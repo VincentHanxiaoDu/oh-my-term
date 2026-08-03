@@ -71,7 +71,39 @@ pub struct BlobMeta {
 }
 
 pub enum BlobKind { Image { width: u32, height: u32 }, File, Text }
+
+/// Which lifecycle a blob is under. Not a second store — one store, one index,
+/// one sweeper, one set of rules, with a per-class policy.
+pub enum BlobClass {
+    /// The default: a paste, an upload, an agent output. Ephemeral, lives under
+    /// `$XDG_RUNTIME_DIR`, swept on `ttl`.
+    Runtime,
+    /// A **pinned mirror** of a file that lives somewhere else — today, a remote
+    /// source file fetched for a local editor ([18 §6.3](18-semantic-open.md#63-where-the-file-lands-and-why-the-layout-matters)).
+    Mirror { host: RemoteHost, remote_path: PathBuf, read_only: bool },
+}
 ```
+
+**Blob classes, and why mirrors are inside the store rather than beside it.**
+A mirror differs from a runtime blob in three ways, and each is a *policy* on the
+class, not a new mechanism:
+
+- **It lives under `$XDG_STATE_HOME/omt/…`, not `$XDG_RUNTIME_DIR`**, because
+  editors keep files open across reboots and a path that vanished mid-session is
+  worse than a stale one. The store owns both roots; `resolve_in_root` remains
+  the only writer to either, and the class selects the root.
+- **It may carry a per-blob `ttl_override`.** A sensitive mirror wants an hour,
+  not the class default. The override is stored in `BlobMeta` and honoured by the
+  same sweeper; it may shorten a TTL but never extend it past `ttl_referenced`.
+- **It is pinned while a holder declares an open handle.** A mirror's `refs` is
+  incremented by an explicit `BlobStore::pin`/`unpin` pair, not by a caller
+  writing to the index. A filesystem watcher that believes an editor still has
+  the file open calls `pin`; the sweeper is free to collect the moment it does
+  not. This keeps [§8](#8-security)'s rule intact — every rule is enforced inside
+  `omt-media`, never in callers.
+
+`BlobMeta` gains `class: BlobClass` and `ttl_override: Option<Duration>`
+accordingly.
 
 **Layout.** `blobs/<hh>/<hash>` where `hh` is the first hash byte in hex, plus
 `blobs/<hh>/<hash>.meta.json`. Files are `0600`, the root is `0700`.
@@ -99,6 +131,8 @@ Per-instance defaults:
 | `max_blobs_per_session` | 200 | Reject with a clear message |
 | `ttl` | 24 h | Background sweeper every 5 min |
 | `ttl_referenced` | 7 d | A blob handed to an agent is pinned longer |
+| `ttl_override` (per blob) | unset | A caller-supplied shorter TTL, honoured by the same sweeper; may not exceed `ttl_referenced` |
+| `max_blob_bytes` per class | `Runtime` = `max_blob_bytes` (32 MiB); `Mirror` = `open.remote.max_bytes` (4 MiB) | The class cap is checked first and its message names the class, so "4 MiB" and "32 MiB" are never confused. The global cap is the absolute ceiling and no class may raise it |
 
 **Cleanup** runs on a timer, on instance start (sweeping the whole root), and on
 session close (dropping that session's `refs/` directory). A crashed instance
@@ -689,7 +723,9 @@ means the managed root is fine; materializing inside the workspace is no longer
 required.
 
 ```rust
-pub trait AgentAdapter {
+// Added to `AgentAdapter`, owned by [06 §7](06-agent-layer.md#7-adapters).
+// These two methods are this document's whole contribution to that trait.
+
     /// How this agent wants to be handed an attachment that exists on disk.
     /// `None` = this agent cannot accept this class at all, in a running session.
     fn attachment_reference(&self, path: &Path, meta: &BlobMeta, class: &AttachmentClass)
@@ -697,7 +733,6 @@ pub trait AgentAdapter {
 
     /// True when the agent accepts this class only at launch (e.g. `codex -i`).
     fn attachment_at_launch_only(&self, class: &AttachmentClass) -> bool { false }
-}
 
 pub enum AttachmentReference {
     /// Inline into the prompt text at the cursor. Carries the exact rendered
@@ -1221,20 +1256,19 @@ syntax. This is per-adapter data on `AgentAdapter`, not a global format:
 | **ACP-generic** | `session/prompt` content blocks support typed resources; the image goes as a resource block, not a path. | High |
 | Anything else | Absolute path in the prompt, prefixed with a human sentence. | Fallback |
 
-```rust
-pub trait AgentAdapter {
-    /// How this agent wants to be handed an image that already exists on disk.
-    fn image_reference(&self, path: &Path, meta: &BlobMeta) -> ImageReference;
-}
+The method is [§4.3.7](#437-what-the-agent-finally-receives)'s
+`attachment_reference` with `class = Image` — there is no separate image method
+and no separate return type:
 
-pub enum ImageReference {
-    /// Inline into the prompt text at the cursor.
-    PromptText(String),
-    /// Run a slash command first, then reference it.
-    Command { command: String, then: String },
-    /// Structured attachment over the agent's own protocol.
-    Structured(serde_json::Value),
-}
+```rust
+// `AttachmentReference` — see §4.3.7. Owned by [06 §7](06-agent-layer.md#7-adapters)
+// as part of `AgentAdapter`.
+
+/// Deprecated alias for `AttachmentReference`, kept only so older references
+/// resolve. `AttachmentReference` is a strict superset — it adds
+/// `InlineContent` — and is the single type; new code names it directly.
+#[deprecated(note = "use AttachmentReference")]
+pub type ImageReference = AttachmentReference;
 ```
 
 `Structured` is always preferred when available, per

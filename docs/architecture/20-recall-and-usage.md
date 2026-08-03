@@ -129,7 +129,7 @@ completeness over output it did not index, and the UI says so (§2.5).
 | Session/workspace name, `session.note`, agent kind/model | yes | **yes** | — | Cheap anchors. |
 | `away_summary` and other agent-authored summaries | yes | **yes** | — | Written by the agent, high signal. |
 | Usage / rate-limit events | yes | no | — | Numbers. §11. |
-| Raw PTY bytes, scrollback outside blocks | no | no | — | Reachable via [04 §8.1](04-terminal-core.md#8-search) within-session search. Not a corpus. |
+| Raw PTY bytes, scrollback outside blocks | no | no | — | Reachable via [04 §8.1](04-terminal-core.md#8-search-selection-hyperlinks-semantic-click-targets) within-session search. Not a corpus. |
 
 ### 2.4 Default field set
 
@@ -159,14 +159,22 @@ says so rather than silently returning nothing from it.
 
 ### 3.1 The decision
 
-> **D-R1 — The recall index is SQLite with FTS5, in the same database file as
-> the block/history store, using external-content tables.**
+> **D-R1 — The recall index is SQLite with FTS5, in the same database *file* as
+> the block/history store — `state/omt/store.db`
+> ([21 §1](21-data-lifecycle.md#1-the-inventory), rows 4/6/11/12) — using
+> external-content tables.**
+
+"Same file" is load-bearing and not a tidiness preference: it is what makes the
+index write part of the block's own transaction. Blocks, history, usage and the
+`doc`/`doc_fts` tables are therefore one SQLite database, and
+[21 §1.3](21-data-lifecycle.md#13-one-database-file-and-why) records that as an
+inventory fact.
 
 Alternatives evaluated:
 
 | Option | Binary cost | Incremental write | Cross-platform | Licence | Verdict |
 |---|---|---|---|---|---|
-| **SQLite + FTS5** (`rusqlite` bundled) | ~1.2 MB, **already linked** — `omt-store`'s backend and [05 §9](05-session-model.md#9-command-history)'s history live here | Row-at-a-time; one transaction per batch; no background merge to schedule | Everywhere Rust builds, including musl and Windows, no C++ toolchain | SQLite public domain; `rusqlite` MIT — both Apache-2.0-compatible (P9/[14](14-licensing.md)) | **Chosen** |
+| **SQLite + FTS5** (`rusqlite` bundled) | ~1.2 MB, **already linked** — `omt-store`'s backend and [05 §9](05-session-model.md#9-command-history)'s history live in the same `store.db` | Row-at-a-time; one transaction per batch; no background merge to schedule | Everywhere Rust builds, including musl and Windows, no C++ toolchain | SQLite public domain; `rusqlite` MIT — both Apache-2.0-compatible (P9/[14](14-licensing.md)) | **Chosen** |
 | tantivy | +4–6 MB, new dep tree | Excellent throughput, but segment-based: needs a merge policy, a commit policy, and a separate on-disk directory to keep consistent with the SQL store across crash/restore | Good | MIT | Rejected: a second durability domain |
 | Hand-rolled inverted index | small | we own every bug | we own every bug | — | Rejected on P5 |
 
@@ -284,7 +292,7 @@ pub struct IndexUnit {
     pub place: Place,                 // cwd, git_root, git_branch
     pub facts: Facts,                 // exit, attribution, agent_kind, model
     /// Already-redacted text. Constructed only by `Redacted::from_raw`, which
-    /// is the sole public constructor; see §5.2. There is no way to build an
+    /// is the sole public constructor; see §5.1. There is no way to build an
     /// `IndexUnit` from a `String`.
     pub text: FieldSet<Redacted>,
 }
@@ -477,84 +485,42 @@ Two consequences worth stating plainly:
   test (`trybuild`) asserts that `IndexUnit { text: "…".into() }` does not
   compile.
 
-### 5.2 What the detector covers
+### 5.2 What the detector covers — owned elsewhere
 
-Pattern list and per-pattern self-tests live in [21](21-data-lifecycle.md); the
-classes, so this document is readable on its own:
+The `Redactor`, its classes (`Env`, `Key`, `Flag`, `Header`, `Shape`, `Entropy`,
+`User`), the shape-rule table with its per-pattern self-tests, the entropy
+thresholds, the `<redacted:sk:len=51>` marker format, the `[store.redaction]`
+configuration and the test corpus are all specified once, in
+[21 §2](21-data-lifecycle.md#2-redaction-before-write). They are not restated
+here: a second copy of a denylist is a denylist that will disagree with the first
+one.
 
-| Class | Examples | Confidence |
-|---|---|---|
-| Known key shapes | `ghp_`, `github_pat_`, `gho_`/`ghu_`/`ghs_`/`ghr_`, `glpat-`, `xox[bpsa]-`, `sk_live_`/`sk_test_`, `npm_`, `nf[pcoub]_`, `pul-`, `AKIA`/`ASIA`+16, `AIza`, `ya29.` | high — vendor-defined prefixes |
-| Env assignments | `AWS_SECRET_ACCESS_KEY=`, `AWS_SESSION_TOKEN=`, `*_TOKEN=`, `*_SECRET=`, `*_KEY=`, `*_PASSWORD=`, `AZURE_*_KEY=`, `GOOGLE_SERVICE_ACCOUNT_KEY=` | high |
-| CLI flags | `--password X`, `--token X`, `-p X` for known clients, `mysql -pX` | medium |
-| HTTP headers | `Authorization: Bearer …`, `Authorization: Basic …`, `X-Api-Key:`, `Proxy-Authorization:`, `Cookie:`/`Set-Cookie:` | high |
-| Private keys and certs | `-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----` … `-----END …-----`, whole block | high |
-| JWTs | `eyJ` + two more base64url segments | high |
-| Connection strings | `postgres://u:p@h`, `mongodb+srv://…`, `amqp://…` — the password component only | high |
-| High-entropy strings | ≥ 24 chars, charset ≥ 40 distinct, Shannon entropy ≥ 4.0 bits/char, not a known hash-shaped token in a git context | **low — see below** |
+What this document adds is only the ordering rule above and its type-level
+enforcement below.
 
-The atuin design point worth copying exactly: **every pattern carries a
-self-test value in the same table entry**, and one `#[rstest]` asserts each
-matches both bare and embedded in surrounding text. A denylist without
-per-pattern tests rots silently
-([research §3.4](../research/completions-and-shell.md#34-privacy-and-secret-redaction)).
+### 5.3 The escape hatches, and where they land in search
 
-### 5.3 False positives, and the policy
-
-High-entropy detection is the only heuristic class, and it will fire on git
-SHAs, UUIDs, base64 images, minified JS and checksums. Policy:
-
-- The entropy rule is **on for `output`, off for `command`**. Command text is
-  short, human-typed, and covered well by the shape and assignment rules;
-  entropy there produces noise. Output is bulk and is where a `kubectl get
-  secret -o yaml` lands.
-- Context exclusions come first: a token on a line matching `^[0-9a-f]{7,40}\s`
-  (git log), inside a ``` fenced block tagged as a diff, or immediately after
-  `sha256:`/`Digest:`/`integrity=` is not a secret.
-- **Redaction is partial, never whole-line.** Only the matched span is replaced,
-  with `‹redacted:kind›` — so `Authorization: ‹redacted:bearer›` retains the
-  fact that an auth header was present. Whole-line redaction destroys far more
-  recall value than it protects.
-- A false positive costs one unfindable token. A false negative costs a secret
-  in a file that gets backed up to Dropbox. The asymmetry justifies erring
-  toward redaction, and the escape hatch below bounds the cost.
-
-### 5.4 The escape hatch
-
-Three levels, all in [21](21-data-lifecycle.md)'s config block, listed here
-because search is where users hit them:
-
-1. `recall.redaction.allow = ["<regex>"]` — spans matching are never redacted.
-   Intended for `sha256:`-style project-specific noise.
-2. `recall.redaction.entropy = false` — disables only the heuristic class. The
-   shape/assignment/header/private-key classes cannot be disabled; that is
-   deliberate.
-3. `persist_scrollback = false` per session or workspace — nothing is stored, so
-   nothing is indexed, and search reports the exclusion (§2.5).
+The controls are [21 §2.5](21-data-lifecycle.md#25-per-workspace-and-per-session-control)'s
+`[store.redaction]` and `[store.persist]` blocks — `allow_patterns`,
+`extra_patterns`, `entropy`, and `persist.scrollback`. They are named here only
+because search is where users notice them: a session or workspace with
+`persist.scrollback = false` stores nothing, therefore indexes nothing, and
+`coverage` reports the exclusion explicitly (§2.5) rather than returning a quiet
+empty set.
 
 There is no "redact this retroactively, it is already indexed" that is cheaper
-than a purge. `data.purge { scope, matching }` ([21](21-data-lifecycle.md))
-deletes the doc rows and their FTS entries in one transaction, and that is the
-supported remedy.
+than a purge. `store.purge` ([21 §8](21-data-lifecycle.md#8-capabilities))
+deletes the `doc` rows and their FTS entries in one transaction, and
+`history.forget` (§12.2) does the same for individual commands. Those are the
+supported remedies.
 
-### 5.5 What redaction cannot catch — stated plainly
+### 5.4 What redaction cannot catch
 
-- **A secret with no shape.** A 12-character database password, a customer name,
-  an internal hostname, the contents of a private document the agent read. No
-  pattern finds these.
-- **Secrets in agent-authored prose.** If the model repeats a key back in an
-  explanation, the shape rules catch it; if it paraphrases one, nothing does.
-- **Structured dumps.** `kubectl get secret -o yaml` gives base64 blobs that
-  entropy catches; `-o json` with short values may not.
-- **Encoding.** A key split across a line wrap, or base64-of-base64, defeats
-  span matching.
-- **The blob store.** Pasted screenshots ([09](09-ssh-and-media.md)) are not
-  text and are not scanned.
-
-Therefore the documented position is: **redaction reduces the blast radius of a
-persisted terminal; it is not a guarantee, and omt says so in the onboarding
-text and in `omt doctor`.** The real controls are opt-out, retention and purge —
-[21](21-data-lifecycle.md).
+[21 §2.6](21-data-lifecycle.md#26-what-this-will-miss--stated-honestly) is the
+honest list, and it is the one to read. The consequence for *this* document is
+the position that must appear in every search surface: **redaction reduces the
+blast radius of a persisted terminal; it is not a guarantee.** A result set is
+never presented as "safe to share".
 
 ---
 
@@ -639,7 +605,7 @@ persists their terminal.
 Worth advertising, because it justifies the whole apparatus: exit code and
 signal, duration, cwd *and* git root *and* branch, human-vs-agent attribution,
 cross-session immediacy (a command run in one pane is queryable in another the
-moment its block closes, with a `HistoryAppended` event so open palettes update
+moment its block closes, with a `history.appended` event so open palettes update
 live), a link to the block's output, and phone access.
 
 ---
@@ -947,7 +913,7 @@ report what.
 
 #### 8.2.4 Multi-session morning digest
 
-Scope `All` with window "since I was last connected" (from presence, [12](12-collaboration.md)) is the
+Scope `All` with window "since I last read this" (from the durable read mark, §12.3 — *not* from presence, which does not survive a restart) is the
 literal answer to J40. Sessions are ordered by *needs-you first*, then by
 activity: `Blocked` sessions, then sessions that ended with `Outcome::Error`,
 then sessions with failed commands, then the rest. That ordering is the digest's
@@ -1333,11 +1299,11 @@ Declared per [03 §2](03-capability-catalog.md#2-declaring-a-capability). All
 
 | Capability | Kind | Role | Input | Output | Effects |
 |---|---|---|---|---|---|
-| `search.query` | Q | V | `SearchQuery` | `SearchResults` | — |
-| `search.explain` | Q | V | `{ query: SearchQuery, doc: DocId }` | `{ factors: [(name, f64)], total: f64, bm25: f64 }` | — |
-| `search.suggest` | Q | V | `{ prefix, scope, limit }` | `{ terms: [String], recent_queries: [String] }` | — |
-| `search.stats` | Q | V | `{}` | `{ docs, bytes, oldest, newest, by_kind, excluded_sessions }` | — |
-| `search.reindex` | C | **A** | `{ scope, since? }` | `{ job: JobId }` | `READS_FS`, `WRITES_FS` |
+| `search.query` | Query | V | `SearchQuery` | `SearchResults` | — |
+| `search.explain` | Query | V | `{ query: SearchQuery, doc: DocId }` | `{ factors: [(name, f64)], total: f64, bm25: f64 }` | — |
+| `search.suggest` | Query | V | `{ prefix, scope, limit }` | `{ terms: [String], recent_queries: [String] }` | — |
+| `search.stats` | Query | V | `{}` | `{ docs, bytes, oldest, newest, by_kind, excluded_sessions }` | — |
+| `search.reindex` | Command | **A** | `{ scope, since? }` | `{ job: JobId }` | `READS_FS`, `WRITES_FS` |
 
 ```rust
 pub struct SearchQuery {
@@ -1387,50 +1353,97 @@ rejects input is a bad search box.
 
 | Capability | Kind | Role | Input | Output |
 |---|---|---|---|---|
-| `history.query` | Q | V | `HistoryQuery` ([05 §9](05-session-model.md#9-command-history)) | `{ entries, next_cursor }` |
-| `history.get` | Q | V | `{ id }` | `HistoryEntry` + `{ block, output_available }` |
-| `history.import` | C | O | `{ shell, path?, dry_run }` | `{ imported, skipped, redacted, preview }` — `READS_FS`, `WRITES_FS` |
-| `history.forget` | C | O | `{ matching: HistorySelector }` | `{ removed }` — `DESTRUCTIVE`, `WRITES_FS` |
+| `history.query` | Query | V | `HistoryQuery` ([05 §9](05-session-model.md#9-command-history)) | `{ entries, next_cursor }` |
+| `history.get` | Query | V | `{ id }` | `HistoryEntry` + `{ block, output_available }` |
+| `history.import` | Command | O | `{ shell, path?, dry_run }` | `{ imported, skipped, redacted, preview }` — `READS_FS`, `WRITES_FS` |
+| `history.forget` | Command | O | `{ matching: HistorySelector }` | `{ removed }` — `DESTRUCTIVE`, `WRITES_FS` |
+
+**`history.*` versus `session.history` / `workspace.history`.** All three exist
+and none is a duplicate of another. `history.query` is the **instance-scoped**
+query and the only implementation: it takes a `HistoryQuery` whose `scope` field
+selects `Global | Workspace(id) | Session(id) | Cwd(path)`. `session.history` and
+`workspace.history` are **pre-scoped conveniences** over it — they exist because
+a session-scoped or workspace-scoped client should not have to construct a global
+query and narrow it, and because they read naturally in the CLI
+(`omt session history <sid>`). All three return `HistoryEntry` from
+[05 §9](05-session-model.md#9-command-history), with the same ranking, the same
+dedup and the same coverage reporting. If they ever diverge, `history.query` is
+right.
 
 `history.forget` deletes rows *and* their FTS entries in one transaction and is
-the targeted counterpart to [21](21-data-lifecycle.md)'s bulk purge; the
-"I just pasted a token into a command" case needs to be one command, not a
-retention-policy change.
+the targeted counterpart to [21 §4.3](21-data-lifecycle.md#43-storepurge--destruction-with-a-manifest)'s
+bulk `store.purge`; the "I just pasted a token into a command" case needs to be
+one command, not a retention-policy change with a typed confirmation. The two are
+cross-referenced deliberately: `store.purge` is scope-shaped and destroys
+everything in a scope, `history.forget` is selector-shaped and destroys command
+rows only. [21 §9](21-data-lifecycle.md#9-open-questions)'s proposed
+`session.blocks.forget` — which would destroy a block's persisted *output* — must
+be specified against both and must not become a third way to delete a command
+row.
 
 ### 12.3 `timeline.*` / `digest.*`
 
 | Capability | Kind | Role | Input | Output |
 |---|---|---|---|---|
-| `timeline.get` | Q | V | `{ session, from_seq?, limit, collapse: bool, kinds? }` | `{ entries, stats, next_seq }` |
-| `timeline.stats` | Q | V | `{ session }` | `TimelineStats` |
-| `digest.get` | Q | V | `{ scope, window }` | `Digest` |
-| `digest.since_last_seen` | Q | V | `{ device? }` | `Digest` — window from presence |
-| `compare.sessions` | Q | V | `{ sessions: [SessionId], base_ref? }` | `{ rows: [ComparisonRow], base_resolved }` |
+| `timeline.get` | Query | V | `{ session, from_cursor?, limit, collapse: bool, kinds? }` | `{ entries, stats, next_cursor }` |
+| `timeline.stats` | Query | V | `{ session }` | `TimelineStats` |
+| `digest.get` | Query | V | `{ scope, window }` | `Digest` |
+| `digest.since_last_seen` | Query | V | `{ device? }` | `Digest` — window from the caller's durable read mark, see below |
+| `compare.sessions` | Query | V | `{ sessions: [SessionId], base_ref? }` | `{ rows: [ComparisonRow], base_resolved }` |
 
 `compare.sessions` is single-instance; multi-instance comparison is client-side
 fan-out over the same capability, merged into one table (§7).
+
+`TimelineCursor` is an opaque token, deliberately **not** called `seq`: the
+protocol's `seq` ([07 §5](07-remote-protocol.md#5-resume-and-reliability)) is a
+different sequence space, and pagination over the timeline cannot use it — see
+open question 11.
+
+`digest.since_last_seen` derives its window from the caller's durable **read
+mark** for the session, not from presence: presence is connection state and is
+empty after a daemon restart ([12 §2](12-collaboration.md#2-presence-is-first-class-state)),
+which would make the digest silently wrong exactly when it is most wanted (the
+morning after). A read mark is a per-`(actor, session)` durable position — the
+same concept as `read_marks` in
+[the remote-continuity design](../design/remote-continuity.md) — advanced when an
+actor views a session and persisted with the rest of the store. Open question 6
+covers the "this device has no mark yet" case.
 
 ### 12.4 `usage.*`
 
 | Capability | Kind | Role | Input | Output |
 |---|---|---|---|---|
-| `usage.query` | Q | V | `{ scope, since, until?, group_by }` | `UsageReport` |
-| `usage.limits` | Q | V | `{ agent? }` | `{ limits: [RateLimitState] }` |
-| `usage.session` | Q | V | `{ session }` | `{ totals, by_model, context_window, last_event }` |
+| `usage.query` | Query | V | `{ scope, since, until?, group_by }` | `UsageReport` |
+| `usage.limits` | Query | V | `{ agent? }` | `{ limits: [RateLimitState] }` |
+| `usage.session` | Query | V | `{ session }` | `{ totals, by_model, context_window, last_event }` |
 
 ### 12.5 `attention.*`
 
-| Capability | Kind | Role | Input | Output |
-|---|---|---|---|---|
-| `attention.list` | Q | V | `{ scope }` | `{ signals: [AttentionSignal] }` |
-| `attention.explain` | Q | V | `{ session }` | `{ baselines, reasons, thresholds, snoozes }` |
-| `attention.snooze` | C | O | `{ session, reason?, until }` | `{ snoozed_until }` |
-| `attention.clear` | C | O | `{ session }` | `{ cleared: u32 }` |
+| Capability | Kind | Role | Input | Output | Effects |
+|---|---|---|---|---|---|
+| `attention.list` | Query | V | `{ scope }` | `{ signals: [AttentionSignal] }` | — |
+| `attention.explain` | Query | V | `{ session }` | `{ baselines, reasons, thresholds, snoozes }` | — |
+| `attention.snooze` | Command | O | `{ session, reason?, until }` | `{ snoozed_until }` | `WRITES_FS` — snoozes are persisted with the binding (§10.4) |
+| `attention.clear` | Command | O | `{ session }` | `{ cleared: u32 }` | `WRITES_FS` |
 
 Events emitted on the shared bus ([03 §4](03-capability-catalog.md#4-events-are-the-read-side-twin)):
-`HistoryAppended`, `DocIndexed { session, kind, seq }` (coalesced, ≤ 1/s per
-session), `AttentionRaised`/`AttentionCleared`, `UsageUpdated { session,
-totals }` (coalesced, ≤ 1/2 s), `DigestAvailable { scope }`.
+
+| Event | Notes |
+|---|---|
+| `history.appended` | one per closed block with a command |
+| `recall.doc.indexed { session, kind, seq }` | coalesced, ≤ 1/s per session |
+| `attention.raised` / `attention.cleared` | §10.3's hysteresis applies before either fires |
+| `usage.updated { session, totals }` | coalesced, ≤ 1/2 s |
+| `digest.available { scope }` | |
+
+> **Naming footnote.** These events were spelled `HistoryAppended`, `DocIndexed`,
+> `AttentionRaised`/`AttentionCleared`, `UsageUpdated` and `DigestAvailable` in
+> an earlier draft of this document. Event names are **dotted lowercase**
+> throughout omt — it matches the capability naming convention and the
+> `snake_case` serde rule in the glossary, and it is what
+> [21 §8](21-data-lifecycle.md#8-capabilities) (`store.sweep.completed`) and
+> [12 §2](12-collaboration.md#2-presence-is-first-class-state) (`presence.changed`)
+> already emit. A PascalCase event name anywhere is a stale draft.
 
 ---
 
@@ -1534,9 +1547,11 @@ so a 4 GB log costs 12 KiB of index and one pass of redaction.
    every new event is wasteful; incremental append is easy for the tail but the
    repeat-collapsing rule (§8.1) can retroactively merge the last two entries.
    Needs a defined incremental algorithm or a bounded-recompute-window rule.
-6. **`digest.since_last_seen` when the device is new.** A phone added this
-   morning has no "last seen". Fall back to 12 hours? To the last session
-   activity gap? Currently unspecified.
+6. **`digest.since_last_seen` when there is no read mark.** A phone added this
+   morning has never read anything, so there is no mark to derive a window from.
+   Fall back to 12 hours? To the last session activity gap? To the actor's mark
+   on another device? Currently unspecified. (What is settled is that the answer
+   is *not* presence — see §12.3.)
 7. **Does Gemini/Qwen or Cursor report usage at all?** Both are `UNCERTAIN` in
    the research. Until verified, they fall into §11.4's "not reported" path,
    which is correct but may be needlessly pessimistic.
@@ -1553,7 +1568,22 @@ so a 4 GB log costs 12 KiB of index and one pass of redaction.
     hit in an orphaned session raises the "restart?" affordance
     ([05 §8.2](05-session-model.md#82-crash-semantics)), and where that prompt
     belongs in the search flow is unspecified.
-11. **Digest as a push payload.** §8.3 truncates the headline to 120 characters
+11. **Timeline pagination has no usable key.** `timeline.get` now pages by an
+    opaque `from_cursor`/`next_cursor` (§12.3) rather than the `from_seq` an
+    earlier draft used, for two reasons that need resolving together. First, the
+    word `seq` was overloaded: [07 §5](07-remote-protocol.md#5-resume-and-reliability)'s
+    protocol `seq` is a *different* sequence space, and a client that passed one
+    where the other was expected would page to a plausible wrong place rather
+    than fail. Second, and worse, `doc.event_seq` is **nullable** — it is the
+    per-session seq of a source `AgentEvent`, and human blocks, file changes,
+    session metadata and summaries have none — so roughly half of a mixed
+    session's timeline entries cannot be addressed by it at all. The cursor
+    therefore has to be a composite (`(ts, doc_id)` is the obvious candidate,
+    since `doc_ts` already indexes it and `doc_id` breaks ties deterministically),
+    and it needs to remain stable under §8.1's repeat-collapsing, which can merge
+    the entry a cursor points at. Undecided; the rename is a guardrail, not the
+    fix.
+12. **Digest as a push payload.** §8.3 truncates the headline to 120 characters
     for Web Push. Whether the phone should instead receive a structured payload
     and compose locally (better, but duplicates the clause table in TypeScript)
     is open. Codegen from the clause table is the likely answer.

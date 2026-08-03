@@ -249,7 +249,7 @@ export type InstanceStatus =
   | { state: "connecting"; attempt: number; nextRetryMs: number }
   | { state: "handshaking" }
   | { state: "connected"; sinceSeqPerSession: Map<SessionId, Seq>; rttMs: number }
-  | { state: "degraded"; reason: "resync_required" | "slow" }
+  | { state: "degraded"; reason: "resync" | "slow" }   // 07 §5.2: the message is `Resync`
   | { state: "auth_failed"; detail: string }
   | { state: "version_incompatible"; instanceCatalog: string; clientCatalog: string };
 
@@ -299,6 +299,8 @@ The home screen is one list across all instances, not a per-instance drill-down.
 interface UnifiedSession {
   instance: InstanceId; instanceLabel: string;
   session: SessionId; title: string;
+  // SessionMode, owned by 05 §1. Serde names of the Rust enum. D8.
+  mode: "pty" | "native";
   workspace: { path: string; name: string; gitBranch: string | null };
   agent: { kind: AgentKind; state: AgentState; model: string | null } | null;
   openInteractions: number;
@@ -314,6 +316,13 @@ Sort key, in order: (1) open interactions descending, (2) `agent.state ===
 owned by [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting).
 This is the same ordering the
 dashboard uses (§6) — the home screen *is* the dashboard, filtered to sessions.
+
+A `native` session carries a visible `native` label on its row **and** in the
+session header —
+[D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)
+requires the mode to be visible on every surface, because the user must never be
+in doubt about which product they are talking to (a `native` Claude session is
+the Agent SDK, not Claude Code). `pty` is the default and is not labelled.
 
 Sessions on a disconnected instance stay in the list, greyed, with their last
 known state and a relative timestamp. Disappearing rows on a subway is worse
@@ -357,6 +366,17 @@ is the default above it.**
 
 Both are complete surfaces. Neither is a preview of the other.
 
+**Except in `native` mode.** A `native` session
+([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp),
+[06 §2.1](06-agent-layer.md#21-session-modes)) has no PTY and therefore **no
+terminal view**; the segmented control is absent. Its two surfaces are the
+structured transcript and the interaction cards, both of which omt renders
+itself. That is D8's honest selling point — in `native` mode omt owns the
+rendering end to end, so the block view, the cards and the whole mobile
+experience are strictly better than anything derived from observing a TUI — and
+the honest cost is stated next to it, on the same screen: the user is not running
+their own CLI.
+
 ### 4.1 Why both
 
 A phone is roughly 40 columns at a readable font size. Almost every useful
@@ -380,6 +400,13 @@ answer really is "I need to see the actual screen".
 
 Backed by `session.blocks.list` / `session.blocks.get`, and live-updated by
 block events on the subscription.
+
+Per [D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim) the block
+model is omt's **strongest and specifically unclaimed idea** — no shipping
+product combines a real VT parser, panes and a mobile client, and OSC 133
+segmentation is what resolves the raw-PTY-versus-cards split the whole category
+is stuck on. It is the differentiator, not a mobile-rendering convenience, and
+this section should be read as product surface rather than an adaptation layer.
 
 ```ts
 interface BlockSummary {
@@ -470,7 +497,8 @@ for tests.
   token ([12](12-collaboration.md)). The header shows *"`laptop` is driving —
   tap to take over"*; takeover is explicit and broadcast.
 - **Resume.** On reconnect, the client sends `since_seq`; the instance replays
-  or answers `resync_required`, in which case the client fetches a scrollback
+  or answers `Resync` ([07 §5.2](07-remote-protocol.md#52-replay-window)), in
+  which case the client fetches a scrollback
   snapshot and re-seeds the emulator. Detail in
   [07](07-remote-protocol.md).
 
@@ -548,7 +576,11 @@ dimensions matter for inline images
 
 ## 5. Native rendering of agent interactions
 
-This is the flagship. An `Interaction` is a structured request from an agent,
+This is the flagship — in engineering depth. The *claim* is narrower:
+[D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim) rates remote
+question cards as commoditized, so what this section may be sold on is answering
+one of them from a phone **while the user's real interactive TUI is on screen**.
+An `Interaction` is a structured request from an agent,
 surfaced by tier-3/4/5 sources only
 ([00 §5](00-overview.md#5-the-agent-observation-pipeline)), rendered natively,
 and answered through `interaction.resolve`.
@@ -587,7 +619,10 @@ Invariants the UI must respect:
   auto-answers ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
 - **Never synthesize.** If the interaction's `source` is `pty`, it is not an
   interaction and the card is not rendered.
-  [P4](01-principles.md#p4--native-semantics-observe-never-re-implement).
+  [P4](01-principles.md#p4--native-semantics-observe-never-re-implement). In
+  `native` mode the rule is vacuous rather than relaxed: every event on a
+  `native` session is `protocol`-sourced, so nothing can ever fail it
+  ([06 §2.1](06-agent-layer.md#21-session-modes)).
 
 Cards appear in three places, driven by the same component: inline in block view
 at the position they occurred, as a **bottom sheet** when they arrive while that
@@ -602,7 +637,7 @@ The data shape is verbatim from
 interface ChoiceQuestion {
   question: string;
   header: string;                  // short tab label, ~12 chars
-  multiSelect: boolean;
+  multi_select: boolean;
   options: { label: string; description: string }[];
 }
 // Interaction kind: { type: "choice", questions: ChoiceQuestion[] }   // 1..4 in practice
@@ -638,10 +673,10 @@ Behavior:
   card is a wizard, not a scroll of everything, because a phone shows one
   question comfortably and four badly. On a wide viewport all questions render
   stacked and the chips become a sticky in-page index.
-- **`multiSelect: false`** → radio semantics; selecting an option advances to the
+- **`multi_select: false`** → radio semantics; selecting an option advances to the
   next question after a 250 ms confirmation flash. This makes the common case
   (3 single-select questions) three taps.
-- **`multiSelect: true`** → checkbox semantics with an explicit **Next**; no
+- **`multi_select: true`** → checkbox semantics with an explicit **Next**; no
   auto-advance.
 - **Descriptions** are clamped to two lines with a "more" affordance; they are
   the whole reason this card beats reading ANSI on a phone, so they are never
@@ -662,7 +697,7 @@ resolution:
 
 ```ts
 type ChoiceAnswer = {
-  /** Selected option labels for this question. Length 1 unless multiSelect. */
+  /** Selected option labels for this question. Length 1 unless multi_select. */
   labels: string[];
   /** Free-text entered via "Other…". Mutually exclusive with labels being non-empty. */
   other?: string;
@@ -751,12 +786,25 @@ Shape owned by [06 §5](06-agent-layer.md#5-interactions--the-flagship-path);
   persistence scope, that scope is shown as a subtitle
   (`"for Bash(git *) in this project"`) so the user knows what they are
   granting.
-- **`edit`**, when the agent offers it, opens the tool input in a schema-aware
-  editor and resolves with `updated_input`, which maps onto `PreToolUse`'s
-  `updatedInput`.
+- **Edit before approving.** The card gains an edit affordance whenever the
+  responder reports `supports_edit` — a property of the channel, not of the
+  agent's option list ([06 §5.4](06-agent-layer.md#54-editing-an-argument-before-approving)),
+  so omt is not adding an option the agent did not offer. Tapping it switches the
+  input pane from read-only pretty-printed JSON to an editor: schema-aware
+  (typed fields, enums, required keys) where the channel supplied the tool's own
+  input schema, a plain JSON editor otherwise, with the same
+  [13 §8](13-security.md#8-secret-redaction) redaction rules and no client-side
+  "fixing up". Before submit the card shows a **diff of original versus edited
+  input**, rendered by the §5.3 diff component, because approving a change you
+  cannot see is exactly the failure this feature exists to prevent. On a phone
+  the editor is a **full-height sheet**, never an inline field — JSON editing in
+  a 3-line box above a software keyboard is unusable. The submit button reads
+  **"Approve with changes"**, and the resolution is attributed as user-edited on
+  every surface.
 
 ```ts
-// InteractionResponse for permission (shape owned by 06 §5.0):
+// InteractionResponse for permission (shape owned by 06 §5.0; `edit` +
+// `updated_input` semantics and who may offer them by 06 §5.4):
 { type: "permission";
   decision: "allow" | "allow_always" | "deny" | "deny_always" | "edit";
   updated_input?: unknown;
@@ -819,7 +867,11 @@ export function InteractionCard(props: InteractionCardProps) {
 
 `<UnknownInteraction>` is not dead code: a newer instance may send a kind this
 client does not know. It renders `prompt` verbatim plus a "answer in the
-terminal view" button, which is strictly better than a blank card.
+terminal view" button, which is strictly better than a blank card. **On a
+`native` session there is no terminal view to open** (§4): the button is replaced
+by the raw payload in a disclosure, plus "this instance is newer than this
+client — update the client to answer here", because in `native` mode no other
+surface exists.
 
 ---
 
@@ -831,7 +883,11 @@ Rows are `UnifiedSession` (§3.3) grouped into three sections:
 
 1. **Needs you** — any session with an open `Interaction`, or an agent in
    `AgentState::Blocked`. (A `blocked` agent with no interaction id is a
-   "needs you" omt can see but not render — 06 §4 — and the row says so.) Or
+   "needs you" omt can see but not render — 06 §4 — and the row says so, offering
+   "open the terminal view". On a `native` session that fallback does not exist
+   (§4), so the row instead says the agent is blocked on something its ACP
+   connection did not describe, and offers the transcript; this is rare by
+   construction, because `native` sessions have only a structured source.) Or
    `agent.state === "blocked"`. Rows here render a compact preview of
    the interaction (the first question's `header` chips, or the permission's
    tool name) and a **primary action inline** — for a single-question,
@@ -1051,8 +1107,8 @@ drive them and break discoverability for real users.
   (`session.write_bytes` — typing into a dead socket must fail loudly). The
   queue is shown as a pill: "2 actions pending". On reconnect they are replayed;
   a `conflict` from `interaction.resolve` renders as "already answered by X".
-- On reconnect the client resumes with `since_seq` per session; on
-  `resync_required` it fetches a snapshot and rebuilds. The user sees a brief
+- On reconnect the client resumes with `since_seq` per session; on `Resync` it
+  fetches a snapshot and rebuilds. The user sees a brief
   skeleton, never a wrong state.
 - `navigator.onLine` is used only as a hint to shorten backoff, never as truth.
 - A wake lock (`navigator.wakeLock`) is held while a session is `busy` **and**
@@ -1168,7 +1224,7 @@ Vitest + `@solidjs/testing-library`, no browser.
 - **Fixture-driven interaction cards.** The verbatim `AskUserQuestion` JSON from
   [agent-clis §1.3.1](../research/agent-clis.md#131-askuserquestion--the-structured-interaction-case)
   is a checked-in fixture. Tests assert: three header chips render, the wizard
-  advances on single-select, `multiSelect` requires explicit Next, "Other…"
+  advances on single-select, `multi_select` requires explicit Next, "Other…"
   produces `{ other: "…" }`, and the comment path produces `{ comment: "…" }`.
 - **Resolution shape tests** compare the produced `InteractionResponse` against
   a JSON fixture shared with the Rust side, so both ends test the same bytes.
@@ -1186,7 +1242,7 @@ against the generated schemas. It can:
   at real speed or instantly);
 - inject an interaction on demand and assert the `interaction.resolve` payload;
 - simulate transport faults: drop the socket, delay frames, force
-  `resync_required`, return `conflict` on resolve, report a **reduced catalog**
+  `Resync`, return `conflict` on resolve, report a **reduced catalog**
   (for §3.4 degradation tests) and a **newer catalog** (for
   `<UnknownInteraction>`);
 - run multiple instances at once, so federation is tested for real.

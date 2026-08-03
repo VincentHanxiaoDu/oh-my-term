@@ -21,8 +21,12 @@ prior art.
 4. **Ancillary semantics** the agents already expose and nobody surfaces: the
    message queue, slash commands, token usage, subagent trees, compaction.
 
-Requirements 1 and 2 are what another tool does. Requirements 3 and 4 are why omt
-exists, and they drive every design choice below.
+Requirements 1 and 2 are what another tool does. Requirements 3 and 4 drive every design
+choice below — though
+[D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim) is the honest
+calibration here: requirement 3 is **table stakes** across this category, not a
+differentiator. What is not table stakes is answering it *from a phone while the
+user's real interactive TUI is live on screen*.
 
 ---
 
@@ -49,6 +53,9 @@ pub struct AgentBinding {
     pub cwd: PathBuf,
     pub started_at: Timestamp,
     pub ended_at: Option<Timestamp>,
+    /// `pty` (default) or `native` (ACP). Defined in
+    /// [05 §1](05-session-model.md#13-session-modes-d8), which owns `SessionMode`. D8.
+    pub mode: SessionMode,
     /// Which sources are currently live for this binding.
     pub sources: Vec<SourceStatus>,
 }
@@ -60,11 +67,38 @@ tailed files, hook correlation) is dropped on binding end so a new agent can
 never inherit the previous one's state — the same discipline another tool applies in
 `clear_retained()`, and for the same reason.
 
+### 2.1 Session modes
+
+An agent occupies a session in one of two modes — `SessionMode::Pty` or
+`SessionMode::Native` — defined in
+[05 §1](05-session-model.md#13-session-modes-d8) and decided by
+[D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp).
+
+- **`pty` (default).** The agent draws its own TUI in a real PTY and omt observes
+  it from outside. The tiered source model of §3–§4 applies in full.
+- **`native`.** omt spawns the agent in ACP mode. There is **no TUI and no PTY**;
+  the ACP connection is the sole event source and the sole responder, and the
+  merge rules of §4 are inert because there is only one source to merge.
+
+This corrects a framing that appears elsewhere in this document: **ACP is a
+replacement front end, not an observability sidecar.** You cannot run a CLI's own
+TUI and speak ACP to the same process. `AcpClient` therefore appears twice in
+this design, and the two appearances are not the same thing:
+
+1. as a tier-`Protocol` `EventSource` for a **`pty`** session whose agent happens
+   to expose ACP alongside its TUI (a second endpoint on a process omt is already
+   observing), and
+2. as **the whole of a `native`** session — transport, event stream, responder
+   and renderer input, with nothing else present.
+
 ---
 
 ## 3. Source model
 
-Everything that can tell omt something about an agent implements one trait.
+Everything that can tell omt something about an agent implements one trait. The
+`Tier` ladder below — and the whole tiered source model — applies to **`pty`
+sessions only** ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp),
+§2.1); a `native` session has exactly one source.
 
 ```rust
 #[async_trait]
@@ -172,7 +206,11 @@ Without it, a mis-detection is unfalsifiable and every bug report is useless.
 ## 5. Interactions — the flagship path
 
 An `Interaction` is a request from an agent for a human decision, promoted to a
-first-class, addressable, resolvable object.
+first-class, addressable, resolvable object. "Flagship" here means *most
+engineering depth*, not *most defensible claim*:
+[D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim) holds the
+narrower claim, which is answering one of these cards from a phone **while the
+user's real interactive TUI is on screen**.
 
 > **Ownership.** This document defines `Interaction`, `InteractionKind`,
 > `InteractionResponse` and their fields — it is the single source of truth for
@@ -314,6 +352,10 @@ pub trait Responder: Send + Sync {
     /// `Independent`. Required by D3: it is the axis that decides whether a
     /// responder is enabled by default.
     fn state_dependence(&self) -> StateDependence;
+    /// Whether this channel can deliver a modified tool input alongside an
+    /// approval. A property of the channel, not of the agent's option list.
+    /// See §5.4. D9.
+    fn supports_edit(&self) -> bool { false }
     async fn respond(&self, i: &Interaction, r: &InteractionResponse) -> Result<(), RespondError>;
 }
 ```
@@ -378,7 +420,12 @@ remote client can answer it.
 
 **This is an unverified assumption and it gates the flagship feature.** Two
 things are unknown: whether `defer` parks the call long enough for a human
-round-trip, and what its timeout is. Therefore:
+round-trip, and what its timeout is.
+[D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim) promotes this
+spike to **the single highest-priority risk in the project** — not one risk among
+many — precisely because deferral is the only *differentiated* part of this
+feature: without it the card remains, but it is a worse copy of something a free
+product already ships. Therefore:
 
 1. A spike change (`spike-defer-semantics`) runs first and measures it. Nothing
    else depends on the answer until it lands.
@@ -391,6 +438,65 @@ round-trip, and what its timeout is. Therefore:
    agent's own tolerance) and always fails open. An agent must never hang
    because omt is slow or dead. This is non-negotiable: the hook's default
    behaviour on any error is to return `{}` and get out of the way.
+
+### 5.4 Editing an argument before approving
+
+Required by [D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)
+consequence 3. This is the producer of `PermissionOptionKind::Edit` and of
+`InteractionResponse::Permission { updated_input }`, both declared above.
+
+**What it means.** The user approves the agent's proposed tool call with a
+modified `input` — answering the agent's own prompt with a different argument,
+which is exactly what the agent's own UI already allows. It stays inside
+[D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
+because omt adds no policy: it changes an *argument*, not the decision procedure,
+and the agent still decides what it will accept.
+
+**Shape.** `InteractionResponse::Permission { decision: Edit, updated_input:
+Some(_) }` is the only shape in which `updated_input` is meaningful. A
+`updated_input` carried on any other decision is a protocol error and is rejected
+with `precondition_failed` rather than silently dropped.
+
+**Who may offer it.** This is the load-bearing decision, because D1 forbids omt
+adding entries to the agent's own option list. The rule:
+
+- omt **never** adds an `Edit` entry to the `PermissionOption`s the agent
+  supplied. That list is passed through verbatim, in the agent's order (§5).
+- Editing is instead offered whenever the **responder** declares it deliverable.
+  The `Responder` trait (§5.2) gains:
+
+  ```rust
+      /// Whether this channel can deliver a modified tool input alongside an
+      /// approval. Not a property of the agent's suggestion list. D9.
+      fn supports_edit(&self) -> bool { false }
+  ```
+
+  Delivering an edited input is a property of the *channel* — Claude Code's
+  `PreToolUse` `updatedInput`, ACP's permission response — not of what the agent
+  happened to suggest. Offering an edit affordance that the channel can honour is
+  not omt inventing an option; it is omt exposing a capability the transport
+  already has.
+
+  The alternative — *offer `Edit` only when the agent listed it in `options`* —
+  is **rejected and recorded as such**: it would make the feature unavailable on
+  channels that demonstrably support it, purely because an agent's suggestion
+  list is a UI hint rather than a capability declaration.
+
+**Validation.** omt does not validate `updated_input` against a schema it
+invented. Where the channel supplies the tool's own input schema, the editor is
+schema-aware (field types, enums, required keys); otherwise it is a raw JSON
+editor and the agent rejects what it does not accept. omt never "fixes up" an
+edited input.
+
+**Attribution.** The edited call is tagged in the event stream and visibly
+attributed on every surface as user-edited, carrying both the original and the
+submitted input — the same discipline
+[D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+applies to synthetic responses, for the same reason: a reader of the transcript
+must never mistake an omt-mediated change for something the agent proposed.
+
+Rendering — the editor, the diff, the mobile sheet — is
+[08 §5.3](08-web-client.md#53-permission--approval-cards--kindtype--permission)'s.
 
 ---
 
@@ -432,6 +538,17 @@ pub trait AgentAdapter: Send + Sync {
     /// Env to inject when omt spawns this agent (correlation ids, hook config).
     fn spawn_env(&self, ctx: &SpawnCtx) -> Vec<(OsString, OsString)>;
 
+    /// Which session modes this adapter supports. D8. `Pty` only is the
+    /// default; an adapter that can be driven over ACP declares `Native` too.
+    /// `SessionModeSet` is defined in [05 §1.1](05-session-model.md#11-types)
+    /// alongside `SessionMode`; it is *not* the keymap's `ModeSet`
+    /// ([16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)).
+    fn supported_modes(&self) -> SessionModeSet { SessionModeSet::PTY_ONLY }
+
+    /// Argv and env for spawning this agent in ACP mode. `None` when the
+    /// adapter does not support `SessionMode::Native`.
+    fn acp_spawn(&self, ctx: &SpawnCtx) -> Option<AcpSpawn> { None }
+
     /// Sources this adapter can construct for a binding, best-first.
     fn sources(&self) -> Vec<Box<dyn EventSource>>;
 
@@ -462,7 +579,9 @@ Both `path_mention` and `image_reference` are agent-native knowledge, so they
 live on the adapter rather than in a central table keyed by `AgentKind`
 ([P4](01-principles.md#p4--native-semantics-observe-never-re-implement)).
 `path_mention` is defaulted, so adding it does not break third-party adapters
-([P2](01-principles.md#p2--pluggable-extension-without-modification)).
+([P2](01-principles.md#p2--pluggable-extension-without-modification)). In
+`native` mode `sources()` is not consulted at all — the ACP connection built from
+`acp_spawn` is the only source (§2.1).
 
 ### 7.1 Integration installer
 
@@ -515,9 +634,23 @@ Claude Code is the failure this ordering exists to prevent.
 | Aider | argv | transcript + heuristics | Text, synthetic | — | static list |
 | Crush | argv | heuristics | none | — | — |
 
-`Interaction::Choice` is Claude-Code-only today. That is the differentiator, not
-a gap; every other agent degrades to `Permission` and `Text`, which are
-universal via ACP.
+The table above describes `pty` mode. Of these agents, **opencode, Gemini CLI and
+Cursor ship an ACP mode**, as do the first-party **Claude** and **Codex** ACP
+adapters, so those five can additionally run as `native` sessions
+([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)).
+D8's warning applies verbatim: the Claude ACP adapter wraps the **Agent SDK, not
+the Claude Code CLI**, so a `native` Claude session is *not running Claude Code*
+— none of its keybindings, its `/voice`, its permission UX or its on-disk
+sessions. That must always be a deliberate, labelled, informed choice.
+
+`Interaction::Choice` is Claude-Code-only today. That is a coverage fact, not a
+differentiator: remote question cards are commoditized
+([D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)), and a
+shipping competitor already has them with i18n and argument editing. The
+differentiated claim is narrower — **answering such a card from a phone while the
+user's real interactive TUI is on screen**, which is a consequence of the
+hook-defer path (§5.3) and which nobody else does. Every other agent degrades to
+`Permission` and `Text`, which are universal via ACP.
 
 ---
 
@@ -561,6 +694,7 @@ universal via ACP.
 | Agent version changes its transcript schema | transcript reader is versioned and validates; on parse failure it disables itself for that binding and reports, rather than emitting garbage |
 | User runs an agent inside tmux inside omt | binding is `Unknown`; documented as unsupported for observation; the terminal still works |
 | Agent spawns subagents | separate threads under one binding; state is the aggregate (any subagent blocked ⇒ session needs you) |
+| **`native` session: the ACP transport closes** | not `Orphaned`-by-PTY-death — there is no PTY (§2.1). The binding ends, open interactions are `Abandoned`, and the session is shown as disconnected with the **agent's own resume** as the recovery path (ACP `session/load` against the agent's session id), never a synthetic replay by omt |
 
 ---
 

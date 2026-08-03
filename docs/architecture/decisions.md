@@ -140,42 +140,26 @@ adapter is therefore built *early*, not last.
 
 ---
 
-## D9 — Positioning: what omt may and may not claim
+## D6 — Terminal emulation is built on a third-party byte-level parser
 
-**Decision.** The competitive survey
-([`remote-agent-products.md` §12`](../research/remote-agent-products.md)) evaluated
-omt's five intended differentiators against shipping products. The results
-change what omt says about itself and what it builds first.
+See [04 — Terminal core](04-terminal-core.md) for the full evaluation. Recorded
+here because it is a foundational, hard-to-reverse choice.
 
-| Claim | Verdict | What omt may say |
-|---|---|---|
-| Runs your real CLI | **Partial** | Not "runs your real CLI" — competitors say that too, while monkey-patching `fetch`, injecting flags, or patching the binary on disk. omt's defensible claim is narrower: *your real CLI, in a real PTY, with its own TUI, keybindings and slash commands, **observed from outside rather than instrumented from within**.* |
-| Remote `AskUserQuestion` cards | **Commoditized** | Do not claim this as a differentiator. happy ships it with 11-language i18n, a dedicated notification path, and *argument editing before approval* — which omt does not yet design for. The differentiated claim is: **answer a card from a phone while the user's real interactive TUI is on screen**, which is a consequence of the hook-defer path and which nobody does. |
-| A real terminal multiplexer, not a chat UI | **Genuinely differentiated — the strongest** | No product combines a real VT parser, panes/layouts, and a mobile client. The **block model** (OSC 133 segmentation making scrollback a collapsible list on a phone, full terminal one tap away) is the specific unclaimed idea and resolves the raw-PTY-vs-cards split the whole category is stuck on. |
-| Multi-instance federation across your own machines | see survey | Real but narrow; state it factually. |
-| TUI/API/web parity enforced in CI | see survey | Real; it is a process claim, so demonstrate it rather than assert it. |
+---
 
-**Consequences.**
+## D7 — Image paste over SSH is only promised where omt controls both ends
 
-1. **The defer spike is promoted to the single highest-priority risk.** It is
-   not one risk among many: it is the load-bearing assumption for the only
-   differentiated part of the question-card feature. If `permissionDecision:
-   "defer"` does not park a tool call long enough for a phone round-trip, that
-   feature degrades to a worse copy of an existing free product. It runs before
-   anything is built on it, and [D8](#d8--two-session-modes-pty-default-and-native-acp-opt-in)'s
-   `native` mode is the designed fallback (ACP's `session/request_permission` is
-   verified, blocking, and has no timeout).
-2. **The block model is promoted from a terminal-core feature to a product
-   differentiator**, and is scheduled accordingly — with eyes open that a
-   correct VT parser with grid, scrollback and reflow is the most expensive item
-   on the roadmap and competes with iTerm2 and another terminal on their own ground.
-3. **Add argument editing before approval** to the interaction model. A
-   competitor has it, users value it, and omt's `Interaction` shape already
-   carries the tool input — it is a small addition that closes a real gap.
-   (It stays inside [D1](#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics):
-   editing an argument is answering the agent's own prompt with a modified
-   input, exactly as the agent's own UI allows, not omt adding a policy.)
-4. Marketing copy and the README are held to this table.
+**Decision.** Full-fidelity clipboard and image paste is a documented feature of
+`omt ssh` / `omt --remote` and of the web client. In a foreign terminal over a
+plain `ssh`, omt attempts the paths that exist (realistically: kitty, with a
+non-default config flag) and otherwise falls back to a *diagnosed* out-of-band
+path — QR to the phone, or `omt paste --to <instance>:<session>` from the
+laptop — naming the terminal and the reason.
+
+**Reasoning.** See [09 — SSH and media](09-ssh-and-media.md) §5. Universal
+foreign-terminal clipboard access is a bet against software omt does not
+control, and it cannot be won. A precise failure message with a working
+alternative is a better product than an unreliable feature.
 
 ---
 
@@ -230,23 +214,39 @@ Claude Code at all. That must be a deliberate, informed choice, never a default.
 
 ---
 
-## D6 — Terminal emulation is built on a third-party byte-level parser
+## D9 — Positioning: what omt may and may not claim
 
-See [04 — Terminal core](04-terminal-core.md) for the full evaluation. Recorded
-here because it is a foundational, hard-to-reverse choice.
+**Decision.** The competitive survey
+([`remote-agent-products.md` §12`](../research/remote-agent-products.md)) evaluated
+omt's five intended differentiators against shipping products. The results
+change what omt says about itself and what it builds first.
 
----
+| Claim | Verdict | What omt may say |
+|---|---|---|
+| Runs your real CLI | **Partial** | Not "runs your real CLI" — competitors say that too, while monkey-patching `fetch`, injecting flags, or patching the binary on disk. omt's defensible claim is narrower: *your real CLI, in a real PTY, with its own TUI, keybindings and slash commands, **observed from outside rather than instrumented from within**.* |
+| Remote `AskUserQuestion` cards | **Commoditized** | Do not claim this as a differentiator. happy ships it with 11-language i18n, a dedicated notification path, and *argument editing before approval* — which omt does not yet design for. The differentiated claim is: **answer a card from a phone while the user's real interactive TUI is on screen**, which is a consequence of the hook-defer path and which nobody does. |
+| A real terminal multiplexer, not a chat UI | **Genuinely differentiated — the strongest** | No product combines a real VT parser, panes/layouts, and a mobile client. The **block model** (OSC 133 segmentation making scrollback a collapsible list on a phone, full terminal one tap away) is the specific unclaimed idea and resolves the raw-PTY-vs-cards split the whole category is stuck on. |
+| Multi-instance federation across your own machines | see survey | Real but narrow; state it factually. |
+| TUI/API/web parity enforced in CI | see survey | Real; it is a process claim, so demonstrate it rather than assert it. |
 
-## D7 — Image paste over SSH is only promised where omt controls both ends
+**Consequences.**
 
-**Decision.** Full-fidelity clipboard and image paste is a documented feature of
-`omt ssh` / `omt --remote` and of the web client. In a foreign terminal over a
-plain `ssh`, omt attempts the paths that exist (realistically: kitty, with a
-non-default config flag) and otherwise falls back to a *diagnosed* out-of-band
-path — QR to the phone, or `omt paste --to <instance>:<session>` from the
-laptop — naming the terminal and the reason.
-
-**Reasoning.** See [09 — SSH and media](09-ssh-and-media.md) §5. Universal
-foreign-terminal clipboard access is a bet against software omt does not
-control, and it cannot be won. A precise failure message with a working
-alternative is a better product than an unreliable feature.
+1. **The defer spike is promoted to the single highest-priority risk.** It is
+   not one risk among many: it is the load-bearing assumption for the only
+   differentiated part of the question-card feature. If `permissionDecision:
+   "defer"` does not park a tool call long enough for a phone round-trip, that
+   feature degrades to a worse copy of an existing free product. It runs before
+   anything is built on it, and [D8](#d8--two-session-modes-pty-default-and-native-acp)'s
+   `native` mode is the designed fallback (ACP's `session/request_permission` is
+   verified, blocking, and has no timeout).
+2. **The block model is promoted from a terminal-core feature to a product
+   differentiator**, and is scheduled accordingly — with eyes open that a
+   correct VT parser with grid, scrollback and reflow is the most expensive item
+   on the roadmap and competes with iTerm2 and another terminal on their own ground.
+3. **Add argument editing before approval** to the interaction model. A
+   competitor has it, users value it, and omt's `Interaction` shape already
+   carries the tool input — it is a small addition that closes a real gap.
+   (It stays inside [D1](#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics):
+   editing an argument is answering the agent's own prompt with a modified
+   input, exactly as the agent's own UI allows, not omt adding a policy.)
+4. Marketing copy and the README are held to this table.

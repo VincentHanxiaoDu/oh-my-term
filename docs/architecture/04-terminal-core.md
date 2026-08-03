@@ -9,7 +9,8 @@ damage record.
 Related: [00 — Overview](00-overview.md) · [01 — Principles](01-principles.md) ·
 [03 — Capability catalog](03-capability-catalog.md) ·
 [05 — Session model](05-session-model.md) ·
-[08 — Web client](08-web-client.md) · [14 — Licensing](14-licensing.md).
+[08 — Web client](08-web-client.md) · [14 — Licensing](14-licensing.md) ·
+[17 — Panes and layout](17-panes-and-layout.md).
 Research inputs: [iTerm2](../research/iterm2.md), [another terminal](../research/another terminal.md).
 
 The crate is deliberately large in scope but small in surface. Its public API is
@@ -628,7 +629,11 @@ receives `BlockUpdate` events carrying, per block, the styled text as
 `(text, spans)` where a span is `{start, len, fg, bg, flags, link?}`. No grid, no
 cursor, no reflow — the browser re-wraps text with CSS. This is what makes a
 phone usable: a 40-column phone renders a 200-column block by soft-wrapping
-words, not by horizontally scrolling a grid.
+words, not by horizontally scrolling a grid. (A `native` session
+([05 §1.3](05-session-model.md#13-session-modes-d8),
+[D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)) is
+structured by construction — it has no grid to derive structure from in the
+first place — so this question does not arise for it.)
 
 The two modes coexist in one session; the block list is the default view and
 "open full terminal" upgrades that pane to byte-stream mode.
@@ -1127,6 +1132,14 @@ pub enum Target {
 Detection is **budgeted and lazy**: it runs on lines entering the viewport, with
 a per-frame cap, and results are cached on the line keyed by `Generation`.
 
+> **Where `Target` lives.** [18 §1.2](18-semantic-open.md#12-the-new-crate)
+> widens `Target` (and `Match`) and **moves both into `omt-types`**, so that
+> `omt-open` can consume them without an L2 dependency exception; the
+> [crate map](02-crate-map.md) records the same. The definition text stays here
+> because this is where detection is specified: `omt-term` remains the *producer*
+> of matches, and this document owns the scanner. Only the type's home crate
+> changes.
+
 ### 8.4 Semantic click targets
 
 `Terminal::target_at(Position) -> Option<Target>` is a pure query. Turning a
@@ -1138,6 +1151,11 @@ a per-frame cap, and results are cached on the line keyed by `Generation`.
 session.target_at        { session, position }         -> Option<Target>
 session.target_resolve   { session, position }         -> ResolvedTarget
 ```
+
+Both are **deprecated aliases**, superseded by the `open.*` group in
+[18 §9](18-semantic-open.md#9-capabilities): `session.target_at` →
+`open.targets.list`, `session.target_resolve` → `open.resolve`. They are kept
+for two minor versions per [03 §7](03-capability-catalog.md#7-versioning).
 
 `ResolvedTarget` carries the absolute path (resolved against the owning block's
 `cwd`, which is why blocks carry `cwd`), whether it exists, and the suggested

@@ -123,7 +123,8 @@ Invariants:
   carry `workspace` instead of `session` and use the workspace's own space
   ([15 §4.6](15-workspace-explorer.md#46-file-watching)).
 - A client may resume with `since_seq`; the instance replays from its log or
-  responds `resync_required` with a snapshot.
+  responds `Resync` ([07 §5.2](07-remote-protocol.md#52-replay-window)) with a
+  snapshot.
 - The TUI subscribes to the same bus with the same envelope. There is no
   internal-only event.
 - Events are *derived from* state changes, never the mechanism of them — a

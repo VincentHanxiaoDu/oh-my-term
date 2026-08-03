@@ -214,7 +214,7 @@ outer terminal
 │ 2. Normalizer      RawKey → KeyEvent         (canonical modifiers,   │
 │                    canonical key names, layout-independent codes)     │
 │ 3. ContextStack    → ContextSet              (what is focused now)    │
-│ 4. Resolver        (KeyEvent, ContextSet, PendingChord) → Resolution  │
+│ 4. Resolver   (KeyEvent, ContextSet, PendingChord) → ChordResolution  │
 │ 5a. Capability     dispatch through the catalog, exactly as remote    │
 │ 5b. Passthrough    write ORIGINAL BYTES to the PTY, unmodified        │
 └──────────────────────────────────────────────────────────────────────┘
@@ -314,7 +314,32 @@ pub enum InputEvent {
     /// Anything omt decoded as "a sequence I do not model". Never dropped.
     Opaque,
 }
+
+/// A decoded mouse report. Bindable, exactly like a `KeyEvent` (§2.3).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MouseEvent {
+    pub kind: MouseKind,
+    pub button: MouseButton,
+    pub mods: Mods,              // same bitflags as KeyEvent; CAPS/NUM masked out
+    pub pos: (u16, u16),         // (col, row), 0-based, in the *pane's* coordinates
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseKind { Press, Release, Drag, Motion, Wheel(WheelDir) }
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WheelDir { Up, Down, Left, Right }
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseButton { Left, Middle, Right, Other(u8) }
 ```
+
+**The decoded encoding is SGR 1006** (`CSI < b ; x ; y M|m`). omt requests it
+from the outer terminal and normalizes the legacy X10/1005/urxvt forms into the
+same `MouseEvent`, so coordinates beyond column 223 are not a special case and a
+release event always carries its button. What omt *forwards* to the inner
+program is the encoding that program asked for, unmodified — §2.1's no-re-encoding
+rule applies to mouse reports exactly as it does to keys.
 
 ### 2.3 Resolution
 
@@ -328,7 +353,7 @@ pub struct Resolver {
 }
 
 pub struct CompiledBinding {
-    pub trigger: Chord,               // one or more KeyEvents
+    pub trigger: Chord,
     pub when: ContextPredicate,
     pub action: Action,
     pub specificity: u16,             // #context terms, ties broken by layer
@@ -343,7 +368,21 @@ pub enum Action {
     None,
 }
 
-pub enum Resolution<'a> {
+/// A trigger: a sequence of one or more key steps, or a single mouse step.
+pub enum Chord {
+    Keys(SmallVec<[KeyEvent; 3]>),
+    /// A mouse event with modifiers, e.g. `"shift-mouse1"`. Never a sequence:
+    /// a two-step mouse chord is not a gesture any terminal can deliver.
+    Mouse(MouseTrigger),
+}
+
+pub struct MouseTrigger {
+    pub kind: MouseKind,          // defaults to Press when the spelling omits it
+    pub button: MouseButton,
+    pub mods: Mods,
+}
+
+pub enum ChordResolution<'a> {
     /// Call this capability. The key is consumed.
     Dispatch(&'a CompiledBinding),
     /// A chord prefix matched; hold input and show the pending-chord hint.
@@ -352,6 +391,32 @@ pub enum Resolution<'a> {
     Passthrough,
 }
 ```
+
+The enum is `ChordResolution`, not `Resolution`: the bare name belongs to
+[18 §3](18-semantic-open.md#3-resolution)'s target-resolution outcome, and the
+two are unrelated. `ChordResolution::Dispatch | ::Pending | ::Passthrough` are
+the only outcomes of matching input against the keymap.
+
+**Mouse triggers.** A trigger may name a mouse event with modifiers, spelled
+`mod-…-mouse<N>` where `N` is `1` (left), `2` (middle), `3` (right) or a number
+for `Other`, optionally suffixed with `-up`, `-drag` or replaced by
+`wheel-up`/`wheel-down`/`wheel-left`/`wheel-right`. A bare `shift-mouse1` means
+*press*; activation semantics that fire on release are the binding's business,
+not the grammar's ([18 §5.4](18-semantic-open.md#54-selection-versus-click)).
+Mouse triggers take a `when` predicate like any other binding, which is how
+[18 §5.1](18-semantic-open.md#51-mouse-reporting--the-inner-program-owns-the-click)
+expresses "consume `Shift`+click only while the inner program has grabbed the
+mouse":
+
+```toml
+[[binding]]
+trigger    = "shift-mouse1"
+when       = "terminal_focused && mouse_reporting"
+capability = "open.activate"
+```
+
+An unmatched mouse event passes through exactly as an unmatched key does
+(rule 5 below) — that is what keeps vim's mouse working.
 
 **Precedence, in order, first match wins:**
 
@@ -526,6 +591,8 @@ bitflags! {
         const REMOTE_THIN_CLIENT   = 1 << 15;  // this TUI is `omt ssh`'s local end
         const WEB                  = 1 << 16;
         const TUI                  = 1 << 17;
+        const HINT_MODE            = 1 << 18;  // 18 §5.2 hint overlay is up
+        const OPEN_MENU_FOCUSED    = 1 << 19;  // 18 §4.3 action menu has focus
     }
 }
 ```
@@ -536,12 +603,19 @@ straight from `omt-term`'s `ModeView`
 the inner program*, and binding on them is how omt stays out of the way. The
 default keymap uses `ALT_SCREEN` in exactly one place: omt's mouse-driven pane
 resize is disabled while the inner program has requested mouse reporting,
-because otherwise omt eats vim's mouse.
+because otherwise omt eats vim's mouse. `MOUSE_REPORTING` additionally gates the
+one sanctioned exception to that rule, `shift-mouse1` (§2.3, §6.2).
+
+`HINT_MODE` and `OPEN_MENU_FOCUSED` are owned by
+[18 — Semantic open](18-semantic-open.md): the first is set while a hint session
+is live for this client (§5.2 there), the second while its action menu holds
+focus. They are listed here because this list is the authoritative superset and
+must actually contain every name a `when` predicate may use.
 
 `when` predicates in `keybindings.toml` are boolean expressions over these
-names, exactly as [10 §8.2](10-configuration.md#82-keybinding-format) specifies.
-The name list here is the authoritative superset; §13 records that 10's list is
-shorter.
+names; [10 §8.2](10-configuration.md#82-keybinding-format) specifies the file
+shape and points back here for the vocabulary. The name list here is the
+authoritative superset.
 
 ### 4.2 Focus and exclusivity
 
@@ -758,7 +832,15 @@ which is why this is safe to ship as data with imperfect coverage.
 
 Runs as pass 4/5 of the [10 §5.1](10-configuration.md#51-pipeline) pipeline,
 collecting all diagnostics. Codes continue the `OMT-C4xx` keybinding range
-already opened by `OMT-C402`.
+already opened by `OMT-C402`; this document owns the individual codes in
+`OMT-C401`–`OMT-C412` (below) and `OMT-C420`–`OMT-C425` (§6.8), and
+[10 §5.4](10-configuration.md#54-cross-field-validation-rules-initial-set) names
+the ranges rather than restating them.
+
+> **Every new code defined here must also land in
+> `docs/reference/diagnostics.md`** — a generated
+> artifact whose completeness [10 §11](10-configuration.md#11-testing) already
+> asserts CI checks. A code that exists only in this document fails that check.
 
 | Code | Severity | Rule |
 |---|---|---|
@@ -1123,7 +1205,7 @@ change:
 | Signal | Effect |
 |---|---|
 | `ALT_SCREEN` | Copy mode's *entry-by-scroll* is disabled (§4.3) — the wheel goes to the program. `<leader> [` still works and shows the primary screen's scrollback, which is correct: the alt screen has no scrollback ([04 §2.6](04-terminal-core.md#26-the-grid-viewport)). |
-| `MOUSE_REPORTING` | omt's mouse chrome (pane resize by drag, click-to-focus inside a pane) is suppressed. |
+| `MOUSE_REPORTING` | omt's mouse chrome (pane resize by drag, click-to-focus inside a pane) is suppressed, **with exactly one exception — `Shift`+click, which omt consumes for semantic activation ([18 §5.1](18-semantic-open.md#51-mouse-reporting--the-inner-program-owns-the-click))**. That mirrors what terminal emulators themselves do one level up: `Shift` has been the "talk to the multiplexer, not the app" escape from application mouse reporting since xterm, applications overwhelmingly do not expect shifted clicks, and the alternative is either stealing plain clicks from vim or having no mouse activation at all inside a TUI. Everything else — plain, `Alt`, drag, motion, wheel — is forwarded untouched. |
 | `APP_CURSOR_KEYS` | Arrow keys are passed through in application form, unmodified; omt never rewrites them. |
 | `BRACKETED_PASTE` | Pastes are wrapped for the inner program; without it they are stripped (§2.2). |
 
@@ -1459,8 +1541,9 @@ the test of whether the abstraction was right.
 
 ### 6.8 Conflict validation for modal keymaps
 
-Modal keymaps add four new failure modes. Each gets a code, continuing the
-`OMT-C4xx` range from §5.2.
+Modal keymaps add six new failure modes. Each gets a code, continuing the
+`OMT-C4xx` range from §5.2, and each is reported by `keys.conflicts` and covered
+by §10.3's matrix on the same terms as the 400-range.
 
 | Code | Severity | Rule |
 |---|---|---|
@@ -1792,13 +1875,13 @@ pub enum ContentPlan {
 
 **Progress.** Transfers over 256 KiB show an inline progress line in the pane's
 status row — `paste  report.pdf  1.4 / 2.1 MB  ▓▓▓▓▓▓░░░  ⌫ cancel` — driven by
-`media.transfer.progress` events, which the web client renders as a bar for the
+`media.transfer.progress` **events** ([09 §5.3](09-ssh-and-media.md#53-tier-2--the-in-band-osc-bridge) owns it; it is an event, never a capability), which the web client renders as a bar for the
 same transfer. At ssh throughput a 20 MB file is seconds, not instant, and
 silence would read as a hang.
 
 **Cancel** is `Ctrl+C` *while the progress line is showing*, which is the one
 place omt scopes `ctrl-c` (a scoped binding, `when = "transfer_active"`, which
-the refusal list permits). Cancelling sends `media.transfer.cancel`; the remote
+the refusal list permits). Cancelling sends `media.blob.abort` ([09 §5](09-ssh-and-media.md#5-case-b-image-paste-over-ssh--the-core-mechanism), which owns it); the remote
 discards the partial and unlinks it. The user's next `Ctrl+C` goes to the agent
 as normal.
 
@@ -1899,8 +1982,9 @@ conflicts
     ▸ omt keys explain ctrl-o
 ```
 
-The flow is a capability (`doctor.keys`), so the web settings UI runs the same
-detection and shows the same fixes with a copy button instead of a prompt.
+The `omt doctor keys` flow is the `keys` group of the `system.doctor` capability
+([22 §10](22-operations.md#10-capabilities)), so the web settings UI runs the
+same detection and shows the same fixes with a copy button instead of a prompt.
 
 ### 7.6 Where the web client differs
 
@@ -1964,11 +2048,13 @@ name, which is the web equivalent for every row without a more specific one.
 | `<leader> e` | `explorer.toggle` | explorer rail / sheet | Already specified in [15 §7.1](15-workspace-explorer.md#71-tui-panel). |
 | `<leader> a` | `interaction.focus_latest` | tap the card | §4.4 — the *only* way a card takes focus. |
 | `<leader> v` | `media.image.paste` | paste button / `⌘V` | **The universal paste chord.** Works in every terminal, on every platform, with no configuration. §7.2. |
-| `<leader> V` | `media.paste_picker` | attach button | Choose what to paste when the clipboard has several representations. |
+| `<leader> V` | `media.picker.open` | attach button | Choose what to paste when the clipboard has several representations. |
 | `<leader> y` | `media.clipboard.write` (selection) | copy button | Sends the current selection to the *local* clipboard via the best available path ([09 §3](09-ssh-and-media.md)). |
 | `<leader> d` | `tui.detach` | close the tab | Detach, leaving sessions running. `Local` in thin-client mode (§7.1). |
 | `<leader> ,` | `tui.open_settings` | settings | Parity with [10](10-configuration.md). |
-| `<leader> g` | *(prefix)* | — | Reserved for the explorer's `g`-prefixed map ([15 §7.1](15-workspace-explorer.md#71-tui-panel)) when the explorer has focus. |
+| `<leader> f` | `open.hints.begin` (default action) | hint overlay / tap a match | Hint mode over every match in the viewport ([18 §5.2](18-semantic-open.md#52-hint-mode--the-primary-mechanism)). The primary, mouse-free way to act on a `file:line` or a URL. |
+| `<leader> F` | `open.hints.begin` `{ action = "menu" }` | hint overlay ▸ menu | Same, but always show the action menu on select rather than the per-kind default. |
+| `<leader> g` | `open.hints.begin` `{ kinds = ["url"] }` when `terminal_focused`; *(prefix)* when `explorer_focused` | hint overlay, URLs only | URL-restricted hint mode. The same chord is the explorer's `g`-prefixed map ([15 §7.1](15-workspace-explorer.md#71-tui-panel)) when the explorer has focus — two bindings differing by `when`, resolved by §2.3 rule 3, not a collision. |
 | `<leader> A` | `tui.open_agent_dashboard` | dashboard tab | The mobile-first view, on the desktop too. |
 | `<leader> !` | `agent.interrupt` | swipe left on a dashboard row | Interrupt the bound agent *without* sending `Ctrl+C` to the pane — for agents with a native interrupt channel. |
 
@@ -2129,7 +2215,8 @@ For arbitrary keymaps and arbitrary context sets:
 Table-driven, one row per `(binding, registry entry, terminal profile)` triple,
 asserting the exact diagnostic code, severity, span and suggestion. It covers:
 
-- Every code `OMT-C401`–`OMT-C412`, with a passing and a failing fixture.
+- Every code `OMT-C401`–`OMT-C412` and `OMT-C420`–`OMT-C425`, with a passing and
+  a failing fixture.
 - Every entry on the refusal list, unscoped (error) and scoped (clean).
 - Every `critical` key of `claude-code.toml` and `zsh-zle.toml`.
 - A terminal profile with no kitty protocol, asserting that
@@ -2167,17 +2254,19 @@ The web client's composition path is testable in Playwright with
 | Capability | Kind | Role | Notes |
 |---|---|---|---|
 | `keys.list` | Query | Viewer | Existing ([10 §10](10-configuration.md#10-config-capabilities)); extended with `deliverable` and `shadows` per binding |
-| `keys.conflicts` | Query | Viewer | Existing; now covers `OMT-C401`–`OMT-C412` |
+| `keys.conflicts` | Query | Viewer | Existing; now covers `OMT-C401`–`OMT-C412` (§5.2) and `OMT-C420`–`OMT-C425` (§6.8) |
 | `keys.explain` | Query | Viewer | §5.3; reports the active keymap and mode (§6.10) |
 | `keys.keymaps` | Query | Viewer | List available keymaps and their inheritance (§6.5) |
 | `keys.registry` | Query | Viewer | Dump an `InnerKeymap` |
 | `keys.probe` | Query | Viewer | The `TerminalProfile` (§5.5) |
 | `keys.capture` | Command | Operator | Record a chord's bytes for the corpus (§10.1) |
-| `doctor.keys` | Query | Operator | §7.5; `--fix` is a separate `doctor.keys.fix` with `Effects::TOUCHES_FS` |
+| `system.doctor` | Query | Viewer | Owned by [22 §10](22-operations.md#10-capabilities); §7.5 is its `keys` group (`DoctorGroup::Keys`), spelled `omt doctor keys` on the CLI. This document introduces no doctor capability of its own |
+| `system.doctor.fix` | Command | Admin | Owned by [22 §10](22-operations.md#10-capabilities); §7.4/§7.5's terminal remap is `omt doctor keys --fix`, with `Effects::WRITES_FS` |
 | `tui.open_command_palette` | Command | Viewer | §3.5 |
 | `tui.open_keymap_help` | Command | Viewer | §8.2 |
 | `interaction.focus_latest` | Command | Operator | §4.4 |
-| `media.paste_picker` | Command | Operator | §7.3 |
+| `media.picker.open` | Command | Operator | Owned by [09 §4.3](09-ssh-and-media.md#4-getting-images-in-the-easy-cases); §7.3 binds it. This document introduces no picker capability of its own — the earlier name `media.paste_picker` was a duplicate and is gone |
+| `media.blob.abort` | Command | Operator | Owned by [09 §5](09-ssh-and-media.md#5-case-b-image-paste-over-ssh--the-core-mechanism); §7.3 binds it to cancel a transfer. The earlier name `media.transfer.cancel` was a duplicate and is gone |
 | `session.send_newline` | Command | Operator | §8.1 |
 | `tui.copy_mode.*` | Command | Operator | Motions, selection, yank — the action set the vim and emacs keymaps both target (§6.6, §6.7) |
 | `tui.set_keymap` | Command | Operator | Switch keymap at runtime (`Runtime` layer); `omt keys use vim` |
@@ -2189,8 +2278,12 @@ construction, per [03 §5](03-capability-catalog.md).
 
 ## 12. What this document deliberately does not do
 
-- **No mouse-driven omt chrome by default while the inner program has mouse
-  reporting on.** §4.3. Stated as a non-goal so it is not "improved" later.
+- **No *new* mouse-driven omt chrome while the inner program has mouse reporting
+  on.** §4.3. Stated as a non-goal so it is not "improved" later. The one
+  sanctioned exception is `Shift`+click for semantic activation, decided in
+  [18 §5.1](18-semantic-open.md#51-mouse-reporting--the-inner-program-owns-the-click)
+  and recorded in §6.2's signal table; adding a second exception requires
+  re-opening that decision, not a local judgement call.
 - **No key-release bindings**, even though the kitty protocol offers them. They
   are unavailable on most terminals, and a keymap whose behaviour differs by
   terminal in a way the user cannot see is exactly what §5.5 exists to prevent.
@@ -2210,29 +2303,23 @@ construction, per [03 §5](03-capability-catalog.md).
 
 ## 13. OPEN QUESTIONS
 
-1. **Mismatch with [10 §8.2](10-configuration.md#82-keybinding-format) — context
-   names.** That document lists seven contexts (`session_focused`, `copy_mode`,
-   `agent_bound`, `interaction_card_focused`, `search_active`, `web`, `tui`).
-   §4.1 here defines eighteen, and renames two: `session_focused` →
-   `terminal_focused`, `interaction_card_focused` → `card_focused`. **Proposal:**
-   this document's set is authoritative, 10 §8.2 is updated to reference it
-   rather than enumerate, and the old names become accepted aliases with a
-   deprecation note. Not edited here because 10 is owned elsewhere.
-2. **Mismatch — the `leader` key itself.** 10 §8.2's examples write literal
-   `"ctrl-b c"` triggers. This document requires a `leader` setting and a
-   `<leader>` token so the whole namespace relocates with one edit. **Proposal:**
-   `keybindings.toml` gains a top-level `leader` key and `<leader>` is legal in
-   any trigger position; literal `ctrl-b` remains legal and means literally
-   `ctrl-b`. Needs a schema change in 10.
-3. **Mismatch — `platform` vs. `requires`.** 10 §8.2 has
-   `platform = ["macos"]`. This document needs `requires = "kitty_keyboard"` for
-   conditionally-installed defaults (§5.5). **Proposal:** add `requires` as a
-   sibling of `platform`. Also unresolved: whether a user binding with an unmet
-   `requires` is a warning (current proposal) or is silently inert.
-4. **Mismatch — `force`.** §5.4's refusal list needs a per-binding
-   `force = true`, which 10 §8.2's grammar has no slot for. It fits naturally in
-   the `[[binding]]` table form but not the flat `"chord" = "capability"` form.
-   Do we require the table form for forced bindings? Probably yes.
+1. **Resolved, see [10 §8.2](10-configuration.md#82-keybinding-format) — context
+   names.** 10 no longer enumerates a context vocabulary; it points at §4.1's
+   `ContextSet`, which is the authoritative superset. The two renamed names
+   (`session_focused` → `terminal_focused`, `interaction_card_focused` →
+   `card_focused`) are accepted as deprecated aliases, diagnosed as a note.
+2. **Resolved, see [10 §8.2](10-configuration.md#82-keybinding-format) — the
+   `leader` key itself.** `keybindings.toml` now has a top-level `leader` key and
+   `<leader>` is legal in any trigger position; literal `ctrl-b` remains legal
+   and means literally `ctrl-b`.
+3. **Resolved, see [10 §8.2](10-configuration.md#82-keybinding-format) —
+   `platform` vs. `requires`.** `requires` is now a sibling of `platform` on a
+   `[[binding]]`. Still open, and deliberately: whether a *user* binding with an
+   unmet `requires` is a warning (current answer, `OMT-C408`) or silently inert.
+4. **Resolved, see [10 §8.2](10-configuration.md#82-keybinding-format) —
+   `force`.** Per-binding `force = true` exists for §5.4's refusal list, and it
+   is legal only in the `[[binding]]` table form — the flat
+   `"chord" = "capability"` form cannot carry it, which is the intended friction.
 5. **Claude Code's keymap is under-verified.** `Ctrl+O`, `Esc`, `Shift+Tab`,
    `Ctrl+C`, `Ctrl+D` are well-attested;
    [research/agent-clis.md §7](../research/agent-clis.md) already flags the
@@ -2280,12 +2367,10 @@ construction, per [03 §5](03-capability-catalog.md).
     installed, but `Alt` on macOS needs the Option remap (§1.3 note ¹), so on a
     default macOS Terminal.app there is **no** working chord for "newline without
     submitting". That is an honest gap with no clean fix inside omt.
-14. **Mismatch with [10 §8.2](10-configuration.md#82-keybinding-format) — `modes`
-    and `keymap`.** That document's `[[binding]]` grammar has no `modes` field
-    and no top-level `keymap` key, and its flat `"chord" = "capability"` form
-    cannot express either. **Proposal:** add both, with `modes` legal only in the
-    table form, and `keymap`/`leader` as the two top-level keys of
-    `keybindings.toml`. Also unresolved: whether a per-keymap file
+14. **Resolved, see [10 §8.2](10-configuration.md#82-keybinding-format) — `modes`
+    and `keymap`.** Both exist: `keymap` and `leader` are the two top-level keys
+    of `keybindings.toml`, and `modes` is a per-binding field legal only in the
+    `[[binding]]` table form. Still open: whether a per-keymap file
     (`keymaps/*.toml`, §6.5) is a fourth config file or a section of the third —
     10 §12 already notes that three files is the practical maximum.
 15. **Does the `default` keymap need a modal engine slot at all?** §6.5 makes

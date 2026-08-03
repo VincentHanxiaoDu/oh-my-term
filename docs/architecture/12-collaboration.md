@@ -110,7 +110,15 @@ Rules:
   it can include secrets — and hiding it would be dishonest.
 
 Presence is *not* persisted across daemon restart. On restart, presence is empty
-and clients repopulate it by reconnecting.
+and clients repopulate it by reconnecting. That is deliberate: presence is
+connection state, and a persisted copy would assert that someone is connected
+when nobody is.
+
+Consequently, **presence is not where "when did I last see this?" lives.** A
+durable last-seen position is a **read mark** per `(actor, session)`, owned by
+[20](20-recall-and-usage.md) — it survives restarts because it is a fact about
+what a person has read, not about who is currently attached. `digest.since_last_seen`
+reads the mark, never presence.
 
 ---
 
@@ -180,6 +188,7 @@ in someone else's editing session.
 
 | Operation | Capability | Semantics |
 |---|---|---|
+| **Auto-acquire** | — (implicit, on the first write) | When **exactly one** client is attached with `Operator`+ and the token is `Free`, that client's first write acquires the token implicitly, with a new `epoch`, audited as a normal `acquire` by that actor. Single-user operation therefore never sees the mechanism at all — the token becomes visible only under contention, which is the correct ergonomic trade. Governed by `WriterPolicy.auto_acquire`, default `true` ([05 §5.2](05-session-model.md) holds the field; the semantics are here). It never applies when a second client is attached, and never to `Viewer`. |
 | **Acquire** | `session.writer.acquire` | Succeeds immediately if `Free`. Fails `conflict` if held, with the holder in `detail`. Requires `Operator`. |
 | **Takeover** | `session.writer.acquire { force: true }` | Legal only for `Operator`+. Opens a `PendingTakeover` with a **grace window of 5 s**. Every surface shows a countdown. The holder may `session.writer.keep` to cancel it once per takeover; a second takeover request within 60 s cannot be cancelled. |
 | **Release** | `session.writer.release` | Immediate; token becomes `Free`. |
@@ -591,15 +600,28 @@ I was away?", which is a daily question for this product.
    as `Actor::Agent` on another session) is modelled but unexercised. The writer
    token semantics for `ActorKind::Agent` in particular need a real use case
    before they are fixed. Coordinate with [06 — Agent layer](06-agent-layer.md).
-6. **Cross-instance presence.** A user attached to four instances appears as
+6. **`assume_idle` — same-identity silent handoff.**
+   [docs/design/remote-continuity.md §4](../design/remote-continuity.md) proposes
+   `session.writer.acquire { assume_idle: bool }`: when the requester and the
+   current holder are the *same human identity* on a different device (laptop in
+   a bag, phone in hand), skip the 5 s grace and hand the token over silently,
+   since there is nobody to be interrupted. It is attractive and it is **not
+   adopted here.** Two things must be settled first: omt has no federated
+   identity notion today (open question 7 below), so "same human" is currently
+   only expressible as "same credential"; and a silent handoff removes the one
+   affordance — the countdown — that tells a user their input is about to stop
+   working, which §3.4's rule exists to prevent. Decide it together with open
+   question 2 (`Background`/`Stale` holders), which is the same problem
+   approached from liveness rather than identity.
+7. **Cross-instance presence.** A user attached to four instances appears as
    four unrelated actors. Should the client assert a federated identity so the
    TUI can say "Vincent is on your machine and two others"? That requires a
    shared identity notion omt currently does not have, and may not want.
-7. **Audit log for terminal writes**: currently byte counts only. Some users
+8. **Audit log for terminal writes**: currently byte counts only. Some users
    (shared/team boxes) will want full input capture. If offered it must be
    opt-in, per-session, loudly indicated in presence on every surface, and
    probably encrypted at rest. Coordinate with [13](13-security.md).
-8. **C4's last-write-wins version field** is not yet specified for the session
+9. **C4's last-write-wins version field** is not yet specified for the session
    tree as a whole (only per-object). Concurrent layout edits from two clients
    may need a coarser lock. Coordinate with
    [05 — Session model](05-session-model.md).

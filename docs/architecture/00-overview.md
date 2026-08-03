@@ -23,7 +23,29 @@ solution, and the invariants every other document and every change must respect.
 - [13 — Security model](13-security.md)
 - [14 — Licensing and provenance](14-licensing.md)
 - [15 — Workspace explorer: files and version control](15-workspace-explorer.md)
+- [16 — Input, keymap and conflict resolution](16-input-and-keymap.md) — what a key means, in which context, and who wins when omt, the terminal and the inner program all want the same chord
+- [17 — Panes and layout](17-panes-and-layout.md) — how a workspace's panes are arranged, resized, navigated, degraded onto a phone, serialized and restored
+- [18 — Semantic open](18-semantic-open.md) — recognizing pointers in terminal output (paths, URLs, commits, stack frames), resolving them to targets, and acting on them
+- [19 — Onboarding, discoverability, migration and TERM](19-onboarding.md) — what happens the first time someone runs `omt`, and how a ten-year tmux user stops resenting it
+- [20 — Recall, timeline and usage](20-recall-and-usage.md) — finding past work across sessions and machines, the session digest, and normalized agent usage/cost
+- [21 — Data lifecycle](21-data-lifecycle.md) — what omt writes, for how long, and how to get it back out or destroy it
+- [22 — Operations](22-operations.md) — running omt as a service, diagnosing it, upgrading it, and driving it from CI with no TTY
+- [23 — Identity and devices](23-identity-and-devices.md) — durable answers, without a cloud, to *which instances do I have?* and *which devices may reach them?*
 - [Glossary](glossary.md) — the canonical name for every shared type and concept
+
+New here? [README.md](README.md) is the reading guide — which of these to read,
+in what order, for what you are trying to do.
+
+### Design notes
+
+Cross-cutting notes that validate the architecture rather than specify part of
+it:
+
+- [`design/scenarios.md`](../design/scenarios.md) — the user-facing scenario and
+  requirement catalogue the architecture is checked against, including the gaps
+  it does not yet describe.
+- [`design/remote-continuity.md`](../design/remote-continuity.md) — working
+  across devices as one continuous session rather than as a second screen.
 
 Background research that informed these decisions lives in
 [`docs/research/`](../research/): [another tool](../research/another tool.md),
@@ -60,7 +82,10 @@ Three gaps follow from that:
 ## 2. The solution in one paragraph
 
 `omt` runs your agent CLIs in real PTYs — unmodified, with their own TUI, their
-own slash commands, their own keybindings. Alongside the byte stream it runs an
+own slash commands, their own keybindings, **observed from outside rather than
+instrumented from within** ([D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)),
+with a `native` (ACP) mode available as a deliberate opt-in
+([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)). Alongside the byte stream it runs an
 **observation layer**: process/env inspection, agent-native hooks, agent-native
 protocols (ACP, app-server, REST/SSE), transcript tailing, and PTY heuristics —
 merged into one normalized `AgentEvent` stream per session. Anything structured
@@ -130,6 +155,11 @@ Instance          one omt daemon on one machine
 Six independent sources, one merged state machine per session. Sources are
 ranked by confidence; a higher-confidence source wins inside a staleness
 window, and lower ones only fill gaps.
+
+This tiered source model applies to `pty` sessions only
+([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)); a
+`native` session is driven entirely by ACP, where the whole stream is already
+typed and there is nothing to infer.
 
 Tier numbers are the `Tier` enum in
 [06 §3](06-agent-layer.md#3-source-model) — **higher is more authoritative**,

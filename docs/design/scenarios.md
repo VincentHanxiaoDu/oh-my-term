@@ -933,8 +933,17 @@ deliberately excludes PTY output, records only capability calls (an agent's tool
 calls are not capability calls), and is Admin-gated. 06 §8 surfaces Claude
 Code's own `away_summary` verbatim — good, but single-agent and state-only.
 
-**In scope.** Yes. It is arguably the second product differentiator after remote
-answering, and it needs no new observation — only assembly.
+**In scope.** Yes, and it needs no new observation — only assembly. On
+positioning: per [D9](../architecture/decisions.md#d9--positioning-what-omt-may-and-may-not-claim)
+the strongest differentiated claim is the **block model** — real VT emulation,
+panes and layouts, and a mobile client in one product, with OSC 133 segmentation
+turning scrollback into a collapsible list on a phone. The timeline and digest
+are the direct continuation of that claim: the same segmented record, read over
+time instead of over a screen. Remote answering is **commoditized** and is not
+the benchmark to rank against; its one differentiated form is answering a card
+from a phone *while the user's real interactive TUI is still on screen*. That
+ordering does not change the judgement here — this is high-value, in scope, and
+cheap relative to what it returns, because every input already exists.
 
 **Minimum honest answer.** A `Timeline` view built from data already collected:
 turn boundaries, tool calls, `AgentEvent::FileChanged`, closed blocks with exit
@@ -1292,29 +1301,29 @@ if not the terminal. Worth documenting because users will try it.
 | R3 | Panes/splits/zoom/detach/attach with tmux-comparable semantics | M | J43 | 05 |
 | R4 | Leader key defaulting to `Ctrl+B`, fully rebindable, unprefixed bindings supported | M | J4, J5 | 16 |
 | R5 | `omt keys explain <chord>` and static conflict detection against inner-program keymaps | M | J2, J43 | 16 §5 |
-| R6 | Declared `TERM`/terminfo story, including what is advertised and the fallback | M | J43 | **NO OWNER** (belongs in 04 §5) |
-| R7 | Per-session fault isolation: one bad session never kills the instance | M | J54 | **NO OWNER** (belongs in 04/05) |
+| R6 | Declared `TERM`/terminfo story, including what is advertised and the fallback | M | J43 | [19 §7](../architecture/19-onboarding.md#7-term-and-terminfo--r6) — `pty` sessions only |
+| R7 | Per-session fault isolation: one bad session never kills the instance | M | J54 | [22 §4.4](../architecture/22-operations.md#44-per-session-fault-isolation-r7) |
 | R8 | Block model + shell integration for bash/zsh/fish, with heuristic fallback | M | J1, J25 | 04 §6–7 |
 | R9 | `ambiguous_width` setting; IME composition on TUI and web | S | J50 | 04 §2.2, 16 §9.3, 08 |
-| R10 | tmux/zellij config importer + command-equivalence table | S | J4 | **NO OWNER** (G6) |
-| R11 | Documented nesting behaviour + visible `nested:` indicator | S | J5 | 06 §9 (indicator unowned) |
+| R10 | tmux/zellij config importer + command-equivalence table | S | J4 | [19 §5](../architecture/19-onboarding.md#5-tmux-and-zellij-migration-and-coexistence) |
+| R11 | Documented nesting behaviour + visible `nested:` indicator | S | J5 | [06 §9](../architecture/06-agent-layer.md#9-failure-modes-and-their-handling) + [19 §5.4](../architecture/19-onboarding.md#54-coexistence-tmux-inside-an-omt-pane) (the badge) |
 
 ## Agent observation and interaction
 
 | # | Req | Pri | Journeys | Owner |
 |---|---|---|---|---|
 | R12 | Merged multi-tier `AgentEvent` stream; tier 0 may never produce structured content | M | J6–J9 | 06 |
-| R13 | `agent.explain` + **visible** degradation indicator on the session card | M | J6 | 06 §4 (visibility unowned) |
+| R13 | `agent.explain` + **visible** degradation indicator on the session card | M | J6 | [06 §4](../architecture/06-agent-layer.md#4-merging-confidence-tiers-not-voting) + [22 §5.1](../architecture/22-operations.md#51-the-panel-p3--all-three-surfaces) (the `tier` and `faults` columns) |
 | R14 | Structured `Interaction` renderable and resolvable from TUI, API and web | M | J10–J12 | 06 §5, 08 §5 |
-| R15 | Deferral must not degrade the local user's card — decide and document | M | J7 | **06 §5.3, undecided (G20)** |
+| R15 | Deferral must not degrade the local user's card — decide and document | M | J7 | **[06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism-and-its-risk), undecided (G20)** |
 | R16 | Exactly-once interaction resolution, broadcast, attributed | M | J11, J55 | 12 §4 |
-| R17 | `Freeform` and `Choice + note` responses, with per-adapter capability declaration | M | J13, J14 | **NO OWNER (G21)** |
+| R17 | `Freeform` and `Choice + note` responses, with per-adapter capability declaration | M | J13, J14 | [06 §5](../architecture/06-agent-layer.md#5-interactions--the-flagship-path) — `ChoiceAnswer.other` / `.comment` and the `Text` variant in §5.0 |
 | R18 | Short retraction window (`Pending` phase) before a resolution reaches the agent | S | J15 | **NO OWNER (G8)** |
 | R19 | Queued client mutations expire and require re-confirmation after long offline | S | J28 | **NO OWNER (G8)** |
 | R20 | Message queue mirrored and writable from every surface; omt-managed fallback labelled and persisted | M | J16 | 06 §8 |
 | R21 | Per-adapter interrupt, surfaced identically on all surfaces | M | J17 | 06 §7 |
 | R22 | Agent's own permission mode displayed read-only on every surface | M | J6, J45 | 06 §10 Q4, 13 §7.2 |
-| R23 | Stuck/loop attention signal: elapsed + repeated tool call + repeated failures | S | J21 | **NO OWNER (G19)** |
+| R23 | Stuck/loop attention signal: elapsed + repeated tool call + repeated failures | S | J21 | [20 §10](../architecture/20-recall-and-usage.md#10-detecting-a-stuck-or-looping-agent-g19) (`attention.*`) |
 | R24 | Compaction, subagents and usage normalized and displayed | S | J18 | 06 §8 |
 | R25 | Explicit statement that omt never auto-answers interactions | M | J45 | decisions (D1 extension) |
 
@@ -1324,10 +1333,10 @@ if not the terminal. Worth documenting because users will try it.
 |---|---|---|---|---|
 | R26 | Push notification on `blocked`, pointer-only payload, coalesced | M | J9 | 07 §8 |
 | R27 | Self-hosted notification path (ntfy/webhook) requiring no vendor egress | M | J9, J52 | 07 §8.2 |
-| R28 | Notification policy: quiet hours, per-workspace mute, severity tiers | S | J40 | **thin (G22)** |
+| R28 | Notification policy: quiet hours, per-workspace mute, severity tiers | S | J40 | [remote-continuity §5.6](remote-continuity.md#56-noise-control) |
 | R29 | Mobile-first card rendering: full descriptions, thumb-reach, multi-select correct | M | J12 | 08 §5, §8 |
 | R30 | Voice input with always-editable transcript, never auto-send; keys never in the browser | S | J34, J35 | 08 §7 |
-| R31 | **Session timeline + morning digest, composed by counting, never generated** | M | J40, J41 | **NO OWNER (G3)** |
+| R31 | **Session timeline + morning digest, composed by counting, never generated** | M | J40, J41 | [20 §8](../architecture/20-recall-and-usage.md#8-timeline-and-digest) (`timeline.*`, `digest.*`) |
 | R32 | Reconnect with exact sequence resume; explicit banner when the replay window was exceeded | M | J28, J29 | 07 §5 |
 
 ## Remote and multi-machine
@@ -1339,23 +1348,23 @@ if not the terminal. Worth documenting because users will try it.
 | R35 | `omt --remote <target>` thin client with local clipboard/editor/media | M | J22–J25 | 09, 16 §7, 18 §6 |
 | R36 | Diagnosed media fallbacks naming the terminal and the reason (D7) | M | J23 | 09 §5.6 |
 | R37 | Remote-file open defaults to read-only with a loud indicator | M | J24 | 18 §6.5 |
-| R38 | Bootstrap path when omt is absent on the remote host | S | J22 | **NO OWNER** |
-| R39 | Multi-host upgrade/version management for many boxes | L | J39 | **NO OWNER** |
+| R38 | Bootstrap path when omt is absent on the remote host | S | J22 | [22 §7](../architecture/22-operations.md#7-bootstrap-onto-a-host-with-no-omt-r38) (`remote.bootstrap`, `remote.probe`) |
+| R39 | Multi-host upgrade/version management for many boxes | L | J39 | [22 §6](../architecture/22-operations.md#6-upgrade) |
 
 ## Persistence, search, lifecycle
 
 | # | Req | Pri | Journeys | Owner |
 |---|---|---|---|---|
 | R40 | Metadata/layout/blocks/scrollback survive daemon restart; sessions return `Orphaned` with one-key restart | M | J30, J31 | 05 §8 |
-| R41 | `omt upgrade` refuses to restart while agents are `working` without `--force`; limitation documented in README | M | J30 | **NO OWNER (G12)** |
-| R42 | PTY supervisor so processes survive daemon restart | L | J30 | **05 §13 open question (G12)** |
-| R43 | Daemon autostart via launchd/systemd; `omt service install` | S | J31 | **NO OWNER (G13)** |
-| R44 | Per-uid socket/state/port isolation on shared machines | M | J48 | **NO OWNER (G13)** |
-| R45 | **Cross-session search over blocks, output and agent transcripts** | M | J42 | **NO OWNER (G2)** |
-| R46 | Cross-instance search via client-side fan-out | S | J42 | **NO OWNER (G2)** |
-| R47 | `store.usage`, `store.export`, `store.purge` with printed manifests | M | J47 | **NO OWNER (G4)** |
+| R41 | `omt upgrade` refuses to restart while agents are `working` without `--force`; limitation documented in README | M | J30 | [22 §1.3](../architecture/22-operations.md#13-graceful-shutdown-with-agents-running) + [22 §6.1](../architecture/22-operations.md#61-omt-upgrade) |
+| R42 | PTY supervisor so processes survive daemon restart | L | J30 | **[05 §13](../architecture/05-session-model.md#13-open-questions) open question (G12)** |
+| R43 | Daemon autostart via launchd/systemd; `omt service install` | S | J31 | [22 §1.2](../architecture/22-operations.md#12-omt-service-install) (`service.*`) |
+| R44 | Per-uid socket/state/port isolation on shared machines | M | J48 | [22 §2](../architecture/22-operations.md#2-multi-user-machines) |
+| R45 | **Cross-session search over blocks, output and agent transcripts** | M | J42 | [20 §3](../architecture/20-recall-and-usage.md#3-index-design)–[§4](../architecture/20-recall-and-usage.md#4-ranking) (`search.*`) |
+| R46 | Cross-instance search via client-side fan-out | S | J42 | [20 §7](../architecture/20-recall-and-usage.md#7-cross-instance-search) |
+| R47 | `store.usage`, `store.export`, `store.purge` with printed manifests | M | J47 | [21 §4](../architecture/21-data-lifecycle.md#4-export-and-purge), [21 §8](../architecture/21-data-lifecycle.md#8-capabilities) |
 | R48 | Per-workspace retention overrides | S | J47 | 05 §8.2 (extend) |
-| R49 | Session rename, pin, filter, archive | S | J19, J38 | **thin (G23)** |
+| R49 | Session rename, pin, filter, archive | S | J19, J38 | `session.rename` in [05 §10.2](../architecture/05-session-model.md#102-session); **pin, saved filters and `archived` remain unowned (G23)** |
 
 ## Privacy and security
 
@@ -1366,9 +1375,9 @@ if not the terminal. Worth documenting because users will try it.
 | R52 | **Session-scoped** share credentials, not only workspace-scoped | M | J32 | 13 §4.1 (verify/extend) |
 | R53 | Revocation terminates live sockets within ~1 s | M | J33 | 13 §5.2 (make explicit) |
 | R54 | Secret redaction in logs, events, audit and command history | M | J46 | 13 §8, 05 §9 |
-| R55 | **`persist_scrollback = false` per session/workspace, with a visible indicator** | M | J46 | **NO OWNER (G9)** |
-| R56 | Redaction applied to any output that enters a search index | M | J42, J46 | **NO OWNER (G2+G9)** |
-| R57 | Documented inventory of what is written where, with file modes | M | J46, J47 | **NO OWNER (G9)** |
+| R55 | **`persist_scrollback = false` per session/workspace, with a visible indicator** | M | J46 | [21 §2.5](../architecture/21-data-lifecycle.md#25-per-workspace-and-per-session-control) + `store.persist.*` in [21 §8](../architecture/21-data-lifecycle.md#8-capabilities) |
+| R56 | Redaction applied to any output that enters a search index | M | J42, J46 | [21 §2](../architecture/21-data-lifecycle.md#2-redaction-before-write) (the detector) + [20 §5](../architecture/20-recall-and-usage.md#5-redaction-and-the-index) (the ordering guarantee) |
+| R57 | Documented inventory of what is written where, with file modes | M | J46, J47 | [21 §1](../architecture/21-data-lifecycle.md#1-the-inventory) |
 | R58 | Audit log with actor, device, interaction responses; queryable | M | J55 | 12 §8 |
 | R59 | No telemetry, no required egress, verified in CI | M | J52 | 10 §7.11, 13 §9 |
 
@@ -1380,42 +1389,63 @@ if not the terminal. Worth documenting because users will try it.
 | R61 | Format-preserving TOML writes from TUI/web edits | M | J36 | 10 §2.3 (confirm) |
 | R62 | A config error never prevents startup; last-good or defaults + loud banner | M | J37 | 10 §6.4 (extend to cold start) |
 | R63 | Precise diagnostics with file/line/column/value/suggestion and stable codes | M | J37 | 10 §5 |
-| R64 | **First-run experience: status bar, one hint, `⟨leader⟩ ?`, `omt setup`** | M | J1, J2, J6 | **NO OWNER (G1)** |
+| R64 | **First-run experience: status bar, one hint, `⟨leader⟩ ?`, `omt setup`** | M | J1, J2, J6 | [19 §1](../architecture/19-onboarding.md#1-first-run-second-run-tenth-run)–[§3](../architecture/19-onboarding.md#3-omt-setup) |
 | R65 | Command palette listing every non-hidden capability with descriptions | M | J3 | 03 + 16 §3.5 |
 | R66 | Launch configurations able to run setup commands (e.g. `git worktree add`) | M | J19 | 10 §9.1 (confirm) |
-| R67 | **`omt doctor` umbrella + `system.health` + diagnostics panel + `omt bug-report`** | M | J53, J54 | **NO OWNER (G5)** |
+| R67 | **`omt doctor` umbrella + `system.health` + diagnostics panel + `omt bug-report`** | M | J53, J54 | [22 §3](../architecture/22-operations.md#3-omt-doctor)–[§5](../architecture/22-operations.md#5-diagnostics-panel-and-omt-bug-report) |
 | R68 | Log location, rotation and redaction documented and discoverable from the UI | S | J53 | 10 §7.12 (surface it) |
 
 ## Automation
 
 | # | Req | Pri | Journeys | Owner |
 |---|---|---|---|---|
-| R69 | `--json` on every capability; stdout data / stderr diagnostics; documented exit codes | M | J44 | **03 (incomplete) (G14)** |
-| R70 | Non-interactive auth via `OMT_TOKEN`/`OMT_INSTANCE`, no TTY required | M | J44 | **NO OWNER (G14)** |
-| R71 | `session.capture`, `agent.wait`, `interaction.list/resolve` capabilities | M | J44, J45 | **NO OWNER (G14)** |
+| R69 | `--json` on every capability; stdout data / stderr diagnostics; documented exit codes | M | J44 | [22 §8.1](../architecture/22-operations.md#81-the-contract) (the automation contract), over [03](../architecture/03-capability-catalog.md)'s codegen |
+| R70 | Non-interactive auth via `OMT_TOKEN`/`OMT_INSTANCE`, no TTY required | M | J44 | [22 §8.2](../architecture/22-operations.md#82-non-interactive-auth-r70) |
+| R71 | `session.capture`, `agent.wait`, `interaction.list/resolve` capabilities | M | J44, J45 | [22 §8.3](../architecture/22-operations.md#83-the-primitives-scripts-need-r71), [22 §10](../architecture/22-operations.md#10-capabilities) |
 | R72 | Attribution of scripted actions in the audit log | S | J45 | 12 §8 |
 
 ## Cost, comparison, accessibility, platform
 
 | # | Req | Pri | Journeys | Owner |
 |---|---|---|---|---|
-| R73 | **Persist usage events; `usage.query` by session/workspace/instance/day** | M | J40 | **NO OWNER (G15)** |
-| R74 | Rate-limit state and reset time surfaced per session and instance | S | J40 | **NO OWNER (G15)** |
-| R75 | Costs are reported by the agent, never computed by omt — stated | M | — | **NO OWNER (G15)** |
-| R76 | Multi-session compare view (diff stat, files, cost, summary) | S | J20 | **NO OWNER (G18)** |
-| R77 | Web client WCAG 2.2 AA, verified with axe-core | M | J49 | 08 §9.1 |
-| R78 | **Stated position: the web client is the accessible surface; TUI `--no-chrome`, `NO_COLOR`, no chord-only paths** | M | J49 | **NO OWNER (G10)** |
-| R79 | **Decision record: macOS + Linux in v1; Windows via WSL2 only** | M | J51 | **NO OWNER (G11)** |
-| R80 | `session.note` free-text handoff note on every surface | S | J55 | **NO OWNER (G7)** |
-| R81 | Documented answer for "adopt an already-running agent": no, and the `--resume` alternative | S | J24 | **NO OWNER (G24)** |
+| R73 | **Persist usage events; `usage.query` by session/workspace/instance/day** | M | J40 | [20 §11](../architecture/20-recall-and-usage.md#11-usage-and-cost-g15) (`usage.*`) |
+| R74 | Rate-limit state and reset time surfaced per session and instance | S | J40 | [20 §11](../architecture/20-recall-and-usage.md#11-usage-and-cost-g15) (`usage.limits`) |
+| R75 | Costs are reported by the agent, never computed by omt — stated | M | — | [20 §11.1](../architecture/20-recall-and-usage.md#111-the-rule-stated-where-nobody-can-miss-it) |
+| R76 | Multi-session compare view (diff stat, files, cost, summary) | S | J20 | [20 §9](../architecture/20-recall-and-usage.md#9-comparing-parallel-agent-results-g18) (`compare.sessions`) |
+| R77 | Web client WCAG 2.2 AA, verified with axe-core | M | J49 | [08 §9.1](../architecture/08-web-client.md#91-accessibility) |
+| R78 | **Stated position: the web client is the accessible surface; TUI `--no-chrome`, `NO_COLOR`, no chord-only paths** | M | J49 | **NO OWNER (G10)** — [08 §9.1](../architecture/08-web-client.md#91-accessibility) covers the web client and [19 §2.1](../architecture/19-onboarding.md#21-the-status-bar-contract) gives `--no-chrome`/`NO_COLOR`; **no document states the position** |
+| R79 | **Decision record: macOS + Linux in v1; Windows via WSL2 only** | M | J51 | **NO OWNER (G11)** — asserted in passing by [19 §5.6](../architecture/19-onboarding.md#56-why-switch-and-when-not-to) and Part 5 §11; 22 does not carry it and there is no decision record |
+| R80 | `session.note` free-text handoff note on every surface | S | J55 | **NO OWNER (G7)** — [20 §8.1](../architecture/20-recall-and-usage.md#81-the-timeline) *consumes* a `Note` entry, but no document declares the capability |
+| R81 | Documented answer for "adopt an already-running agent": no, and the `--resume` alternative | S | J24 | **NO OWNER (G24)** — refused in Part 5 §16 and in G24; [06 §9](../architecture/06-agent-layer.md#9-failure-modes-and-their-handling) does not state it |
 
-**Requirements with NO OWNER, counted: 30 of 81.** They cluster in six areas —
-onboarding (G1), search (G2), digest/timeline (G3), data lifecycle + privacy
-(G4, G9), self-observability + service (G5, G13), and automation (G14) — which
-suggests the missing documents are roughly: `19-onboarding.md`,
-`20-timeline-and-digest.md`, `21-data-lifecycle-and-privacy.md`,
-`22-search-and-recall.md`, `23-operations-and-diagnostics.md`, and a
-CLI/automation contract section inside 03.
+**Requirements with NO OWNER, counted: 6 of 81.**
+
+The original count was 31, clustering in six areas — onboarding (G1), search
+(G2), digest/timeline (G3), data lifecycle + privacy (G4, G9),
+self-observability + service (G5, G13), and automation (G14). Documents
+[19 — Onboarding](../architecture/19-onboarding.md),
+[20 — Recall and usage](../architecture/20-recall-and-usage.md),
+[21 — Data lifecycle](../architecture/21-data-lifecycle.md) and
+[22 — Operations](../architecture/22-operations.md) were written to close them
+and did; the owner cells above now name the section that owns each one.
+
+The six that remain, and why each is genuinely still open:
+
+| # | Why it is still unowned |
+|---|---|
+| R18 | Retraction window before a resolution reaches the agent. G8 is a partial gap and nobody has specified the `Pending` phase; it interacts with exactly-once resolution ([12 §4](../architecture/12-collaboration.md)) and needs a decision there first |
+| R19 | Expiry and re-confirmation of queued client mutations after a long offline. Same gap (G8), same missing decision |
+| R78 | The accessibility *position statement*. [08 §9.1](../architecture/08-web-client.md#91-accessibility) specifies web accessibility and [19 §2.1](../architecture/19-onboarding.md#21-the-status-bar-contract) gives `--no-chrome`/`NO_COLOR`, but no document says out loud which surface is the accessible one |
+| R79 | The platform decision record. macOS + Linux v1 / Windows-via-WSL2 is asserted in prose in several places and recorded in no decision entry; it belongs in `decisions.md`, not in a document |
+| R80 | `session.note`. [20 §8.1](../architecture/20-recall-and-usage.md#81-the-timeline) reads a `Note` timeline entry, but no document declares the capability that writes one |
+| R81 | The documented "no" for adopting an already-running agent. Refused in Part 5 §16 and analysed in G24; [06 §9](../architecture/06-agent-layer.md#9-failure-modes-and-their-handling) does not carry it, so it exists only in this file |
+
+Three further entries are tagged as owned-but-open rather than unowned, and
+should not be counted either way: **R15** (deferral versus the local card —
+[06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism-and-its-risk),
+a live decision), **R42** (PTY supervisor —
+[05 §13](../architecture/05-session-model.md#13-open-questions)), and **R49**,
+where `session.rename` exists and pin/filter/archive do not.
 
 ---
 

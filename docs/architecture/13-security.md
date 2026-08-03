@@ -147,7 +147,11 @@ it: every socket connection is audited with its pid, uid and argv.
 ```rust
 #[async_trait]
 pub trait AuthBackend: Send + Sync {
-    /// Stable id, e.g. "bearer", "password", "invite", "tailnet".
+    /// Stable id; the closed set is
+    /// "bearer", "password", "invite", "tailnet", "device_grant".
+    /// `device_grant` presents a root-signed `DeviceGrant` and mints a
+    /// per-instance credential on the spot — flow in
+    /// [23 §3.2](23-identity-and-devices.md#32-how-other-instances-learn-about-it).
     fn method(&self) -> &'static str;
 
     /// Advertised in the handshake (07 §3.3). May depend on the transport —
@@ -165,18 +169,46 @@ pub trait AuthBackend: Send + Sync {
 
     /// Revocation check on every reconnect and, for long-lived connections,
     /// every 60 s. A revoked credential closes the connection.
-    async fn is_revoked(&self, cred: &CredentialId) -> Result<bool, AuthError>;
+    ///
+    /// A credential id, or a device whose grants and credentials are all revoked
+    /// together ([23 §6.1](23-identity-and-devices.md#61-revoking-one-device)).
+    async fn is_revoked(&self, subject: &RevocationSubject) -> Result<bool, AuthError>;
+}
+
+pub enum RevocationSubject {
+    Credential(CredentialId),
+    Device(DeviceId),
 }
 
 pub struct Grant {
     pub credential: CredentialId,
-    pub principal: PrincipalId,          // a human or a device
+    /// The identity this credential belongs to (23 §1.1 owns `IdentityId`), and
+    /// the device it was issued to. `device` is `None` for a password or tailnet
+    /// grant that is not device-bound.
+    pub identity: IdentityId,
+    pub device: Option<DeviceId>,
     pub role: Role,
     pub scope: CredentialScope,          // §4.1
     pub expires_at: Option<OffsetDateTime>,
-    pub device_bound: Option<DevicePubKey>,
+    /// `DeviceKey` is defined in [23 §1.1](23-identity-and-devices.md#11-four-types).
+    /// Still `Option` here: device binding is genuinely optional for tailnet and
+    /// local-socket grants, which have no long-lived credential to bind.
+    pub device_bound: Option<DeviceKey>,
 }
 ```
+
+`is_revoked` takes a `RevocationSubject` rather than a bare `CredentialId`
+because the unit a user revokes is a **device**, not a credential: `device.revoke`
+([23 §6.1](23-identity-and-devices.md#61-revoking-one-device)) invalidates every
+credential *and* the root-signed `DeviceGrant` that device holds, and a
+`DeviceGrant` carries no `CredentialId` at all.
+
+**Naming, because three things are called "grant".** `Grant` (here) is the
+*result of authenticating* — what a backend returns. `DeviceGrant`
+([23 §1.3](23-identity-and-devices.md#13-devicegrant--the-certificate-that-makes-this-decentralized))
+is a *root-signed certificate* a device presents in order to obtain a `Grant`.
+`[[auth.tailnet.mappings]]` (§3.5) is a *config table* mapping tailnet identities
+to roles. They are never interchangeable.
 
 Backends issue and verify. They perform no transport work and no routing (P1),
 and authorization itself happens in capability dispatch, not in the transport —
@@ -216,6 +248,85 @@ pub struct Invite {
   read-only, two-hour invite — the "let a colleague watch this agent" case.
 - Invites are listed and revocable: `omt invite list`, `omt invite revoke <id>`.
 
+**The capabilities.** Every CLI verb is a capability
+([P3](01-principles.md#p3--parity-one-capability-three-surfaces)), so `omt
+invite`, `omt invite list` and `omt invite revoke` are declared here rather than
+existing only as CLI surface. All three are `Admin`: minting a credential-bearing
+link is instance administration, not operation.
+
+```rust
+capability! {
+    /// Mint an invite (§3.2). The token is returned once and never stored in
+    /// recoverable form — only `jti`, `role`, `scope` and the expiry are kept,
+    /// which is what makes revocation possible without keeping the secret.
+    name  = "invite.create",
+    group = "invite", verb = "create",
+    kind  = Command, role = Role::Admin,
+    input  = InviteCreate { role: Role, ttl: Option<Duration>,      // default 24 h, max 7 d
+                            scope: CredentialScope, max_uses: Option<u8> },
+    output = InviteCreateOut { id: InviteId, token: String, url: Url,
+                               expires_at: OffsetDateTime },
+    effects = [Effects::WRITES_FS],   // the `jti` record, retained until expiry
+    since = "0.4",
+}
+
+capability! {
+    /// List outstanding invites. Never returns a token — only the record.
+    name  = "invite.list",
+    group = "invite", verb = "list",
+    kind  = Query, role = Role::Admin,
+    input  = InviteList { include_expired: bool, include_consumed: bool },
+    output = InviteListOut { invites: Vec<InviteRecord> },
+    //        InviteRecord { id, role, scope, issued_at, expires_at,
+    //                       max_uses, uses, consumed_by: Vec<DeviceRef> }
+    effects = [],
+    since = "0.4",
+}
+
+capability! {
+    /// Revoke an invite by id. Idempotent; revoking a consumed invite does
+    /// **not** revoke the credential it produced — that is `device.revoke`
+    /// ([23 §12](23-identity-and-devices.md#12-capabilities)).
+    name  = "invite.revoke",
+    group = "invite", verb = "revoke",
+    kind  = Command, role = Role::Admin,
+    input  = InviteRevoke { id: InviteId },
+    output = InviteRevokeOut { revoked: bool, was_consumed: bool },
+    effects = [Effects::WRITES_FS, Effects::DESTRUCTIVE],
+    since = "0.4",
+}
+
+capability! {
+    /// Exchange an invite token for a long-lived credential
+    /// ([07 §1.3](07-remote-protocol.md#13-adding-an-instance)). Consumes the
+    /// invite's `jti`, binds the credential to `device.public_key`, and returns
+    /// it exactly once. Replay fails because `jti` is already spent.
+    name  = "join.exchange",
+    group = "join", verb = "exchange",
+    kind  = Command, role = Role::Admin,      // see the pre-auth note below
+    input  = JoinExchange { token: String, device: DeviceRegistration },
+    output = JoinExchangeOut { credential: String, role: Role,
+                               scope: CredentialScope, instance: InstanceId,
+                               registry: RegistrySnapshot },
+    effects = [Effects::WRITES_FS],           // the credential record and the spent `jti`
+    since = "0.4",
+}
+```
+
+`join.exchange` is **reachable pre-authentication by construction — it *is* an
+authentication path**, and it is the only entry point in the `invite`/`join`
+groups that is. It is declared `Admin` for the same reason
+`identity.recovery.use` is ([23 §12](23-identity-and-devices.md#12-capabilities)):
+it carries `WRITES_FS`, which §4 makes a CI failure on a `Viewer` capability, so
+the role declaration follows the effect bits and the pre-auth reachability is a
+named, enumerated exemption in the dispatch chain rather than a weakened role.
+The caller presents no credential; the *invite signature* is the authorization,
+verified against the instance's Ed25519 key before the handler runs. Like every
+pre-auth path it is **rate-limited** (per source address and per `jti`, with
+exponential backoff on signature failures) and **audited loudly** — every
+exchange, successful or not, is an audit record naming the invite, the device and
+the outcome ([12 §8](12-collaboration.md#8-audit-log)).
+
 ### 3.3 Bearer tokens
 
 Long-lived credentials, the output of an invite exchange or of
@@ -254,11 +365,11 @@ to manage, revocation is a Tailscale ACL change.
 [auth.tailnet]
 enabled = true
 # Map tailnet identity to an omt role. Unmatched identities are refused.
-[[auth.tailnet.grants]]
+[[auth.tailnet.mappings]]
 user = "vincent@example.com"
 role = "admin"
 
-[[auth.tailnet.grants]]
+[[auth.tailnet.mappings]]
 tag  = "tag:ci"
 role = "viewer"                       # Viewer cannot resolve interactions at all
 ```
@@ -308,6 +419,39 @@ The mapping is mechanical, which is what makes it trustworthy:
   `WRITES_PTY`, `SPAWNS_PROCESS`, `WRITES_FS`, `NETWORK` or `DESTRUCTIVE` is a
   **CI failure**. The two declarations must be consistent, and the test enforces
   it across the whole catalog.
+
+**The one carve-out: read-only subprocess.** `SPAWNS_PROCESS` *alone* does not
+disqualify `Viewer`. The CI check exempts a capability when **all five** of the
+following hold, and it fails the build if any one of them is missing:
+
+1. `effects` contains `SPAWNS_PROCESS` and `READS_FS`, and **no** other effect
+   bit — in particular none of `WRITES_PTY`, `WRITES_FS`, `NETWORK`,
+   `DESTRUCTIVE`.
+2. The declaration carries `spawn = Spawn::ReadOnly { program, argv_template }`.
+   `program` is a fixed absolute path or a fixed program name resolved once at
+   startup; it is never taken from the request.
+3. The child is executed with `execve`-style fixed argv. **No shell**, no
+   `sh -c`, no user-supplied string that is split into arguments. Request data
+   may only fill named holes in `argv_template`, and each hole is one whole
+   argument.
+4. The child gets no stdin, its stdout/stderr are captured, and it is spawned
+   with the instance's own uid and a cwd inside a workspace root — never with
+   elevated privileges and never in a directory the caller named directly.
+5. `argv_template` appears in the **read-only subprocess allow-list** checked
+   into the repository next to the catalog test, so adding one is a reviewed
+   diff rather than a property a handler can assert about itself.
+
+The motivating case is the `workspace.vcs.*` family
+([15 §6](15-workspace-explorer.md#6-capabilities)): `summary`, `status`,
+`diff`, `diff_many` and `worktrees` shell out to `git` to read a repository's
+state. Reading a repository is a `Viewer` operation by every other measure, and
+forcing it to `Operator` would mean a read-only shared link could not see the
+file tree — which is the explorer's entire premise. The bit that matters is
+*mutation*, and a fixed-argv read-only `git` invocation performs none.
+
+Anything that fails one of the five conditions is not covered: `remote.probe`
+opens an outbound SSH connection and therefore declares `NETWORK`, so it is
+`Operator` ([22 §10](22-operations.md#10-capabilities)), not `Viewer`.
 
 ### 4.1 Credential scope
 
@@ -424,8 +568,11 @@ browser is simultaneously running hostile pages.
   "Approve" button on a permission card is a realistic attack and framing has no
   legitimate use here.
 - **Service worker scope** is the app root, and the push subscription is bound
-  to a device credential, so a revoked device stops receiving notifications
-  ([07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab)).
+  to the **device** (`DeviceId`), not to a credential, so a revoked device stops
+  receiving notifications however it authenticates — including a
+  tailnet-authenticated device that holds no long-lived credential
+  ([07 §8.1](07-remote-protocol.md#81-web-push-primary),
+  [23 §6.1](23-identity-and-devices.md#61-revoking-one-device)).
 
 ---
 
@@ -509,34 +656,37 @@ There is no `CredentialPolicy` type.
 
 ## 8. Secret redaction
 
-Redaction applies to **logs, audit entries and events** — the three places data
-leaves its original context. It does not and cannot apply to the terminal
-stream itself: a secret echoed into a terminal is on the screen, and hiding it
-would corrupt the terminal.
+**The detector is not specified here.** The `Redactor`, its classes, its key /
+flag / header / shape / entropy rules, its thresholds, its `<redacted:…:len=N>`
+marker format, its configuration and its test corpus are
+[21 §2](21-data-lifecycle.md#2-redaction-before-write)'s, and that section also
+defines the *scope* of redaction: all persisted terminal content, not only
+telemetry. There is exactly one implementation and one rule set; duplicating it
+here is how the two would drift.
 
-The redactor runs on every structured value before serialization:
+What this document owns is the **integration**, which is the part that carries a
+security guarantee:
 
-1. **Key-name rules** — any map key matching
-   `(?i)(pass(word|wd)|secret|token|api[-_ ]?key|authorization|cookie|private[-_ ]?key|credential|session[-_ ]?id)`
-   has its value replaced with `"<redacted:key>"`.
-2. **Value-shape rules** — high-entropy strings matching known credential
-   shapes: `sk-[A-Za-z0-9]{20,}`, `gh[pousr]_[A-Za-z0-9]{36}`, `AKIA[0-9A-Z]{16}`,
-   `xox[baprs]-…`, JWTs (`eyJ[\w-]+\.[\w-]+\.[\w-]+`), `-----BEGIN … PRIVATE
-   KEY-----` blocks, and omt's own `omt_c_…` / `omt_s_…`.
-3. **Environment** — env maps are redacted key-first and never logged in full at
-   any level below `trace`; `trace` refuses to log env at all unless
-   `OMT_LOG_SECRETS=1` is set, which is documented as a debugging footgun and
-   prints a warning banner on startup.
-4. **Length-preserving markers** — replacement is `<redacted:sk:len=51>`, so a
-   bug report remains diagnosable without carrying the secret.
+> The redactor is a `Layer` in the tracing stack **and** a serializer wrapper on
+> the event bus. Every structured value passes through it before serialization,
+> so **there is no path that emits an unredacted value by forgetting to call
+> it.** Redaction is not something a call site opts into.
 
-The redactor is a `Layer` in the tracing stack **and** a serializer wrapper on
-the event bus, so there is no path that emits an unredacted value by forgetting
-to call it. It ships a fuzz target (P5) and a corpus of real-shaped-but-fake
-credentials.
+Two consequences of that placement:
 
-Known limits, stated honestly: a secret in an unusual format inside a tool
-call's free-text argument will not be caught, and PTY bytes are never redacted.
+- **Env maps** are redacted key-first and are never logged in full at any level
+  below `trace`; `trace` refuses to log env at all unless `OMT_LOG_SECRETS=1` is
+  set, which is documented as a debugging footgun and prints a warning banner on
+  startup.
+- The `Layer` and the serializer wrapper ship a shared fuzz target (P5) against
+  21 §2's corpus of real-shaped-but-fake credentials, so the integration is
+  tested with the same inputs as the detector.
+
+Known limits, stated honestly: a secret in an unusual format inside a tool call's
+free-text argument will not be caught, and the *live* terminal stream is never
+redacted — a secret echoed into a terminal is on the screen, and hiding it would
+corrupt the terminal. The **durable** copy of that stream is redacted, on the
+write path, per [21 §2](21-data-lifecycle.md#2-redaction-before-write).
 
 ---
 
@@ -545,20 +695,51 @@ call's free-text argument will not be caught, and PTY bytes are never redacted.
 ### 9.1 Egress
 
 omt makes **zero** outbound connections by default. There is no telemetry, no
-update check, no crash reporting, no analytics
-([00 §8](00-overview.md#8-what-omt-is-not)). The complete list of things that can
-ever cause egress, each off by default and each requiring explicit
-configuration:
+crash reporting, no analytics, and nothing is contacted unless the user asked for
+it ([00 §8](00-overview.md#8-what-omt-is-not)). The table below is the complete
+list of *features* that can cause egress once enabled — the mechanical check is
+the `NETWORK` effect bit in the capability catalog
+([03 §2](03-capability-catalog.md#2-declaring-a-capability)), and CI asserts that
+every capability that opens a socket declares it, so this table cannot silently
+fall behind the code.
 
-| Feature | Destination | Default |
-|---|---|---|
-| Web Push | browser vendor push endpoint | off |
-| Webhook notifications (`ntfy`/Gotify) | user-specified URL | off |
-| STT provider | Deepgram / OpenAI | off (local whisper.cpp available) |
-| Self-signed cert ACME (if ever added) | Let's Encrypt | not implemented |
+**Third-party destinations.** Everything here talks to a machine that is not the
+user's:
 
-`instance.health` reports which egress paths are enabled, so "what can this
-thing phone home to?" is a query, not an audit of the config file.
+| Feature | Capability | Destination | Default |
+|---|---|---|---|
+| Web Push | — (daemon-initiated) | browser vendor push endpoint | off |
+| Webhook notifications (`ntfy`/Gotify) | — (daemon-initiated) | user-specified URL | off |
+| STT provider | — | Deepgram / OpenAI | off (local whisper.cpp available) |
+| Update check | `upgrade.check` ([22 §10](22-operations.md)) | the release host | **off** — no automatic check; the capability must be called |
+| Update install | `upgrade.apply` ([22 §10](22-operations.md)) | the release host | off; explicit, and the artifact's checksum is verified (§9.2) |
+| Self-signed cert ACME (if ever added) | — | Let's Encrypt | not implemented |
+
+**Instance-to-instance traffic within the user's own registry.** This is a
+distinct class and is not "phoning home": the destination is another machine the
+user owns and enrolled, over the transport they configured, and the traffic
+carries the user's own identity and device state
+([23](23-identity-and-devices.md)). It is listed because it is still egress and a
+reviewer must be able to see it, not because it is the same kind of risk.
+
+| Feature | Capability | Destination | Default |
+|---|---|---|---|
+| Identity key rotation, pushed to the user's other instances | `identity.rotate_key` ([23 §12](23-identity-and-devices.md)) | every enrolled instance | on demand only |
+| Device revocation | `device.revoke`, `device.revoke_all` ([23 §12](23-identity-and-devices.md)) | every enrolled instance | on demand only |
+| Registry home election | `instance.registry.set_home` ([23 §12](23-identity-and-devices.md)) | the enrolled instances | on demand only |
+| Registry sync | `instance.registry.sync` ([23 §12](23-identity-and-devices.md)) | the enrolled instances | on demand, **plus** a recurring poll — see below |
+| Revocation poll | — (daemon-initiated) | the **home instance** only | **on whenever more than one instance is enrolled**: every 15 minutes ([23](23-identity-and-devices.md)) |
+| Remote host probe / bootstrap | `remote.probe`, `remote.bootstrap` ([22 §10](22-operations.md)) | the SSH host the user named | on demand only |
+
+The 15-minute revocation poll is the one entry that is **not** strictly
+on-demand, and it is called out rather than buried: a revoked device must stop
+working on every instance within minutes, and that requires someone to ask. A
+single-instance install never makes it. It is the only recurring outbound
+connection in the product, and it goes to a machine the user owns.
+
+`instance.health` reports which egress paths are enabled, including whether the
+revocation poll is running and to which instance, so "what can this thing phone
+home to?" is a query, not an audit of the config file.
 
 ### 9.2 Supply chain
 
@@ -656,10 +837,15 @@ Then, recommended and not enforced:
    currently have. Coordinate with
    [05 — Session model](05-session-model.md) and
    [12 §9](12-collaboration.md#9-open-questions).
-7. **Push payload metadata leak.** Even a pointer-only payload
-   (07 §8.1) tells the push vendor that a session on a named instance needs
-   attention, and when. The `ntfy`-on-tailnet path avoids it entirely; should
-   that be the *default* rather than the alternative?
+7. **Push payload metadata leak.** Even the minimal pointer-plus-short-title
+   payload of [07 §8.1](07-remote-protocol.md#81-web-push-primary) tells the push
+   vendor that a session on a named instance needs attention, and when. Whether
+   the `ntfy`-on-tailnet path should therefore be the *default* rather than the
+   alternative is **one question, owned by
+   [07 §9 Q5](07-remote-protocol.md#9-open-questions)** — it is answered there,
+   not here. This entry exists only to record the security argument feeding into
+   it: from a metadata-exposure standpoint, `ntfy`-on-tailnet is strictly better,
+   and the counter-argument is reliability, which 07 Q5 is the place to measure.
 8. **Interaction resolution by plugins.** A plugin acting as an actor with an
    `Operator` role could resolve interactions programmatically. That is a
    legitimate automation feature and an obvious abuse path. D1 forbids omt

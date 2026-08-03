@@ -94,12 +94,21 @@ only for the lifetime of a connection
 wrong lifetime. It must be keyed by an identity that outlives both the
 connection and the device.
 
-```rust
-/// ADDITION. A stable identity for "the person", derived from the credential's
-/// owner, not from a device or a connection. Today every instance has exactly
-/// one — D4's "single user, many devices" — but nothing here assumes that.
-pub struct IdentityId(Uuid);
+`IdentityId` is **not** an addition of this document. It is defined and owned by
+[23 §1.1](../architecture/23-identity-and-devices.md#11-four-types): the
+blake3-256 of the identity root public key, rendered
+`idn_<crockford-base32>`, self-certifying and mintable with no issuer. This
+document only *uses* it as the per-actor key. What is new here is `ActorContinuity`
+and the state hanging off it.
 
+Note also where the two documents divide: [23] owns the **registry** — an
+identity's devices, its instance list, its revocations — while `ActorContinuity`
+below is **per instance and is not replicated by the registry**. The registry
+tells you which devices belong to a person; it never carries their recents,
+drafts or mutes, and promoting or demoting a home instance moves none of it
+([23 §3.1](../architecture/23-identity-and-devices.md#31-what-it-is)).
+
+```rust
 /// ADDITION. Per-instance, per-identity continuity state. Persisted.
 pub struct ActorContinuity {
     pub identity: IdentityId,
@@ -665,7 +674,7 @@ https://<instance-host>/#/i/<instance-id>/<session-id>/<interaction-id>?src=push
 - `<instance-id>` is present so the client resolves the right connection even if
   the host it was pushed from is now reachable at a different address (tailnet
   rename, DERP change).
-- `n=<nonce>` is echoed to `continuity.notification_ack` (§10 **ADDITION**) so
+- `n=<nonce>` is echoed to `continuity.notification.ack` (§10 **ADDITION**) so
   the instance can suppress the same notification on the user's other devices and
   record delivery-to-action latency.
 - Generalized routes, so "open this on my laptop" (§2.6) and future links share
@@ -799,7 +808,7 @@ The rules that matter:
 3. **Presence suppression** (§3.1): if another of my devices is `Active` and
    attached to that session, no push. If it is `Background` or `Idle`, push
    normally — a laptop with the lid shut is not attention.
-4. **Cross-device dedup.** When one device acks (`continuity.notification_ack`,
+4. **Cross-device dedup.** When one device acks (`continuity.notification.ack`,
    §5.2), the instance pushes a silent `dismiss` pointer to that identity's other
    subscriptions so the same question does not sit unread on three screens.
 5. **Quiet hours break for interactions by default**, because an agent blocked at
@@ -1012,7 +1021,7 @@ must never be silent about a downgrade.
 | Interaction *arrival* | Normal | Lossless queue never drops them (07 §6.1) | Push still arrives — it does not use the WebSocket | Nothing arrives; the row says so |
 | Media upload (09 §4.3) | Normal, chunked | **Resumed from the last acked offset** | Deferred, held in the draft's `blobs` | Deferred |
 | Voice / STT | Normal | Falls back to batch (no interim text) | Recorded locally, uploaded on reconnect, ≤2 min | Deferred |
-| Layout / pane ops | Normal | Normal (local view), promotes on reconnect | Local view only; `layout.promote` disabled with a reason | Disabled with a reason |
+| Layout / pane ops | Normal | Normal (local view), promotes on reconnect | Local view only; [`layout.promote`](../architecture/17-panes-and-layout.md#92-layout) disabled with a reason | Disabled with a reason |
 | Config changes | Normal | CAS retried | **Disabled** — CAS semantics cannot be honoured offline | Disabled |
 
 ### 8.3 The honesty rules
@@ -1184,8 +1193,10 @@ list gains `continuity`).
 
 ### 10.3 Model additions
 
-- `IdentityId` on `Actor` and on `Credential`, so per-actor state has a key that
-  outlives a connection. This partially answers
+- `IdentityId` (owned by
+  [23 §1.1](../architecture/23-identity-and-devices.md#11-four-types), not
+  defined here) carried on `Actor` and on `Credential`, so per-actor state has a
+  key that outlives a connection. This partially answers
   [12 §9 Q6](../architecture/12-collaboration.md#9-open-questions)
   (cross-instance presence) *within* an instance; the cross-instance federated
   identity question remains open.
@@ -1216,11 +1227,17 @@ CLI with reason `"no notification surface"`.
    across instances relies on clock agreement between machines, which
    [12 §5.2](../architecture/12-collaboration.md#52-what-is-not-guaranteed)
    explicitly does not guarantee. Probably fine at minute granularity; unmeasured.
-2. **`IdentityId` derivation.** Today every credential on an instance belongs to
-   the same person, so `IdentityId` can be a per-instance constant. The moment a
-   second person exists, "which identity is this credential" needs an answer that
-   [13 — Security](../architecture/13-security.md) owns. Getting this wrong makes
-   drafts leak between people, so it must be settled before multi-user.
+2. **Which identity is a given credential's?** `IdentityId`'s *derivation* is
+   settled and not open here: it is the blake3-256 of the identity root public
+   key, owned by
+   [23 §1.1](../architecture/23-identity-and-devices.md#11-four-types). What is
+   open is the **mapping** — today every credential on an instance belongs to the
+   same person, and the moment a second person exists, "which identity issued
+   this credential" needs an answer that
+   [23](../architecture/23-identity-and-devices.md) owns (see
+   [23 §13 Q6](../architecture/23-identity-and-devices.md#13-open-questions),
+   multi-user identities on one instance). Getting this wrong makes drafts leak
+   between people, so it must be settled before multi-user.
 3. **Auto-navigate thresholds** (1.5× runner-up, absolute floor) in §2.2 are
    guesses. They need real usage; the suppression heuristic (two back-taps →
    10 min off) is a guess on top of a guess.
@@ -1233,10 +1250,16 @@ CLI with reason `"no notification surface"`.
    related to [08 §11 Q1](../architecture/08-web-client.md#11-open-questions).
 6. **Does the soft-free window (15 s) fight the 90 s idle release?** Two timers
    governing the same token, with different owners (client heuristic vs. server
-   policy) is a smell. It may be cleaner to make the server's idle release
-   identity-aware — 15 s for the same identity, 90 s otherwise — and delete the
-   client-side rule entirely. Coordinate with
-   [12 §9 Q1](../architecture/12-collaboration.md#9-open-questions).
+   policy) is a smell. **Recommended resolution, stated explicitly rather than
+   left as a maybe: make the server's idle release identity-aware — 15 s when the
+   requester's identity equals the holder's, 90 s otherwise — and delete the
+   client-side soft-free rule of §4.1–§4.2 entirely.** That leaves exactly one timer,
+   owned by the server, with the client's role reduced to rendering it. The
+   design in §4.1–§4.2 is left as written until
+   [12 §9](../architecture/12-collaboration.md#9-open-questions) — which owns the
+   writer token and its 90 s release ([12 §3.3](../architecture/12-collaboration.md#3-the-writer-token))
+   — adopts the change; this document does not get to change 12's timer
+   unilaterally.
 7. **Draft sync on a shared session with two people.** Last-write-wins with a
    visible loser (§2.4) is defensible for one person on two devices and mediocre
    for two people. If real multi-human use appears, per-actor draft keys

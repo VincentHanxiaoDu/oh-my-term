@@ -225,16 +225,21 @@ SIGTERM (or `omt instance shutdown`)
 $ omt instance shutdown
 refusing: 3 sessions are working and 1 has an open interaction
 
-  s_4b2f  ~/code/omt        claude   working    4 m 12 s   "refactor the parser"
-  s_91cc  ~/code/omt        codex    working    41 s
-  s_2d0e  ~/code/infra      claude   BLOCKED    2 m 03 s   Bash(terraform apply)
-  s_77a1  ~/code/client-x   claude   working    18 m
+  s_4b2f  ~/code/omt        claude   pty      working    4 m 12 s  "refactor the parser"
+  s_91cc  ~/code/omt        codex    pty      working    41 s
+  s_2d0e  ~/code/infra      claude   pty      BLOCKED    2 m 03 s  Bash(terraform apply)
+  s_77a1  ~/code/client-x   opencode native   working    18 m
+
+The `mode` column is not decoration: killing a `native` session ends a JSON-RPC
+transport and abandons whatever it was holding, which is a different loss from
+killing a PTY, and D8 requires the mode visible wherever a session is listed.
 
   omt instance shutdown --wait          wait for them to go idle (then shut down)
   omt instance shutdown --force         stop now; running agents are killed
 ```
 
-**`SIGKILL` of the daemon** loses at most the §21 §6.2 window; the store's
+**`SIGKILL` of the daemon** loses at most the window described in
+[21 §6.2](21-data-lifecycle.md#62-what-kill--9-loses); the store's
 append-log design is what makes that acceptable, and the next start reports
 `RestoreOutcome::Recovered { lost_tail }` honestly.
 
@@ -394,10 +399,11 @@ omt doctor service         launchd/systemd unit health
 | `shell` | integration is *working* — OSC 133 A/B/C/D observed in a live session in the last hour | installed but not emitting (a `precmd` overwritten by a later plugin) | "load omt's hook last; add it after `oh-my-zsh.sh`" |
 | `shell` | `tmux set -g set-clipboard on` when running under tmux ([09 §3.1](09-ssh-and-media.md#31-writing-to-the-local-clipboard-remote--local)) | OSC 52 silently dropped | the exact tmux line |
 | `agents` | each configured agent CLI found on `PATH`, with its version | not found under a launchd service (§1.2's PATH trap) | "launchd does not inherit your shell PATH; `omt service install` again, or set `[agents.claude_code].command`" |
+| `agents` | **ACP adapter availability** — for each detected agent, whether a `native` mode is reachable ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)): the ACP subcommand or adapter binary exists, launches, and completes an `initialize` handshake, with the negotiated protocol version | `omt claude --native` fails at spawn, or negotiates nothing | names the adapter package and the install command; states that `pty` mode is unaffected. For Claude it also states that the adapter wraps the **Agent SDK, not the Claude Code CLI** |
 | `agents` | agent version is within the tested range for its adapter | `claude 2.9.0` vs adapter tested to `2.7.x` | "observation may degrade to the transcript tier; `omt agent explain <sid>` shows which tier is live" |
 | `agents` | hook integration installed / stale / broken — compares the installed hook block's checksum against the current binary's | stale after an omt upgrade | `omt integrate install --agent claude-code` |
-| `agents` | `omt-hook` binary present, executable, and responds in < 50 ms | hook installed but binary missing after a `cargo install` into a different prefix | absolute path it expected, and the fix |
-| `agents` | hook can reach the socket (the hook's own failure mode, [06 §…](06-agent-layer.md)) | hook exits 0 but observation falls back to heuristics | "the daemon was not running when the agent started; restart the agent session" |
+| `agents` | `omt-hook` binary present, executable, and its round trip completes. **The budget is single-digit milliseconds** ([02 — crate map](02-crate-map.md)); the check's 50 ms is a *failure* threshold, not the budget — a hook that takes 40 ms has already lost its budget and is reported as a warning with its measured time | hook installed but binary missing after a `cargo install` into a different prefix; or a round trip over 50 ms | absolute path it expected, and the fix |
+| `agents` | hook can reach the socket (the hook's own failure mode, [06 §9](06-agent-layer.md#9-failure-modes-and-their-handling)) | hook exits 0 but observation falls back to heuristics | "the daemon was not running when the agent started; restart the agent session" |
 | `net` | socket exists, is 0600, parent is 0700, owner is us, and `connect()` succeeds | any of those wrong | `chmod`/`chown` command, or "another user owns this path — refusing" |
 | `net` | no credential-shaped string in the daemon's argv or environ (§2.3) | a token in argv | names the offending argument |
 | `net` | listeners: what is bound, on what interface, with what auth backend | `0.0.0.0` with no auth | refuses to run in that state at all ([13 §2](13-security.md)); doctor explains |
@@ -585,21 +591,39 @@ pub struct InstanceHealth {
     pub threads: u32,
     pub event_loop_lag_p50_p99: (Duration, Duration),
     pub bus_subscribers: u32,
-    pub bus_dropped_events: u64,          // 07 §6 backpressure drops, cumulative
-    pub degraded: Vec<Degradation>,       // §4.4
+    pub bus_dropped_events: u64,           // 07 §6 backpressure drops, cumulative
+    pub degraded: Vec<InstanceDegradation>, // §4.4
 }
 
 pub struct SessionHealth {
     pub session: SessionId,
     pub state: SessionState,
+    pub mode: SessionMode,                // D8 — Pty | Native; 05 §1.3
+    pub rss_estimate_bytes: u64,
+    pub agent: Option<AgentHealth>,       // tier live, staleness, last event
+    pub faults: Vec<SessionFault>,        // §4.4
+
+    /// `pty` sessions only; `None` for `Native` — there is no PTY, no VT
+    /// parser and no grid to measure.
+    pub pty: Option<PtySessionHealth>,
+    /// `native` sessions only; `None` for `Pty`.
+    pub native: Option<NativeSessionHealth>,
+}
+
+pub struct PtySessionHealth {
     pub pty_bytes_per_s_1m: u64,
     pub parser_ns_per_kib_p99: u64,
     pub grid_cells: u64,
     pub scrollback_bytes: u64,
-    pub rss_estimate_bytes: u64,
     pub damage_frames_per_s: f32,
-    pub agent: Option<AgentHealth>,       // tier live, staleness, last event
-    pub faults: Vec<SessionFault>,        // §4.4
+}
+
+pub struct NativeSessionHealth {
+    pub events_per_s_1m: f32,             // JSON-RPC notifications inbound
+    pub transcript_bytes: u64,            // omt-rendered transcript, the scrollback analogue
+    pub rpc_rtt_p99: Duration,            // request/response latency to the adapter
+    pub pending_requests: u32,
+    pub acp_version: String,
 }
 
 pub struct ClientHealth {
@@ -610,7 +634,83 @@ pub struct ClientHealth {
     pub backpressure: BackpressureState,  // 07 §6
     pub subscriptions: u32,
 }
+
+/// The store row of the diagnostics panel (§5.1), plus what `doctor store` needs.
+pub struct StoreHealth {
+    pub path: PathBuf,
+    pub bytes_used: u64,
+    pub bytes_free: u64,                  // on the filesystem holding `path`
+    pub format_version: u32,              // 21 — the on-disk store format
+    pub last_sweep: Option<Timestamp>,    // retention sweep, 21 §3
+    pub write_latency_p99: Duration,
+    pub gaps: u32,                        // `store.gap` markers written, 21 §3.3
+}
+
+/// One observation source for one session, per [06](06-agent-layer.md).
+pub struct SourceHealth {
+    pub session: SessionId,
+    pub source: SourceId,
+    pub tier: ObservationTier,            // Hook | Protocol | Heuristic, 06
+    pub state: SourceState,               // Working | Blocked | Unknown
+    pub last_event_at: Option<Timestamp>,
+    pub staleness: Option<Duration>,       // now − last_event_at
+    pub events_1m: u32,
+}
+
+/// One row of [13 §9.1](13-security.md#9-network-egress-and-supply-chain)'s
+/// egress table, evaluated against this instance's live config. One entry per
+/// feature that *can* open an outbound connection, enabled or not.
+pub struct EgressStatus {
+    pub feature: EgressFeature,
+    /// `None` for daemon-initiated paths (Web Push, webhooks, the revocation
+    /// poll) — 13 §9.1 lists those with no capability by design.
+    pub capability: Option<CapabilityName>,
+    pub destination: EgressDestination,   // resolved host/URL, or "not configured"
+    pub class: EgressClass,               // ThirdParty | OwnRegistry — 13 §9.1's two tables
+    pub enabled: bool,
+    /// `None` for on-demand paths; `Some` only for the 15-minute revocation poll,
+    /// the single recurring outbound connection in the product.
+    pub interval: Option<Duration>,
+}
+
+/// An instance-level capability that is currently degraded. Added and cleared by
+/// the `instance.degraded` event (§10). Distinct from a `SessionFault` (§4.4),
+/// which is scoped to one session, and from the layout `Degradation`
+/// ([17 §2.3](17-panes-and-layout.md#23-minimums-and-what-happens-when-they-cannot-be-met)).
+pub struct InstanceDegradation {
+    pub kind: InstanceDegradationKind,    // NotPersisting | MetricsOff | RegistryUnreachable | ClockSkew | HooksStale
+    pub since: Timestamp,
+    pub detail: String,                   // one line, shown in the panel banner
+    pub remedy: Option<String>,           // the doctor remedy, when there is one
+}
+
+/// Returned by `upgrade.apply` (§10, §6.1): *when* the daemon will restart, and
+/// what is holding it.
+pub struct RestartPlan {
+    pub when: RestartWhen,                // Now | WhenIdle | Manual — `--force`, `--wait`, `--binary-only`
+    pub binary_installed: bool,           // the new inode is on disk already
+    pub store_migration: Option<(u32, u32)>,
+    pub blocked_by: Vec<SessionSummary>,  // agents still working, §6.1's refusal
+}
+
+/// One bound endpoint, as `doctor net` and `omt service status` display it
+/// (§3.1, §5.1). The Unix control socket is always present; a TCP entry exists
+/// only when one was explicitly configured ([13 §2](13-security.md)).
+pub struct Listener {
+    pub transport: ListenerTransport,     // Unix { path, mode, owner } | Tcp { addr }
+    pub auth: AuthBackend,                // 13 §2 — peer-cred, bearer + invite, …
+    pub ephemeral: bool,                  // port chosen at bind time
+    pub connections: u32,
+}
 ```
+
+**`Health.egress` is the same data `instance.health` reports.** `system.health`
+is the structured model — the full picture, for the diagnostics panel and for a
+monitoring script. `instance.health` ([13 §9.1](13-security.md#9-network-egress-and-supply-chain))
+is retained as the narrow, cheap query for one question — *what can leave this
+machine, and is any of it enabled* — because a warning banner should not have to
+compute session and client health to render. Two capabilities, one source of
+truth, and the reference catalog carries both with exactly that distinction.
 
 `system.health` is a `Query` at `Viewer`, because knowing the daemon is healthy
 is not a privileged fact and a phone should be able to show it.
@@ -675,7 +775,8 @@ This is scenario J54, and it needs a mechanism, not a promise.
 | `ParserPanic` | a panic anywhere in the per-session pipeline (`omt-term`, block tracker, an adapter's normalizer) on hostile bytes | every session's byte-processing step runs inside `catch_unwind` at the **session task boundary**, with the panic hook capturing the backtrace and the last 4 KiB of input | session → `Degraded { ParserPanic }`: the PTY keeps running and its raw bytes keep being persisted, but grid state is frozen and the pane shows a banner with a "reset terminal state" action. The offending bytes are quarantined to `state/omt/crashes/<ts>/` and `omt bug-report` picks them up. **The other 14 sessions are untouched.** |
 | `RunawayOutput` | sustained output above `session.max_bytes_per_s` (default 8 MiB/s) for > 5 s — `yes`, a `find /`, an accidental binary `cat` | per-session token-bucket read scheduler; the reader stops draining and lets the PTY's own buffer apply backpressure to the writer | session → `Degraded { Throttled }` with a visible "throttled — 8 MiB/s" badge and a one-key "let it run" override. The event bus is protected because the coalescer ([07 §6.2](07-remote-protocol.md#62-coalescing-terminal-frames)) already caps frame rate |
 | `ScrollbackExhaustion` | a session grows past `store.max_scrollback_bytes` | oldest chunks evicted first, per session, never instance-wide | that session loses its oldest history; nobody else does |
-| `AgentOom` / `AgentCrash` | the agent CLI is OOM-killed or exits non-zero mid-turn | the PTY read returns EOF; the process reaper reads the exit status and `dmesg`/`/proc` for an OOM signature where available | session → `Exited { status }` with a diagnosis line: *"claude was killed by the OOM killer (rss 6.1 GiB)"*, and a restart affordance. omt's own memory is unaffected — the agent is a child process, not a plugin |
+| `NativeTransportClosed` (`native` only) | the ACP adapter exits, or the JSON-RPC transport closes | there is **no PTY and therefore no EOF to observe**: the fault is a closed stdio transport, plus any in-flight request completing with a transport error. Pending `session/request_permission` calls are the ones that matter — they are blocking requests with no timeout, so a transport close is the only signal they will ever get | session → `Exited { transport_closed }`; open interactions become `Abandoned` and are marked as such on every surface rather than silently disappearing ([06 §9](06-agent-layer.md#9-failure-modes-and-their-handling)). Recovery is the **agent's own resume** (ACP `session/load` against its session id), never a synthetic replay by omt |
+| `AgentOom` / `AgentCrash` (`pty` only) | the agent CLI is OOM-killed or exits non-zero mid-turn | the PTY read returns EOF; the process reaper reads the exit status and `dmesg`/`/proc` for an OOM signature where available | session → `Exited { status }` with a diagnosis line: *"claude was killed by the OOM killer (rss 6.1 GiB)"*, and a restart affordance. omt's own memory is unaffected — the agent is a child process, not a plugin |
 | `SlowConsumer` | a client cannot keep up | per-subscription backpressure ([07 §6](07-remote-protocol.md#6-backpressure)) drops that subscription's terminal frames, never `interaction` events, and never affects other clients | the slow client resyncs |
 | `StoreError` | a write fails (ENOSPC, EIO) | the store returns an error to that session's writer; the session enters `Degraded { NotPersisting }` and a `store.gap` marker is written ([21 §3.3](21-data-lifecycle.md#33-disk-pressure)) | sessions keep running; content stops being written |
 | `PluginFault` | an out-of-process plugin hangs or crashes | already isolated by process boundary ([11](11-plugins.md)) | plugin disabled, reported |
@@ -687,7 +788,8 @@ The mechanisms behind the invariant:
 2. **`catch_unwind` at the session boundary**, plus `panic = "unwind"` in the
    release profile — deliberately not `abort`, because abort would make the
    invariant impossible to hold. Any panic caught is an `error!` log, a crash
-   record and a `SessionFaulted` event; it is never swallowed.
+   record and a `session.faulted` event (§10's event table; dotted lowercase is
+   the convention throughout the corpus); it is never swallowed.
 3. **No shared mutable state on the hot path.** `omt-term` is a pure state
    machine per session with no globals ([02](02-crate-map.md)), which is what
    makes per-session isolation achievable at all — this invariant was bought by
@@ -703,6 +805,13 @@ The mechanisms behind the invariant:
 the diagnostics panel, and shown as a badge on the session row on every surface.
 A degraded session that a user has not acknowledged keeps its banner —
 degradation that goes unnoticed is indistinguishable from a bug.
+
+Degradation of the *instance* rather than one session — the store not
+persisting, the registry unreachable, hooks gone stale — is a separate list:
+`InstanceHealth.degraded: Vec<InstanceDegradation>` (§4.1), maintained by the
+`instance.degraded` event (§10). It is `InstanceDegradation`, not `Degradation`:
+the bare name is [17 §2.3](17-panes-and-layout.md#23-minimums-and-what-happens-when-they-cannot-be-met)'s
+layout degradation and the two are unrelated.
 
 ---
 
@@ -721,17 +830,19 @@ live `doctor` summary; there is no TUI-only diagnostic view
 │ bus      2 subscribers   0 dropped                                        │
 │ store    6.2 GiB   231 GiB free   sweep 3h ago   writes p99 1.2ms         │
 │                                                                            │
-│ session      state     out/s   parser p99   scroll   agent    tier   faults │
-│ s_4b2f       live      41 KiB   18 µs/KiB   6.1 MiB  working  hook    —    │
-│ s_91cc       live     2.1 MiB   22 µs/KiB   8.0 MiB  working  proto   THROT │
-│ s_2d0e       live       0 B      —          1.2 MiB  blocked  hook    —    │
-│ s_77a1       degraded   —        —          4.4 MiB  unknown  heur    PANIC │
+│ session   mode    state     out/s   parser p99  scroll   agent   tier  faults │
+│ s_4b2f    pty     live      41 KiB   18 µs/KiB  6.1 MiB  working hook   —    │
+│ s_91cc    pty     live     2.1 MiB   22 µs/KiB  8.0 MiB  working proto  THROT │
+│ s_2d0e    pty     live       0 B      —         1.2 MiB  blocked hook   —    │
+│ s_77a1    pty     degraded   —        —         4.4 MiB  unknown heur   PANIC │
+│ s_0c31    native  live      12 ev/s   n/a       2.8 MiB  working acp    —    │
 │                                                                            │
 │ client       kind    rtt    queue   backpressure   viewing                 │
 │ c_780ab5     web     41ms   0 B     ok             s_4b2f (blocks)         │
 │ c_local      tui     —      —       ok             workspace ~/code/omt    │
 │                                                                            │
 │ [d] run doctor   [l] tail log   [b] bug report   [r] reset s_77a1          │
+│ native rows show events/s and transcript bytes; parser and grid are n/a    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -980,7 +1091,9 @@ same sweeper, on the remote host. So:
   discover at the worst moment.
 - `omt ssh box --uninstall` removes the binary, stops the daemon, and offers
   `store.purge --everything` on that host with the manifest, so a host can be
-  left exactly as it was found.
+  left exactly as it was found. It is the remote form of
+  [19 §8](19-onboarding.md#8-uninstall-and-rollback)'s `uninstall.apply`, and is
+  distinct from `service.uninstall` (§10), which only removes a service unit.
 
 ---
 
@@ -1052,8 +1165,16 @@ capability! {
     role  = Role::Viewer,
     input = AgentWait {
         session: SessionId,
-        /// Any of these ends the wait. `Blocked` means "an interaction is open" —
-        /// i.e. a human is needed.
+        /// Any of these ends the wait.
+        ///
+        /// `Blocked` is an **agent state**: it matches whenever the agent is
+        /// blocked on a human, including at the moment of the call when
+        /// `immediate` is set. `Interaction` is an **edge**: it matches only
+        /// when a *new* interaction opens after the wait began, and carries
+        /// that interaction in the result's `interaction` field. A script that asks "is
+        /// anyone needed here?" wants `Blocked`; a watcher that wants each new
+        /// card exactly once wants `Interaction`, because `Blocked` would fire
+        /// immediately on a card it has already handled.
         until: Vec<WaitCondition>,      // Idle | Blocked | Working | Exited | Interaction
         timeout: Duration,
         /// Resolve immediately if the condition already holds. Default true —
@@ -1215,9 +1336,39 @@ Declared per [03 §2](03-capability-catalog.md#2-declaring-a-capability). Roles:
 | `upgrade.check` | Query | O | `{ channel }` | `{ current, available, notes, store_migration: Option<(u32,u32)> }` | `NETWORK` |
 | `upgrade.apply` | Command | A | `{ version?, force: bool, wait: bool, binary_only: bool }` | `{ installed, restart: RestartPlan, blocked_by: [SessionSummary] }` | `NETWORK`, `WRITES_FS`, `SPAWNS_PROCESS`, `DESTRUCTIVE` |
 | `remote.bootstrap` | Command | O | `{ host, consent: bool, mode: Upload\|Download\|AssumeInstalled, prefix: PathBuf }` | `{ installed_version, artifact, bytes, duration }` | `NETWORK`, `WRITES_FS`, `SPAWNS_PROCESS` |
-| `remote.probe` | Query | V | `{ host }` | `{ present: bool, version?, os, arch, libc, has_zstd }` | `NETWORK` |
+| `remote.probe` | Query | O | `{ host }` | `{ present: bool, version?, os, arch, libc, has_zstd }` | `NETWORK` |
 | `agent.wait` | Query | V | §8.3 | `AgentWaitResult` | — |
 | `session.capture` | Query | V | `{ session, range: Blocks\|Lines\|All, format: Text\|Ansi\|Jsonl, max_bytes }` | `{ content, truncated, from, to }` | `READS_FS` |
+
+`session.capture`'s `Ansi` format returns `unsupported` for a `native` session
+([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)): there is
+no VT stream to reproduce — omt rendered that session itself from typed events,
+so the faithful renderings are `Text` and `Jsonl`, and inventing escape
+sequences omt never received would be a fabrication, not a capture.
+
+**`system.doctor` is both a leaf capability and a namespace prefix** — it is
+callable itself, and `system.doctor.fix` sits underneath it. It is the only such
+name in the catalog, and the catalog **permits it**: names are resolved as whole
+strings, never by walking a prefix tree, so `system.doctor` and
+`system.doctor.fix` are two unrelated entries that happen to share a stem. The
+alternative, `system_doctor_fix`, buys a rule nobody was enforcing at the cost of
+a name no user would guess. The CLI renders them `omt doctor` and
+`omt doctor fix`.
+
+**`service.uninstall` removes the service unit and nothing else** — omt stays
+installed and start-on-demand keeps working (§1.1). It is not
+`uninstall.plan`/`uninstall.apply`, which remove omt's whole footprint
+([19 §8](19-onboarding.md#8-uninstall-and-rollback)), and not `plugin.uninstall`,
+which removes one plugin ([11](11-plugins.md)). `omt uninstall` calls
+`service.uninstall` as one of its steps.
+
+**`remote.probe` is `Operator`, not `Viewer`**, matching its sibling
+`remote.bootstrap`. It declares `NETWORK` because it opens an outbound SSH
+connection to a host the caller named, and [13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog)
+makes `Viewer` + `NETWORK` a CI failure with no available carve-out — the
+read-only-subprocess exemption covers `SPAWNS_PROCESS` with `READS_FS` only, and
+deliberately not `NETWORK`. A read-only shared link must not be able to make this
+machine connect somewhere.
 
 `system.doctor` being a `Query` at `Viewer` is deliberate: diagnosing your own
 instance from your phone is exactly the situation where diagnosis is hardest to
@@ -1230,7 +1381,7 @@ Events emitted:
 | Event | When |
 |---|---|
 | `instance.shutting_down` | shutdown initiated, with the grace window |
-| `instance.degraded` | a `Degradation` was added or cleared (§4.4) |
+| `instance.degraded` | an `InstanceDegradation` (§4.1) was added to or cleared from `InstanceHealth.degraded` (§4.4) |
 | `session.faulted` | a session entered `Degraded`, with the fault class |
 | `session.fault_cleared` | a degraded session was reset |
 | `health.threshold` | a budget in §9 was crossed, naming the session responsible |

@@ -185,6 +185,10 @@ than one row, in any configuration.**
  omt  1:zsh  2:claude ●  3:build ✗      ~/code/app   main*   ⌃b ? help
  └┬┘  └──────────┬───────────┘          └────┬────┘  └─┬──┘  └───┬───┘
   A              B                            C         D        E
+
+ omt  1:zsh  2:claude ● ⟨native⟩  3:build ✗   ~/code/app  main*  ⌃b ? help
+                        └───┬───┘
+                            M
 ```
 
 Every cell must justify its columns; here is the justification, and a cell that
@@ -193,7 +197,8 @@ cannot pass this test does not ship:
 | Cell | Content | Why it earns the space |
 |---|---|---|
 | **A** | `omt`, or the instance name when not the default, or `omt→box` in a thin client ([09](09-ssh-and-media.md)) | **"Which program am I in, and is it local?"** A user who forgets they are inside omt will type `⌃b` into a bare shell and be confused; a user who forgets they are *remote* will `rm` the wrong file. Six columns to prevent both. |
-| **B** | Session list: index, name, agent-state glyph | The only always-visible answer to "what else is running and does any of it need me". Glyphs are the agent state machine's, coloured from the theme's agent-state slots ([10 §8.1](10-configuration.md#81-theme-format)): `●` working, `◍` blocked/needs you, no glyph = idle, `✗` last command failed. **This cell is the product's differentiator rendered in ten characters.** |
+| **B** | Session list: index, name, agent-state glyph | The only always-visible answer to "what else is running and does any of it need me". Glyphs are the agent state machine's, coloured from the theme's agent-state slots ([10 §8.1](10-configuration.md#81-theme-format)): `●` working, `◍` blocked/needs you, no glyph = idle, `✗` last command failed. **This cell is the fastest possible answer to "which agent needs me" — one glance, no navigation, ten characters.** |
+| **M** | `⟨native⟩` on a session running in `native` mode ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp), [05 §1.3](05-session-model.md#13-session-modes-d8)) | D8 requires `SessionMode` to be visible on **every** surface, and this is the TUI's. It is absent for `pty` sessions — the default is unlabelled, the opt-in is labelled, because the thing the user must never be confused about is *which product they are talking to*. It is state, not a hint, and it does not participate in the overflow drop order below: if B is summarised, the summary still carries the mode. |
 | **C** | cwd of the focused pane, `~`-abbreviated, middle-elided | Comes free from OSC 7 ([04 §5.4](04-terminal-core.md#54-osc)). Answers "which worktree is this pane" — the question [J19](../design/scenarios.md#j19--running-several-agents-across-worktrees) is entirely about. |
 | **D** | VCS branch + dirty marker, from the shell integration's `omt_git` user var | Same question as C, one level finer. **Degrades to absent** when shell integration is not installed — which is itself a legible signal, and is the honest one. |
 | **E** | `⌃b ? help`, showing the *resolved* leader | The escape hatch. It is last (rightmost, least scanned) and never blinks. If a user learns exactly one thing about omt, this is the thing. |
@@ -212,9 +217,16 @@ Rules:
   every width from 20 to 200.
 - **`NO_COLOR` and `--no-chrome`** are honoured: `--no-chrome` removes the bar
   entirely, for screen-reader users and for `asciinema`-style recordings
-  ([G10](../design/scenarios.md#g10--accessibility-of-the-tui)). Everything the
-  bar shows is also available as `instance.status` in the catalog, so removing
-  it removes no information, only its ambient presentation.
+  ([G10](../design/scenarios.md#g10--accessibility-of-the-tui--no-owner)).
+  Everything the bar shows is composed from capabilities that already exist —
+  `instance.info` ([22 §10](22-operations.md#10-capabilities)) for cell A,
+  `session.list` ([05 §10.2](05-session-model.md#102-session)) for cells B, C, D
+  and the `mode` indicator M, and `agent.state`
+  ([06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting)) for B's
+  glyphs — so removing the bar removes no information, only its ambient
+  presentation, and §2.1 is parity-checked without a new capability. **No
+  `instance.status` capability is declared**: a composed view whose only consumer
+  is one row of chrome is a catalog entry that exists to be a screenshot.
 - **No spinners, no clocks, no CPU meters, no ASCII art.** The bar redraws only
   when its content changes, because a bar that redraws on a timer keeps a laptop
   awake and shows up in every `strace` a user runs while debugging something
@@ -441,9 +453,28 @@ as data, not a hard-coded list:
 │ Not found: opencode, gemini, goose, qwen, cursor-agent, amp                  │
 │                                                                              │
 │ Installing omt's hooks gives, per 06 §3: precise turn boundaries, tool-call  │
-│ visibility, and — for Claude Code — deferred permission questions you can    │
-│ answer from your phone. Without them omt still works at the heuristic floor  │
-│ (busy / idle / needs you) and says so on every session card.                 │
+│ visibility, and — for Claude Code — permission questions that can be parked  │
+│ long enough to answer from your phone. Without them omt still works at the   │
+│ heuristic floor (busy / idle / needs you) and says so on every session card. │
+│                                                                              │
+│ ! Deferred (parked) questions depend on Claude Code's `permissionDecision:   │
+│   "defer"` holding a tool call open for a phone round-trip. That is not yet  │
+│   verified (06 §5.3, D9 consequence 1 — it is the highest-priority risk in   │
+│   the product). If it does not hold, omt still shows the question everywhere │
+│   and you answer it at the terminal; and `--native` (below) is the designed  │
+│   fallback, because ACP's permission request is blocking and has no timeout. │
+│                                                                              │
+│ Session modes (D8). `pty` is the default for every agent here and is what    │
+│ the rest of this screen configures. These also speak ACP and can be run as   │
+│ `omt <agent> --native`, where omt renders the whole session and the agent    │
+│ has no TUI:                                                                  │
+│   opencode · gemini · cursor-agent · goose · qwen  — first-class ACP modes   │
+│   claude, codex  — via their official ACP adapters                           │
+│ ! The Claude ACP adapter wraps the **Agent SDK, not the Claude Code CLI**.   │
+│   A `native` Claude session is therefore NOT running Claude Code: no slash   │
+│   commands, no `/voice`, no on-disk Claude sessions, no permission UX you    │
+│   recognise. That is a deliberate, informed choice and never a default; omt  │
+│   labels every native session `⟨native⟩` on every surface (D8, 05 §1.3).     │
 │                                                                              │
 │ ── claude ─────────────────────────────────────────────────────────────────  │
 │ ~/.claude/settings.json — MERGE, existing content preserved, comments kept:  │
@@ -643,45 +674,45 @@ literal for every row.
 | 7 | `choose-tree` / `choose-window` (`w`, `s`) | `tui.open_session_picker` | `⟨leader⟩ w` |
 | 8 | `split-window -h` (`%`) | `pane.split{vertical}` | `⟨leader⟩ \|` |
 | 9 | `split-window -v` (`"`) | `pane.split{horizontal}` | `⟨leader⟩ -` |
-| 10 | `select-pane -L/-D/-U/-R` (`←↓↑→`) | `pane.focus_direction` | `⟨leader⟩ h j k l` / arrows |
-| 11 | `select-pane -t :.+` (`o`) | `pane.focus_next` | `⟨leader⟩ o` |
+| 10 | `select-pane -L/-D/-U/-R` (`←↓↑→`) | `pane.navigate` ([17 §9.1](17-panes-and-layout.md#91-pane)) | `⟨leader⟩ h j k l` / arrows |
+| 11 | `select-pane -t :.+` (`o`) | `pane.focus_cycle` | `⟨leader⟩ o` |
 | 12 | `last-pane` (`;`) | `pane.focus_last` | `⟨leader⟩ ;` |
-| 13 | `display-panes` (`q`) | `pane.show_numbers` | `⟨leader⟩ q` |
+| 13 | `display-panes` (`q`) | `pane.show_numbers` — **proposed, not yet declared**⁴ | `⟨leader⟩ q` |
 | 14 | `resize-pane -L/-D/-U/-R` (`M-←` …) | `pane.resize` (repeatable) | `⟨leader⟩ ⌃h j k l` |
 | 15 | `resize-pane -Z` (`z`) | `pane.zoom` | `⟨leader⟩ z` |
 | 16 | `swap-pane -D/-U` (`}`/`{`) | `pane.swap` | `⟨leader⟩ }` / `{` |
 | 17 | `rotate-window` (`C-o`) | `pane.rotate` | `⟨leader⟩ ⌃o` |
-| 18 | `select-layout` (`M-1`…`M-5`, `Space`) | `pane.layout.apply` | `⟨leader⟩ Space` cycles ([17](17-panes-and-layout.md)) |
-| 19 | `break-pane` (`!`) | `pane.break_out` | `⟨leader⟩ !`¹ |
-| 20 | `join-pane` | `pane.join` | palette |
-| 21 | `next-window` / `previous-window` (`n`/`p`) | `session.focus_next` / `_prev` | `⟨leader⟩ n` / `p` |
-| 22 | `last-window` (`l`) | `session.focus_last` | `⟨leader⟩ l` |
-| 23 | `select-window -t N` (`0`–`9`) | `session.focus_index` | `⟨leader⟩ 0`–`9` |
+| 18 | `select-layout` (`M-1`…`M-5`, `Space`) | `layout.preset`; `layout.apply_saved` for a named one ([17 §9.2](17-panes-and-layout.md#92-layout)) | `⟨leader⟩ Space` cycles presets |
+| 19 | `break-pane` (`!`) | `pane.stack.break_out` ([17 §9.1](17-panes-and-layout.md#91-pane)) | `⟨leader⟩ !`¹ |
+| 20 | `join-pane` | `pane.move_to_workspace` (17 §9.1) | palette |
+| 21 | `next-window` / `previous-window` (`n`/`p`) | `pane.focus_cycle { reverse }`⁵ | `⟨leader⟩ n` / `p` |
+| 22 | `last-window` (`l`) | `pane.focus_last`⁵ | `⟨leader⟩ l` |
+| 23 | `select-window -t N` (`0`–`9`) | `pane.focus_index`⁵ | `⟨leader⟩ 0`–`9` |
 | 24 | `rename-window` (`,`) | `session.rename` | `⟨leader⟩ .`² |
 | 25 | `rename-session` (`$`) | `workspace.rename` | `⟨leader⟩ $` |
 | 26 | `copy-mode` (`[`) | `tui.enter_copy_mode` | `⟨leader⟩ [` |
-| 27 | `paste-buffer` (`]`) | `media.paste_buffer` | `⟨leader⟩ ]` |
-| 28 | `list-buffers` / `choose-buffer` (`=`) | `media.buffers.list` | `⟨leader⟩ =` |
-| 29 | `save-buffer` / `load-buffer` | `media.buffers.save` / `.load` | palette |
+| 27 | `paste-buffer` (`]`) | `media.paste_buffer` — **proposed, not yet declared**⁴ | `⟨leader⟩ ]` |
+| 28 | `list-buffers` / `choose-buffer` (`=`) | `media.buffers.list` — **proposed, not yet declared**⁴ | `⟨leader⟩ =` |
+| 29 | `save-buffer` / `load-buffer` | `media.buffers.save` / `.load` — **proposed, not yet declared**⁴ | palette |
 | 30 | `command-prompt` (`:`) | `tui.open_command_palette` | `⟨leader⟩ p`³ |
 | 31 | `list-keys` (`?`) | `tui.open_keymap_help` | `⟨leader⟩ ?` |
 | 32 | `send-prefix` (`C-b`) | `SendKey(leader)` | `⟨leader⟩ ⟨leader⟩` |
 | 33 | `clock-mode` (`t`) | — | **not implemented** (§5.5) |
 | 34 | `capture-pane -p` | `session.capture` | CLI / palette |
 | 35 | `send-keys` | `session.send_text` / `session.send_keys` | CLI / palette |
-| 36 | `pipe-pane` | `session.pipe` | CLI |
-| 37 | `synchronize-panes` | `pane.sync_input` | `⟨leader⟩ S` |
+| 36 | `pipe-pane` | `session.pipe` — **proposed, not yet declared**⁴ | CLI |
+| 37 | `synchronize-panes` | `layout.synchronize` ([17 §9.2](17-panes-and-layout.md#92-layout)) | `⟨leader⟩ S` |
 | 38 | `set-option` / `show-options` | `config.set` / `config.get` | `⟨leader⟩ ,` |
 | 39 | `source-file` | `config.reload` | auto (live reload, [10 §6](10-configuration.md#6-live-reload)) |
 | 40 | `list-sessions` (`ls`) | `session.list` | `omt session list` |
 | 41 | `respawn-pane` | `session.restart` | palette |
-| 42 | `swap-window` / `move-window` | `session.move` | palette |
+| 42 | `swap-window` / `move-window` | `pane.swap` / `pane.move_to_workspace` (17 §9.1) | palette |
 | 43 | `find-window` (`f`) | palette search | `⟨leader⟩ p` |
-| 44 | `refresh-client` (`r`) | `tui.redraw` | `⟨leader⟩ r` |
+| 44 | `refresh-client` (`r`) | `tui.redraw` — **proposed, not yet declared**⁴ | `⟨leader⟩ r` |
 
 ¹ `⟨leader⟩ !` is `agent.interrupt` in the default keymap
 ([16 §8.2](16-input-and-keymap.md#82-the-leader-namespace)); in the `tmux`
-keymap it is `pane.break_out` and `agent.interrupt` moves to `⟨leader⟩ ⌃c`. This
+keymap it is `pane.stack.break_out` and `agent.interrupt` moves to `⟨leader⟩ ⌃c`. This
 is the one genuine collision between the two maps and it is resolved in favour
 of tmux inside the tmux keymap, by construction.
 ² tmux's `,` is omt's settings chord in the default keymap; the `tmux` keymap
@@ -689,6 +720,17 @@ restores `,` to rename and moves settings to `⟨leader⟩ ⌃,`.
 ³ omt has no `:` command line. The palette is strictly more capable (it fuzzy-
 searches, shows chords, and builds argument forms from schemas), and the `tmux`
 keymap binds `:` to it so the muscle memory lands somewhere correct.
+⁴ **Proposed, not yet declared.** These four names appear nowhere in the
+capability catalog: [17 §9](17-panes-and-layout.md#9-capabilities) owns `pane.*`
+and `layout.*`, [05 §10](05-session-model.md#10-capability-surface) owns
+`session.*`, and neither declares them. They are recorded here as the tmux
+commands omt has no equivalent for yet, so that the generated reference does not
+inherit invented capabilities from a migration table. Each needs a real
+declaration in its owning document before it can be bound.
+⁵ tmux's *window* is omt's *session occupying a pane*, so window navigation is
+pane focus in omt and uses [17 §9.1](17-panes-and-layout.md#91-pane)'s
+`pane.focus_*` family. There is no separate `session.focus_*` family; the
+session-level list operation is `session.list`.
 
 **Zellij**, abbreviated, because the population is smaller and its model differs
 more: `Ctrl+p` pane mode → `⟨leader⟩` prefix; `Ctrl+t` tab mode → sessions;
@@ -732,29 +774,30 @@ Rows tmux has and omt does not are listed in `unmapped` and reported by
 ['<leader> "']      = { capability = "pane.split",     args = { direction = "horizontal" } }
 ["<leader> o"]      = "pane.focus_next"
 ["<leader> ;"]      = "pane.focus_last"
-["<leader> q"]      = "pane.show_numbers"
+["<leader> q"]      = "pane.show_numbers"      # proposed, §5.1 note 4
 ["<leader> z"]      = "pane.zoom"
 ["<leader> {"]      = { capability = "pane.swap",      args = { direction = "prev" } }
 ["<leader> }"]      = { capability = "pane.swap",      args = { direction = "next" } }
-["<leader> !"]      = "pane.break_out"
+["<leader> !"]      = "pane.stack.break_out"
 ["<leader> ctrl-c"] = "agent.interrupt"      # displaced by the row above
-["<leader> space"]  = "pane.layout.cycle"
+["<leader> space"]  = "layout.preset"          # cycles presets
 ["<leader> ,"]      = "session.rename"
 ["<leader> ctrl-,"] = "tui.open_settings"    # displaced by the row above
 ["<leader> $"]      = "workspace.rename"
 ["<leader> ["]      = "tui.enter_copy_mode"
-["<leader> ]"]      = "media.paste_buffer"
-["<leader> ="]      = "media.buffers.list"
+["<leader> ]"]      = "media.paste_buffer"     # proposed, §5.1 note 4
+["<leader> ="]      = "media.buffers.list"     # proposed, §5.1 note 4
 ["<leader> :"]      = "tui.open_command_palette"
 ["<leader> ?"]      = "tui.open_keymap_help"
-["<leader> n"]      = "session.focus_next"
-["<leader> p"]      = "session.focus_prev"   # NOTE: not the palette, in this keymap
-["<leader> l"]      = "session.focus_last"
+["<leader> n"]      = { capability = "pane.focus_cycle", args = { reverse = false } }
+["<leader> p"]      = { capability = "pane.focus_cycle", args = { reverse = true } }   # NOTE: not the palette, in this keymap
+["<leader> l"]      = "pane.focus_last"
 ["<leader> f"]      = "tui.open_command_palette"
-["<leader> r"]      = "tui.redraw"
+["<leader> r"]      = "tui.redraw"             # proposed, §5.1 note 4
 ["<leader> t"]      = "none"                 # clock-mode: unmapped, see `unmapped`
-["<leader> up"]     = { capability = "pane.focus_direction", args = { dir = "up" } }
-# … down/left/right, `<leader> 0`–`9`, `<leader> ctrl-<arrow>` resize (repeatable = true)
+["<leader> up"]     = { capability = "pane.navigate", args = { dir = "up" } }
+# … down/left/right, `<leader> 0`–`9` → pane.focus_index, `<leader> ctrl-<arrow>`
+# resize (repeatable = true)
 
 [[unmapped]]
 tmux = "clock-mode"
@@ -839,7 +882,7 @@ WOULD WRITE (nothing written yet — re-run without --dry-run):
 
 ── mapped, review ───────────────────────────────────────────────────────────
   ~ tmux.conf:22   bind -n C-h select-pane -L
-      → [[binding]] trigger = "ctrl-h", capability = "pane.focus_direction"
+      → [[binding]] trigger = "ctrl-h", capability = "pane.navigate"
                     args = { dir = "left" }
       ! UNPREFIXED. warning[OMT-C406]: `ctrl-h` is a critical key for `nvim`
         (backspace/left in insert mode) and for readline. It will not reach any
@@ -977,19 +1020,31 @@ with doubled `ESC` ([09 §3.1](09-ssh-and-media.md)). Consequences, per directio
 ### 5.6 Why switch, and when not to
 
 Overselling here produces angry users, and angry ex-tmux users are loud. This
-section is shipped verbatim as `omt help migrate` and in the README.
+section is shipped verbatim as `omt help migrate` and in the README, and is
+therefore held to [D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)'s
+table of what omt may and may not claim.
 
 **Switch if:**
 
-- You run agent CLIs and want to see, from anywhere, which of them are blocked
-  on a question — and answer from your phone. This is the entire reason omt
-  exists; nothing in tmux comes close.
+- **You want your scrollback to be a structure rather than a wall.** omt
+  segments output into command blocks (OSC 133, [04 §6](04-terminal-core.md)),
+  which is what makes a day of terminal work a *collapsible list on a phone*
+  with the full terminal one tap away — and makes it survive a daemon restart,
+  with search over it. This is the specific thing no other product does: real VT
+  emulation, panes and layouts, and a mobile client, in one tool
+  ([D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)).
 - You want a real terminal underneath: 24-bit colour, images, hyperlinks, the
-  kitty keyboard protocol, correct reflow. tmux is a multiplexer on top of your
+  kitty keyboard protocol, correct reflow. omt runs **your real CLI, in a real
+  PTY, with its own TUI, keybindings and slash commands, observed from outside
+  rather than instrumented from within**. tmux is a multiplexer on top of your
   terminal and is a lossy layer for all of those.
-- You want scrollback, command blocks, exit codes and search to survive a
-  restart, with a phone-legible rendering of them.
 - You already reach for a phone or a second machine mid-task.
+- You run agent CLIs and want to see which of them are blocked on a question,
+  and answer from your phone — **while your real interactive TUI is still on
+  screen at your desk**. Remote question cards themselves are not unique to omt;
+  several products ship them. Answering one *without* replacing the agent's own
+  terminal UI is the part that is omt's ([D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim),
+  [06 §5.3](06-agent-layer.md#53-the-deferral-mechanism-and-its-risk)).
 
 **Do not switch if:**
 
@@ -1012,7 +1067,9 @@ section is shipped verbatim as `omt help migrate` and in the README.
   Not in v1 ([17](17-panes-and-layout.md)).
 - **Your tmux is on a server you `ssh` into and omt is not installed there.**
   You can run omt locally and `ssh` from a pane, but the remote features need a
-  remote omt ([R38](../design/scenarios.md#remote-and-multi-machine) is unowned).
+  remote omt — which `omt ssh` will offer to install for you over the existing
+  ssh connection ([22 §7](22-operations.md#7-bootstrap-onto-a-host-with-no-omt-r38),
+  [R38](../design/scenarios.md#remote-and-multi-machine)).
 - **You have a decade-old config full of `run-shell` and TPM plugins and no
   appetite to rebuild it.** §5.3 will tell you honestly how much survives. Run
   `omt migrate tmux --dry-run` before deciding; it writes nothing.
@@ -1047,7 +1104,18 @@ after the user has demonstrably hit the problem the feature solves.**
 ## 7. `TERM` and terminfo — R6
 
 Requirement [R6](../design/scenarios.md#terminal-and-multiplexer-fundamentals)
-was unowned. It is owned here. This is a classic source of subtle breakage:
+was unowned. It is owned here.
+
+> **The whole of §7 applies to `pty` sessions only.** `TERM`, terminfo and the
+> outer-terminal probe describe the environment omt hands to a process it
+> spawned in a pseudo-terminal. A `native` session
+> ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp),
+> [05 §1.3](05-session-model.md#13-session-modes-d8)) has no PTY and no child
+> process reading terminfo: omt renders it from typed JSON-RPC events, so there
+> is nothing to advertise and nothing to fall back to. `omt doctor term` reports
+> `n/a (native)` for such sessions rather than a passing check.
+
+This is a classic source of subtle breakage:
 advertise too much and `less` emits sequences omt does not implement; advertise
 too little and `nvim` runs in 8 colours.
 
@@ -1178,6 +1246,16 @@ with a test, not a paragraph in a README.
 omt uninstall [--keep-config] [--keep-data] [--dry-run] [--yes]
 ```
 
+**Three different things are called "uninstall" in this corpus, and they are
+distinguished by capability group, not by prose.** `uninstall.plan` /
+`uninstall.apply` (this section) remove **omt's own footprint** from the machine.
+`service.uninstall` ([22 §10](22-operations.md#10-capabilities),
+[22 §1.2](22-operations.md#12-omt-service-install)) removes only the launchd or
+systemd **user service unit**, leaving omt installed and start-on-demand intact.
+`plugin.uninstall` ([11](11-plugins.md)) removes **one plugin**. `omt uninstall`
+runs the first and, if a service unit is installed, calls the second as one of
+its steps; neither touches plugins beyond deleting `~/.config/omt/` wholesale.
+
 Behaviour, derived from `~/.local/state/omt/setup-manifest.json` (§3.6), which
 records every outward-facing write with its path, a hash of what omt wrote, and
 the backup's location:
@@ -1244,7 +1322,6 @@ All are palette-visible with a `title` (§2.4) unless marked hidden.
 | `setup.plan` | Query | Operator | `READS_FS` | The full six-step plan with diffs, unapplied. The web client renders this |
 | `setup.apply` | Command | Admin | `WRITES_FS` | One step at a time; `{ step, accept: true }`; refuses without a matching plan hash |
 | `setup.detect_agents` | Query | Viewer | `READS_FS` | §3.3 |
-| `instance.status` | Query | Viewer | — | The status bar's content, so §2.1 is parity-checked, not TUI-only |
 | `onboarding.hint_state` | Query | Viewer | — | Which hints remain; §1.2's one-hint rule is observable |
 | `onboarding.dismiss_hints` | Command | Operator | `WRITES_FS` | Permanent |
 | `help.topics` | Query | Viewer | — | §4.2's generated tree |
@@ -1255,9 +1332,9 @@ All are palette-visible with a `title` (§2.4) unless marked hidden.
 | `keys.keymaps` | Query | Viewer | — | Existing ([16 §11](16-input-and-keymap.md#11-capabilities-introduced-here)); gains `unmapped` for §5.2 |
 | `term.profile` | Query | Viewer | — | Advertised `TERM`, entry resolution result, outer-terminal probe, disagreements (§7.4) |
 | `term.install_terminfo` | Command | Admin | `WRITES_FS` | Local or, with an explicit host, remote via ssh — confirmation required |
-| `doctor.term` | Query | Operator | — | §7.4's rendering; joins `doctor.keys`/`doctor.media` under the `omt doctor` umbrella ([G5](../design/scenarios.md#g5--observability-of-omt-itself--no-owner)) |
+| `system.doctor` `{ groups: [Term] }` | Query | Viewer | `READS_FS` | §7.4's rendering. **Not a new capability**: doctor is one parameterized capability owned by [22 §10](22-operations.md#10-capabilities), and this document contributes the `Term` group to it rather than a `doctor.term` of its own. The CLI spelling is `omt doctor term` ([G5](../design/scenarios.md#g5--observability-of-omt-itself--no-owner)) |
 | `uninstall.plan` | Query | Admin | `READS_FS` | §8's dry run |
-| `uninstall.apply` | Command | Admin | `WRITES_FS`, `DESTRUCTIVE` | Confirm gesture required on every surface |
+| `uninstall.apply` | Command | Admin | `WRITES_FS`, `DESTRUCTIVE` | Confirm gesture required on every surface. **Not** `service.uninstall` or `plugin.uninstall` — see §8 |
 | `nesting.state` | Query | Viewer | — | Per-pane multiplexer detection, feeding the badge (§5.4) |
 
 Catalog additions required by §2.4, as declaration *fields* rather than
@@ -1305,8 +1382,12 @@ table and are recorded as such in §10 Q1.
 7. **Should `omt setup` run automatically on first launch when stdin is a TTY
    and no config exists?** Currently no: the first screen is a shell. But a
    large fraction of users will never type `omt setup`, and will therefore run
-   omt permanently at the heuristic floor with no idea that the product's
-   flagship feature needed a hook. A middle option — the status bar carrying a
+   omt permanently at the heuristic floor with no idea that the flagship
+   *question-card* path — a card raised on the phone while the agent's own TUI
+   keeps running at the desk — needed a hook. (What may be claimed about that
+   path, and in what words, is
+   [D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)'s table,
+   not this document's.) A middle option — the status bar carrying a
    persistent `setup` cell (state, not a hint) until setup has been run or
    declined — is probably right and is not specified above. **Most consequential
    open question in this document.**

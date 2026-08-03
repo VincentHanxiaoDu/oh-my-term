@@ -314,6 +314,13 @@ Config keys under `workspace.explorer.*`, defaults shown:
 | `watch.max_watched_dirs` | 8 000 | coarse mode (§4.6) |
 | `vcs.command_timeout` | 10 s | `deadline_exceeded`; child killed |
 
+**Read-size precedence, so the three limits are not confused for each other:**
+`read.max_bytes` (2 MiB) bounds an *inline* read through
+`workspace.files.read`; [18](18-semantic-open.md)'s `open.remote.max_bytes`
+(4 MiB) bounds a *mirrored source file* fetched for a local editor; and
+[09 §2](09-ssh-and-media.md#2-the-blob-store)'s `max_blob_bytes` (32 MiB) is the
+absolute ceiling nothing may exceed.
+
 Two of these come from measuring opencode and rejecting its choice. Its diff
 default is `--unified=2147483647` — the entire file as context on every hunk.
 Fine for feeding a model, terrible for a phone on LTE. And its total patch
@@ -563,7 +570,7 @@ handlers live in `omt-daemon` over the providers.
 ([03 §2](03-capability-catalog.md#2-declaring-a-capability)) — the earlier
 `TOUCHES_FS` bit was split into `READS_FS` and `WRITES_FS` for this document's
 sake, and every prior declaration has been migrated
-(`session.target_resolve` → `READS_FS`, `workspace.worktree.add` →
+(`open.resolve` → `READS_FS`, `workspace.worktree.add` →
 `WRITES_FS`, `media.file.push`/`media.clipboard.write` → `WRITES_FS`,
 `media.file.pull` → `READS_FS`, `config.set` → `WRITES_FS`). `READS_FS` is
 permitted for `Viewer`; `WRITES_FS` joins the
@@ -631,7 +638,7 @@ capability! {
 }
 ```
 
-The remaining seven follow the same pattern:
+The remaining nine follow the same pattern:
 
 | Capability | Kind/Role | Input → Output | Effects |
 |---|---|---|---|
@@ -644,6 +651,16 @@ The remaining seven follow the same pattern:
 | `workspace.vcs.status` | Q / V | `{workspace, scope, include_line_stats}` → `VcsStatus` | `READS_FS`, `SPAWNS_PROCESS` |
 | `workspace.vcs.diff_many` | Q / V | `{workspace, paths[], base, context_lines, intra_line}` → `{diffs[], budget_exhausted}` | `READS_FS`, `SPAWNS_PROCESS` |
 | `workspace.vcs.worktrees` | Q / V | `{workspace}` → `{worktrees[]}` | `READS_FS`, `SPAWNS_PROCESS` |
+
+**`workspace.vcs.*` is `Viewer` *and* declares `SPAWNS_PROCESS`, and that is
+legal.** It is the case that motivates the read-only-subprocess carve-out in
+[13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog): these five
+capabilities spawn a fixed argv (`git`, no shell, request data only ever filling
+whole named arguments), declare `READS_FS` and no write bit, and the subprocess
+mutates nothing. Each one is listed in the read-only subprocess allow-list that
+CI checks, so the exemption is a reviewed entry rather than a handler's own
+assertion. `workspace.files.reveal` is *not* covered — it launches the user's
+editor or file manager, which is why it is `Operator`.
 
 `diff_many` powers "review everything the agent changed" in one round trip.
 There is no `stage`, `unstage`, `discard`, `apply` or `commit` (§1.1).
@@ -823,15 +840,20 @@ Where a naive port fails, so it is specified concretely.
 ### 8.1 `file:line` from terminal output
 
 [04 §8.4](04-terminal-core.md#84-semantic-click-targets) already produces
-`Target::Path { raw, line, col }` and `session.target_resolve` already returns a
-`ResolvedTarget` with the path resolved against the owning block's `cwd`. One
-field is added:
+`Target::Path { raw, line, col }`, and
+[18 §9](18-semantic-open.md#9-capabilities)'s `open.resolve` — which supersedes
+the `session.target_at` / `session.target_resolve` sketched in 04 — returns a
+`ResolvedTarget` with the path resolved against the owning block's `cwd`. This
+document contributes one type to it:
 
 ```rust
 pub struct ExplorerRef { pub workspace: WorkspaceId, pub rel: RelPath,
                          pub line: Option<u32>, pub col: Option<u32> }
-// ResolvedTarget gains: pub explorer: Option<ExplorerRef>
 ```
+
+`ResolvedTarget` carries `explorer: Option<ExplorerRef>`. The struct itself is
+defined once, in [18 §3](18-semantic-open.md#3-resolution), which owns it; this
+document owns only `ExplorerRef` and the explorer behaviour behind it.
 
 Clicking, tapping, or `gf`-ing `src/main.rs:42:8` in a stack trace opens the
 explorer at that node, scrolled to line 42, showing the diff if the file is
@@ -854,8 +876,9 @@ so it goes on the adapter rather than being guessed, per
 [P4](01-principles.md#p4--native-semantics-observe-never-re-implement):
 
 ```rust
-// added to AgentAdapter, doc 06 §7 — defaulted to None
-fn path_mention(&self, rel: &RelPath) -> Option<String>;
+// Added to `AgentAdapter`, owned by [06 §7](06-agent-layer.md#7-adapters).
+// Defaulted to `None`, so third-party adapters keep compiling.
+fn path_mention(&self, rel: &RelPath) -> Option<String> { None }
 ```
 
 Claude Code and opencode return `@crates/omt-term/src/lib.rs`; an agent with no
@@ -894,6 +917,14 @@ answerable in one tap from a lock-screen notification.
 
 `files.reveal` runs the configured editor on the *daemon's* machine
 (`editor = "${EDITOR}"`, `editor_args = ["--goto", "{path}:{line}:{col}"]`).
+
+**`workspace.files.reveal` and [18](18-semantic-open.md)'s `editor` handler share
+one implementation:** 18 owns the handler and the editor argv/template
+resolution (its detected per-editor table replaces the VS Code-specific
+`editor_args` default above), and this document owns `workspace.files.reveal` as
+the capability surface — so the explorer's "open in editor" and
+`open.activate { handler: "editor" }` cannot diverge in behaviour.
+
 The template substitutes **positional argv values, never a shell string** — no
 `sh -c`, so a path containing `;` or `$()` is inert. The program is resolved
 from `PATH` once and the resolved path is shown in the confirmation. Because it
@@ -1096,7 +1127,8 @@ which is exactly how patch-splitting parsers get confused.
 a `VcsProvider` for a toy VCS written outside the crate using only its public
 API. If it needs a `pub(crate)` item opened up, the abstraction leaked.
 
-**Parity**: the standard catalog test covers all eleven capabilities. Playwright
+**Parity**: the standard catalog test covers all thirteen capabilities declared
+in §6 (four written out, nine tabulated). Playwright
 adds a 390×844 audit asserting every explorer row and diff control meets 44 px,
 and an E2E that opens the sheet, filters, opens a diff, inserts an `@` mention
 and asserts the composer text — mirrored by a TUI test driving the same sequence

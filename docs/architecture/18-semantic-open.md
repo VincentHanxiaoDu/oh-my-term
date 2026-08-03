@@ -36,8 +36,10 @@ Related documents:
 - [15 — Workspace explorer](15-workspace-explorer.md) — `confine()`, sensitivity,
   `workspace.files.reveal`
 - [16 — Input and keymap](16-input-and-keymap.md) — chord semantics, modifier
-  forwarding, `omt doctor keys`. **Not read while writing this document (being
-  authored concurrently); see [§11](#11-open-questions) for the mismatches to check.**
+  forwarding, `omt doctor keys`. 16 owns input semantics and the trigger grammar;
+  this document owns semantic open and the mouse *activation policy* that
+  [16 §6.2](16-input-and-keymap.md#62-the-hard-case--omt-vim-mode-vs-a-real-vim-in-a-pane)
+  now records as the one sanctioned exception to its mouse-suppression rule.
 - Research: [iTerm2 §8.4](../research/iterm2.md#84-smart-selection--semantic-history)
   (semantic history, smart selection, `iTermPathFinder`, `iTermCachingFileManager`)
 
@@ -88,7 +90,7 @@ holds with no new exception. `omt-daemon` wires `omt-term`'s matcher output into
 
 Moving `Match`/`Target` down into `omt-types` is a small change to
 [02](02-crate-map.md) and [04 §8.3](04-terminal-core.md#83-hyperlinks-and-detection);
-noted in [§11](#11-open-questions) as an index/cross-reference edit for whoever
+noted in [§12](#12-open-questions) as an index/cross-reference edit for whoever
 owns those files.
 
 ### 1.3 What this is not
@@ -100,7 +102,7 @@ owns those files.
 - **Not an editor.** Same boundary as [15 §1.1](15-workspace-explorer.md) — omt
   hands off to the real editor.
 - **Not automatic.** No target is ever activated without an explicit user
-  action. See [§7](#7-security).
+  action. See [§8](#8-security).
 
 ---
 
@@ -360,12 +362,20 @@ pub struct ResolutionContext<'a> {
     pub home: &'a Path,
 }
 
+/// **The canonical definition.** Other documents contribute fields; none
+/// redeclare the struct.
 pub struct ResolvedTarget {
     pub target: Target,
     pub resolution: Resolution,
     pub existence: Existence,
     pub sensitivity: Sensitivity,         // from 15 §9.4, so handlers can gate
     pub actions: Vec<ActionOffer>,        // ordered, best first (§4.3)
+    /// Which machine owns the file. Filled by the *resolving* instance; §6.1.
+    pub host: TargetHost,
+    /// Set when the path is inside an open workspace root, so the explorer can
+    /// jump straight to the node. `ExplorerRef` is defined in
+    /// [15 §8.1](15-workspace-explorer.md#81-fileline-from-terminal-output).
+    pub explorer: Option<ExplorerRef>,
 }
 
 pub enum Resolution {
@@ -453,7 +463,10 @@ Applied in order, before any syscall:
 
 - **`stat` with a cache.** A `StatCache` keyed by absolute path, TTL 2 s,
   capacity 4096, negative entries cached at TTL 500 ms. Naive existence checking
-  on every hover is the classic performance killer here and iTerm2 needed
+  **once per match, on every re-match of a line**, is the classic performance
+  killer here — a screen of a stack trace is dozens of `stat`s per frame, and
+  scrolling re-runs them. (omt never checks on *hover*: §5.1 renders decoration
+  from the matcher, not the pointer.) iTerm2 needed
   `iTermCachingFileManager` for exactly this reason
   ([iTerm2 §8.4](../research/iterm2.md#84-smart-selection--semantic-history)).
   The cache is invalidated wholesale on a workspace FS event from
@@ -658,7 +671,7 @@ Substitution is **per-argv-element and typed**: `{line}`/`{col}` are integers
 formatted by omt (never user text), `{path}` is the resolved `PathBuf` passed as
 one element. An element that would become empty because `{col}` is `None` is
 dropped whole, not left as a stray flag. There is no `sh -c` anywhere in this
-path, so a file named `; rm -rf ~` is inert. See [§7.3](#73-editor-and-command-templates).
+path, so a file named `; rm -rf ~` is inert. See [§8.3](#83-editor-and-command-templates).
 
 Terminal editors (`vim`, `hx`, `emacs -nw`, `nano`, `kak`, `micro`) are not
 spawned into the void: when the client is a TUI, omt opens them in a **new omt
@@ -683,11 +696,14 @@ section already solved "how does *this* agent want to be handed a path", for
 images. The trait gains a sibling method:
 
 ```rust
-pub trait AgentAdapter {
-    fn image_reference(&self, path: &Path, meta: &BlobMeta) -> ImageReference;   // 09 §7.1
+// Added to `AgentAdapter`, owned by [06 §7](06-agent-layer.md#7-adapters).
+// One method; `attachment_reference` (09 §4.3.7) already covers the disk-blob case.
+
     /// How this agent wants to be handed a *source file* the user is pointing at.
-    fn file_reference(&self, path: &Path, line: Option<u32>, col: Option<u32>) -> ImageReference;
-}
+    /// Returns `AttachmentReference` — the single reference type, of which
+    /// `ImageReference` is a deprecated alias ([09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)).
+    fn file_reference(&self, path: &Path, line: Option<u32>, col: Option<u32>)
+        -> AttachmentReference;
 ```
 
 | Agent | `file_reference` |
@@ -811,10 +827,13 @@ right one here for reasons specific to omt:
    different handler, which no click gesture can do without more modifiers.
 
 ```
-ctrl-b f          enter hint mode, default action per §4.3
-ctrl-b F          enter hint mode, always show the action menu on select
-ctrl-b g          enter hint mode restricted to `kind = url`
+<leader> f        enter hint mode, default action per §4.3
+<leader> F        enter hint mode, always show the action menu on select
+<leader> g        enter hint mode restricted to `kind = url`
 ```
+
+(`<leader>` is `ctrl-b` by default; the token and the spelling are
+[16 §3](16-input-and-keymap.md#3-the-leader-key)'s.)
 
 Behavior:
 
@@ -947,7 +966,7 @@ Rules:
    *innermost match span* under the cursor, falling back to `word_chars`. One
    definition of "the thing under the cursor", used by both selection and
    activation, so double-click-then-copy and hint-then-copy give byte-identical
-   results. This is a small change to 04 §8.2's phrasing; see [§11](#11-open-questions).
+   results. This is a small change to 04 §8.2's phrasing; see [§12](#12-open-questions).
 
 ### 5.5 Blocks — the third, mouse-free path
 
@@ -971,13 +990,17 @@ Chord grammar, modifier normalization, the `when` predicate vocabulary, platform
 overrides, conflict diagnostics (`OMT-C4xx`) and the `omt doctor keys` flow are
 [16](16-input-and-keymap.md)'s, not this document's. This document contributes:
 
-- three new `when` contexts: `hint_mode`, `open_menu_focused`, `mouse_reporting`;
-- default bindings `ctrl-b f` / `ctrl-b F` / `ctrl-b g` (§5.2);
-- one mouse-binding requirement that may not exist in 16's grammar yet: triggers
-  must be able to name **mouse events with modifiers and a `when` on
-  `mouse_reporting`**, e.g. `"shift-mouse1"` with `when = "mouse_reporting"`. If
-  16's trigger grammar is keys-only, it needs extending, and that is a
-  cross-document change flagged in [§11](#11-open-questions).
+- two new `when` contexts, `hint_mode` and `open_menu_focused`, now carried in
+  [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet` alongside
+  the `mouse_reporting` it already had;
+- default bindings `<leader> f` / `<leader> F` / `<leader> g` (§5.2), now
+  registered in [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace).
+  `<leader> g` coexists with the explorer's `g` prefix: they differ by `when`,
+  which 16 §2.3 rule 3 resolves;
+- one mouse-binding requirement, **now supported**: [16 §2.3](16-input-and-keymap.md#23-resolution)'s
+  `Chord` admits a mouse event with modifiers (`"shift-mouse1"`) carrying a
+  `when` predicate, and [16 §2.2](16-input-and-keymap.md#22-types) gives
+  `MouseEvent` a shape (`kind`/`button`/`mods`/`pos`, decoded from SGR 1006).
 
 ---
 
@@ -1047,6 +1070,13 @@ Three points about the transfer:
 
 ### 6.3 Where the file lands, and why the layout matters
 
+**This is not a second file store.** The mirror tree is a named region *of the
+blob store* — [09 §2](09-ssh-and-media.md#2-the-blob-store)'s `BlobClass::Mirror`
+— and 09 owns it. Everything below describes the layout and the policy values
+this document supplies; the enforcement, the sweeper, the refcount and the only
+write path (`resolve_in_root`) all stay inside `omt-media`, per 09's rule that
+rules live in the store and not in its callers.
+
 ```
 $XDG_STATE_HOME/omt/remote/<host>/<h8>/<tail…>/<basename>
                             │       │    └── up to 3 trailing components of the remote dir
@@ -1070,8 +1100,11 @@ Every element earns its place:
   title bar sees `omt/remote/box/…` and knows.
 - The tree lives under `XDG_STATE_HOME`, not `XDG_RUNTIME_DIR`, because editors
   keep files open across reboots and a vanished path mid-session is worse than a
-  stale one. It is swept on the same TTL schedule as the blob store, with
-  `refs > 0` while an editor is believed to have it open.
+  stale one. That root is the `Mirror` class's root, chosen by `omt-media`
+  ([09 §2](09-ssh-and-media.md#2-the-blob-store)) rather than by this crate. It
+  is swept by the store's own sweeper, and it is pinned while an editor is
+  believed to have it open — which `omt-open` expresses by calling the store's
+  `pin`/`unpin`, never by touching a refcount itself.
 
 The **sidecar** is the machine-readable provenance record: remote instance id,
 host, absolute remote path, BLAKE3 of the fetched content, fetch time, the
@@ -1085,12 +1118,12 @@ explained:
 
 | Case | Behavior |
 |---|---|
-| Size > `open.remote.max_bytes` (default **4 MiB**, well under [09](09-ssh-and-media.md)'s 32 MiB blob cap because this is a *source file*, and a 30 MB one is a generated blob nobody wants in an editor) | Refuse. Offer: `read_inline` with a line window (§6.6), `explorer` (streams a range), or "fetch anyway" as an explicit second action |
+| Size > `open.remote.max_bytes` (default **4 MiB**). This is not a limit of this document's own: it *configures* the `Mirror` class's `max_blob_bytes` in [09 §2](09-ssh-and-media.md#2-the-blob-store), and the store enforces it. It sits well under 09's 32 MiB absolute ceiling because this is a *source file*, and a 30 MB one is a generated blob nobody wants in an editor | Refuse. Offer: `read_inline` with a line window (§6.6), `explorer` (streams a range), or "fetch anyway" as an explicit second action |
 | Binary (sniffed per [15 §9.2](15-workspace-explorer.md#92-size-limits-and-binary-detection): NUL in first 8 KiB, or >5 % replacement chars) | Do not open in a text editor. Offer `read_inline` (which renders an image inline if it is one, per [09 §7.3](09-ssh-and-media.md#73-display-in-the-web-client)), `download to ~/Downloads`, `copy path` |
 | Directory | Never fetched. Offer `explorer` (which is remote-native and needs no transfer), `insert path into agent prompt`, `copy` |
 | Not readable by the remote user (`EACCES`) | `Unresolved { RemoteUnreadable }` with the actual errno string and the file's mode/owner from `stat`, so the user knows whether to `sudo` or give up |
 | fifo / socket / device | Refused outright, same rule as [09 §8](09-ssh-and-media.md#8-security) |
-| Sensitive per [15 §9.4](15-workspace-explorer.md#94-sensitive-files) | Fetch requires `Operator` and an explicit confirm naming the file; the fetched copy is `0600` and its TTL is 1 hour, not 24 |
+| Sensitive per [15 §9.4](15-workspace-explorer.md#94-sensitive-files) | Fetch requires `Operator` and an explicit confirm naming the file; the fetched copy is `0600` and the mirror is created with `ttl_override = 1h` ([09 §2](09-ssh-and-media.md#2-the-blob-store)) instead of the class default |
 | Symlink | Resolved **on the remote** through `confine()`; a link escaping every workspace root is fetchable only under the same "outside workspace ⇒ editor-only" rule as §3.3 |
 
 ### 6.5 The snapshot problem — and the recommendation
@@ -1138,7 +1171,7 @@ mature, handles saves, watches, and LSP) does the work.
 | JetBrains Gateway | `gateway ssh://<host>/<path>` (project-level; line positioning unavailable) | `gateway` on `PATH` |
 | Neovim | `nvim` with `scp://<host>//<path>` (netrw) or an existing `--listen` server + `--remote` | netrw enabled; slow for large files, so offered but not preferred |
 | Emacs | `emacsclient -n "/ssh:<host>:<path>"` (TRAMP) | `emacsclient` reaches a running server |
-| Zed | remote projects exist but the CLI surface for opening one path is **unverified** — see [§11](#11-open-questions) | — |
+| Zed | remote projects exist but the CLI surface for opening one path is **unverified** — see [§12](#12-open-questions) | — |
 | everything else | not available | — |
 
 Detection is done **once per (editor, version)** and cached, not on every open.
@@ -1160,7 +1193,11 @@ that an agent is concurrently editing the same tree.
 When explicitly enabled per host:
 
 - The fetched file is `0644`. A `notify` watcher on the materialized path
-  debounces 300 ms after the last write.
+  debounces 300 ms after the last write. The watcher lives in `omt-daemon` and is
+  a **caller** of `omt-media`: it reads the mirror through the store's API and
+  holds the mirror alive with a `pin` handle. It does not write into the blob
+  tree and it does not mutate a refcount directly — [09 §2](09-ssh-and-media.md#2-the-blob-store)'s
+  `resolve_in_root` remains the store's only writer.
 - On change: recompute BLAKE3. If unchanged from the fetched hash (editors
   rewrite files on save without changes), do nothing.
 - **Pre-flight conflict check.** Call `workspace.files.stat` on the remote and
@@ -1174,8 +1211,9 @@ When explicitly enabled per host:
   with `overwrite: true`, preserving the original mode, through the remote's
   `confine()`. Every push is an audit event and a visible toast naming the
   remote path.
-- The watcher stops when the sidecar's TTL expires or the session detaches, and
-  says so — a silently-stopped sync is the worst possible state.
+- The watcher stops when the mirror's TTL expires or the session detaches,
+  dropping its `pin`, and says so — a silently-stopped sync is the worst possible
+  state. `open.remote.discard` is the explicit form of the same call.
 
 `writeback` is documented as **experimental** and is off by default. That is a
 deliberate, stated choice, not an omission.
@@ -1462,7 +1500,7 @@ Plus four smaller ones, same pattern:
 | `open.rules.list` | Q / Viewer | `{}` → `{rules: Vec<RuleInfo>}` (id, kind, precedence, enabled, source layer) | — |
 | `open.rules.test` | Q / Viewer | `{text, rules?}` → `{matches, overlaps_resolved}` — powers `omt open rules test` and the config editor's live preview | — |
 | `open.remote.list` | Q / Viewer | `{}` → `{files: Vec<RemoteMirror>}` (the §6.3 sidecars: remote path, host, fetched-at, hash, read_only, writeback state) | `READS_FS` |
-| `open.remote.discard` | C / Operator | `{path}` → `Ack` — drop a mirrored file and stop its watcher | `TOUCHES_FS` |
+| `open.remote.discard` | C / Operator | `{path}` → `Ack` — drop a mirrored file and stop its watcher, via `omt-media`'s `unpin`/discard API | `WRITES_FS` |
 
 **Events** on the existing bus: `OpenActivated { match, handler, outcome }`,
 `OpenRemoteFetched { remote_path, host, bytes }`, `OpenWritebackConflict { .. }`,
@@ -1628,23 +1666,45 @@ Genuine uncertainties, and the cross-document edits this file implies.
    section (`default`, `rank`, `binding`, `rule`, `handler`, `editor.*`,
    `mouse.*`, `hints.*`, `remote.*`, `match.*`, `issue.*`), and the §5.2 default
    keybindings in `keybindings.toml`.
-5. **[15](15-workspace-explorer.md)** — `workspace.files.reveal` and this
-   document's `editor` handler are the same operation reached two ways; one of
-   them should delegate. Recommendation: `files.reveal` becomes a thin wrapper
-   over `open.activate { handler: "editor" }` so the argv table in §4.4 exists
-   once. 15 §8.4's `editor_args` default (`--goto {path}:{line}:{col}`) is
-   VS Code-specific and should become the detected table here.
+5. **Resolved — [15](15-workspace-explorer.md) and `workspace.files.reveal`.**
+   `workspace.files.reveal` stays as the capability 15 owns, and **the `editor`
+   handler and `workspace.files.reveal` share one implementation**: this document
+   owns the handler and the editor argv/template resolution (§4.4), 15 owns the
+   capability surface. 15 §8.4's `editor_args` default
+   (`--goto {path}:{line}:{col}`) is VS Code-specific and is superseded by the
+   detected per-editor table here.
 6. **[09](09-ssh-and-media.md)** — §6 adds a consumer of `media.file.pull`; no
    protocol change, but 09's §7.4 could mention it.
-7. **[16 — Input and keymap](16-input-and-keymap.md)** — **not read** (authored
-   concurrently). Three specific things to reconcile: (a) does the trigger
-   grammar support **mouse events with modifiers**, which §5.1 requires? (b) does
-   `when` support a `mouse_reporting` context? (c) `omt doctor keys` needs the
-   §5.3(c) outer-emulator section. If 16 assigns `ctrl-b f` to something else,
-   this document yields.
+7. **Resolved — [16 — Input and keymap](16-input-and-keymap.md).** (a) The
+   trigger grammar **does** support mouse events with modifiers:
+   [16 §2.2](16-input-and-keymap.md#22-types) gives `MouseEvent` a shape
+   (`kind`/`button`/`mods`/`pos`, SGR 1006) and
+   [16 §2.3](16-input-and-keymap.md#23-resolution)'s `Chord` admits a
+   `"shift-mouse1"`-style trigger with a `when`. (b) `mouse_reporting`,
+   `hint_mode` and `open_menu_focused` are all in
+   [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet`.
+   (c) `<leader> f` / `<leader> F` / `<leader> g` are registered in
+   [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace). Still outstanding:
+   `omt doctor keys` needs the §5.3(c) outer-emulator section, which 16 owns.
 8. **[00 — Overview](00-overview.md)** and any docs index need an `18` entry.
 
 **Genuine technical uncertainties:**
+
+**Layering — `omt-open` at L2 is unresolved, and is recorded rather than fixed
+here.** [02](02-crate-map.md) says an L2 crate is "independently useful, owns no
+global state" and that "L0–L2 are runtime-agnostic". §1.2 places `omt-open` at
+L2, but three things cut against that: `OpenHandler` is `#[async_trait]` (a
+runtime commitment), its built-ins **spawn processes**, and `open.hints.*` holds
+**per-client state on the instance** (§5.2) — which is global state by any
+reading. It also depends on `omt-catalog`, which the sibling L2 crate
+`omt-workspace-fs` ([15 §2](15-workspace-explorer.md#2-the-crate-omt-workspace-fs-at-l2))
+deliberately does not. **Proposed fix, for whoever owns
+[02](02-crate-map.md) to rule on:** hint-session state moves to `omt-daemon`,
+leaving `omt-open` with (a) the handler registry and (b) a **pure resolver** —
+`Match` + `ResolutionContext` → `ResolvedTarget`, syscalls behind a trait — with
+activation behind a `Spawner` seam exactly analogous to `omt-workspace-fs`'s
+`WatchDriver`. That makes the crate testable without a runtime and restores the
+L2 invariants. This document is deliberately **not** restructured on it.
 
 9. **Shift+click passthrough is asserted, not verified.** The claim in §5.1 —
    that iTerm2, kitty, WezTerm, Ghostty, Alacritty, Terminal.app and Windows

@@ -58,15 +58,15 @@ against, not averages.
 | 1 | Session/workspace/pane tree, layouts, focus | `state/omt/tree/snapshot-<n>.bin` + `tree.log` | postcard snapshot + length-prefixed CRC'd append log | ~200 KB steady; rewritten, not grown | 0600 | **Yes** — session `argv` and injected `env` ([05 §1.1](05-session-model.md#11-types)); redacted per §2 |
 | 2 | Scrollback chunk snapshots | `state/omt/sessions/<sid>/scrollback/<gen>.zst` | zstd-compressed styled-line chunks, per [04 §2.4](04-terminal-core.md#24-scrollback-blocks-of-logical-lines) generations | **~120 MB/day** raw, ~15–25 MB/day after zstd (agents are verbose and repetitive, so compression is unusually good) | 0600 | **Yes, the worst offender.** Raw PTY output |
 | 3 | Live grid snapshot | `state/omt/sessions/<sid>/grid.bin` | one screen, uncompressed | ≤ 400 KB per live session, overwritten | 0600 | **Yes** |
-| 4 | Command blocks (metadata) | `state/omt/blocks.db` (SQLite) | rows: command, cwd, branch, exit, timing, attribution | ~400 blocks/day ≈ 200 KB/day | 0600 | **Yes** — the command line itself (`export FOO_TOKEN=…`) |
+| 4 | Command blocks (metadata) | `state/omt/store.db` (SQLite, shared — see §1.3) | rows: command, cwd, branch, exit, timing, attribution | ~400 blocks/day ≈ 200 KB/day | 0600 | **Yes** — the command line itself (`export FOO_TOKEN=…`) |
 | 5 | Command block output | `state/omt/sessions/<sid>/blocks/<bid>.zst` | zstd styled lines, one file per block over `block_output_min_bytes` | included in (2)'s budget; bounded per block at 2 MiB | 0600 | **Yes** |
-| 6 | Command history | `state/omt/history.db` (SQLite + FTS5) | [05 §9](05-session-model.md#9-command-history) `HistoryEntry` | ~150 KB/day, ~50 MB/year | 0600 | **Yes** — already redacted at write per 05 §9 |
+| 6 | Command history | `state/omt/store.db` (same file as #4/#11) | [05 §9](05-session-model.md#9-command-history) `HistoryEntry` | ~150 KB/day, ~50 MB/year | 0600 | **Yes** — already redacted at write per 05 §9 |
 | 7 | Agent event log | `state/omt/sessions/<sid>/agent.jsonl.zst` | normalized `AgentEvent` stream ([06](06-agent-layer.md)) | ~3–8 MB/day across all sessions | 0600 | **Yes** — tool inputs, file paths, prompt text |
 | 8 | Interaction ledger | `state/omt/interactions.log` + `interactions.db` | append-only records + resolved index | ~30 interactions/day ≈ 60 KB/day | 0600 | **Yes** — full tool input, and the user's free-text answers |
 | 9 | Agent transcript cache | `cache/omt/transcripts/<agent>/<native-id>.idx` | offsets + digests into the *agent's own* transcript file | ~1 MB/day | 0600 | Pointers only — but see §1.1 |
 | 10 | Media blobs | `$XDG_RUNTIME_DIR/omt/<instance>/blobs/` | content-addressed, [09 §2](09-ssh-and-media.md#2-the-blob-store) | bursty; capped at 512 MiB, TTL 24 h / 7 d referenced | 0600 / dir 0700 | **Yes** — a pasted screenshot of a dashboard is a secret |
-| 11 | Search index | `state/omt/index/` (tantivy) | inverted index over blocks, output and agent turns; owned by [20](20-recall-and-usage.md) | ~35 % of the indexed corpus ≈ 8 MB/day | 0600 | **Yes if unredacted** — §2.3 forbids that |
-| 12 | Usage/cost ledger | `state/omt/usage.db` | token and cost deltas per session | ~20 KB/day | 0600 | No |
+| 11 | Search index | `state/omt/store.db` — the `doc_fts` FTS5 tables inside the block/history database | FTS5 external-content tables over blocks, output windows and agent turns; **the index design is owned by [20 §3](20-recall-and-usage.md)**, this document owns what may enter it and when it is deleted | ~35 % of the indexed corpus ≈ 8 MB/day | 0600 | **Yes if unredacted** — §2.3 forbids that |
+| 12 | Usage/cost ledger | `state/omt/store.db` (same file) | token and cost deltas per session | ~20 KB/day | 0600 | No |
 | 13 | Audit log | `state/omt/audit/<yyyy-mm>.log` | [12 §8](12-collaboration.md#8-audit-log), redacted, 90-day retention | ~300 KB/day | 0600 / dir 0700 | Redacted by construction; no PTY bytes |
 | 14 | Configuration | `config/omt/config.toml`, `keybindings.toml`, `instances.toml`, `themes/`, `workflows/`, `launch/` | TOML/YAML, [10](10-configuration.md) | static | 0644 (0600 for `instances.toml`) | No — a secret inline is a validation error ([13 §5.1](13-security.md#51-at-rest)) |
 | 15 | Secrets and credentials | `config/omt/secrets.toml`, `state/omt/credentials.db`, `instance.key`, `invites.db` | [13 §5.1](13-security.md#51-at-rest) | static | **0600, enforced and corrected at startup** | **Yes, by definition** — §5 |
@@ -109,6 +109,30 @@ $ omt store paths --for-backup-exclusion
 ~/.config/omt               # configuration — KEEP, it is small and precious
 ~/.config/omt/secrets.toml  # KEEP but ensure the backup is encrypted
 ```
+
+### 1.3 One database file, and why
+
+Inventory rows #4 (blocks), #6 (history), #11 (the FTS5 search index) and #12
+(usage) are **one SQLite file, `state/omt/store.db`**. They were once four, and
+that was wrong: [20 §3.1](20-recall-and-usage.md#31-the-decision)'s D-R1 chooses
+FTS5 precisely so that the index row is written *in the same transaction* as the
+block record it describes, which makes "the block exists but is not findable" an
+unreachable state. Two files means two transactions and reconciliation after a
+crash becomes a subsystem. One durability domain is the whole argument, so there
+is one file.
+
+The two databases that stay separate stay separate for a durability reason, not
+a historical one:
+
+- **`interactions.db` + `interactions.log`** (#8) are in the `Critical` fsync
+  class (§6.3) — the ledger is `fsync`ed *before the capability returns*, and
+  putting it in the same file as the `Bulk`-class index writes would drag every
+  scrollback flush into that discipline or the ledger out of it.
+- Everything else (#1 tree, #7 agent events, #13 audit) is a log, not a
+  database.
+
+Usage (#12) has no such reason — its loss window is a flush cadence, not a
+durability class — so it is folded into `store.db` with the rest.
 
 `omt doctor store` warns when `$XDG_STATE_HOME/omt` is inside a directory that
 looks synced (`~/Dropbox`, `~/Library/Mobile Documents`, a path containing
@@ -165,11 +189,14 @@ Two consequences follow and both are deliberate:
    shows the redacted form. That transition is visible and it is honest: the UI
    marks a redacted span with a dim `▒` gutter glyph and a hover/tap explanation
    *"redacted before writing to disk — see `omt store explain-redaction`"*.
-2. **There is exactly one redactor.** It is the same
-   [13 §8](13-security.md#8-secret-redaction) implementation, promoted from
-   "logs, audit and events" to "logs, audit, events **and all persisted terminal
-   content**". Sharing it is not a code-reuse nicety: two redactors would drift,
-   and the weaker one would define the product's real guarantee.
+2. **There is exactly one redactor, and §2.2 below is its specification.** The
+   `Redactor`, its classes, its rules and its markers are defined here and
+   nowhere else. [13 §8](13-security.md#8-secret-redaction) owns only the
+   *integration* — the tracing `Layer` and the event-bus serializer wrapper that
+   make it impossible to emit a log line or an event without passing through it —
+   so the same detector covers logs, audit entries, events **and all persisted
+   terminal content**. Sharing it is not a code-reuse nicety: two redactors would
+   drift, and the weaker one would define the product's real guarantee.
 
 ### 2.2 The detector
 
@@ -182,7 +209,19 @@ pub struct Redactor {
     allow:         Vec<Regex>,        // explicit false-positive suppressions
 }
 
-pub enum RedactionClass { Env, Key, Shape(&'static str), Entropy, User(String) }
+pub enum RedactionClass {
+    Env,
+    Key,
+    /// A credential passed as a command-line argument: `--password X`,
+    /// `--token X`, `mysql -pX`. Medium confidence; see (a').
+    Flag,
+    /// A credential in an HTTP header line: `Authorization: Bearer …`,
+    /// `X-Api-Key:`, `Proxy-Authorization:`, `Cookie:`/`Set-Cookie:`.
+    Header,
+    Shape(&'static str),
+    Entropy,
+    User(String),
+}
 
 pub struct Finding {
     pub span: Range<usize>,
@@ -191,7 +230,7 @@ pub struct Finding {
 }
 ```
 
-Three layers, in order, first match wins:
+Layers, in order, first match wins:
 
 **(a) Key rules** — the assignment/keyword forms, applied to structured values
 (env maps, JSON tool inputs) and to line text:
@@ -204,9 +243,25 @@ Three layers, in order, first match wins:
 plus every key in a `KEY=VALUE` line whose *key* ends in `_TOKEN`, `_SECRET`,
 `_KEY`, `_PASSWORD`, `_PASSWD`, `_CREDENTIALS`.
 
+**(a') Flag rules** (`RedactionClass::Flag`) — a credential passed as an
+argument rather than an assignment: `--password X`, `--token X`, `--api-key X`,
+`--secret X`, `-p X` for a known client, and the attached form `mysql -pX`.
+Confidence is **medium**, not high: `-p` means "port" to as many programs as it
+means "password", so the attached and known-client forms are matched and a bare
+`-p X` is matched only for clients on a small built-in list. The matched span is
+the *value*, never the flag.
+
+**(a'') Header rules** (`RedactionClass::Header`) — a credential on an HTTP
+header line, matched on the header name: `Authorization: Bearer …`,
+`Authorization: Basic …`, `X-Api-Key:`, `Proxy-Authorization:`, `Cookie:` and
+`Set-Cookie:`. High confidence, and worth its own class rather than folding into
+key rules because the replacement keeps the header name — `Authorization:
+<redacted:header:len=44>` retains the fact that an auth header was present,
+which is most of the diagnostic value.
+
 **(b) Shape rules** — known credential formats, matched with a single
-`regex::RegexSet` pass so cost is one scan regardless of rule count. Inherited
-verbatim from 13 §8 and extended:
+`regex::RegexSet` pass so cost is one scan regardless of rule count. This table
+is the source of truth; 13 §8's shape list is a summary of it:
 
 | Class | Pattern (abbreviated) |
 |---|---|
@@ -251,7 +306,9 @@ finding with its class and a one-key "add an allow rule for this shape" action.
 <redacted:pem:lines=27>
 ```
 
-Length-preserving markers, exactly as 13 §8 specifies, because a bug report and
+Length-preserving markers — `<redacted:CLASS[:detail]:len=N>` is **the** marker
+format, and every other document referring to a redaction marker refers to this
+one — because a bug report and
 a diff remain readable when you can see *that* a 51-character `sk-` token was
 there. Column alignment inside a styled line is preserved by padding the
 replacement to the original cell width when the original was ≤ 40 cells and
@@ -272,7 +329,7 @@ about, because it is where users get surprised.
 
 | Case | What happens | Why |
 |---|---|---|
-| A secret **typed or pasted into a command line** — `export API_KEY=sk-…`, `curl -H "Authorization: Bearer …"` | The block's `command` field is redacted before it reaches `blocks.db` or `history.db`. The **input bytes were never persisted at all** — omt does not log keystrokes ([12 §8](12-collaboration.md#8-audit-log)) — so the only copy is the block record, and it is redacted. | Command text is the durable, searchable, cross-session artifact. It is also the one users re-run by accident. |
+| A secret **typed or pasted into a command line** — `export API_KEY=sk-…`, `curl -H "Authorization: Bearer …"` | The block's `command` field is redacted before it reaches `store.db`. The **input bytes were never persisted at all** — omt does not log keystrokes ([12 §8](12-collaboration.md#8-audit-log)) — so the only copy is the block record, and it is redacted. | Command text is the durable, searchable, cross-session artifact. It is also the one users re-run by accident. |
 | A secret **printed into output** — `cat .env`, a tool result containing a JWT | Redacted on the way into scrollback, block output, agent event log and index. Present in the live grid and the in-memory ring until flushed. | Output is high-volume and unstructured; the guarantee is "not on disk", not "never on screen" (P4). |
 | A secret in a **shell prompt** (some prompts embed a session token) | Prompt regions are marked by OSC 133 `A`…`B` and are redacted with the same rules; a prompt is output. | Same as output. |
 | A secret in an **agent's tool input** | Redacted in the ledger and audit entry, per 13 §7. **Not** redacted on the way to the agent — omt is not in that path (P4). | omt observes; it does not mediate the agent's own I/O. |
@@ -392,7 +449,7 @@ single age cutoff.
 | 8 | Interaction ledger | **30 days** | keep id, kind, tool name, decision, actor, latency; drop the full input | **1 year** | — |
 | 9 | Transcript index | on agent transcript deletion | — | 30 days | 500 MiB |
 | 10 | Blobs | — | — | 24 h / 7 d referenced ([09 §2](09-ssh-and-media.md#2-the-blob-store)) | 512 MiB |
-| 11 | Search index | follows its source | segments merged; postings for deleted docs dropped | with the source data | 25 % of `state/` |
+| 11 | Search index | follows its source | FTS5 rows for deleted docs are removed in the same transaction as the source row and the shadow table is `optimize`d on the full sweep; freed pages are reclaimed by `VACUUM` | with the source data | 25 % of `state/` |
 | 12 | Usage | **90 days** | rolled up to daily totals per session | never (it is tiny and it is the cost record) | — |
 | 13 | Audit | never | — | **90 days** ([12 §8](12-collaboration.md#8-audit-log)) | — |
 | 16 | Daemon log | — | — | 5 files × 32 MiB | 160 MiB |
@@ -406,7 +463,8 @@ per-workspace overrides:
 [store.retention]
 scrollback_compact_after = "7d"
 scrollback_delete_after  = "30d"
-scrollback_max_bytes     = "4GiB"
+scrollback_max_bytes     = "4GiB"    # per instance
+scrollback_max_bytes_per_session = "8MiB"
 blocks_delete_after      = "1y"
 agent_events_compact_after = "14d"
 agent_events_delete_after  = "90d"
@@ -416,6 +474,40 @@ audit_delete_after       = "90d"     # capped at 1y; a shorter value is allowed
 [workspace."~/code/client-x".store.retention]
 scrollback_delete_after  = "3d"      # NDA work: keep the minimum that is useful
 ```
+
+`RetentionPolicy` is the resolved form of that config block — what
+`store.retention.get` returns (§8) and what `store.retention.set` takes. It is a
+plain record with one entry per swept kind, plus the scope it was resolved for
+and where each value came from, so a user can see *why* their scrollback is
+being deleted after three days:
+
+```rust
+pub struct RetentionPolicy {
+    /// Scope this policy was resolved for; workspace policies may only be
+    /// stricter than the instance policy, never looser (§2.5's ladder).
+    pub scope: RetentionScope,          // Instance | Workspace(WorkspaceId)
+    pub rules: BTreeMap<DataKind, RetentionRule>,
+}
+
+pub struct RetentionRule {
+    /// Age after which the record is compacted to its metadata. `None` = never.
+    pub compact_after: Option<Duration>,
+    /// Age after which the record is deleted outright. `None` = never.
+    pub delete_after: Option<Duration>,
+    /// Size cap for this kind, enforced oldest-first after the age rules.
+    pub max_bytes: Option<u64>,
+    /// Row cap, for the two kinds that are counted in rows rather than bytes.
+    pub max_rows: Option<u64>,
+    /// Which layer of the config ladder supplied this rule.
+    pub source: ConfigSource,
+}
+```
+
+`DataKind` is the inventory's `#` column, named rather than numbered
+(`Scrollback`, `BlockOutput`, `Blocks`, `History`, `AgentEvents`,
+`Interactions`, `TranscriptIndex`, `Blobs`, `SearchIndex`, `Usage`, `Audit`,
+`DaemonLog`, `Crashes`, `Quarantine`), so the table above and the type are the
+same list and CI can assert it.
 
 **Retention is enforced by the sweeper, not by the writer.** Nothing checks the
 clock on the hot path. A record written today with a 30-day policy is deleted by
@@ -432,7 +524,7 @@ pub struct Sweeper {
 }
 
 pub struct SweepSchedule {
-    /// Cheap pass: expired blobs, log rotation, index segment merge.
+    /// Cheap pass: expired blobs, log rotation, FTS5 incremental `optimize`.
     light:  Duration,       // 5 min
     /// Full pass: compaction, deletion, size-cap enforcement, vacuum.
     full:   Duration,       // 6 h, plus once at startup after a 60 s settle delay
@@ -470,8 +562,8 @@ behaviour. The daemon checks free space on the filesystem holding
 | Free space | State | Behaviour |
 |---|---|---|
 | > 5 GiB and > 10 % | `Healthy` | normal |
-| ≤ 5 GiB or ≤ 10 % | `Tight` | warning event + banner on every surface; full sweep scheduled immediately; index merging deferred (it needs 2× space transiently) |
-| ≤ 1 GiB or ≤ 3 % | `Pressure` | **aggressive reclaim**: apply the shortest retention that any workspace configures, instance-wide; drop all block output older than 24 h; drop the search index entirely (it is derived and rebuildable); evict all unreferenced blobs |
+| ≤ 5 GiB or ≤ 10 % | `Tight` | warning event + banner on every surface; full sweep scheduled immediately; `VACUUM` and FTS5 `optimize` on `store.db` deferred (both need up to 2× the file transiently) |
+| ≤ 1 GiB or ≤ 3 % | `Pressure` | **aggressive reclaim**: apply the shortest retention that any workspace configures, instance-wide; drop all block output older than 24 h; empty the search index (`DELETE FROM doc_fts` and drop the `doc` text columns' contents, then `VACUUM`) — it is derived data and always rebuildable from the blocks, so it is the cheapest large thing to lose; evict all unreferenced blobs |
 | ≤ 200 MiB | `Critical` | **stop persisting**: scrollback, block output, agent events and index writes are dropped in memory with a counter; the tree, interaction ledger, credentials and audit log keep writing (they are small and losing them is unacceptable). Every surface shows a red banner naming the filesystem and the free bytes. Sessions keep running — omt never kills a session because of disk |
 
 The `Critical` rule is the important one: **the terminal keeps working when the
@@ -519,7 +611,7 @@ Last sweep: 3 h 12 m ago, reclaimed 402 MiB in 11.3 s.  Next: in 2 h 48 m.
 ```
 
 `--json` gives the same as a machine-readable tree
-([22 §8](22-operations.md#8-automation-and-ci)). `--by session` and
+([22 §8](22-operations.md#8-automation-and-ci-g14)). `--by session` and
 `--workspace <path>` narrow it.
 
 ### 4.2 `store.export` — the archive format
@@ -617,8 +709,8 @@ This will PERMANENTLY DESTROY the following. There is no undo.
 
   Files and directories to be removed:
     ~/.local/state/omt/sessions/{88 directories}
-    rows in ~/.local/state/omt/{blocks.db,history.db,interactions.db,usage.db}
-    index documents in ~/.local/state/omt/index/  (segment rewrite)
+    rows in ~/.local/state/omt/store.db  (blocks, history, usage, doc + doc_fts)
+    rows in ~/.local/state/omt/interactions.db
 
   NOT removed (not omt's data):
     ~/.claude/projects/-Users-ada-code-client-x      412 MiB
@@ -666,8 +758,10 @@ Rules, each of which exists because of a specific way this goes wrong:
   what the user shows their client.
 - **Purge is synchronous and complete before it reports success.** SQLite rows
   are deleted in a transaction and the database is `VACUUM`ed (otherwise the
-  bytes remain in free pages, and "I deleted it" would be false). Index segments
-  containing purged documents are rewritten, not merely tombstoned. Files are
+  bytes remain in free pages, and "I deleted it" would be false). The purged
+  documents' FTS5 rows are deleted in that same transaction — not merely
+  tombstoned — so the postings go with the `VACUUM` rather than surviving it.
+  Files are
   removed with `unlink`; omt does **not** claim secure erase — on a
   copy-on-write or flash filesystem that claim is unverifiable, and the README
   says so.
@@ -779,8 +873,12 @@ discover from a blog post.
 ### 6.1 The model
 
 Append-log plus periodic snapshot, per
-[05 §8](05-session-model.md#8-persistence-and-restore). This section specifies
-the durability policy that 05 leaves open.
+[05 §8](05-session-model.md#8-persistence-and-restore). **This document owns the
+durability policy** — the `Record` frame below, the fsync classes in §6.3, the
+repair path in §6.4 and the versioned-store rule in §7.1 — and
+[05 §8.2](05-session-model.md#82-crash-semantics) defers to it, keeping only the
+session-tree-specific facts (what is snapshotted, what `RestoreOutcome` means for
+a restored session).
 
 ```rust
 pub struct Record {
@@ -812,7 +910,7 @@ target, and the containing directory is `fsync`ed. Never written in place.
 | Usage | ≤ 60 s | Rolled up; a lost minute is noise |
 | Audit | 0 for `Denied`/auth events, ≤ 1 s for the rest | §6.3 |
 | Credentials | 0 | Written rarely, always `fsync`ed |
-| Search index | ≤ 30 s, and **always recoverable** — the index is derived; a torn segment is discarded and rebuilt from the source | |
+| Search index | 0 for anything committed with its source row (D-R1's whole point); ≤ 30 s for the batched remainder, and **always recoverable** — the index is derived data and is rebuilt from the blocks with `INSERT INTO doc_fts(doc_fts) VALUES('rebuild')` | |
 
 ### 6.3 fsync policy, and what it costs
 
@@ -853,17 +951,19 @@ Scanning ~/.local/state/omt …
 
   tree.log                    ok       (torn tail truncated: 1 record, 812 B)
   interactions.log            ok
-  blocks.db                   ok       (integrity_check passed)
-  history.db                  DAMAGED  (integrity_check: row 41,882 malformed)
+  interactions.db             ok       (integrity_check passed)
+  store.db                    DAMAGED  (integrity_check: history row 41,882 malformed)
+  store.db doc_fts            REBUILD  ('integrity-check' failed: doc_fts out of
+                                        step with doc for 812 rows)
   sessions/s_4b2f/scrollback  DAMAGED  (chunk 91: crc mismatch)
-  index/                      REBUILD  (segment 14 truncated)
 
 Plan:
-  history.db      → recover 41,881 rows into history.db.repaired, quarantine the
-                    original at quarantine/2026-08-03T18-51-10Z-history.db
+  store.db        → recover 41,881 history rows into store.db.repaired, quarantine
+                    the original at quarantine/2026-08-03T18-51-10Z-store.db
   s_4b2f chunk 91 → truncate the session's scrollback at chunk 90; 2.1 MiB of
                     output after 2026-08-03T14:02:11Z is unrecoverable
-  index/          → delete and rebuild from blocks.db (est. 3 min, background)
+  doc_fts         → INSERT INTO doc_fts(doc_fts) VALUES('rebuild')
+                    (est. 3 min, background)
 
 Proceed? [y/N]
 ```
@@ -876,6 +976,11 @@ Rules:
   rebuilt without asking because it costs nothing to lose.
 - A `Partial` restore surfaces as a warning event and a banner on every surface
   until acknowledged, and `omt doctor store` keeps reporting it.
+- **The index is checked, not trusted.** `INSERT INTO doc_fts(doc_fts)
+  VALUES('integrity-check')` is what detects an external-content FTS table that
+  has drifted from its `doc` rows, and the only remedy offered is
+  `VALUES('rebuild')` — there is no partial repair of an index, because there is
+  no reason to attempt one.
 - **The store is checked on startup, cheaply**: header magic, format version, and
   the tail record of each log. The full `integrity_check` runs only in
   `omt store repair` or after an unclean shutdown was detected.
@@ -941,7 +1046,7 @@ enforced in CI:
 tests/fixtures/store/
   v1/  v2/  v3/  …            ← a complete, small, realistic store per version
     STORE_VERSION
-    tree.log  blocks.db  history.db  interactions.log
+    tree.log  store.db  interactions.log  interactions.db
     sessions/s_fixture/scrollback/0000.zst
     EXPECTED.json             ← the post-migration state, asserted field by field
 ```
@@ -986,9 +1091,15 @@ Declared per [03 §2](03-capability-catalog.md#2-declaring-a-capability). Roles:
 | `store.redaction.test` | Query | V | `{ text: String }` | `{ findings: [Finding], redacted: String }` | — |
 | `store.migrate.status` | Query | V | `{}` | `{ store_version, binary_version, pending: [Migration], backups: [{ path, bytes, created }] }` | — |
 
+`store.purge` is the bulk, scope-shaped destruction. Its narrow counterpart is
+[20 §12.2](20-recall-and-usage.md#122-history)'s `history.forget`, which removes
+individual command rows and their FTS entries and is deliberately *not* folded
+into this capability: "I just pasted a token into a command" must be one command,
+not a retention-policy change with a typed confirmation.
+
 CLI spellings follow the generated tree: `omt store usage`, `omt store export`,
 `omt store purge`, `omt store repair`, `omt store explain-redaction`. All of them
-honour `--json` ([22 §8](22-operations.md#8-automation-and-ci)).
+honour `--json` ([22 §8](22-operations.md#8-automation-and-ci-g14)).
 
 `store.redaction.test` deserves its place in the catalog even though it is
 trivial: it is how a user validates an `extra_patterns` entry without running a
@@ -1027,6 +1138,16 @@ Events emitted:
    means rewriting chunks. Probably worth it — this is the single most likely
    thing a user will ask for after an accident. Needs a design against
    [04 §2.4](04-terminal-core.md#24-scrollback-blocks-of-logical-lines).
+
+   **It must not duplicate `history.forget`.** [20 §12.2](20-recall-and-usage.md#122-history)
+   already owns `history.forget { matching: HistorySelector }`, the narrow "I
+   just pasted a token into a command line" remedy: it deletes command rows and
+   their FTS entries in one transaction and touches nothing else. If
+   `session.blocks.forget` is added it is a *different* operation — it destroys a
+   block's persisted **output** and rewrites the scrollback chunks that carry it —
+   and the two must be specified against each other, with `store.purge` (§4.3)
+   remaining the only bulk, scope-shaped destruction. Three overlapping ways to
+   delete the same row is how a purge ends up incomplete.
 
 3. **OPEN QUESTION — retention for a workspace whose sessions are still live.**
    §3.1 deletes scrollback older than 30 days. A session that has been running

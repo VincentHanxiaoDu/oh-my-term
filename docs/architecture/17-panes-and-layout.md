@@ -203,7 +203,7 @@ pub struct PanePlacement {
     pub pane: PaneId,
     /// Including the title bar, excluding dividers.
     pub outer: Rect,
-    /// The PTY-visible content area.
+    /// The pane's content area; for a `pty` session this is the PTY-visible grid.
     pub content: Rect,
     pub edges: EdgeFlags,     // which sides touch the container, for border drawing
     pub stack: Option<StackId>,
@@ -468,7 +468,9 @@ Two consequences are not negotiable:
 - **Server-side per-client re-rendering is impossible for the case that matters.**
   [07 §4.3](07-remote-protocol.md#43-the-resize-problem) already rejects it and
   the reasoning is correct: an alt-screen agent that drew a box at 120 columns
-  cannot be re-rendered at 40, because the information is gone. Nothing in tmux,
+  cannot be re-rendered at 40, because the information is gone, which is true
+  for a `pty` session; a `native` session's content is typed events and
+  re-renders freely at any width (§3.7). Nothing in tmux,
   zellij, wezterm or another tool does this
   ([research §3](../research/multiplexers.md#3-multi-client-different-sizes--the-crux)).
 
@@ -629,7 +631,11 @@ Reasoning:
 
 **Consequences, all user-visible, all required to be surfaced:**
 
-1. **Taking the writer token may resize the PTY.** Per doc 07, the client warns
+1. **Taking the writer token may resize the PTY.** `keep_size` and the 20 %
+   threshold are *acquisition* semantics, so they belong to
+   [12 §3.3](12-collaboration.md#33-lifecycle) alongside
+   [07 §4.3](07-remote-protocol.md#43-the-resize-problem)'s negotiation. The
+   client warns
    before the first takeover of a session whose size would change by more than
    20 %, and offers `writer.acquire { keep_size: true }`, which acquires the
    token while installing `Pinned` at the current size. That flag is now a
@@ -689,6 +695,23 @@ Because arrangements are per-view, layout capabilities take an explicit view:
 - `layout.adopt { view }` replaces the caller's view with a copy of another's.
 - A client may pin itself to `Primary` regardless of size
   (`client.pinned_view`), accepting the degradation; §7 gives it a real UI.
+
+### 3.7 Native sessions
+
+A `native` session ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp),
+[05 §1.3](05-session-model.md#13-session-modes-d8)) has no PTY and no grid, so
+everything §3.4 arbitrates simply does not apply to it.
+
+- **Size-independent, and excluded from `SessionSizing` entirely.** There is no
+  `current`, no `policy`, no participants to weigh.
+- **They never letterbox.** A native pane re-renders at whatever content rect it
+  is given, independently per client — 200 columns on the laptop and 52 on the
+  phone at the same instant, both at full fidelity.
+- **They emit no `SessionResized`** (05 §11 invariant 11).
+- `session.size_policy` and `layout.synchronize` **reject** a native pane; there
+  is no PTY to size and none to broadcast keystrokes into.
+- The 250 ms resize debounce (§2.6) is **skipped**: a re-`compute` costs a
+  re-render and nothing else, so there is nothing to coalesce.
 
 ---
 
@@ -1175,7 +1198,7 @@ line where there is room, and is otherwise available on demand.
 | `Idle` | dot, muted | |
 | `Working { detail }` | animated dot + elapsed | `detail` on hover/long-press |
 | `Blocked { interaction: Some(_) }` | **attention colour + count** | Tappable → `interaction.resolve`; the flagship path |
-| `Blocked { interaction: None }` | attention colour, no count | "needs you" — open terminal view. Doc 06 is explicit that this degradation is visible, never silent |
+| `Blocked { interaction: None }` | attention colour, no count | "needs you" — open terminal view. Doc 06 is explicit that this degradation is visible, never silent. A `native` session (§3.7) has no terminal view; the action opens its event timeline instead |
 | `Exited { code }` | exit code, red when non-zero | |
 | `Unknown` | nothing | Not a badge; absence of information is not a state to advertise |
 
@@ -1186,7 +1209,9 @@ holding it did not fit.
 
 **Dead sessions.** A pane whose session is not `Live` renders its content
 normally — scrollback stays readable, searchable and copyable — with a
-persistent banner:
+persistent banner. For a `native` session (§3.7) there is no scrollback; the
+persisted transcript takes its place and is equally readable, searchable and
+copyable, and `Restart` re-spawns the adapter.
 
 | State | Banner | Actions |
 |---|---|---|
@@ -1277,11 +1302,21 @@ capability! {
 | `layout.promote` | O | `{ view }` | `{ layout }` | mutates `Primary`, visible to all |
 | `layout.adopt` | O | `{ from: ViewId }` | `{ layout }` | |
 | `layout.rearm` | O | `{ view? }` | `Ack` | re-enable responsive swapping (§4.2) |
-| `layout.save` | O | `{ name, view?, scope: User \| Project }` | `{ path }` | `TOUCHES_FS` |
+| `layout.save` | O | `{ name, view?, scope: User \| Project }` | `{ path }` | `WRITES_FS` |
 | `layout.apply_saved` | O | `{ name, view? }` | `{ layout }` | `SPAWNS_PROCESS` |
 | `layout.list_saved` | V | `{}` | `{ layouts: [SavedLayoutInfo] }` | |
 | `layout.import_tmux` | O | `{ string, view? }` | `{ layout, warnings }` | |
+
+One capability outside this group is specified here because this document owns
+its semantics (§3.4):
+
+| Capability | Role | Input | Output | Effects |
+|---|---|---|---|---|
 | `session.size_policy` | O | `{ session, policy: SizePolicy }` | `SessionSizing` | resizes the PTY |
+
+It belongs to the `session` group, not `layout` — its prefix is authoritative for
+naming, catalog registration and CLI shape ([05 §10.2](05-session-model.md#102-session)).
+It rejects `native` sessions (§3.7).
 
 ### 9.3 Reconciliation with the existing catalog
 
@@ -1330,9 +1365,9 @@ exactly right, debounced 500 ms.
   (`Terminal` only; `Overlay` floats are transient by definition), stacks, zoom,
   focus, `synchronize` group, and named marks.
 - Per-pane: `PaneId`, its `SessionId`, `priority` and `min` overrides.
-- Per session: `SessionSizing::{current, policy}`, so a `Pinned` session comes
+- Per `pty` session only: `SessionSizing::{current, policy}`, so a `Pinned` session comes
   back pinned and an `Orphaned` session's content is readable at the width it
-  was written.
+  was written. A `native` session has no sizing to persist (§3.7).
 
 **What is not:**
 
@@ -1445,18 +1480,22 @@ a virtual clock:
 
 ### 12.1 Contradictions requiring a decision by the doc owners
 
-**C1 — Sizing policy: doc 05 §2.2 vs doc 07 §4.3.** Doc 05 states *"the PTY size
-is the minimum over attached, non-lazy viewers"*. Doc 07 states *"one
-authoritative PTY size per session, owned by the writer"* with `SizeOwner::Writer`
-as default and `Smallest` as opt-in. These are directly incompatible defaults.
-§3.4 above resolves in favour of doc 07 (`Driver` default, `Smallest` opt-in,
-minimum-over-participants as the no-writer fallback) because a size that changes
-on every attach is worse for alt-screen agents, and because tmux's `smallest` is
-its most-complained-about behaviour. **Doc 05 §2.2 and invariant 10 must be
-rewritten**; doc 07's `SizeOwner` should be renamed `SizePolicy` and gain the
-`Driver` naming for consistency. Doc 05's `SizePolicy::{Participant, Observer}`
-also collides by name with this document's `SizePolicy`; §3.4 renames doc 05's
-to `Participation`.
+**C1 — Sizing vocabulary in doc 05.** The substantive default is settled: doc 05
+§2.2 already delegates the negotiation to
+[07 §4.3](07-remote-protocol.md#43-the-resize-problem) with `SizeOwner::Writer`
+as the default, which is what §3.4 above calls `SizePolicy::Driver`. What
+remains is vocabulary: doc 05's **invariant 10** and **open question 2** still
+describe sizing in the old "minimum over participants" framing and must adopt
+`SizePolicy` / `Participation` terms so the two documents read as one model.
+Doc 07's `SizeOwner` should likewise gain the `Driver` naming for consistency.
+
+**C1b — `writer.acquire { keep_size }` and the 20 % takeover warning need
+ratifying in [12 §3.3](12-collaboration.md#33-lifecycle).** §3.4 consequence 1
+describes both, but they are *acquisition* semantics, and by doc 05's own
+ownership rule (05 §5) doc 12 owns those. Doc 12 must declare the `keep_size`
+flag on `writer.acquire`, its `SizePolicy::Pinned` transition, and the 20 %
+change threshold that triggers the warning — or state a different number, which
+this document then follows.
 
 **C2 — Zoom scope: doc 05 §2.1 vs doc 05 §13 Q5.** Doc 05 §2.1 states *"Zoom is
 non-destructive and per-workspace, not per-client"* and then §13 open question 5
@@ -1465,9 +1504,13 @@ proposes the opposite. §5.1 above decides **per view**, which is neither exactl
 zoom, and a phone in its own view does not force it on anyone. Doc 05 §2.1 needs
 the sentence changed and §13 Q5 can be closed.
 
-**C3 — "BSP tree" wording.** Doc 05 §1 and §2 call the layout a BSP tree while
-defining an n-ary `children: Vec<(f32, Layout)>`. BSP means binary. Doc 05
-should say "n-ary split tree". Doc 05 §1's object-model diagram also says
+**C3 — "BSP tree" wording. Resolved, deliberately partially.** Doc 05 §1 and §2
+called the layout a BSP tree while defining an n-ary
+`children: Vec<(f32, Layout)>`. BSP means binary, so doc 05 §2's opening
+sentence now says "an n-ary split tree (historically 'BSP')". The **heading
+itself is retained** — four links in this document target
+`05-session-model.md#2-layout-the-bsp-tree`, and link stability is worth more
+than the word. Doc 05 §1's object-model diagram also says
 `Layout: a BSP tree of panes, owned by a Workspace` — with §3's per-view model
 that becomes "one or more `LayoutView`s, owned by a Workspace".
 

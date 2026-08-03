@@ -54,7 +54,7 @@ Related: [Decision log](decisions.md) ·
 | **I1** | State the user creates from a phone is persisted **server-side on omt instances**. The browser holds a credential and a cache, nothing authoritative. | Signing in from another device yields the same view, because the client never held the truth. |
 | **I2** | Any ordinary instance may be designated **`home`** — the holder of the canonical registry. It is a role, never a new component and never a hosted service. Plus an **encrypted identity file** as the always-available fallback. | No new binary, no new deployment. A user with no home still works, with a smaller guarantee. |
 | **I3** | Every device gets its **own** key and its own per-instance credential, revocable individually and remotely. | A lost phone is one `device.revoke` away from useless, from any other device. |
-| **I4** | **Passkeys/WebAuthn bind the device at registration; they do not gate day-to-day use.** Per-action re-authentication is opt-in, configurable, and off by default. | Registration is strong; opening the app is not a biometric checkpoint. |
+| **I4** | **Passkeys/WebAuthn bind the device at registration; they do not gate day-to-day use.** Per-action re-authentication is opt-in, configurable, and **off by default for ordinary work** — opening the app, reading, typing, resolving interactions. **The one exception, on by default, is the identity and revocation surface** (`identity.*`, `device.revoke*`, §7.2), because those are the operations that would let an attacker holding a live session lock the owner out of their own instances. That exception is itself configurable to `off`. | Registration is strong; opening the app is not a biometric checkpoint; and an unattended unlocked phone still cannot silently revoke your laptop. |
 | **I5** | Interaction answers stay **first-come-first-served with acknowledgement** — the existing CAS. Device identity is wired into it so every surface shows *which device* answered, and the loser gets an explicit echo. | §8; the CAS itself is unchanged. |
 
 ---
@@ -89,6 +89,52 @@ pub struct HomeRef {
     pub endpoints: Vec<Endpoint>,
     pub designated_at: OffsetDateTime,
     pub designated_by: DeviceId,
+    /// Set when this home was demoted in favour of another (§3.4 step 5). A
+    /// device that reaches only the old home follows this pointer.
+    pub superseded_by: Option<InstanceId>,
+}
+
+/// Identity-scoped preferences that follow the human across devices. A small
+/// versioned key/value map — cross-instance UI preferences, notification
+/// defaults, `pair_expiry` (§11) — deliberately **not** a place for session or
+/// workspace state. Read with `identity.prefs.get`, written with `.set`, and
+/// merged last-write-wins by wall clock (§3.6).
+pub struct IdentityPrefs {
+    pub version: u64,
+    pub entries: BTreeMap<String, serde_json::Value>,
+}
+
+/// One immutable, monotonic entry in the revocation list. Union-merged, never
+/// removed, and always beats an `Added` record for the same device (§3.6).
+pub struct Revocation {
+    pub device: DeviceId,
+    pub at: OffsetDateTime,
+    pub by: DeviceId,
+    pub reason: RevocationReason,
+    /// The `registry_epoch` at revocation time; drives the epoch floor (§6.3).
+    pub epoch: u64,
+    /// Signed by the identity root key so any instance can verify it without
+    /// trusting the instance that forwarded it.
+    pub sig: Ed25519Signature,
+}
+
+/// A merge outcome the registry could not resolve on its own (§3.6). Today the
+/// only variant that occurs is conflicting `HomeDesignated` records; the enum is
+/// open so a future record type can add one without a breaking change.
+pub enum Conflict {
+    HomeDesignated { candidates: Vec<HomeRef> },
+}
+
+/// What a device submits about *itself* when it is being registered — during
+/// pairing (§5.1), a code-based add (§2.4) or a recovery redemption (§6.4).
+/// It is the un-signed request from which a `Device` record and a `DeviceGrant`
+/// are minted; it carries no authority of its own.
+pub struct DeviceRegistration {
+    pub device_pub: DeviceKey,
+    pub label: String,
+    pub form: DeviceForm,
+    pub platform: DevicePlatform,
+    pub webauthn_attestation: Option<Vec<u8>>,
 }
 ```
 
@@ -98,12 +144,16 @@ pub struct HomeRef {
 /// (12 §1, §2); this document gives it a durable record.
 pub struct Device {
     pub id: DeviceId,                      // uuid v7, minted by the device, `dev_<b32>`
-    pub identity: IdentityId,
+    /// `None` for `AuthSource::Tailnet`: a tailnet-auto-enrolled device is keyed
+    /// by its tailnet login and is never bound to an identity root key (§10.1).
+    pub identity: Option<IdentityId>,
     pub label: String,                     // "Vincent's iPhone" — shown everywhere
     pub form: DeviceForm,                  // Phone | Tablet | Laptop | Desktop | Headless
     pub platform: DevicePlatform,          // { os, os_version, browser, app_kind, standalone }
     /// The device's own signing key. Non-exportable where the platform allows.
-    pub device_key: DeviceKey,
+    /// `None` for `AuthSource::Tailnet`: authority is re-derived from the tailnet
+    /// on every connection, so there is no device key to hold (§10.1).
+    pub device_key: Option<DeviceKey>,
     /// Present when the device registered a passkey (§2). Absent is normal.
     pub webauthn: Option<WebauthnBinding>,
     pub created_at: OffsetDateTime,
@@ -147,8 +197,16 @@ pub enum AuthSource {
 
 ```rust
 /// What a device holds *per instance*. Issued by that instance, stored by that
-/// instance (13 §5.1) and cached by the device. This is the existing bearer
-/// credential of 13 §3.3 — this document adds only the identity/device link.
+/// instance (13 §5.1) and cached by the device.
+///
+/// `InstanceCredential` is the **persisted, per-instance form** of
+/// [13 §3.1](13-security.md#31-the-trait)'s `Grant` — the same bearer credential
+/// of 13 §3.3 — with the identity/device link made **mandatory for paired
+/// devices**. 13's `Grant` keeps `device`/`device_bound` optional because it
+/// also covers grants that are not device-bound; here the paired case is the
+/// only case, so both are required. A tailnet-authenticated device (§10.1)
+/// holds **no long-lived credential at all** and therefore has no
+/// `InstanceCredential` record.
 pub struct InstanceCredential {
     pub instance: InstanceId,
     pub credential: CredentialId,
@@ -227,6 +285,13 @@ Three rules fall out and are worth stating on their own:
    that is the intended semantics — see §6 and §9.3.
 
 ### 1.3 `DeviceGrant` — the certificate that makes this decentralized
+
+**Naming, because two things are called "grant".** `DeviceGrant` (below) is a
+*root-signed certificate* a device presents in order to be authenticated;
+`Grant` ([13 §3.1](13-security.md#31-the-trait)) is the *result* an
+`AuthBackend` returns once it has been. A `DeviceGrant` is minted once by the
+identity root key and verifiable offline by every enrolled instance; a `Grant`
+is produced per authentication and never leaves the instance.
 
 ```rust
 /// Signed by the identity root key. This is what lets a device introduce
@@ -606,7 +671,7 @@ bag.
 | Add a *new* instance | Works locally; the registration is queued as a pending registry mutation and flushed when home returns (§3.6). |
 | Pair a *new* device | **Blocked at home**, but not blocked overall: fall back to the local-shell path (§5.2) on any instance, or the identity file. The error names the alternative. |
 | Revoke a device | **Works, partially.** Fans out immediately to every instance the revoking device can reach; queued for home and for the rest. The UI shows exactly which instances have acknowledged: *"Revoked on 2 of 3 instances. `mini` unreachable — it will apply this within 15 minutes of coming back, or immediately when you next reach it."* Partial revocation reported as partial is the whole point. |
-| Renew an expiring `DeviceGrant` | Blocked. With 90-day grants and renewal attempted from day 60, this needs home to be unreachable for a month; when it happens, the device falls back to its per-instance credentials, which do not expire, and shows a non-blocking warning. |
+| Renew an expiring `DeviceGrant` | Blocked. With 90-day grants and renewal attempted from day 60, this needs home to be unreachable for a month; when it happens, the device falls back to its per-instance credentials, which **default to no expiry** (`InstanceCredential.expires_at: None`, §1.1), and shows a non-blocking warning. Whether they should instead carry a shorter, instance-renewable TTL is [§13 Q5](#13-open-questions). |
 
 **The invariant, and it is absolute: an unreachable home never blocks a device
 from reaching an instance it already has a credential or an unexpired grant
@@ -893,10 +958,16 @@ Order of operations:
    — they are bearer certificates with a `not_after`. The revocation list is
    what makes them ineffective, and it is consulted on every connect and on the
    existing 60-second liveness check ([13 §3.1](13-security.md#31-the-trait)).
-5. The push subscription bound to that device's credential stops delivering
-   ([13 §6](13-security.md#6-browser-side-controls)), so a lost phone also stops
-   buzzing with the content of your interactions. This matters more than it
-   sounds.
+   That check is `AuthBackend::is_revoked`, which takes a `RevocationSubject`
+   precisely so this flow can express *revoke the device* rather than *revoke one
+   credential id* — a `DeviceGrant` has no `CredentialId`.
+5. The push subscription **bound to the device** — not to a credential — is
+   dropped ([07 §8.1](07-remote-protocol.md#81-web-push-primary),
+   [13 §6](13-security.md#6-browser-side-controls)), regardless of how that
+   device authenticates, so a tailnet-authenticated device with no long-lived
+   credential is covered too. A lost phone therefore also stops buzzing with the
+   titles of your sessions and the fact that they need you. This matters more
+   than it sounds.
 
 **Open interactions and in-flight work on the revoked device:**
 
@@ -1293,7 +1364,7 @@ It **bypasses device registration for authentication and keeps it for
 attribution and revocation.** Concretely:
 
 1. A request arriving with trusted identity headers is granted per
-   `[[auth.tailnet.grants]]` ([13 §3.5](13-security.md#35-tailnet-identity)) —
+   `[[auth.tailnet.mappings]]` ([13 §3.5](13-security.md#35-tailnet-identity)) —
    no `DeviceGrant`, no bearer token, no passkey.
 2. The instance **auto-enrolls a `Device` record** keyed by
    `(tailnet login, client-reported device id)` with
@@ -1301,6 +1372,9 @@ attribution and revocation.** Concretely:
    `Tailscale-User-Name` plus the client hint (`"Vincent · iOS · Safari"`). It
    mints **no long-lived credential** — authority is re-derived on every
    connection, which is the property that makes this configuration pleasant.
+   Such a record therefore carries `device_key: None` and `identity: None`
+   (§1.1): there is no device key to bind and no identity root key involved. It
+   is keyed by the tailnet login, and that is the whole of its provenance.
 3. That record participates fully in presence, the writer token, the audit log
    and the interaction attribution (§8) — so "answered by iPhone" works
    identically whether the device is paired or tailnet-authenticated.
@@ -1392,11 +1466,17 @@ Declared in the [03 §2](03-capability-catalog.md#2-declaring-a-capability) styl
 | `identity.rotate_key` | Command | Admin | `{ confirm: "rotate" }` | `{ new_identity, updated: [InstanceId], unreachable: [InstanceId] }` | `DESTRUCTIVE`, `NETWORK` |
 | `identity.prefs.get` / `.set` | Query / Command | Viewer / Operator | `{ key? }` / `{ key, value, version }` | `IdentityPrefs` / `{ version }` | — / `WRITES_FS` |
 | `identity.recovery.generate` | Command | Admin | `{ confirm: "regenerate" }` | `{ codes: [String; 10] }` — invalidates the previous set | `DESTRUCTIVE` |
-| `identity.recovery.use` | Command | Viewer¹ | `{ code, device: DeviceRegistration }` | `{ grant, registry }` | `WRITES_FS` |
+| `identity.recovery.use` | Command | Admin¹ | `{ code, device: DeviceRegistration }` | `{ grant, registry }` | `WRITES_FS` |
 
-¹ `identity.recovery.use` is reachable pre-authentication by construction — it
-*is* an authentication path. It is rate-limited (3/hour/instance), audited
-loudly, and notifies every registered device.
+¹ Declared `Admin` because it carries `WRITES_FS`, which
+[13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog) makes a CI
+failure on a `Viewer` capability. It is nevertheless reachable
+**pre-authentication** — it *is* an authentication path — by exactly the
+mechanism `device.pair.complete` uses (note ² below): the recovery code is
+mapped by the dispatch layer to a short-lived `Admin` grant scoped by
+`capabilities = {identity.recovery.use}`
+([13 §4.1](13-security.md#41-credential-scope)). It is rate-limited
+(3/hour/instance), audited loudly, and notifies every registered device.
 
 ### `device.*`
 
@@ -1442,12 +1522,13 @@ every other exemption.
 
 Consistency check: no capability above is `Viewer` with a `WRITES_FS`,
 `DESTRUCTIVE` or `NETWORK` bit, which is the CI rule from
-[13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog). The two
-`Viewer` commands (`identity.recovery.use`, `device.stepup.*`) are the
-authentication path itself; `recovery.use` carries `WRITES_FS` and is therefore
-declared `Admin` with an explicit pre-auth exemption in the dispatch chain rather
-than being modelled as a `Viewer` capability — the exemption is a named,
-enumerated entry, not a general escape hatch.
+[13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog). The
+remaining `Viewer` commands (`device.stepup.challenge` / `.verify`) are the
+authentication path itself and carry no effect bits at all.
+`identity.recovery.use` carries `WRITES_FS` and is therefore declared `Admin`
+with an explicit pre-auth exemption in the dispatch chain rather than being
+modelled as a `Viewer` capability — the exemption is a named, enumerated entry,
+not a general escape hatch.
 
 ---
 
@@ -1476,9 +1557,10 @@ enumerated entry, not a general escape hatch.
    bad in practice.
 5. **Grant lifetime of 90 days** is a guess balancing offline-revocation risk
    against a device that has not seen home in a while. It interacts badly with a
-   phone that only ever reaches one non-home instance. Should the *per-instance
-   credential* carry a shorter TTL instead, since it can be renewed by the
-   instance itself with no home involvement?
+   phone that only ever reaches one non-home instance. **Decided for now:** the
+   per-instance credential carries `expires_at: Option<..>` and **defaults to no
+   expiry** (§1.1, §3.5). The open part is only the alternative — giving it a
+   shorter TTL, since the instance can renew it itself with no home involvement.
 6. **Multi-user identities on one instance.** §1.2 assumes one identity per
    instance. Two humans sharing a dev box means two enrolled root keys and
    per-identity session ownership, which the session model does not have — the

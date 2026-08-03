@@ -9,11 +9,17 @@ Related: [02 — Crate map](02-crate-map.md) ·
 [05 — Session model](05-session-model.md) ·
 [08 — Web client](08-web-client.md) ·
 [12 — Collaboration](12-collaboration.md) ·
-[13 — Security model](13-security.md)
+[13 — Security model](13-security.md) ·
+[23 — Identity and devices](23-identity-and-devices.md)
 
 ---
 
 ## 1. Topology and federation
+
+Identity, devices and the optional `home` registry role are owned by
+[23 — Identity and devices](23-identity-and-devices.md). This section owns the
+*session* topology; 23 owns *who may connect and how that is proved and
+revoked*.
 
 ### 1.1 The shape
 
@@ -31,11 +37,22 @@ Related: [02 — Crate map](02-crate-map.md) ·
 
 Two facts define everything else:
 
-- **Each instance is authoritative for its own sessions.** An instance never
-  proxies another instance, never mirrors another instance's state, and never
-  needs to know that other instances exist. There is no cluster, no leader
-  election, no shared store. An instance that is offline simply contributes
-  nothing.
+- **Each instance is authoritative for its own sessions.** No instance proxies,
+  mirrors or depends on another instance for **session or terminal state**.
+  There is no cluster, no leader election, no shared store for the work itself,
+  and that is precisely what makes the federation client-side. An instance that
+  is offline simply contributes nothing.
+
+  **The one exception, stated precisely.** Instances that share an owner's
+  identity registry replicate **revocations and registry epochs only**
+  ([23 §3.2](23-identity-and-devices.md#32-how-other-instances-learn-about-it),
+  [23 §6.1](23-identity-and-devices.md#61-revoking-one-device)) — a small,
+  signed, monotonic, best-effort channel. No session operation depends on it: an
+  instance that never syncs still serves every session it owns, and still
+  verifies device grants offline against the enrolled identity root key. When
+  the channel fails, the failure is reported as *partial*
+  (`applied_on` / `pending_on` on `device.revoke`), never hidden. Nothing else
+  crosses instance boundaries.
 - **The client federates.** The web client holds a list of *instance
   connections*, each with its own credential, its own connection state, its own
   event sequence space, and its own catalog. The unified session list is a
@@ -377,7 +394,7 @@ per connection); every response echoes it. Unsolicited server messages carry no
   "instance": { "id": "3f2a…", "name": "workstation", "version": "0.4.1",
                 "platform": { "os": "linux", "arch": "aarch64" },
                 "catalog_hash": "b3:7c1e…" },
-  "auth": { "required": true, "methods": ["bearer", "password", "tailnet"] },
+  "auth": { "required": true, "methods": ["bearer", "password", "invite", "tailnet", "device_grant"] },
   "features": ["term.binary", "blob.chunked", "stt.opus", "push.webpush"],
   "limits": { "max_control_frame": 1048576, "max_binary_frame": 8388608,
               "replay_window_bytes": 4194304, "replay_window_events": 4096 }
@@ -408,7 +425,7 @@ reconnects and across sessions:
 
 ```json
 { "t": "auth_challenge", "id": null,
-  "methods": ["bearer", "password", "tailnet"],
+  "methods": ["bearer", "password", "invite", "tailnet", "device_grant"],
   "nonce": "n_9f2c…" }
 ```
 
@@ -623,7 +640,7 @@ pub struct ViewportPolicy {
     /// The size actually applied to the PTY. Set by the writer's viewport,
     /// or pinned by the user.
     pub authoritative: TermSize,
-    pub owner: SizeOwner,     // Writer | Pinned { by: ActorId } | Smallest
+    pub owner: SizeOwner,     // Writer | Pinned { by: ActorId, size: TermSize } | Smallest
 }
 
 pub enum SizeOwner {
@@ -672,6 +689,40 @@ A client always reports its viewport (used for presence, for `Smallest`, and to
 decide letterboxing); `request_authoritative` is the explicit ask, and is
 refused with `precondition_failed` if the client does not hold the writer token.
 
+### 4.4 Native sessions
+
+Everything above §4.4 describes a `pty` session. A `native` session
+([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)) has
+no PTY and no terminal at all, and the protocol says so rather than degrading
+quietly.
+
+- **The mode is on the wire, before attach.** A session's `SessionMode`
+  ([05 §1.5](05-session-model.md#1-the-object-model)) is carried in
+  `session.get`, in every row of the unified session list (§1.6), and in the
+  `Welcome`/attach reply. A client therefore knows whether a grid exists
+  *before* it decides how to render the session, and never has to infer it from
+  the absence of bytes.
+- **No terminal surface exists.** For a `native` session there are no terminal
+  byte frames (`kind=1`/`kind=2`), no grid snapshot (`kind=5`,
+  `TermSnapshotMeta`), and no `ViewportPolicy` — there is no PTY to size.
+  `TermAttach` and `TermResize` return `unsupported`. Clients still report a
+  viewport, for presence only ([12 §2](12-collaboration.md#2-presence-is-first-class-state)).
+- **§6's lossy/lossless split degenerates.** A native session's stream is
+  entirely lossless, so `LagPolicy::Strict` (never drop; close the connection on
+  overflow) is the **only legal policy** for it. This is not a preference: §6.2's
+  fallback is "collapse to state", and a grid *is* a lossless summary of
+  arbitrary byte history, whereas a list of tool calls and messages is not.
+  There is nothing structured agent events can be collapsed into, so they must
+  not be dropped.
+- **§7's latency budget does not apply.** It measures a keystroke round trip,
+  and a native session has no keystrokes — the unit is a submitted prompt or a
+  permission answer, whose budget is dominated by the agent. Local echo is
+  disabled for the same reason.
+- **JSON only.** The binary frame `kind` set (§3.6) stays closed; native
+  sessions introduce no new binary kinds and are carried entirely as typed
+  events on the control channel. Blobs (images in a prompt) use the existing
+  `kind=3` path unchanged.
+
 ---
 
 ## 5. Resume and reliability
@@ -687,12 +738,32 @@ refused with `precondition_failed` if the client does not hold the writer token.
   PTY bytes that drew its box cannot cross.
 - Instance-scoped events (config, plugin, peers) use the reserved session id
   `s_instance` with its own sequence.
+- **Workspace-scoped events** (`workspace_fs` and anything else keyed to a
+  workspace rather than a session, §3.7) carry `workspace` instead of `session`
+  in the envelope and have their own per-workspace `Seq` space. So there are
+  exactly three sequence spaces — per session, per workspace, and the single
+  `s_instance` space — and `since_seq` is keyed uniformly by whichever id the
+  event carries.
 
 ### 5.2 Replay window
 
 The daemon keeps, per session, a ring buffer of the last `min(4 MiB, 4096
 events)` (both configurable, both reported in `Welcome.limits`). On
 `Subscribe{since_seq}` or `TermAttach{since_seq}`:
+
+**`since_seq` shape, stated once because the two messages differ deliberately.**
+In `Subscribe` it is a **map** keyed by session id, workspace id or
+`s_instance`, because one subscription covers many of them (§3.7, §5.1). In
+`TermAttach` it is a **scalar**, because a terminal attach covers exactly one
+session. Neither form is a shorthand for the other, and a client that sends the
+wrong shape gets `Error{code:"precondition_failed"}` rather than a silently
+ignored field.
+
+| Scope | Window kept | On `since_seq` older than the window |
+|---|---|---|
+| session (events + terminal bytes) | `min(4 MiB, 4096 events)` | `Resync` + grid snapshot, then live |
+| workspace (`workspace_fs` and other workspace-scoped events) | last 1024 events, no byte cap — these events are small and there is no snapshot to send | `Resync` with `snapshot_follows: false`; the client re-reads current state via `workspace.files.*` |
+| `s_instance` (config, plugin, peers) | last 1024 events | `Resync` with `snapshot_follows: false`; the client refetches the catalog and config |
 
 | Condition | Response |
 |---|---|
@@ -712,6 +783,10 @@ events)` (both configurable, both reported in `Welcome.limits`). On
 The client **must** treat `Resync` as "discard local state for this session and
 rebuild". It is a normal, expected message, not an error — a phone that slept
 for an hour will always get one.
+
+**Canonical name, binding.** The message is `Resync`, tagged `"t": "resync"` on
+the wire (§3.2). It is *not* `resync_required`; any document or catalog entry
+using that spelling is wrong and should be corrected to match this one.
 
 ### 5.3 Daemon restart
 
@@ -739,6 +814,11 @@ scrollback above a separator. For an agent session the agent-native resume path
 (`claude --resume <uuid>`, `codex resume`) is offered as the one-tap action.
 Re-parenting PTYs to a supervisor process so they survive an upgrade is
 [05 §13.1](05-session-model.md#13-open-questions), deferred.
+
+A **`native` session** (§4.4) has no PTY and therefore never enters
+`SessionState::Orphaned`: its restart path is the agent's own ACP session
+resume, re-establishing the JSON-RPC connection and resuming the agent-side
+session id, with the typed event history replayed from `omt-store`.
 
 ### 5.4 Mobile specifics
 
@@ -881,14 +961,23 @@ by every desktop browser.
 
 - The client subscribes via the service worker and posts the subscription to
   `notification.push.subscribe` (a normal capability, so it is auth'd and
-  audited; the same name is used in [08 §8.6](08-web-client.md#86-pwa-and-web-push)). The daemon stores endpoint + keys per device credential.
+  audited; the same name is used in [08 §8.6](08-web-client.md#86-pwa-and-web-push)). The daemon stores endpoint + keys **per device** (`DeviceId`,
+  [23 §1.1](23-identity-and-devices.md#11-four-types)), not per credential —
+  a tailnet-authenticated device holds no long-lived credential at all
+  ([23 §10.1](23-identity-and-devices.md#101-how-it-composes)) and must still be
+  able to receive and to lose notifications. Revoking the device drops its
+  subscription, whatever method that device authenticates with.
 - The daemon signs and POSTs directly to the browser vendor's push service
   (`fcm.googleapis.com`, `web.push.apple.com`). **This is the only outbound
   network connection omt ever makes**, it is off by default, and enabling it is
   an explicit, documented consent step ([13 §9](13-security.md)).
 - **Payloads are encrypted end-to-end** by the Web Push spec (aes128gcm with the
-  client's keys), so the vendor's push service sees ciphertext. Even so, omt
-  sends only a *pointer*, never content:
+  client's keys), so the vendor's push service sees ciphertext. Even so, the
+  payload is deliberately minimal: an **addressable pointer** (instance,
+  session, interaction id) plus a **short, non-secret title and body derived
+  from the session and the interaction kind** — the agent name, the workspace,
+  and what class of thing is being asked. It never carries the question text,
+  the agent's output, a tool's arguments, or any scrollback:
 
 ```json
 { "v": 1, "instance": "3f2a…", "session": "s_4b2f",
@@ -897,8 +986,9 @@ by every desktop browser.
 ```
 
 The service worker fetches the actual question over the authenticated WebSocket
-when the notification is tapped or when it can do so silently. Consequence: a
-notification for a revoked device shows a generic title and nothing more.
+when the notification is tapped or when it can do so silently. Consequence, and
+it is the security-relevant one: a notification delivered to a **revoked** device
+can never be expanded, so it shows a generic title and nothing more.
 
 - Triggers, all configurable per device: interaction opened, agent turn ended
   after > N seconds, agent error, session died, writer takeover requested.
@@ -944,7 +1034,10 @@ Rejected: an omt-operated push relay. It would be a hosted service, and
    [06 — Agent layer](06-agent-layer.md).
 5. **iOS PWA push reliability** for the flagship scenario has not been measured.
    If it is bad, the `ntfy` path may need to become the *default* recommendation
-   rather than the private-mode alternative.
+   rather than the private-mode alternative. **This is the single owner of the
+   "should `ntfy` be the default?" question**;
+   [13 §11 Q7](13-security.md#11-open-questions) defers to it and contributes the
+   metadata-exposure argument.
 6. **Blob chunk size** (currently unspecified; likely 256 KiB) interacts with
    backpressure — a large image upload from a phone must not starve the
    interaction path. Probably needs its own queue class alongside lossy/lossless.

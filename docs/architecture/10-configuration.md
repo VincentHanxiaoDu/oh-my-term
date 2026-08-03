@@ -576,7 +576,8 @@ applied through `toml_edit` at the reported span.
 | `OMT-C230` | `media.osc_bridge.max_bytes` ≤ `media.quota.max_blob_bytes` ≤ `media.quota.max_total_bytes` |
 | `OMT-C240` | every `plugins.enabled` id has an installed, manifest-valid plugin |
 | `OMT-C250` | `telemetry.enabled` may only be `false` (see §7.11) |
-| `OMT-C402` | keybinding conflicts: duplicate trigger, chord/prefix shadowing, unknown capability |
+| `OMT-C401`–`OMT-C412` | keybinding conflicts: duplicate trigger, chord/prefix shadowing, unknown capability or args, unknown `when` context, inner-keymap shadowing, undeliverable or ambiguous chords, refusal-list violations. Individual codes are defined and owned by [16 §5.2](16-input-and-keymap.md#52-static-validation-at-config-load) |
+| `OMT-C420`–`OMT-C425` | modal-keymap conflicts (vim/emacs): ambient-mode bindings, `modes` without a modal engine, operator-pending shadowing, `Esc` timing. Owned by [16 §6.8](16-input-and-keymap.md#68-conflict-validation-for-modal-keymaps) |
 
 ### 5.5 Where validation runs
 
@@ -1056,16 +1057,20 @@ and machine-editable; contexts are expressed on the trigger, not by nesting.
 ```toml
 #:schema https://omt.dev/schemas/keybindings.schema.json
 
+# ── Top-level keys: exactly two ───────────────────────────────────────────
+leader = "ctrl-b"      # relocates the whole `<leader>` namespace with one edit
+keymap = "default"     # "default" | "vim" | "emacs" | a name in keymaps/
+
 # ── Global ────────────────────────────────────────────────────────────────
-"ctrl-b c"        = "session.create"
-"ctrl-b x"        = { capability = "session.close", args = { confirm = true } }
-"ctrl-b |"        = { capability = "pane.split", args = { direction = "vertical" } }
-"ctrl-b -"        = { capability = "pane.split", args = { direction = "horizontal" } }
-"ctrl-b z"        = "pane.zoom"
-"ctrl-b ["        = "tui.enter_copy_mode"
-"ctrl-b w"        = "tui.open_session_picker"
-"ctrl-b a"        = "tui.open_agent_dashboard"
-"ctrl-b ,"        = "tui.open_settings"
+"<leader> c"      = "session.create"
+"<leader> x"      = { capability = "session.close", args = { confirm = true } }
+"<leader> |"      = { capability = "pane.split", args = { direction = "vertical" } }
+"<leader> -"      = { capability = "pane.split", args = { direction = "horizontal" } }
+"<leader> z"      = "pane.zoom"
+"<leader> ["      = "tui.enter_copy_mode"
+"<leader> w"      = "tui.open_session_picker"
+"<leader> a"      = "tui.open_agent_dashboard"
+"<leader> ,"      = "tui.open_settings"
 "ctrl-shift-p"    = "tui.open_command_palette"
 
 # ── Context-scoped: `when` restricts the binding ──────────────────────────
@@ -1081,12 +1086,35 @@ capability = "tui.exit_copy_mode"
 
 [[binding]]
 trigger = "ctrl-c"
-when    = "session_focused && !copy_mode"
+when    = "terminal_focused && !copy_mode"
+force   = true            # `ctrl-c` is on 16 §5.4's refusal list
 capability = "session.send_keys"
 args     = { keys = "" }
 
 # ── Unbinding ─────────────────────────────────────────────────────────────
-"ctrl-b d" = "none"
+"<leader> d" = "none"
+```
+
+Three more per-binding fields, shown together because they only exist in the
+`[[binding]]` table form:
+
+```toml
+[[binding]]
+trigger  = "ctrl-shift-v"
+requires = "kitty_keyboard"     # or "modify_other_keys", "cmd_forwarding"
+platform = ["macos", "linux"]
+capability = "media.image.paste"
+
+[[binding]]
+trigger    = "d d"
+modes      = ["normal"]         # only meaningful under a modal keymap
+capability = "explorer.delete"
+
+[[binding]]
+trigger    = "<leader> ctrl-h"
+repeatable = true               # exempt from 16 §9.4's repeat guard
+capability = "pane.resize"
+args       = { direction = "left" }
 ```
 
 Grammar:
@@ -1097,16 +1125,45 @@ Grammar:
   `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`,
   and printable punctuation). **Chords** are space-separated keystrokes in one
   string: `"ctrl-b c"`. This is the another terminal convention and it is a good one.
+  A trigger may also name a **mouse event with modifiers** (`"shift-mouse1"`);
+  the spelling is [16 §2.3](16-input-and-keymap.md#23-resolution)'s.
+- **`<leader>`** — legal in **any** trigger position, and expands to whatever the
+  top-level `leader` key names. Writing the literal `ctrl-b` is still legal and
+  still means literally `ctrl-b`; the point of `<leader>` is that relocating the
+  prefix is one edit rather than forty.
+- **Top-level keys** — exactly two: `leader` (default `"ctrl-b"`) and `keymap`
+  (`"default" | "vim" | "emacs"`, or a name resolved in `keymaps/`, see
+  [16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)). Everything else
+  at the top level is a trigger.
 - **`"none"`** unbinds, exactly as another terminal's `REMOVED_KEYBINDING_SERIALIZATION`.
 - **Action** — a bare string (a capability name) or a table with `capability`
   and `args`. `args` is validated against that capability's input schema at
   config-validation time, so a typo in `direction = "verticl"` is caught by
   `omt config validate`, not at keypress time.
-- **`when`** — a small boolean predicate over named contexts
-  (`session_focused`, `copy_mode`, `agent_bound`, `interaction_card_focused`,
-  `search_active`, `web`, `tui`), with `&&`, `||`, `!`, parentheses. Resolution
-  is most-specific-first: a binding with a `when` that matches beats one without.
-- **Platform** — an optional `platform = ["macos"]` on a `[[binding]]`.
+- **`when`** — a small boolean predicate with `&&`, `||`, `!`, parentheses over
+  named contexts. **The vocabulary is
+  [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet`**, which is
+  the authoritative superset; this document does not enumerate it, so the two
+  cannot drift. `session_focused` and `interaction_card_focused` are accepted as
+  deprecated aliases for `terminal_focused` and `card_focused`.
+- **Resolution** — how competing bindings are ordered is **not** decided here.
+  [16 §2.3](16-input-and-keymap.md#23-resolution) owns it, in five rules
+  (pending chord, modal context, specificity, config layer, passthrough). This
+  document owns the file's shape; 16 owns what the file means.
+- **Platform and capability gates** — optional `platform = ["macos"]` and
+  `requires = "kitty_keyboard" | "modify_other_keys" | "cmd_forwarding"` on a
+  `[[binding]]`. `platform` is about the OS; `requires` is about a negotiated
+  terminal capability ([16 §5.5](16-input-and-keymap.md#55-terminal-capability-probing)).
+  A binding whose gate is unmet is not installed, and a *user* binding in that
+  state is reported (`OMT-C408`) rather than silently dropped.
+- **`force = true`** — required to bind a key on
+  [16 §5.4](16-input-and-keymap.md#54-conflict-policy)'s refusal list. Legal only
+  in the `[[binding]]` table form; without it the binding is an `OMT-C410` error.
+- **`modes = [...]`** — restricts a binding to named modes of a modal keymap
+  ([16 §6](16-input-and-keymap.md#6-modal-keymaps-vim-mode-and-emacs-mode)).
+  Table form only; declaring it under a non-modal keymap is an `OMT-C421` error.
+- **`repeatable = true`** — exempts the binding from the key-repeat guard in
+  [16 §9.4](16-input-and-keymap.md#94-key-repeat). Table form only.
 
 Because actions are capability names, **the keymap is parity-checked**: a test
 asserts every action in the default keymap names a registered capability, and

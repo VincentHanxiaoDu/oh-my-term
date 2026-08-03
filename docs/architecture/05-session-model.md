@@ -10,7 +10,8 @@ Related: [00 — Overview](00-overview.md) · [01 — Principles](01-principles.
 [03 — Capability catalog](03-capability-catalog.md) ·
 [04 — Terminal core](04-terminal-core.md) · [06 — Agent layer](06-agent-layer.md) ·
 [07 — Remote protocol](07-remote-protocol.md) ·
-[12 — Collaboration](12-collaboration.md) · [13 — Security](13-security.md).
+[12 — Collaboration](12-collaboration.md) · [13 — Security](13-security.md) ·
+[17 — Panes and layout](17-panes-and-layout.md) (the deepening of §2).
 
 The crate's contract in one paragraph: it is a **synchronous, deterministic state
 machine over the session tree**, driven by (a) capability calls arriving from
@@ -76,9 +77,9 @@ pub struct Session {
     pub workspace: WorkspaceId,
     pub title: SessionTitle,          // explicit override, else OSC 2, else command
     pub kind: SessionKind,            // Shell | Command { argv } | Agent { kind }
+    pub mode: SessionMode,            // D8; §1.5
     pub state: SessionState,
-    pub term: Terminal,               // omt-term, §4 of doc 04
-    pub pty: PtyHandle,               // omt-pty
+    pub surface: SessionSurface,      // §1.5 — replaces the old `term` + `pty` pair
     pub cwd: Option<PathBuf>,         // live, from OSC 7 / proc inspection
     pub agent: Option<AgentBinding>,  // see 06; a property, not a child object
     pub writer: WriterState,          // §5
@@ -87,6 +88,29 @@ pub struct Session {
     pub created_at: Timestamp,
     pub exited_at: Option<Timestamp>,
     pub env: SessionEnv,              // what omt injected, for reproducible restore
+}
+
+/// D8. Chosen at creation, immutable for the session's life.
+pub enum SessionMode { Pty, Native }
+
+bitflags! {
+    /// A set of `SessionMode`s. Used by adapters to declare which modes they
+    /// can be driven in ([06 §7](06-agent-layer.md#7-adapters)). Named
+    /// `SessionModeSet`, not `ModeSet` — that name belongs to the keymap's
+    /// editing-mode flags ([16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)).
+    pub struct SessionModeSet: u8 {
+        const PTY_ONLY = 0b01;
+        const NATIVE   = 0b10;
+    }
+}
+
+/// Makes "a native session has no PTY" unrepresentable rather than an unwrap site.
+pub enum SessionSurface {
+    /// `SessionMode::Pty` — the user's real CLI in a real PTY, observed.
+    Pty { pty: PtyHandle, term: Terminal },
+    /// `SessionMode::Native` — the agent spawned in ACP mode; omt renders the
+    /// whole session from typed events. No PTY, no grid, no authoritative size.
+    Native { conn: AcpConnection, transcript: Transcript },
 }
 
 pub enum SessionState {
@@ -108,6 +132,9 @@ pub struct Pane {
     pub size: GridSize,               // derived from the layout and the client's size
 }
 ```
+
+`Session::mode()` is the discriminant accessor over `surface`, and the stored
+`mode` field must always agree with the `SessionSurface` variant (§11).
 
 ### 1.2 Identity and lifetimes
 
@@ -140,9 +167,37 @@ workspaces.
 4. An **exited** session is retained for `exited_retention` (default 30 min, or
    until explicitly closed) so the user can read the last output and re-run.
 
+### 1.3 Session modes (D8)
+
+Two modes, chosen at creation and immutable thereafter
+([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)):
+`pty` — the user's real CLI in a real PTY, observed from outside — is the
+default and the product premise; `native` — the agent spawned in ACP mode with
+no TUI, omt rendering the whole session from typed events — is opt-in.
+
+- A `native` session has **no PTY, no grid, and no authoritative size**. It never
+  participates in `ViewportPolicy` ([07 §4.3](07-remote-protocol.md#43-the-resize-problem));
+  every client simply renders it at its own width.
+- `SessionMode` is visible on every surface, and a `native` session is **always
+  labelled as such** — the user must never be unsure which product they are
+  talking to (D8).
+- The tiered `EventSource` model of [06 §3](06-agent-layer.md) applies to `pty`
+  sessions only. In `native` mode the ACP connection is the sole source, so there
+  is nothing to merge and nothing to degrade.
+- **Closing** a native session closes the JSON-RPC connection and then terminates
+  the adapter process, rather than SIGHUP-ing a PTY (§1.2 lifetime rule 2 is the
+  `pty` form).
+- History (§9) and blocks come from block closure, so they exist **only for `pty`
+  sessions**. A native session's timeline is reconstructed from its typed events
+  ([20 — Recall and timeline](20-recall-and-usage.md)).
+
 ---
 
 ## 2. Layout: the BSP tree
+
+A workspace's tiling arrangement is an **n-ary split tree** (historically, and in
+this heading, "BSP"); the deepening of everything below is
+[17 — Panes and layout](17-panes-and-layout.md).
 
 ```rust
 pub enum Layout {
@@ -215,6 +270,15 @@ session has one authoritative `(cols, rows)` with a `ViewportPolicy` whose
 `SizeOwner` is `Writer` (default), `Pinned { by }`, or `Smallest` (opt-in). This
 crate stores the policy on the session, applies the resulting size to the PTY,
 and reports every client's viewport for presence.
+
+In [17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)'s
+vocabulary, which owns per-client layout: `SizeOwner::Writer` is rendered as
+`SizePolicy::Driver`, and `Participation::{Participant, Observer}` is 17's term
+for a client's sizing role. A client in block view is always an `Observer`.
+07 §4.3 remains the authority for the negotiation itself.
+
+A `Native` session ([§1.3](#13-session-modes-d8)) has no authoritative size at
+all and is excluded from this negotiation entirely.
 
 What follows from that here:
 
@@ -297,7 +361,8 @@ with a snapshot appropriate to `mode`:
 If `since_seq` is supplied and still within the retained event window, the
 instance replays from it instead — that is the reconnect path, and it is what
 makes a phone coming back from a tunnel resume mid-stream rather than flashing.
-If the seq is too old, the reply is `resync_required` plus a fresh snapshot.
+If the seq is too old, the reply is `Resync`
+([07 §5.2](07-remote-protocol.md#52-replay-window)) plus a fresh snapshot.
 
 **Detach** is implicit (transport closed) or explicit
 (`session.detach`/`instance.detach`). Detaching:
@@ -334,9 +399,14 @@ input-arbitration requirement.
 
 ### 5.1 The rule
 
-> **At most one actor may write to a session's PTY at any moment. Holding the
-> writer token is a visible, explicit, revocable state, and every client always
-> knows who holds it.**
+> **At most one actor may write to a session's *input channel* at any moment.
+> Holding the writer token is a visible, explicit, revocable state, and every
+> client always knows who holds it.**
+
+In a `pty` session the input channel is the PTY. In `native` mode ([§1.3](#13-session-modes-d8))
+the only input path is `agent.prompt`, so the token gates that instead of the
+PTY-write capabilities. [12 §3.1](12-collaboration.md#31-what-it-governs) owns
+what the token governs.
 
 Silent last-write-wins is not acceptable: two people (or a person and an agent)
 typing into the same shell interleave into a corrupted command line, and the
@@ -373,10 +443,10 @@ Semantics are [12 §3.3](12-collaboration.md#33-lifecycle)'s; the handlers are
 here.
 
 ```
-session.writer.acquire   { session, reason?, force: bool }
-                         -> Acquired { epoch, holder } | Conflict { holder, takeover? }
-session.writer.release   { session }                  -> Released
-session.writer.keep      { session }                  -> Kept   // holder cancels a takeover
+session.writer.acquire   { session, reason?, force: bool, keep_size: bool }
+                         -> Acquired { epoch } | Conflict { holder }
+session.writer.release   { session }                  -> Ack
+session.writer.keep      { session }                  -> Ack   // holder cancels a takeover
 session.writer.status    { session }                  -> WriterStatus
 ```
 
@@ -387,10 +457,9 @@ a takeover storm resolves to the most recent requester (12 §6 C5).
 
 Consequences for the data model:
 
-- **`auto_acquire`.** When exactly one client is attached with `Operator`+ and
-  the token is `Free`, the first write implicitly acquires it. Single-user
-  operation therefore never sees the mechanism at all — the token only becomes
-  visible when there is contention, which is the correct ergonomic trade.
+- **`auto_acquire`.** The field lives here; its semantics — when it applies, what
+  epoch it produces, and how it is audited — are
+  [12 §3.3](12-collaboration.md#33-lifecycle)'s first row.
 - **Writes are checked, not queued.** `session.send_text` / `send_keys` /
   `write_bytes` from a non-holder returns `precondition_failed` with the current
   holder in the structured error detail, so the client can offer "request
@@ -403,7 +472,10 @@ Consequences for the data model:
 - **Agents hold the token too.** When the agent layer injects text as a last
   resort ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)),
   it acquires the token as `ActorKind::Agent`, so a human sees "claude is typing"
-  rather than mysterious characters, and can take over.
+  rather than mysterious characters, and can take over. **This is the current
+  lean, not a settled decision**: writer-token semantics for `ActorKind::Agent`
+  are [12 §9](12-collaboration.md#9-open-questions)'s open question 5 and are
+  waiting on a real multi-agent use case. If 12 settles differently, 12 wins.
 - **Observers always see the state.** `WriterStatus` is part of every session
   snapshot and every change is an event, so the TUI can render "driven by:
   phone (Ada) · 42 s" in the pane border and a phone can render the same. The
@@ -512,7 +584,8 @@ is a different architecture; see the open questions.
 | Block metadata (command, exit, cwd, git, timing, attribution) | **Append-only log**, one record per block close | The valuable, permanent artifact; also feeds history (§9) |
 | Scrollback | **Chunk snapshot**, delta by chunk generation | Per [04 §2.4](04-terminal-core.md#24-scrollback-blocks-of-logical-lines) each chunk has a generation; only changed chunks are written. Written every `scrollback_flush` (default 10 s) and on clean shutdown |
 | Live grid (viewport) | Snapshot with the scrollback flush | Small and bounded; makes restore show the last screen |
-| Raw PTY byte ring | **Not persisted** | Bounded, ephemeral, only used for live client resume |
+| Raw PTY byte ring (`pty` sessions only) | **Not persisted** | Bounded, ephemeral, only used for live client resume |
+| Native session transcript (`native` sessions only) | **Append-only log**, like block metadata | It *is* the session — there is no scrollback to fall back on (§1.3) |
 | Interaction ledger | Append-only log (owned by `omt-agent`) | Must be exactly-once across restart |
 | Credentials | `omt-auth` + `omt-store`, separate file, 0600 | [P8](01-principles.md#p8--security-by-default-no-ambient-trust) |
 
@@ -537,9 +610,11 @@ pub enum RestoreOutcome {
 
 Rules:
 
-- Every log record is length-prefixed and checksummed. A torn tail record (the
-  classic crash artifact) is truncated, not treated as corruption.
-- Snapshots are written to a temp file and `rename`d — never written in place.
+- **The durability policy is [21 §6](21-data-lifecycle.md#6-crash-consistency)'s**
+  and is not restated here: the `Record` frame (length prefix + CRC), torn-tail
+  truncation, temp-file-plus-`rename` for snapshots, the three fsync classes, and
+  the repair path when this enum returns `Partial`. What follows is only what is
+  specific to the session tree.
 - A restore never *silently* drops data. `Partial` surfaces as a warning event
   and a banner in every surface.
 - Restored sessions come back as `SessionState::Orphaned`. Their content is
@@ -548,10 +623,12 @@ Rules:
   injected env, into the same pane, keeping the old scrollback above a
   separator. This is materially better than either silently killing the session
   or pretending it is alive.
-- **Retention**: scrollback snapshots are capped per session
-  (`store.max_scrollback_bytes`, default 8 MiB) and per instance
-  (default 1 GiB), evicting oldest-first. Block metadata is retained far longer
-  (default 1 year) because it is small and it is the history.
+- **Retention is [21 §3](21-data-lifecycle.md#3-retention-and-compaction)'s**,
+  including the per-instance cap and the budget arithmetic behind it. The only
+  number this document needs inline is the per-session one, because it bounds a
+  single session's restore: scrollback snapshots are capped per session at
+  `[store.retention] scrollback_max_bytes_per_session`, default 8 MiB, evicting
+  oldest-first.
 
 ### 8.3 Versioning
 
@@ -621,11 +698,11 @@ Decisions:
 - **Sync across instances is out of scope for v1.** A federating web client
   ([00 §7](00-overview.md)) queries each instance and merges client-side. No
   cloud, per [00 §8](00-overview.md).
-- **Redaction.** Commands matching configured secret patterns (default: `export
-  *_TOKEN=`, `*_KEY=`, `--password`, and anything the shell marked as
-  `HISTCONTROL=ignorespace`) are stored with the value replaced by `‹redacted›`.
-  The block's *output* is not redacted — that is a different problem — but the
-  durable, searchable, syncable artifact is.
+- **Redaction** — including what is redacted, in which streams, with which rules
+  and with which marker — is
+  [21 §2](21-data-lifecycle.md#2-redaction-before-write)'s, and it covers the
+  block's persisted *output* as well as its command text. History is written
+  through the same choke point as everything else.
 
 ---
 
@@ -644,9 +721,9 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `workspace.open` | O | `{ path, name? }` | `{ workspace, created: bool }` |
 | `workspace.close` | O | `{ workspace, close_sessions: bool }` | `{ closed_sessions: [SessionId] }` |
 | `workspace.rename` | O | `{ workspace, name }` | `WorkspaceInfo` |
-| `workspace.layout.get` | V | `{ workspace }` | `{ layout: LayoutTree, geometry: [(PaneId, Rect)] }` |
-| `workspace.layout.set` | O | `{ workspace, layout }` | `{ layout }` |
-| `workspace.layout.preset` | O | `{ workspace, preset }` | `{ layout }` |
+| `workspace.layout.get` | V | `{ workspace }` | `{ layout: LayoutTree, geometry: [(PaneId, Rect)] }` — **deprecated alias** for `layout.get` ([17 §9.2](17-panes-and-layout.md#92-layout)); kept two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
+| `workspace.layout.set` | O | `{ workspace, layout }` | `{ layout }` — **deprecated alias** for `layout.set` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
+| `workspace.layout.preset` | O | `{ workspace, preset }` | `{ layout }` — **deprecated alias** for `layout.preset` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
 | `workspace.focus` | O | `{ workspace, pane }` | `{ focused: PaneId }` |
 | `workspace.git.status` | V | `{ workspace }` | `VcsSummary` — **deprecated alias** for `workspace.vcs.summary` ([15 §6](15-workspace-explorer.md#6-capabilities)); kept for two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
 | `workspace.worktree.list` | V | `{ workspace }` | `{ worktrees: [WorktreeInfo] }` |
@@ -659,7 +736,7 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 |---|---|---|---|
 | `session.list` | V | `{ workspace?, include_exited: bool }` | `{ sessions: [SessionInfo] }` |
 | `session.get` | V | `{ session }` | `SessionInfo` |
-| `session.create` | O | `{ workspace, kind, cwd?, env?, size?, pane_target? }` | `{ session, pane }` — effects: `SPAWNS_PROCESS` |
+| `session.create` | O | `{ workspace, kind, mode: SessionMode = Pty, cwd?, env?, size?, pane_target? }` | `{ session, pane }` — effects: `SPAWNS_PROCESS`; `mode` per [§1.3](#13-session-modes-d8) |
 | `session.close` | O | `{ session, force: bool }` | `{ status }` — effects: `DESTRUCTIVE` |
 | `session.restart` | O | `{ session }` | `{ session }` — effects: `SPAWNS_PROCESS`, `DESTRUCTIVE` |
 | `session.rename` | O | `{ session, title }` | `SessionInfo` |
@@ -672,8 +749,8 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `session.signal` | O | `{ session, signal }` | `Ack` — effects: `DESTRUCTIVE` |
 | `session.scrollback.get` | V | `{ session, from: Position?, lines, mode }` | `{ lines: [StyledLine], from, to }` |
 | `session.search` | V | `{ session, query, cursor? }` | `{ matches, cursor, exhausted }` |
-| `session.target_at` | V | `{ session, position }` | `Option<Target>` |
-| `session.target_resolve` | V | `{ session, position }` | `ResolvedTarget` (carries `explorer: Option<ExplorerRef>`, [15 §8.1](15-workspace-explorer.md#81-fileline-from-terminal-output)) — effects: `READS_FS` |
+| `session.target_at` | V | `{ session, position }` | `Option<Target>` — **deprecated alias** for `open.targets.list` ([18 §9](18-semantic-open.md#9-capabilities)) |
+| `session.target_resolve` | V | `{ session, position }` | `ResolvedTarget` (carries `explorer: Option<ExplorerRef>`, [15 §8.1](15-workspace-explorer.md#81-fileline-from-terminal-output)) — effects: `READS_FS`; **deprecated alias** for `open.resolve` ([18 §9](18-semantic-open.md#9-capabilities)) |
 | `session.blocks.list` | V | `{ session, before?, limit, filter? }` | `{ blocks: [BlockInfo], next_cursor }` |
 | `session.blocks.get` | V | `{ session, block, include_output, max_lines }` | `{ block, output: [StyledLine], truncated }` |
 | `session.blocks.rerun` | O | `{ session, block, target_session? }` | `{ seq }` — effects: `WRITES_PTY`, `DESTRUCTIVE` |
@@ -683,6 +760,10 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `session.writer.keep` | O | `{ session }` | `Ack` — holder cancels a pending takeover |
 | `session.writer.status` | V | `{ session }` | `WriterStatus` |
 | `session.history` | V | `HistoryQuery` | `{ entries, next_cursor }` |
+
+`session.send_text`, `session.send_keys`, `session.write_bytes`,
+`session.resize` and `session.signal` return `unsupported` on a `Native`
+session — there is no PTY to write to, size, or signal ([§1.3](#13-session-modes-d8)).
 
 `session.blocks.rerun` is marked `DESTRUCTIVE` deliberately: re-running an
 arbitrary previous command with one tap must require a confirm gesture, per
@@ -695,20 +776,13 @@ judgement about the agent's tools
 
 ### 10.3 `pane.*`
 
-| Capability | Role | Input | Output |
-|---|---|---|---|
-| `pane.list` | V | `{ workspace }` | `{ panes: [PaneInfo] }` |
-| `pane.split` | O | `{ pane, dir, ratio?, session? }` | `{ pane, session }` — creates a session when `session` is omitted |
-| `pane.close` | O | `{ pane, close_session: bool }` | `{ focus: PaneId? }` |
-| `pane.focus` | O | `{ pane }` | `{ focused }` |
-| `pane.navigate` | O | `{ from, dir }` | `{ focused }` |
-| `pane.move` | O | `{ pane, to, dir }` | `{ layout }` |
-| `pane.swap` | O | `{ a, b }` | `{ layout }` |
-| `pane.resize` | O | `{ pane, edge, delta }` | `{ layout }` |
-| `pane.zoom` | O | `{ pane, zoomed }` | `{ layout }` |
-| `pane.set_session` | O | `{ pane, session }` | `PaneInfo` — retarget a pane at a different session |
-| `pane.scroll` | V | `{ pane, to }` | `{ view }` — per-client view state |
-| `pane.select` | V | `{ pane, anchor, head, mode }` | `{ text_len }` |
+`pane.*` and `layout.*` are owned by [17 §9](17-panes-and-layout.md#9-capabilities),
+including their input and output shapes; this document does not restate them.
+
+The names this document relies on: `pane.list`, `pane.split`, `pane.close`,
+`pane.focus`, `pane.navigate`, `pane.move`, `pane.swap`, `pane.resize`,
+`pane.zoom`, `pane.set_session`, `pane.scroll`, `pane.select`, `layout.get`,
+`layout.set`, `layout.preset`.
 
 ### 10.4 Events emitted
 
@@ -750,10 +824,15 @@ property tests call after every operation:
 7. A session in `Exited` or `Orphaned` has no writer and refuses PTY writes.
 8. `Workspace::sessions` and `Session::workspace` agree in both directions.
 9. Every `ClientId` in `Session::viewers` exists in `Instance::clients`.
-10. The authoritative PTY size equals what `ViewportPolicy` resolves to
+10. For a session with `mode == Pty`, the authoritative PTY size equals what
+    `ViewportPolicy` resolves to
     ([07 §4.3](07-remote-protocol.md#43-the-resize-problem)): the writer's
-    viewport, the pinned size, or the minimum over attached viewports under
-    `Smallest`; and the last authoritative size when no viewer remains.
+    viewport (`SizeOwner::Writer`, rendered as `SizePolicy::Driver` in
+    [17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)),
+    the pinned size, or the minimum over `Participation::Participant` viewports
+    under `Smallest`; and the last authoritative size when no viewer remains.
+11. A `Native` session has no `PtyHandle`, no authoritative size, and emits no
+    `SessionResized`. Its `mode` field and its `SessionSurface` variant agree.
 
 ---
 
@@ -790,8 +869,10 @@ property tests call after every operation:
    but the `PtyHandle` abstraction in `omt-pty` should be designed so the handle
    *could* come from elsewhere. Needs a decision with the `omt-pty` change owner.
 
-2. **OPEN QUESTION — sizing policy when the only viewer is a phone.** §2.2 takes
-   the minimum over participants. If a laptop detaches and only an observer phone
+2. **OPEN QUESTION — sizing policy when the only viewer is a phone.** §2.2's
+   default is `SizeOwner::Writer` (`SizePolicy::Driver` in 17's vocabulary),
+   with the minimum over `Participant`s as the no-writer fallback. If a laptop
+   detaches and only an observer phone
    remains, the session keeps its last size — correct, but it means an agent may
    render for a width nobody can see. Alternative: shrink to a "headless"
    canonical size (e.g. 120×40). Needs data from the agent CLIs on how badly they
