@@ -761,7 +761,9 @@ What artifact 2 therefore asserts, precisely:
    `Parity::Exempt` naming the TUI surface. Without this rule a `hidden`
    capability would pass artifact 2 with no TUI affordance of any kind.
 
-**What no automated check can assert is that an affordance is *good*.** A
+**What no automated check can assert is that an affordance is *good*.**
+([D17](decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances)
+records why this section says less than an earlier draft claimed.) A
 capability reachable only by typing its name into a palette is reachable, not
 discoverable, and for something a user reaches for under pressure — interrupting
 a runaway agent, cancelling a transfer — that distinction is the whole product.

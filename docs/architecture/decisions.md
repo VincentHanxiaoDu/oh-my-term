@@ -636,3 +636,49 @@ confirm-by-observation rule, which turns a changed keymap into a visible
 the reason and offers the terminal view — the honest degradation
 [06 §4](06-agent-layer.md) already specifies. omt never presents an
 unanswerable card as answerable.
+
+---
+
+## D17 — Parity is a floor against unreachability, not a promise of good affordances
+
+**Decision.** The parity test guarantees that **no capability is unreachable on
+any surface**. It does not, and cannot, guarantee that a capability is *at hand*
+on any surface. Where a user needs something in a hurry, that is a design-review
+obligation, not a CI obligation, and the documents say which is which.
+
+**Reasoning.** An audit of the capability surface found that the test's TUI arm
+had quietly become vacuous. [16 §3.1](16-input-and-keymap.md) established —
+correctly — that the command palette *is* the universal TUI affordance, since
+its contents are the catalog; that is what lets omt keep a tiny un-prefixed key
+budget instead of inventing a chord for a hundred and fifty operations. But
+[03 §5](03-capability-catalog.md) went on claiming a per-capability *binding* was
+verified. Read together, "every non-`Admin` capability has a TUI action" reduced
+to "the palette exists" for roughly 140 of 150 entries.
+
+The mechanism was fine. The claim was wrong, and a wrong claim about a
+correctness gate is worse than a weaker gate honestly described, because it stops
+people looking. The audit found exactly what that produces:
+`agent.interrupt` — the flagship stop action — had only a swipe gesture on the
+web, in a document that had itself written the rule *"no gesture is the only way
+to reach a capability"*; and `media.image.upload` and `session.search` were
+declared, type-checked into requiring a web handler, and had no interface
+designed anywhere.
+
+**Consequences.**
+- [03 §5.1](03-capability-catalog.md#51-what-artifact-2-actually-asserts-and-what-it-does-not)
+  states what artifact 2 asserts: reachability, the reverse direction (every
+  bound action names a real capability — the half that catches drift), and the
+  rule that a `hidden` capability has no palette entry and therefore needs a real
+  binding or a surface exemption.
+- **Surface-local UI verbs do not belong in the catalog.** A capability is a
+  cross-surface operation. `tui.zoom_font` was already demoted to a client
+  preference on this reasoning; the rest of the `tui.*` family follows, so that
+  no surface is obliged to implement another surface's metaphor.
+- **Two things the test cannot see are called out where they occur**: per-agent
+  degradation ([06 §7.3](06-agent-layer.md)'s matrix, which is per-agent while
+  the test is per-capability) and per-card answerability
+  ([D16](#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical),
+  where one `Parity::Full` capability succeeds for one card type and not another).
+  Both are honest designs; neither is checkable by enumerating the registry.
+- Review asks a question CI cannot: *would a user reach for this under pressure,
+  and can they?*
