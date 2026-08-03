@@ -270,6 +270,31 @@ via `events.resume`.
 | **Keybindings** | `[[contributes.keybindings]]` | defaults only; the user's `keybindings.toml` always wins, and conflicts are reported as `OMT-C4xx` warnings naming the plugin |
 | **Notification sinks** | `[[contributes.notification_sinks]]` | a sink id usable in `notifications.rules[].sinks` as `plugin:<id>` |
 
+**A plugin can be an entire client, and that is the point.** The table above
+lists what a plugin *contributes to omt*; it does not bound what a plugin can
+*be*. Because §3.3 makes the plugin API the capability catalog itself, a plugin
+that subscribes to `agent.*` and `interaction.*` and calls `session.list`,
+`session.send_text`, `agent.prompt` and `interaction.resolve` **is a channel** —
+a surface through which a human drives sessions — without contributing anything
+from the table at all.
+
+A Telegram bot is the canonical example: it speaks Telegram's API on one side
+and the ordinary plugin API on the other, and it needs no new omt concept. It
+inherits the whole model for free — exactly-once interaction resolution, the
+intent classes that make a retry safe, the writer token, and an audit trail that
+records the action as `plugin:<id>` acting for a named actor. The same shape
+covers a Slack app, an IRC bridge, an email responder, a Shortcuts action, or a
+physical button on a desk.
+
+Two boundaries make this safe rather than alarming:
+
+- A plugin **cannot exceed a remote client**, because it is calling the same
+  catalog through the same dispatch with the same role check. There is no
+  privileged back door to be careless with.
+- A plugin **cannot contribute a `Transport` or an `AuthBackend`** in v1 (§9).
+  A channel does not need to: it is a *consumer* of the protocol, not a new way
+  to speak it. The distinction is that it adds a client, not a socket.
+
 **UI contributions are declarative on purpose.** Letting a plugin ship code into
 the web client would mean shipping arbitrary JS into a page that holds session
 credentials. A `session_action` is a title, an icon name, a capability and an

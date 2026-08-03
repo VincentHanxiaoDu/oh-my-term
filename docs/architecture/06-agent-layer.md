@@ -1301,6 +1301,28 @@ the set above has to be enough to render a readable conversation without the
 grid. It is, and here is the mapping
 ([08 §4.4](08-web-client.md#44-transcript-view) renders it):
 
+#### Streaming granularity is a property of the source, not of the model
+
+`AssistantText` and `Reasoning` both carry `partial`, and the renderer coalesces
+`partial: true` fragments into one row — so token-by-token streaming is a
+first-class shape in the model. What a surface actually *receives*, however,
+depends on which tier is feeding it, and an implementer should not go looking
+for a bug when the answer is physics:
+
+| Session | Source | Granularity |
+|---|---|---|
+| `native` (ACP) | `session/update` → `agent_message_chunk` | **token-level** — the agent streams chunks and omt forwards them as `partial` |
+| `pty`, terminal view | the PTY byte stream | **token-level** — this *is* the agent typing; nothing is reconstructed |
+| `pty`, transcript view | transcript tailing | **message-level** — an agent writes its JSONL a message at a time, not a token at a time. There is no finer signal to tail |
+| `pty`, hooks | hook events | **event-level** — hooks fire on lifecycle boundaries, not on content |
+
+So a `pty` session's transcript view shows an assistant message when it lands,
+while its terminal view shows the same text appearing character by character.
+Both are correct; they are different observations of the same thing. Where an
+agent offers a genuine streaming channel omt uses it, and where it does not, omt
+does not fabricate one by re-deriving tokens from the screen — that would be
+tier-0 content, which [§6](#6-the-heuristic-floor) forbids.
+
 | Row a reader expects | Built from |
 |---|---|
 | "I asked this" | `UserMessage`, with an omt-typed chip when `origin` is `Remote` or `Synthetic` |
