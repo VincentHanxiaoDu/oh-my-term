@@ -483,3 +483,96 @@ already displays exactly this. It was reserved for `native` sessions only.
   transcript: only busy/idle/needs-you and a letterboxed grid.
   [06 §7.3](06-agent-layer.md)'s coverage matrix gains a "mobile surface"
   column, so this is visible rather than discovered.
+
+---
+
+## D15 — Five classes of pending intent, each with its own delivery mechanism
+
+**Decision.** Every mutation a client can originate belongs to exactly one of
+five classes, and each class has one prescribed mechanism. A capability
+declaration names its class; the class determines whether a retry is safe.
+
+| Class | Examples | Mechanism | Retry safe? |
+|---|---|---|---|
+| **CAS + intent identity** | `interaction.resolve` (omt-side), `config.set` | CAS on version-or-state, plus `(identity, intent_id)` | **Yes** — returns the original result |
+| **Append with dedup key** | `agent.queue.enqueue` | client `intent_id` + bounded server dedup cache | **Yes** |
+| **Raw byte stream** | `session.write_bytes` | writer `epoch` + consumed-offset `ack`; **never replayed** | **No** — reject loudly |
+| **Externally-confirmed intent** | an injected answer, an injected enqueue | at-most-once write, confirm by **observation**, `Undelivered` on timeout | **No — never retry** |
+| **LWW free text** | drafts | CAS on `version`, visible loser | Yes |
+
+**Reasoning.** The design specified exactly one intent to a high standard —
+interaction resolution — and left the rest without identity, durability, expiry
+or a failure state. Worse, [D11](#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+moved the flagship path into a class that **did not previously exist in the
+design**.
+
+The fourth class is the discovery. An answer delivered by writing at a UI omt
+does not own fits none of the other three: there is no CAS target representing
+the agent's card; an `intent_id` cannot dedup it, because the sink is a UI, not
+a log — a duplicate is not a duplicate row but a keystroke landing *somewhere
+else entirely*; and a consumed-offset ack proves nothing, because the PTY
+consumes bytes whether or not the card did. Before D11 this was a corner case
+for the synthetic responder. After D11 it is the entire remote-answer path.
+
+**Consequences.**
+
+1. **Split the interaction state machine.** `Submitted { by, response, at }` when
+   the bytes are written; `Resolved` **only when omt observes the agent record
+   the answer** (hook `PostToolUse`, a transcript entry, a tool result) inside a
+   bounded window; `Undelivered { reason, response }` otherwise, with the text
+   preserved and surfaced everywhere as *"your answer may not have reached the
+   agent — check the terminal"*. Today the ledger `fsync`s `Resolved` and
+   asserts a success it cannot verify.
+2. **Never retry an injection** — not on reconnect, not on restart, not by any
+   actor except a human who can see the screen. A crash between CAS and
+   injection goes to `Undelivered`, never to a replay. This also requires
+   `Resolving` to carry the **response**, which it currently does not, so today
+   a crash cannot even report what was lost.
+3. **`agent.queue.enqueue` carries a `BindingId` and requires
+   `AgentState::Working`.** Without it, a replayed enqueue against a session
+   whose agent has exited lands **in the shell prompt and is executed as a
+   command**. [D3](#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+   does not protect here — it governs answers, and "submitting typed text to a
+   prompt box" is on its allowed list. The failure is target identity, not state
+   inference. Queued mutations also carry `valid_until` and require
+   re-confirmation rather than silent replay after a long offline period.
+4. **Confirmation signals already exist and must be used.** Claude Code's
+   `queue-operation` line *is* an enqueue receipt; a transcript entry *is* an
+   answer receipt. The design read them as mirror data and never as delivery
+   confirmation.
+5. **Stable request identity.** `RequestId` becomes `(DeviceId, monotonic u64)`
+   persisted client-side, with a bounded recent-results cache in dispatch that
+   replays the stored result on a repeat. Today `RequestId` is *"unique per
+   connection"*, so a client whose socket dies mid-call can never learn whether
+   the call applied. This one mechanism makes the first two classes work.
+6. **Fix the idempotency key.** `(interaction_id, actor, response)` breaks on
+   exactly the retry it was written for: a reconnecting device gets a new
+   `ActorId`, so its own retry reads as a stranger overriding it. Key on
+   `(interaction_id, identity_or_device, intent_id)`.
+7. **Reserve `ack: u32` in the terminal frame header before the wire freezes.**
+   It was already required for mosh-style predictive echo; it is *also* the only
+   safe resumption mechanism for the byte-stream class. Recording both rationales
+   so it cannot be value-engineered out as "a v2 feature".
+8. **Durable intent log for the omt-managed queue** (`Ordered` class), and a row
+   in [21 §6.2](21-data-lifecycle.md)'s loss table. It is memory-only today, so
+   every non-Claude agent's queued text dies unrecorded on `kill -9`. Add a CI
+   check that every persisted type has a loss-table row — the same trick
+   [03 §5](03-capability-catalog.md)'s parity test plays.
+9. **A durable attention log**, required by [D12](#d12--no-push-notifications-in-v1-open-and-replay-instead).
+   Open-and-replay discovers only *live* state plus a 4 MiB window, so an
+   interaction that opened **and went terminal** inside an offline gap appears
+   nowhere: the user opens the app to an idle session, never learning their agent
+   asked and gave up. Per `(identity, session)`, every interaction reaching a
+   terminal state since the actor's read mark, queryable as
+   `interaction.list { since_read_mark, include_terminal }` and rendered first on
+   reconnect.
+10. **Distinguish the failure modes.** `LedgerError`'s `AlreadyResolved`,
+    `Cancelled` and `Abandoned` currently collapse onto one `conflict` code, so a
+    phone cannot tell "someone else answered" from "the agent gave up". Add a
+    discriminating `detail.state` and three renderings.
+
+**The spike this creates.** Whether Claude Code's `AskUserQuestion` card accepts
+a **position-independent** selection decides whether the flagship path is on by
+default at all: if the card is arrow-key-only, D3 disables it, and D9's headline
+claim is off by default in its headline case. This replaces the defer spike as
+the highest-priority experiment.
