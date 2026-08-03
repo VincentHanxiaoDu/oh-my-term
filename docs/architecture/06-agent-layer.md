@@ -826,7 +826,7 @@ mirror-don't-intercept shape and which nobody else does. Every other agent degra
 
 **Why a daemon restart is not `Cancelled`.** The earlier design marked these
 `Cancelled { daemon_restart }`, which was wrong three times over.
-[12 §4.1](12-collaboration.md#41-the-state-machine) defines `Cancelled` as a
+[12 §4.1](12-collaboration.md#41-the-invariant) defines `Cancelled` as a
 decision *by an actor* — and here no actor decided anything; the daemon fell
 over. It also discards a decision the user was told had been accepted, reporting
 "cancelled" for an answer that may well have reached the agent. And it could not

@@ -105,19 +105,24 @@ been blocked on `AskUserQuestion` for 38 of them. Has tried Blink + tmux on the
 phone; the agent's TUI at 40 columns is unusable; arrow-keying a selection box
 on a touchscreen is worse.
 
-**Wants from omt.** A push notification the moment an agent blocks. A card on
+**Wants from omt.** To find out an agent is blocked the moment she opens her
+phone — [D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+ships no notification backend, so discovery is open-and-replay, and the cost of
+that is that she is not interrupted, only ready. A card on
 the phone with real tappable options and readable descriptions. Free-text
 answers with voice dictation while walking. To see, in one glance on waking, a
 digest of *what the agent did in the last hour*, not just what it is doing now.
 To be confident that tapping "Yes, edit the file" from a phone did the same
 thing as pressing Enter at the desk.
 
-**Uninstalls if.** A notification arrives and the card is gone/expired/already
+**Uninstalls if.** She opens the tab and the card is gone/expired/already
 answered without explanation. A tap resolves the wrong option (this is exactly
 what D3 exists to prevent, and the fear is rational). She answers on the phone,
-walks to the laptop, and the two disagree. Push does not survive iOS
-backgrounding — which is a real risk on the ntfy-less path
-([07 §8.2](../architecture/07-remote-protocol.md#82-the-tailscale-friendly-self-hosted-path)).
+walks to the laptop, and the two disagree. Opening is slow, or the replay misses
+an interaction that opened and went terminal while she was away — the two
+mandatory refetches
+([07 §8.2](../architecture/07-remote-protocol.md#82-what-replaces-it-open-and-replay))
+exist precisely to prevent that.
 Her terminal output — with an `.env` echoed in it — turns out to be sitting
 unencrypted in a state directory synced to iCloud (gap G9).
 
@@ -348,12 +353,14 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 ### J9 — Agent blocks while the user is away entirely
 
 - **Trigger.** Ana is on a walk. No client attached.
-- **Steps.** Phone buzzes.
-- **Shows.** Push notification `claude · api-gateway — Needs a decision`
-  ([07 §8](../architecture/07-remote-protocol.md#8-notifications-to-a-closed-tab)),
-  containing only a pointer. Tap → PWA opens → authenticated WS → the card.
-- **Success.** Under 10 s from tap to a readable card with tappable options.
-- **Failure.** iOS killed the service worker. The interaction timed out
+- **Steps.** Nothing buzzes — no notification backend ships in v1
+  ([07 §8](../architecture/07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1)).
+  She learns of it when she next opens a client.
+- **Shows.** Opening the PWA → authenticated WS → resync → replay → the ranked
+  list puts the blocked session first, with the card
+  ([07 §8.2](../architecture/07-remote-protocol.md#82-what-replaces-it-open-and-replay)).
+- **Success.** Under 10 s from opening to a readable card with tappable options.
+- **Failure.** The interaction timed out
   (12 §4.3) before she got there — the card must then show *"this expired and
   the agent proceeded with its default"* rather than vanishing. C7 in 12 covers
   "interaction while nobody attached"; the *user-facing expiry explanation* is
@@ -384,8 +391,8 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 
 ### J12 — Answering from a phone
 
-- **Steps.** Notification → card sheet → thumb-reachable option buttons at the
-  bottom third (08 §8.1) → tap.
+- **Steps.** Open the PWA → the ranked list surfaces the blocked session → card
+  sheet → thumb-reachable option buttons at the bottom third (08 §8.1) → tap.
 - **Shows.** Question header, full option descriptions (the thing the terminal
   card truncates), agent + workspace + branch chips, permission mode.
 - **Success.** No horizontal scrolling, no pinch-zoom, no 40-column terminal.
@@ -838,7 +845,8 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 
 - **Trigger.** P4 installs on a network with no egress.
 - **Success.** omt works fully: no telemetry (10 §7.11), no required egress
-  (00 §8). Push is off; the ntfy path can be internal.
+  (00 §8). There is no notification backend to configure at all (D12), and the
+  daemon opens no outbound connection.
 - **Failure.** Plugin distribution (11 §6), STT providers (08 §7.3), and the web
   client's asset delivery must all be verified offline-clean, and the web client
   must load no CDN fonts. Minor but worth an explicit statement. See G16.
@@ -1187,8 +1195,8 @@ current — say so, so a wrong number is never omt's invention.
 **Need.** J52. **In scope**: yes, and nearly satisfied by 00 §8 already.
 
 **Minimum honest answer.** An explicit "omt works with zero egress" section
-listing the only features that need the network (Web Push to a vendor endpoint,
-cloud STT, plugin registry fetches, `omt update` checks), each off or optional,
+listing the only features that need the network (cloud STT, plugin registry
+fetches, `omt update` checks), each off or optional,
 and a CI check that the web client bundle references no external origin.
 
 ## G17 — Internationalization — **adequate, with one gap**
@@ -1256,13 +1264,15 @@ message (06 §8) and the UI says so before sending. Never silently drop a note.
 
 ## G22 — Notification quality and fatigue — **partial**
 
-**Need.** 07 §8 defines transport and coalescing well. It does not define
-*policy*: five agents finishing overnight should not produce five 03:00
-buzzes. Users need quiet hours, per-workspace muting, and severity tiers.
+**Need.** Moot for v1: D12 ships no notification backend, so there is nothing to
+be fatigued by. The gap is preserved because the policy is what a future backend
+— a native app or a plugin — will immediately need: five agents finishing
+overnight must not produce five 03:00 buzzes.
 
-**Minimum honest answer.** Per-device notification rules in config: quiet hours,
-per-workspace/per-session mute, and a tier split (`blocked` = push,
-`turn finished` = silent badge by default). Small addition to 10 §7.7.
+**Minimum honest answer.** The `NotifyPrefs` design is already written down and
+deferred in [remote-continuity §5.6](remote-continuity.md#56-noise-control--deferred-and-why-the-design-is-kept):
+quiet hours, per-workspace/per-session mute, and a tier split. Nothing to build
+in v1.
 
 ## G23 — Session naming, organisation and scale — **thin**
 
@@ -1315,7 +1325,7 @@ if not the terminal. Worth documenting because users will try it.
 | R12 | Merged multi-tier `AgentEvent` stream; tier 0 may never produce structured content | M | J6–J9 | 06 |
 | R13 | `agent.explain` + **visible** degradation indicator on the session card | M | J6 | [06 §4](../architecture/06-agent-layer.md#4-merging-confidence-tiers-not-voting) + [22 §5.1](../architecture/22-operations.md#51-the-panel-p3--all-three-surfaces) (the `tier` and `faults` columns) |
 | R14 | Structured `Interaction` renderable and resolvable from TUI, API and web | M | J10–J12 | 06 §5, 08 §5 |
-| R15 | Deferral must not degrade the local user's card — decide and document | M | J7 | **[06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism-and-its-risk), undecided (G20)** |
+| R15 | Remote answering must not degrade the local user's card: the agent's own CLI draws it, omt mirrors and syncs | M | J7 | **Decided — [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it), [06 §5.2](../architecture/06-agent-layer.md#52-responders--how-the-answer-gets-back); deferral demoted to an opt-in optimization ([06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization))** |
 | R16 | Exactly-once interaction resolution, broadcast, attributed | M | J11, J55 | 12 §4 |
 | R17 | `Freeform` and `Choice + note` responses, with per-adapter capability declaration | M | J13, J14 | [06 §5](../architecture/06-agent-layer.md#5-interactions--the-flagship-path) — `ChoiceAnswer.other` / `.comment` and the `Text` variant in §5.0 |
 | R18 | Short retraction window (`Pending` phase) before a resolution reaches the agent | S | J15 | **NO OWNER (G8)** |
@@ -1331,9 +1341,9 @@ if not the terminal. Worth documenting because users will try it.
 
 | # | Req | Pri | Journeys | Owner |
 |---|---|---|---|---|
-| R26 | Push notification on `blocked`, pointer-only payload, coalesced | M | J9 | 07 §8 |
-| R27 | Self-hosted notification path (ntfy/webhook) requiring no vendor egress | M | J9, J52 | 07 §8.2 |
-| R28 | Notification policy: quiet hours, per-workspace mute, severity tiers | S | J40 | [remote-continuity §5.6](remote-continuity.md#56-noise-control) |
+| R26 | ~~Push notification on `blocked`~~ — **dropped by [D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)**; replaced by open-and-replay discovery | M | J9 | [07 §8.2](../architecture/07-remote-protocol.md#82-what-replaces-it-open-and-replay) |
+| R27 | ~~Self-hosted notification path (ntfy/webhook)~~ — **dropped by D12**; a plugin's business, not core's | M | J9, J52 | [07 §8.3](../architecture/07-remote-protocol.md#83-the-reserved-extension-point) |
+| R28 | Notification policy: quiet hours, per-workspace mute, severity tiers — **deferred with D12**, design kept for a future backend | S | J40 | [remote-continuity §5.6](remote-continuity.md#56-noise-control--deferred-and-why-the-design-is-kept) |
 | R29 | Mobile-first card rendering: full descriptions, thumb-reach, multi-select correct | M | J12 | 08 §5, §8 |
 | R30 | Voice input with always-editable transcript, never auto-send; keys never in the browser | S | J34, J35 | 08 §7 |
 | R31 | **Session timeline + morning digest, composed by counting, never generated** | M | J40, J41 | [20 §8](../architecture/20-recall-and-usage.md#8-timeline-and-digest) (`timeline.*`, `digest.*`) |
@@ -1441,9 +1451,9 @@ The six that remain, and why each is genuinely still open:
 | R81 | The documented "no" for adopting an already-running agent. Refused in Part 5 §16 and analysed in G24; [06 §9](../architecture/06-agent-layer.md#9-failure-modes-and-their-handling) does not carry it, so it exists only in this file |
 
 Three further entries are tagged as owned-but-open rather than unowned, and
-should not be counted either way: **R15** (deferral versus the local card —
-[06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism-and-its-risk),
-a live decision), **R42** (PTY supervisor —
+should not be counted either way: **R15** (settled by D11 and no longer live —
+[06 §5.2](../architecture/06-agent-layer.md#52-responders--how-the-answer-gets-back)),
+**R42** (PTY supervisor —
 [05 §13](../architecture/05-session-model.md#13-open-questions)), and **R49**,
 where `session.rename` exists and pin/filter/archive do not.
 

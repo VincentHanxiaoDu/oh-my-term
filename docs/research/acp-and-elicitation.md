@@ -38,8 +38,13 @@ Five facts that change omt's plan:
 4. **`session/request_permission` is confirmed live and is exactly as good as hoped.**
    Verbatim capture in §4.3. It is a blocking bidirectional JSON-RPC request with no
    timeout, no expiry, and no cancellation except client-initiated — the ideal shape for
-   a phone round-trip. This is materially *better* than Claude Code's unverified
-   `permissionDecision: "defer"` ([06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism-and-its-risk)).
+   a phone round-trip. It is a materially *cleaner* delivery path than omt's Claude Code
+   route, which observes the card through the `PreToolUse` hook and answers it by
+   synthesizing a keystroke into the agent's own live card
+   ([06 §5.2](../architecture/06-agent-layer.md#52-responders--how-the-answer-gets-back)) —
+   though that route is now verified to work
+   ([`spike-card-answering.md`](spike-card-answering.md),
+   [D16](../architecture/decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)).
 5. **The TUI tension is real and it is not resolvable.** An ACP-mode agent has no TUI. §10
    is the honest analysis and the recommendation.
 
@@ -325,9 +330,12 @@ omt's fifth variant, `Edit`, has no ACP equivalent — see §7.
 
 - **No timeout exists anywhere in the protocol.** Not on this method, not generally. The
   request stays outstanding until the client answers or the turn is cancelled. omt's
-  phone round-trip is bounded only by omt's own policy. This is strictly better than
-  Claude Code's `defer`, whose parking duration is [06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism-and-its-risk)'s
-  named unverified risk.
+  phone round-trip is bounded only by omt's own policy. On the Claude Code path there is
+  no protocol-level outstanding request at all: the CLI draws its own card and waits for a
+  human, and omt's window is instead the confirmation window on the injected answer
+  ([06 §5.2](../architecture/06-agent-layer.md#52-responders--how-the-answer-gets-back)).
+  ACP's shape is the simpler of the two because the answer is a protocol reply rather than
+  a keystroke whose effect must be observed.
 - **Cancellation** arrives one of two ways: the client sends `session/cancel` and must
   then answer pending permission requests with `outcome: "cancelled"`; or the *agent*
   sends `$/cancel_request` with this request's `id`, to which the client responds with
@@ -772,10 +780,10 @@ product they chose. In exchange omt gets one uniform code path.
 
 **Compared against omt's hook-based approach, honestly:**
 
-| | ACP adapter | Hooks ([11 §1.4](agent-clis.md), [06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism-and-its-risk)) |
+| | ACP adapter | Hooks ([11 §1.4](agent-clis.md), [06 §5.2](../architecture/06-agent-layer.md#52-responders--how-the-answer-gets-back)) |
 |---|---|---|
 | Runs the user's real Claude Code | **No** | **Yes** |
-| Permission round-trip | Blocking request, **no timeout** — verified shape | `permissionDecision: "defer"`, **unverified**, timeout unknown |
+| Permission round-trip | Blocking request, **no timeout** — verified shape | `PreToolUse` observes, the answer is a synthetic keystroke into the CLI's own card and must be confirmed by observation — **verified live** for single-select and "allow", not for a specific deny ([D16](../architecture/decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)) |
 | `AskUserQuestion` / `Choice` fidelity | Would arrive as a tool call needing permission, or not at all — the adapter has no `AskUserQuestion` concept | **1:1, verified** |
 | Structured tool calls, plans, usage, slash commands | Free, uniform, typed | Per-agent, partly UNCERTAIN |
 | Install burden | Spawn a process | Merge JSON into 4 config files without clobbering user hooks |

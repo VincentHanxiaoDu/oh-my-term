@@ -567,12 +567,12 @@ browser is simultaneously running hostile pages.
 - **`frame-ancestors 'none'`** — omt is never embeddable. Clickjacking a
   "Approve" button on a permission card is a realistic attack and framing has no
   legitimate use here.
-- **Service worker scope** is the app root, and the push subscription is bound
-  to the **device** (`DeviceId`), not to a credential, so a revoked device stops
-  receiving notifications however it authenticates — including a
-  tailnet-authenticated device that holds no long-lived credential
-  ([07 §8.1](07-remote-protocol.md#81-web-push-primary),
-  [23 §6.1](23-identity-and-devices.md#61-revoking-one-device)).
+- **Service worker scope** is the app root. There is no push subscription to
+  bind or revoke: [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+  ships no notification backend
+  ([07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1)), so
+  a revoked device simply stops being able to connect
+  ([23 §6.1](23-identity-and-devices.md#61-revoking-one-device)).
 
 ---
 
@@ -837,15 +837,18 @@ Then, recommended and not enforced:
    currently have. Coordinate with
    [05 — Session model](05-session-model.md) and
    [12 §9](12-collaboration.md#9-open-questions).
-7. **Push payload metadata leak.** Even the minimal pointer-plus-short-title
-   payload of [07 §8.1](07-remote-protocol.md#81-web-push-primary) tells the push
-   vendor that a session on a named instance needs attention, and when. Whether
-   the `ntfy`-on-tailnet path should therefore be the *default* rather than the
-   alternative is **one question, owned by
-   [07 §9 Q5](07-remote-protocol.md#9-open-questions)** — it is answered there,
-   not here. This entry exists only to record the security argument feeding into
-   it: from a metadata-exposure standpoint, `ntfy`-on-tailnet is strictly better,
-   and the counter-argument is reliability, which 07 Q5 is the place to measure.
+7. **Push payload metadata leak — retired.** The risk was that even a minimal
+   pointer-plus-short-title payload would tell a push vendor that a session on a
+   named instance needs attention, and when.
+   [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+   removes push from v1 outright
+   ([07 §8.1](07-remote-protocol.md#81-the-decision)), so no such payload is ever
+   produced and the daemon makes no outbound connection at all. The `Notifier`
+   trait remains **specified and reserved with zero implementations**
+   ([07 §8.3](07-remote-protocol.md#83-the-reserved-extension-point)) for a future
+   native app or a user plugin; if one is ever registered, the metadata argument
+   above is the analysis it must answer, and a plugin's outbound connection is the
+   user's own choice, disclosed as such.
 8. **Interaction resolution by plugins.** A plugin acting as an actor with an
    `Operator` role could resolve interactions programmatically. That is a
    legitimate automation feature and an obvious abuse path. D1 forbids omt

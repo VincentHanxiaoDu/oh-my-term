@@ -977,7 +977,7 @@ target, and the containing directory is `fsync`ed. Never written in place.
 
 **This table is CI-enforced.** Every type persisted through `omt-store` must
 have a row here, and a test fails the build when one does not — the same trick
-[03 §5](03-capability-catalog.md#5-the-parity-test)'s parity test plays, and for
+[03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test plays, and for
 the same reason. Persisted types carry a `#[derive(Persisted)]` (or are
 registered in `omt-store`'s type registry); the test enumerates the registry,
 parses the row keys out of this section, and asserts the two sets are equal in

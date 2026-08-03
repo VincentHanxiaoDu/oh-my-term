@@ -961,13 +961,16 @@ Order of operations:
    That check is `AuthBackend::is_revoked`, which takes a `RevocationSubject`
    precisely so this flow can express *revoke the device* rather than *revoke one
    credential id* — a `DeviceGrant` has no `CredentialId`.
-5. The push subscription **bound to the device** — not to a credential — is
-   dropped ([07 §8.1](07-remote-protocol.md#81-web-push-primary),
-   [13 §6](13-security.md#6-browser-side-controls)), regardless of how that
-   device authenticates, so a tailnet-authenticated device with no long-lived
-   credential is covered too. A lost phone therefore also stops buzzing with the
-   titles of your sessions and the fact that they need you. This matters more
-   than it sounds.
+5. There is no push subscription to drop:
+   [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+   ships no notification backend
+   ([07 §8.1](07-remote-protocol.md#81-the-decision),
+   [13 §6](13-security.md#6-browser-side-controls)). A revoked device simply stops
+   being able to connect, regardless of how it authenticates, so a
+   tailnet-authenticated device with no long-lived credential is covered too. If a
+   `Notifier` is ever registered through the reserved extension point
+   ([07 §8.3](07-remote-protocol.md#83-the-reserved-extension-point)), its
+   subscription must be device-bound so that revocation covers it.
 
 **Open interactions and in-flight work on the revoked device:**
 
@@ -1283,7 +1286,7 @@ IndexedDB database `omt`, version-migrated like any on-disk format (P5).
 | `interactions` | open interaction *summaries* + resolutions from the last 24 h, for the echo strip (§8.3) and instant cold start | 256 KB | age |
 | `terminal` | last **2000 lines** per session for the 3 most recently viewed sessions only | 4 MB | LRU |
 | `prefs` | cached `IdentityPrefs` | 32 KB | never |
-| `assets` | app shell (service worker cache, not IDB) | separate | SW policy ([08 §8.6](08-web-client.md#86-pwa-and-web-push)) |
+| `assets` | app shell (service worker cache, not IDB) | separate | SW policy ([08 §8.6](08-web-client.md#86-pwa--installable-with-no-push)) |
 
 **Total budget: 8 MB**, checked on every write; over budget, the LRU stores are
 trimmed in the order `terminal` → `sessions` → `interactions` → `instances`.
@@ -1306,7 +1309,7 @@ threshold while being enough for an instant cold start.
 - **Recovery codes**, in any form.
 - **Session content beyond §9.1's window** — no scrollback archive, no blocks
   bodies, no media blobs, no audit entries. Stale terminal content is worse than
-  absent terminal content ([08 §8.6](08-web-client.md#86-pwa-and-web-push) makes
+  absent terminal content ([08 §8.6](08-web-client.md#86-pwa--installable-with-no-push) makes
   the same call for the service worker).
 
 ### 9.3 Invalidation, and eviction mid-session

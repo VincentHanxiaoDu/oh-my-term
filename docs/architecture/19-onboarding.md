@@ -1044,7 +1044,8 @@ table of what omt may and may not claim.
   screen at your desk**. Remote question cards themselves are not unique to omt;
   several products ship them. Answering one *without* replacing the agent's own
   terminal UI is the part that is omt's ([D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim),
-  [06 §5.3](06-agent-layer.md#53-the-deferral-mechanism-and-its-risk)).
+  [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it),
+  [06 §5.2](06-agent-layer.md#52-responders--how-the-answer-gets-back)).
 
 **Do not switch if:**
 

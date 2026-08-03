@@ -499,17 +499,21 @@ and every exchange is audited.
 | `stt.session.start` | `session-start` | Command | O | `NETWORK` for hosted providers | Open a transcription session; audio rides the existing WebSocket as binary frames, with a container hint for Safari's `audio/mp4`. |
 | `stt.session.stop` | `session-stop` | Command | O | — | Finalize and return the transcript. |
 
-## `notification` — [07 §8](../architecture/07-remote-protocol.md#8-notifications-to-a-closed-tab)
+## `notification` — none in v1 — [07 §8](../architecture/07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1)
 
-| Name | Kind | Role | Effects | Description |
-|---|---|---|---|---|
-| `notification.push.subscribe` | Command | O | — | Register a Web Push subscription **per device credential** (`DeviceId`). |
-| `notification.push.unsubscribe` | Command | O | — | Drop it; a revoked device stops receiving pushes. |
-| `notification.test` | Command | O | `NETWORK` | Send a test notification through the configured sinks. |
+**There is no `notification` capability group.**
+[D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+removes push from v1 outright, so `notification.push.subscribe`,
+`notification.push.unsubscribe` and `notification.test` are **not v1 capabilities
+and must not appear in the catalog**. Clients discover pending work by
+reconnecting and replaying
+([07 §8.2](../architecture/07-remote-protocol.md#82-what-replaces-it-open-and-replay)).
 
-Sending a push is the **only** outbound connection omt ever makes, it is off by
-default, and enabling it is an explicit consent step
-([13 §9.1](../architecture/13-security.md#9-network-egress-and-supply-chain)).
+The property this buys: **omt makes no outbound network connection at all** — the
+daemon accepts connections and never initiates one. The `Notifier` trait is
+specified and reserved with zero implementations
+([07 §8.3](../architecture/07-remote-protocol.md#83-the-reserved-extension-point))
+for a future native app or a user plugin.
 
 ## `presence`, `audit`, `events`
 

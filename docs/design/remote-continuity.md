@@ -165,9 +165,9 @@ Justification, item by item:
 | Viewport (cols/rows/dpr), font size, pinch zoom | Physical property of the screen. Syncing it is actively harmful ([17 §3.3](../architecture/17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)). |
 | The client's `LayoutView` (`Adaptive` on a phone) | A phone cannot render a four-way split; forcing it to is anti-pattern A1 (§9). |
 | Scroll offset, selection, search-in-progress | Already per-client in `PaneView` ([05 §4](../architecture/05-session-model.md#4-attachment-detach-and-multi-client-viewing)). Syncing scroll between a laptop and a phone means two people fighting a scrollbar. |
-| Terminal-vs-block view *default* | Derived from viewport width ([08 §4](../architecture/08-web-client.md#4-two-view-modes)); overridden by `preferred_surface` when the user set one explicitly. |
+| Which of the three surfaces is the *default* | Derived from viewport width and session kind — block, transcript or terminal ([08 §4](../architecture/08-web-client.md#4-view-modes)); overridden by `preferred_surface` when the user set one explicitly. |
 | Keymap overlay, virtual key bar layout state, haptics | Input-hardware properties. |
-| Credentials, device keypair, push subscription | Device-bound by [13 §3](../architecture/13-security.md). Moving them would break revocation-per-device. |
+| Credentials, device keypair | Device-bound by [13 §3](../architecture/13-security.md). Moving them would break revocation-per-device. |
 | Predictive-echo engagement state, measured RTT | Per-link. |
 
 ### 1.3 Where per-actor state is stored, and why on the instance

@@ -110,7 +110,7 @@ say. The split is deliberate; the boundary is stated in both.
 | Redaction | [21 §2](21-data-lifecycle.md#2-redaction-before-write) — the detector | [13 §8](13-security.md#8-secret-redaction) — the tracing/serializer integration; [20 §5](20-recall-and-usage.md) — the ordering guarantee |
 | Persistence | [05 §8](05-session-model.md#8-persistence-and-restore) — the session tree | [21 §6–§7](21-data-lifecycle.md) — durability, versioning, migration |
 | Credentials | [13 §3](13-security.md#3-authentication) — `AuthBackend`, `Grant`, scope | [23](23-identity-and-devices.md) — identity, devices, pairing, revocation |
-| Notifications | [07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab) — the transport | [`../design/remote-continuity.md` §5.6](../design/remote-continuity.md) — the policy (*proposed*) |
+| Notifications | [07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1) — none in v1 (D12); the reserved `Notifier` extension point | [`../design/remote-continuity.md` §5.6](../design/remote-continuity.md#56-noise-control--deferred-and-why-the-design-is-kept) — the policy, kept but *deferred* |
 | Blobs | [09 §2](09-ssh-and-media.md#2-the-blob-store) — the store | [18 §6](18-semantic-open.md) — the mirror class, as a caller |
 | Doctor / health | [22 §3–§4](22-operations.md) | — everything else defers; there is no per-group `doctor.*` capability |
 
