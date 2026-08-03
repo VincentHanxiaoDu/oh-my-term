@@ -53,16 +53,15 @@ multi-megabyte OSC payloads — §1.4).
 
 | Option | Verdict | Reasoning |
 |---|---|---|
-| Vendor `ghostty-vt` (as another tool does) | **Rejected** | Ghostty is MIT, so licence is fine — but it is Zig. Vendoring means a Zig toolchain in the build, an FFI boundary in the hottest loop in the program, and a foreign memory model for the grid. another tool accepts that because it only needs a screen scrape; omt needs to own the grid, marks and blocks in Rust to do reflow and block tracking. A Rust-side grid over a Zig-side parser is the worst of both. |
-| Write the byte state machine from scratch | **Rejected** | Paul Williams' DEC ANSI state machine is ~1000 lines of table-driven code that is boring, well-specified, and already correct in `vte`. Rewriting it buys nothing and costs a year of tail bugs (C1 handling in UTF-8, sub-parameters, intermediates, `ST` variants). The *interesting* correctness lives above the tokenizer, and that is where our effort should go. |
-| `vte` + omt semantic layer | **Chosen** | `vte` is `no_std`-capable, dependency-light, Apache-2.0/MIT (compatible with omt's Apache-2.0 — no copyleft contamination, unlike studying iTerm2/another terminal code, see [P9](01-principles.md#p9--clean-room-with-respect-to-studied-code)), and battle-tested by Alacritty. Its `Perform` trait gives exactly the seam we want: it hands us `print`, `execute`, `csi_dispatch`, `esc_dispatch`, `osc_dispatch`, `hook`/`put`/`unhook`. |
-| `termwiz` | Rejected | Excellent, but it brings a much larger surface (its own cell/surface model, terminfo, widgets) that we would fight rather than use. |
+| Vendor `ghostty-vt` (as another tool does) | **Rejected** | Licence is fine (MIT) but it is Zig: a Zig toolchain in the build, an FFI boundary in the hottest loop, and a foreign memory model for the grid. another tool accepts that because it only needs a screen scrape; omt must own the grid, marks and blocks in Rust to do reflow and block tracking. A Rust grid over a Zig parser is the worst of both. |
+| Write the byte state machine from scratch | **Rejected** | Paul Williams' DEC ANSI state machine is ~1000 lines of table-driven code that is boring, well-specified, and already correct in `vte`. Rewriting it buys nothing and costs a year of tail bugs (C1 in UTF-8, sub-parameters, intermediates, `ST` variants). The interesting correctness lives above the tokenizer. |
+| `vte` + omt semantic layer | **Chosen** | `no_std`-capable, dependency-light, Apache-2.0/MIT (compatible with omt's Apache-2.0 — no copyleft contamination, cf. [P9](01-principles.md#p9--clean-room-with-respect-to-studied-code)), battle-tested by Alacritty. Its `Perform` trait is exactly the seam we want: `print`, `execute`, `csi_dispatch`, `esc_dispatch`, `osc_dispatch`, `hook`/`put`/`unhook`. |
+| `termwiz` | Rejected | Excellent, but brings a much larger surface (its own cell/surface model, terminfo, widgets) we would fight rather than use. |
 
 Licence note: we may read iTerm2 (GPL-2.0) and another terminal (AGPL-3.0) to learn *what
 sequences exist and what they mean* — those are facts. We may not copy or
-translate their code. Every design in this document is expressed as an interface
-plus an algorithm, and implementers must write it from the description, not from
-the studied sources.
+translate their code. Every design here is an interface plus an algorithm;
+implementers write it from the description, not from the studied sources.
 
 ### 1.3 Layering
 
@@ -85,21 +84,12 @@ PTY bytes
 
 `Interpreter` is the only type that knows about VT semantics. `Screen`, `Grid`,
 `Scrollback` and `BlockTracker` know nothing about escape sequences — they take
-structured operations (`insert_cells`, `scroll_region_up`, `set_mark`). This
-keeps modules under the 1200-line advisory limit from
-[P1](01-principles.md#p1--clean-small-crates-explicit-seams):
-
-| Module | Responsibility | Rough size |
-|---|---|---|
-| `parser/` | `vte` glue, fast path, payload hooks | ~900 |
-| `interp/` | mode tables, CSI/ESC/OSC dispatch, replies | ~1400 (split into `interp/csi.rs`, `interp/osc.rs`, `interp/modes.rs`) |
-| `grid/` | viewport grid, cells, cursor, scroll regions | ~1200 |
-| `scrollback/` | line blocks, positions, ring bounds | ~1100 |
-| `reflow/` | resize algorithm and coordinate conversion | ~600 |
-| `block/` | OSC 133 state machine + heuristic fallback | ~800 |
-| `damage/` | dirty tracking, diff emission | ~400 |
-| `search/`, `select/`, `link/` | find, selection, hyperlink & path detection | ~900 total |
-| `graphics/` | sixel, Kitty, OSC 1337 images | ~700 |
+structured operations (`insert_cells`, `scroll_region_up`, `set_mark`). Module
+split, chosen to stay under the 1200-line advisory limit from
+[P1](01-principles.md#p1--clean-small-crates-explicit-seams): `parser/`
+(`vte` glue, fast path, hooks) · `interp/{csi,osc,modes}.rs` · `grid/` ·
+`scrollback/` · `reflow/` · `block/` · `damage/` · `search/`, `select/`, `link/`
+· `graphics/`.
 
 ### 1.4 Where `vte` is not enough
 
@@ -1205,21 +1195,14 @@ O(rows).
 ### 9.5 Benchmark plan
 
 `benches/` with `criterion`, run in CI on every PR with a 10 % regression
-threshold on the headline numbers:
-
-| Bench | Input |
-|---|---|
-| `throughput_ascii` | 64 MiB of `/usr/share/dict/words` |
-| `throughput_sgr` | `ls --color -R` capture, ~20 MiB |
-| `throughput_tui` | recorded `htop`/`nvim` session (heavy cursor addressing + 2026) |
-| `throughput_unicode` | CJK + emoji corpus (forces the slow path) |
-| `reflow` | 10k/100k-line scrollback, widths 80→200→40→80 |
-| `search_literal` / `search_regex` | 100k lines |
-| `damage_merge` | 10 000 `advance` calls without collection |
-| `alloc_idle` | assert zero allocations across 1000 empty `advance` calls |
-
-Capture corpora are checked in as compressed fixtures so benchmarks are
-reproducible and comparable across machines and over time.
+threshold: `throughput_ascii` (64 MiB of words), `throughput_sgr`
+(`ls --color -R` capture), `throughput_tui` (recorded `htop`/`nvim`, heavy cursor
+addressing + 2026), `throughput_unicode` (CJK + emoji, forces the slow path),
+`reflow` (10k/100k lines, widths 80→200→40→80), `search_literal`/`search_regex`
+(100k lines), `damage_merge` (10 000 `advance` calls without collection),
+`alloc_idle` (assert zero allocations across 1000 empty `advance` calls).
+Capture corpora are checked in as compressed fixtures so results are comparable
+across machines and over time.
 
 ---
 
