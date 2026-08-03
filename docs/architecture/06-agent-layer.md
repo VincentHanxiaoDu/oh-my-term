@@ -853,18 +853,29 @@ implementation covers opencode, Gemini CLI, Goose and Qwen Code at once, which
 is the best coverage-per-unit-work available. An adapter trait shaped only by
 Claude Code is the failure this ordering exists to prevent.
 
-| Agent | Binding | State | Interactions | **Resolution observed by** | Queue | Commands | Mobile surface |
-|---|---|---|---|---|---|---|---|
-| Claude Code | env marker | hooks (30 events) | **Choice + Permission**, synthetic delivery (§5.2) | `PostToolUse` on the same `tool_use_id`; `tool_result` carries the answer, so equality is checkable. **A denied permission may emit nothing — those expire.** | native (`queue-operation`) | `system/init` + disk | **transcript** + cards |
-| Codex | env marker | hooks + app-server | Permission, native | app-server response — the channel's own reply confirms | — | app-server | **transcript** + cards |
-| opencode | env/argv | plugin + REST/SSE + ACP | Permission, native | ACP/plugin response | uncertain | ACP `available_commands_update` | **transcript** + cards |
-| Gemini CLI | argv | hooks + ACP | Permission, native | ACP response | — | ACP | **transcript** + cards |
-| Qwen Code | argv | inherits Gemini | Permission, native | ACP response | — | ACP | **transcript** + cards |
-| Cursor | env marker | hooks | Permission, native | hook completion | — | disk | **transcript** + cards |
-| Goose | argv | ACP | Permission, native | ACP response | — | ACP | **transcript** + cards |
-| Amp | argv | stream-json | Permission, degraded | **none — interactions expire** | — | — | **grid only** — status, no transcript |
-| Aider | argv | transcript + heuristics | Text, synthetic | transcript entry; equality checkable | — | static list | **grid only** — status, no transcript |
-| Crush | argv | heuristics | none | n/a | — | — | **grid only** — status, no transcript |
+| Agent | Binding | State | Interactions | **Resolution observed by** | **Interrupt via** | Queue | Commands | Mobile surface |
+|---|---|---|---|---|---|---|---|---|
+| Claude Code | env marker | hooks (30 events) | **Choice + Permission**, synthetic delivery (§5.2) | `PostToolUse` on the same `tool_use_id`; `tool_result` carries the answer, so equality is checkable. **A denied permission may emit nothing — those expire.** | `Esc` (its own interrupt key) | native (`queue-operation`) | `system/init` + disk | **transcript** + cards |
+| Codex | env marker | hooks + app-server | Permission, native | app-server response — the channel's own reply confirms | app-server | — | app-server | **transcript** + cards |
+| opencode | env/argv | plugin + REST/SSE + ACP | Permission, native | ACP/plugin response | ACP `session/cancel` | uncertain | ACP `available_commands_update` | **transcript** + cards |
+| Gemini CLI | argv | hooks + ACP | Permission, native | ACP response | ACP `session/cancel` | — | ACP | **transcript** + cards |
+| Qwen Code | argv | inherits Gemini | Permission, native | ACP response | ACP `session/cancel` | — | ACP | **transcript** + cards |
+| Cursor | env marker | hooks | Permission, native | hook completion | `Ctrl+C` | — | disk | **transcript** + cards |
+| Goose | argv | ACP | Permission, native | ACP response | ACP `session/cancel` | — | ACP | **transcript** + cards |
+| Amp | argv | stream-json | Permission, degraded | **none — interactions expire** | `Ctrl+C` | — | — | **grid only** — status, no transcript |
+| Aider | argv | transcript + heuristics | Text, synthetic | transcript entry; equality checkable | `Ctrl+C` | — | static list | **grid only** — status, no transcript |
+| Crush | argv | heuristics | none | n/a | `Ctrl+C` | — | — | **grid only** — status, no transcript |
+
+**The interrupt column exists because interrupt is the floor's only control.**
+For a heuristic-tier agent ([D5](decisions.md#d5--initial-agent-coverage) track 4)
+a phone gets no blocks, no transcript and no answerable cards — stopping the
+agent is the *entire* remote control surface, so "how do we interrupt this one"
+cannot be left to a CLI help string. Where an agent exposes a native cancel,
+`agent.interrupt` uses it and the pane is untouched; where it does not, the
+fallback is `Ctrl+C` written to the PTY, which is what every CLI is interrupted
+with and requires no inference about screen state
+([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+is satisfied: a control character is position-independent by construction).
 
 **The "mobile surface" column, and the floor stated honestly.** Required by
 [D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work).

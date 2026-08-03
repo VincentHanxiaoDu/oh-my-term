@@ -1455,6 +1455,16 @@ No gesture is the *only* way to reach a capability — every one has a visible
 control, because gesture-only affordances break the parity test's ability to
 drive them and break discoverability for real users.
 
+**Interrupt in particular gets a visible control**, since it is the one a user
+reaches for under pressure and the swipe would otherwise be its only path. A
+session whose agent is `Working` shows a **`⏹ Stop`** button in the session
+header — persistent, in the thumb zone, and the only destructive-looking control
+that does not require a confirm sheet, because hesitating to stop a runaway
+agent is the failure this exists to prevent. It calls `agent.interrupt`, which
+uses the agent's native interrupt channel where one exists and falls back to
+`Ctrl+C` where it does not ([06 §7.3](06-agent-layer.md)). The swipe on a
+dashboard row remains as the fast path for someone triaging several sessions.
+
 ### 8.5 Offline and reconnect
 
 - A single connection-state banner, per instance, at the top: `connecting…`,

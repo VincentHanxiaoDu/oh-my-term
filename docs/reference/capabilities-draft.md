@@ -253,7 +253,16 @@ generated doc entry.
 | `interaction.list` | `list` | Query | V | — | Interactions by `scope`. `since_read_mark` and `include_terminal` return those that reached a terminal state since the actor's read mark — the mandatory post-`Resync` refetch ([07 §5.2](../architecture/07-remote-protocol.md#52-replay-window), [20 §12.5](../architecture/20-recall-and-usage.md)). |
 | `interaction.get` | `get` | Query | V | — | One interaction, including its `viewers`. |
 | `interaction.resolve` | `resolve` | Command | **O** | `WRITES_PTY`¹ | The flagship path. Exactly-once; idempotent by `(interaction_id, identity_or_device, intent_id)` — **not** by the actor, which changes on every reconnect ([D15](../architecture/decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism) c6, [12 §4.1](../architecture/12-collaboration.md#4-interaction-ownership)). A losing caller gets `conflict` with a discriminating `detail.state` of `already_resolved` / `cancelled` / `abandoned` (D15 c10). Writer-token gating follows the interaction's `deliverable` ([12 §3.1](../architecture/12-collaboration.md#31-what-it-governs)): `Native` is exempt, `Synthetic` is delivered as [D13](../architecture/decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s gated transaction and **is** token-gated, and `None` is not answerable at all. An `Operator` may resolve **any** interaction the agent posed (D1, D2). |
-| `interaction.cancel` | `cancel` | Command | O | — | Withdraw without answering, where the mechanism allows it. |
+<!-- `interaction.cancel` was removed. A human cannot withdraw an agent's
+     question — only the agent can ([D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):
+     omt mirrors, it does not intercept). What a user means by "cancel" is
+     answering with the escape hatch, which is `interaction.resolve` carrying a
+     `Cancelled` response — `Esc`, D16's universal safe negative, and exactly
+     what 08 §5.3's "Cancel this request" footer already sends. Keeping a
+     separate capability would have contradicted 12 §4.1's invariant that
+     `resolve` is the only mutation path, and implied omt can do something it
+     cannot. Dismissing a card from a client's own view is client-local state
+     (08 §8.4's swipe-down), not a capability. -->
 
 ¹ `WRITES_PTY` is the declared maximum and is narrowed by `refine_effects` to nothing when `deliverable` is `Native` — a native response channel touches no PTY.
 | `interaction.focus_latest` | `focus-latest` | Command | O | — | Jump to the most recent open interaction ([16 §11](../architecture/16-input-and-keymap.md#11-capabilities-introduced-here)). |
