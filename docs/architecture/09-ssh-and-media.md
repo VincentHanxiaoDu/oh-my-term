@@ -257,7 +257,12 @@ render as the tier-degradation message (§5.6).
 - **Linux/Wayland**: `wl-clipboard`'s protocol via `wayland-client`, same MIME
   order. If neither compositor path is available, shell out to `wl-paste
   --list-types` / `wl-paste -t` (present on effectively every Wayland desktop).
-- **Windows**: `CF_DIBV5`/`CF_HDROP` via `windows-rs`, re-encoded to PNG.
+There is no native-Windows clipboard backend in v1
+([D10](decisions.md#d10--platform-targets-macos-and-linux-windows-via-wsl2)):
+Windows is supported through WSL2, where the Linux paths above apply (an X11 or
+Wayland bridge such as WSLg; without one, no local clipboard source is available
+and the out-of-band fallbacks of §5 apply). A `CF_DIBV5`/`CF_HDROP` backend is a
+future addition behind the same per-platform seam, not a commitment.
 
 The image is sniffed, normalized (EXIF orientation applied, EXIF metadata
 including GPS **stripped** — see §8), stored, and referenced.

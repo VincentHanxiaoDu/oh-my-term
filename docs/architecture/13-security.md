@@ -558,8 +558,10 @@ browser is simultaneously running hostile pages.
   to the WebSocket API at all. The only cookie-shaped surface is the static
   bundle, which is unauthenticated and inert.
 - **CSRF token for the REST surface.** Where a browser form-style request is
-  unavoidable (the OAuth-less login POST and the push-subscription endpoint), a
-  double-submit token bound to the connection nonce is required.
+  unavoidable (in v1, only the OAuth-less login POST), a double-submit token
+  bound to the connection nonce is required. There is no push-subscription
+  endpoint: [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+  ships no notification backend.
 - **CSP** on the served bundle: `default-src 'self'; connect-src 'self'
   wss://<self>; img-src 'self' blob: data:; script-src 'self'; frame-ancestors
   'none'; base-uri 'none'; form-action 'self'`. No inline script, no CDN. Plus
@@ -708,12 +710,19 @@ user's:
 
 | Feature | Capability | Destination | Default |
 |---|---|---|---|
-| Web Push | — (daemon-initiated) | browser vendor push endpoint | off |
-| Webhook notifications (`ntfy`/Gotify) | — (daemon-initiated) | user-specified URL | off |
 | STT provider | — | Deepgram / OpenAI | off (local whisper.cpp available) |
 | Update check | `upgrade.check` ([22 §10](22-operations.md)) | the release host | **off** — no automatic check; the capability must be called |
 | Update install | `upgrade.apply` ([22 §10](22-operations.md)) | the release host | off; explicit, and the artifact's checksum is verified (§9.2) |
 | Self-signed cert ACME (if ever added) | — | Let's Encrypt | not implemented |
+
+**Notification egress does not appear in this table**, because in v1 there is
+none. Web Push (a browser vendor's relay) and webhook notifiers (`ntfy`, Gotify,
+Telegram) were both analysed here and both are removed by
+[D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead): a
+daemon-initiated connection to a third party leaks *"this machine needs its owner,
+now"* even under an encrypted payload, which contradicts the no-required-egress
+position. That analysis is retained as the rationale a future `Notifier` plugin
+must answer (§10.7); it is not a live mechanism, and no `Notifier` backend ships.
 
 **Instance-to-instance traffic within the user's own registry.** This is a
 distinct class and is not "phoning home": the destination is another machine the

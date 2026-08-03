@@ -318,7 +318,7 @@ UI. omt's addition is not a better card, it is *reach*.
   one and its answer is needed either way.
 - Where a *native* response channel exists (ACP `session/request_permission`,
   the opencode plugin, Codex app-server), it is used and no synthetic input is
-  involved. `native` sessions ([D8](#d8--two-session-modes-pty-default-and-native-acp-opt-in))
+  involved. `native` sessions ([D8](#d8--two-session-modes-pty-default-and-native-acp))
   are unaffected — omt owns the rendering there by construction.
 - D9's differentiated claim survives and gets sharper: *answer the agent's own
   card from your phone while the real TUI is on screen, with both sides in

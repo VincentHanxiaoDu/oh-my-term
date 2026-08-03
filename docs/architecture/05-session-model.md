@@ -86,9 +86,9 @@ pub struct Session {
     pub workspace: WorkspaceId,
     pub title: SessionTitle,          // explicit override, else OSC 2, else command
     pub kind: SessionKind,            // Shell | Command { argv } | Agent { kind }
-    pub mode: SessionMode,            // D8; §1.5
+    pub mode: SessionMode,            // D8; §1.3
     pub state: SessionState,
-    pub surface: SessionSurface,      // §1.5 — replaces the old `term` + `pty` pair
+    pub surface: SessionSurface,      // §1.3 — replaces the old `term` + `pty` pair
     pub cwd: Option<PathBuf>,         // live, from OSC 7 / proc inspection
     pub agent: Option<AgentBinding>,  // see 06; a property, not a child object
     pub writer: WriterState,          // §5
@@ -186,7 +186,7 @@ default and the product premise; `native` — the agent spawned in ACP mode with
 no TUI, omt rendering the whole session from typed events — is opt-in.
 
 - A `native` session has **no PTY, no grid, and no authoritative size**. It never
-  participates in `ViewportPolicy` ([07 §4.3](07-remote-protocol.md#43-the-resize-problem));
+  participates in size negotiation ([07 §4.3](07-remote-protocol.md#43-the-resize-problem));
   every client simply renders it at its own width.
 - `SessionMode` is visible on every surface, and a `native` session is **always
   labelled as such** — the user must never be unsure which product they are
@@ -200,6 +200,194 @@ no TUI, omt rendering the whole session from typed events — is opt-in.
 - History (§9) and blocks come from block closure, so they exist **only for `pty`
   sessions**. A native session's timeline is reconstructed from its typed events
   ([20 — Recall and timeline](20-recall-and-usage.md)).
+
+### 1.4 The types §1.1 names
+
+§1.1's structs reference nine types that this document uses and no document
+defined. They are defined here, in this crate, because this crate is where they
+live. `Transcript` gets the most room because it is the largest of them by far.
+
+#### 1.4.1 `Transcript` — the entire content of a `native` session
+
+For a `pty` session the content is the grid plus scrollback plus blocks, all
+owned by [04](04-terminal-core.md). A `native` session has none of those: per
+§1.3 it has no PTY and no grid, so **the transcript is not a view of the session,
+it is the session.** It is what §8.1 persists as an append-only log, what
+[08 §4.4](08-web-client.md#44-transcript-view) renders, what
+[20](20-recall-and-usage.md) indexes for search and recall, and what
+[21](21-data-lifecycle.md) must retain, redact and purge. Losing it loses
+everything the user did.
+
+It is also the source for the transcript **view** of a `pty` agent session
+([D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work)),
+where it is populated from the merged agent event stream instead of from an ACP
+connection. One type, two producers.
+
+```rust
+pub struct Transcript {
+    pub session: SessionId,
+    /// Append-only, ordered by `seq`. Never mutated in place — a correction is
+    /// a new entry that supersedes an earlier one by `supersedes`.
+    entries: Vec<TranscriptEntry>,
+    /// Byte budget for the in-memory tail. Older entries are evicted from
+    /// memory only; the on-disk log is authoritative and 21 §3 owns its
+    /// retention. Default 8 MiB, matching §8.2's per-session scrollback cap.
+    resident_budget: usize,
+    /// First entry still resident. Everything before it is on disk only, and a
+    /// client scrolling past it pages from the store rather than getting a hole.
+    resident_from: Seq,
+}
+
+pub struct TranscriptEntry {
+    pub seq: Seq,                     // the session's sequence space (§1.1)
+    pub ts: Timestamp,
+    /// Which observation tier produced this, so a surface can render
+    /// confidence honestly ([06 §3](06-agent-layer.md)). `Protocol` for every
+    /// entry in a `native` session.
+    pub source: EventSourceTier,
+    /// Set when a later entry replaces this one — a streamed message that was
+    /// finalized, a tool call that gained its result. Renderers show the newest.
+    pub supersedes: Option<Seq>,
+    pub body: TranscriptBody,
+}
+
+pub enum TranscriptBody {
+    /// A user turn, whoever originated it. `actor` is 12 §1's, so "who said
+    /// this from which device" survives into recall.
+    UserMessage { actor: Actor, content: Vec<ContentBlock> },
+    /// An assistant turn. `streaming: true` while it is still being appended.
+    AssistantMessage { content: Vec<ContentBlock>, streaming: bool },
+    /// Agent-internal reasoning, where the agent exposes it. Rendered collapsed
+    /// by default and **excluded from recall indexing by default** (20).
+    Thinking { text: String },
+    ToolCall { id: ToolCallId, name: String, input: serde_json::Value },
+    ToolResult { id: ToolCallId, outcome: ToolOutcome, content: Vec<ContentBlock> },
+    /// The interaction is owned by the ledger (06 §5); the transcript carries a
+    /// reference and its terminal state, so replay shows what was asked and
+    /// what was decided without duplicating the ledger.
+    Interaction { id: InteractionId, terminal_state: Option<InteractionState> },
+    /// Mode changes, model changes, context-window events, agent errors.
+    Notice { kind: NoticeKind, text: String },
+}
+
+pub enum ContentBlock {
+    Text { text: String },
+    Markdown { text: String },
+    /// Content-addressed; the bytes live in the store, not in the transcript.
+    Image { blob: BlobId, mime: String },
+    /// A fenced snippet the surface may render with highlighting, and 18 may
+    /// offer semantic actions on.
+    Code { lang: Option<String>, text: String },
+    Diff { diff: FileDiff },          // 15 §3.2's type, one renderer everywhere
+}
+```
+
+Properties that are load-bearing:
+
+- **Append-only and `seq`-ordered.** The transcript shares the session's
+  sequence space, so a client resumes it with `since_seq` exactly as it resumes
+  terminal bytes ([12 §5.1](12-collaboration.md#51-guarantees) G1, G4), and the
+  same replay window covers both.
+- **Superseding rather than mutation** is what makes streaming safe to persist:
+  a partial assistant message is a durable entry, and the finalized one
+  supersedes it. A crash mid-stream leaves a truthful partial record rather than
+  a hole.
+- **Redaction happens on write**, through
+  [21 §2](21-data-lifecycle.md#2-redaction-before-write)'s single choke point,
+  like every other persisted stream. The transcript carries model output and
+  tool inputs, so it is one of the highest-risk streams for secrets.
+- **Purge is per entry, by `seq` range**, so
+  [21](21-data-lifecycle.md)'s "delete everything about session X before date
+  Y" is expressible without rewriting the log's framing.
+- **Blobs are referenced, never inlined.** A pasted screenshot must not make one
+  transcript entry megabytes wide.
+
+#### 1.4.2 The rest, briefly
+
+```rust
+/// A PTY master, owned by `omt-pty`. Deliberately an abstraction rather than a
+/// raw fd: §13.1's process-survival question needs a handle that could come
+/// from a supervisor rather than from this process, and D10 keeps a Windows
+/// seam open at no cost. Unix-only in v1 (D10).
+pub struct PtyHandle {
+    pub child: ChildHandle,           // pid, pgid, wait/kill
+    read: PtyReadHalf,
+    /// Private to the session's `InputGate` — the serialization point of
+    /// [12 §3.5](12-collaboration.md#35-the-serialization-point). Nothing else
+    /// in the daemon holds a writable handle.
+    write: PtyWriteHalf,
+    pub size: GridSize,               // the authoritative size; TIOCSWINSZ target
+}
+
+/// A live JSON-RPC connection to an agent spawned in ACP mode (D8). Owns the
+/// framing, the request-id space, the negotiated protocol version and the
+/// agent's declared capabilities; surfaces incoming notifications as typed
+/// events for `omt-agent` to normalize.
+pub struct AcpConnection {
+    pub protocol_version: AcpVersion,     // v1 is the build target; v2 negotiated
+    pub agent_caps: AcpCapabilities,
+    pub acp_session: AcpSessionId,        // the agent's own id, not omt's
+    pub state: ConnectionState,           // Handshaking | Ready | Closing | Closed { reason }
+}
+
+/// Per-*pane* view state. Never shared: two panes on one session scroll
+/// independently (§4), so nothing here belongs on `Session`.
+pub struct PaneView {
+    pub scroll: ScrollPosition,       // Follow (pinned to live) | At(Position)
+    pub selection: Option<Selection>,
+    pub search: Option<SearchCursor>,
+    pub folded_blocks: HashSet<BlockId>,
+    pub mode: ViewMode,               // Grid | Blocks | Transcript
+}
+
+/// Exactly what omt injected into the child's environment, recorded so a
+/// restart (§8.2) is reproducible and so a user can see what omt did to their
+/// shell. Not the child's full environment — only omt's additions and removals.
+pub struct SessionEnv {
+    pub injected: BTreeMap<String, String>,   // OMT_SESSION, TERM, integration hooks
+    pub removed: BTreeSet<String>,
+    /// The inherited environment is captured as a hash, not a copy: it contains
+    /// the user's secrets and must never reach the store (13 §8).
+    pub inherited_digest: Blake3Hash,
+}
+
+/// Per-instance resource ceilings. Enforced at creation; exceeding one is a
+/// loud `resource_exhausted`, never a silent degradation.
+pub struct InstanceLimits {
+    pub max_sessions: usize,              // default 128
+    pub max_sessions_per_workspace: usize,// default 32
+    pub max_panes_per_view: usize,        // default 64
+    pub max_clients: usize,               // default 32
+    /// Total scrollback + transcript bytes resident across all sessions.
+    /// 21 §3 owns the on-disk budget; this bounds memory.
+    pub max_resident_bytes: usize,        // default 512 MiB
+}
+
+/// Allocates the per-session `Seq` values every event carries. Monotonic,
+/// never reused, and **persisted with the session** so it does not restart at
+/// zero after a daemon restart (§11 invariant 6). One generator per session;
+/// `Instance::seq` is the instance-wide allocator used by the audit log
+/// (12 §8), which is a different space.
+pub struct SeqGenerator { next: u64 }
+
+/// The instance-wide command history of §9, backed by `omt-store`'s SQLite.
+/// Owns the FTS index, the per-scope query paths and the `HistoryAppended`
+/// emission; §9 defines `HistoryEntry` and `HistoryQuery`.
+pub struct HistoryStore { /* store handle + prepared statements */ }
+
+/// What a client can render, reported at attach and used to choose an encoding
+/// rather than to grant permission — a client that cannot render images is
+/// sent a placeholder, never denied the session (D2).
+pub struct ClientCapabilities {
+    pub images: ImageSupport,         // None | Sixel | KittyGraphics | WebImg
+    pub mouse: bool,
+    pub kitty_keyboard: bool,         // affects key encoding (16)
+    pub true_color: bool,
+    pub bracketed_paste: bool,
+    pub clipboard: ClipboardSupport,  // None | Osc52 | Native
+    pub max_frame_bytes: usize,       // caps a snapshot the client must decode
+}
+```
 
 ---
 
@@ -313,17 +501,25 @@ A session's PTY has exactly one size. When N clients view the same workspace at
 different terminal sizes, we must choose one.
 
 **The negotiation rule is specified once, in
-[07 §4.3](07-remote-protocol.md#43-the-resize-problem), which owns it:** each
-session has one authoritative `(cols, rows)` with a `ViewportPolicy` whose
-`SizeOwner` is `Writer` (default), `Pinned { by }`, or `Smallest` (opt-in). This
-crate stores the policy on the session, applies the resulting size to the PTY,
-and reports every client's viewport for presence.
+[07 §4.3](07-remote-protocol.md#43-the-resize-problem), which owns it**, and the
+**vocabulary is [17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)'s**,
+which supersedes 07's earlier `SizeOwner` naming. This document uses 17's names
+throughout and never the old ones:
 
-In [17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)'s
-vocabulary, which owns per-client layout: `SizeOwner::Writer` is rendered as
-`SizePolicy::Driver`, and `Participation::{Participant, Observer}` is 17's term
-for a client's sizing role. A client in block view is always an `Observer`.
-07 §4.3 remains the authority for the negotiation itself.
+| 17 §3.4 — use this | superseded name |
+|---|---|
+| `SizePolicy::Driver` (default) | `SizeOwner::Writer` |
+| `SizePolicy::Smallest` | `SizeOwner::Smallest` |
+| `SizePolicy::Pinned { size, by }` | `SizeOwner::Pinned { by }` |
+| `Participation::{Participant, Observer}` | *(no earlier name)* |
+
+So: each session has one authoritative `(cols, rows)` and a `SizePolicy` that is
+`Driver` (the writer-token holder's view drives the PTY, falling back to the
+smallest `Participant` viewport when nobody holds the token), `Pinned`, or
+`Smallest` (opt-in). This crate stores the policy on the session, applies the
+resulting size to the PTY, and reports every client's viewport for presence.
+A client in block view is always an `Observer`. 07 §4.3 remains the authority
+for the negotiation itself; 17 §3.4 for the names.
 
 A `Native` session ([§1.3](#13-session-modes-d8)) has no authoritative size at
 all and is excluded from this negotiation entirely.
@@ -333,7 +529,7 @@ What follows from that here:
 - Every client reports its viewport; a non-authoritative client's report updates
   presence and nothing else. Clients whose viewport differs from the
   authoritative size render scaled-to-fit-width and letterboxed, never cropped.
-- `SizeOwner::Smallest` is the "nobody is cropped" pairing mode, and is the only
+- `SizePolicy::Smallest` is the "nobody is cropped" pairing mode, and is the only
   mode in which any attached client's viewport change can resize the PTY.
 - Resizes are debounced and coalesced (250 ms); a drag-resize produces one
   `resize` call to `omt-term`, not sixty. See
@@ -402,7 +598,8 @@ pub struct ClientView {
     /// laptop. The `SessionId` is the shared identity and is what every surface
     /// actually highlights.
     pub viewing: SmallVec<[(ViewId, SessionId); 4]>,
-    /// Reported viewport. Authoritative only per 07 §4.3's `ViewportPolicy`.
+    /// Reported viewport. Authoritative only per the session's `SizePolicy`
+    /// (17 §3.4), negotiated per 07 §4.3.
     pub size: GridSize,
     pub mode: ViewMode,                   // Grid | Blocks
 }
@@ -553,10 +750,34 @@ is authoritative):
   `Native`** — an ACP `session/request_permission` reply, an opencode-plugin
   response, a Codex app-server call. Those do not touch the PTY.
   Where `deliverable` is `Synthetic`, the resolve is a PTY write and is a
-  **gated transaction** that acquires the token, verifies input quiescence and
-  re-verifies the interaction before writing
+  **gated transaction** that acquires the token, verifies input quiescence
+  (`injection_quiescence`, default 750 ms —
+  [12 §3.3.1](12-collaboration.md#331-lease-parameters)) and re-verifies the
+  interaction before writing
   ([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write),
-  [12 §3.1](12-collaboration.md#31-what-it-governs)). The old blanket exemption
+  [12 §3.1](12-collaboration.md#31-what-it-governs)). Data-model consequences
+  for this crate:
+  - The transaction runs inside the session's **`InputGate`**
+    ([12 §3.5](12-collaboration.md#35-the-serialization-point)), which owns
+    `PtyHandle::write` exclusively (§1.4.2). The local TUI's passthrough goes
+    through the same gate — that is what makes the two writers orderable.
+  - Re-verification is the six preconditions of
+    [12 §4.6](12-collaboration.md#46-preconditions-on-a-synthetic-delivery), and
+    they are **screen-derived**: the card's presence, the printed row number at
+    the computed index, the card not being in text-entry mode, an option list of
+    ≤ 9, the pane **not being on the alternate screen**
+    ([04 §6.4](04-terminal-core.md#64-the-fallback-heuristic--no-shell-integration)),
+    and no imminent agent-side AFK auto-advance. So the gate reads `omt-term`'s
+    freshest snapshot, not the hook payload, and a `Native` session — having no
+    grid — never takes this path.
+  - The write itself is raw bytes **outside bracketed paste**, one key per
+    `write(2)`. A `Synthetic` resolve therefore cannot be expressed as a
+    `session.send_text` call, which bracket-wraps; it is a distinct gate entry
+    point.
+  - `WriterState` is unchanged by all of this: the transaction acquires and
+    releases the ordinary token, so a human always sees who is writing.
+
+  The old blanket exemption
   rested on "it goes back through the agent's own channel", which
   [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
   deleted.
@@ -811,7 +1032,7 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `session.rename` | O | `{ session, title }` | `SessionInfo` |
 | `session.attach` | V | `{ session, mode, since_seq?, viewport }` | `Attached { snapshot, seq } \| ResyncRequired { snapshot, seq }` — `viewport` is a report, not a claim; see [07 §4.3](07-remote-protocol.md#43-the-resize-problem) |
 | `session.detach` | V | `{ session }` | `Ack` |
-| `session.resize` | O | `{ session, cols, rows, pixel_width?, pixel_height?, request_authoritative }` | `{ authoritative: GridSize, owner: SizeOwner }` — per [07 §4.3](07-remote-protocol.md#43-the-resize-problem); requires the writer token only when `request_authoritative` |
+| `session.resize` | O | `{ session, cols, rows, pixel_width?, pixel_height?, request_authoritative }` | `{ authoritative: GridSize, policy: SizePolicy }` — per [07 §4.3](07-remote-protocol.md#43-the-resize-problem); requires the writer token only when `request_authoritative` |
 | `session.send_text` | O | `{ session, text, submit }` | `{ seq }` — effects: `WRITES_PTY`; requires writer token |
 | `session.send_keys` | O | `{ session, keys: [KeySpec] }` | `{ seq }` — effects: `WRITES_PTY`; requires writer token |
 | `session.write_bytes` | O | `{ session, bytes }` | `{ seq }` — effects: `WRITES_PTY`; requires writer token |
@@ -902,13 +1123,14 @@ property tests call after every operation:
 7. A session in `Exited` or `Orphaned` has no writer and refuses PTY writes.
 8. `Workspace::sessions` and `Session::workspace` agree in both directions.
 9. Every `ClientId` in `Session::viewers` exists in `Instance::clients`.
-10. For a session with `mode == Pty`, the authoritative PTY size equals what
-    `ViewportPolicy` resolves to
-    ([07 §4.3](07-remote-protocol.md#43-the-resize-problem)): the writer's
-    viewport (`SizeOwner::Writer`, rendered as `SizePolicy::Driver` in
-    [17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)),
-    the pinned size, or the minimum over `Participation::Participant` viewports
-    under `Smallest`; and the last authoritative size when no viewer remains.
+10. For a session with `mode == Pty`, the authoritative PTY size equals what its
+    `SizePolicy` resolves to
+    ([17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)
+    for the names, [07 §4.3](07-remote-protocol.md#43-the-resize-problem) for the
+    negotiation): under `Driver`, the writer's viewport, falling back to the
+    minimum over `Participation::Participant` viewports when nobody holds the
+    token; under `Pinned`, the pinned size; under `Smallest`, that same minimum
+    over `Participant`s; and the last authoritative size when no viewer remains.
 11. A `Native` session has no `PtyHandle`, no authoritative size, and emits no
     `SessionResized`. Its `mode` field and its `SessionSurface` variant agree.
 12. Every workspace has exactly one view of kind `Primary`, and
@@ -954,8 +1176,8 @@ property tests call after every operation:
    *could* come from elsewhere. Needs a decision with the `omt-pty` change owner.
 
 2. **OPEN QUESTION — sizing policy when the only viewer is a phone.** §2.2's
-   default is `SizeOwner::Writer` (`SizePolicy::Driver` in 17's vocabulary),
-   with the minimum over `Participant`s as the no-writer fallback. If a laptop
+   default is `SizePolicy::Driver`, with the minimum over `Participant`s as the
+   no-writer fallback. If a laptop
    detaches and only an observer phone
    remains, the session keeps its last size — correct, but it means an agent may
    render for a width nobody can see. Alternative: shrink to a "headless"
@@ -963,13 +1185,24 @@ property tests call after every operation:
    handle a resize mid-run. Affects [06](06-agent-layer.md).
 
 3. **OPEN QUESTION — writer token granularity for agents.** §5.3 has agents hold
-   the token when injecting text. But an agent's *hook-channel* answers do not
-   touch the PTY and are not gated. If a user is mid-command and an agent's
-   deferred `PreToolUse` resolves, the agent may then write to the PTY as its own
-   next action. Do we queue that behind the human's token, or does an
-   agent-initiated write pre-empt? Lean: queue, with a visible indicator.
-   Tracked jointly as [06 §10.10](06-agent-layer.md#10-open-questions) and
+   the token when injecting text as `ActorKind::Agent`. The question is what
+   happens when an agent-initiated write meets a human who is mid-command: do we
+   queue it behind the human's token, or does it pre-empt? Lean: queue, with a
+   visible indicator. Tracked jointly as
+   [06 §10.10](06-agent-layer.md#10-open-questions) and
    [12 §9.5](12-collaboration.md#9-open-questions).
+
+   > **Rewritten.** The original form of this question rested on *"an agent's
+   > hook-channel answers do not touch the PTY and are not gated"*, and on a
+   > deferred `PreToolUse` resolving.
+   > [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+   > deleted both: omt does not defer, and the hook is an observation channel
+   > with no response slot. A `Synthetic` resolution now *is* a PTY write and is
+   > gated as a transaction (§5.4,
+   > [12 §3.1](12-collaboration.md#31-what-it-governs)); a `Native` one goes over
+   > the agent's own RPC and is ungated. Neither is an ungated PTY write, so the
+   > premise is gone. What survives is the narrower question above, which is
+   > about `ActorKind::Agent` as a *writer*, not about interaction delivery.
 
 4. **OPEN QUESTION — history scope for worktrees.** §7 makes each worktree its
    own workspace, but users almost certainly want history shared across worktrees

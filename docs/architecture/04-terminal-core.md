@@ -37,7 +37,8 @@ impl Terminal {
 
 `advance` never blocks, never allocates unboundedly, and never performs a side
 effect itself. A reply to DA/DSR/OSC-52 is *returned* as a `HostAction`, so the
-core is trivially testable and the session layer keeps all policy.
+core is trivially testable and the session layer keeps all policy. `HostAction`
+is enumerated in [§1.6](#16-hostaction--what-advance-returns).
 
 ---
 
@@ -147,7 +148,86 @@ We do **not** implement iTerm2's conductor. `Interpreter` does, however, expose 
 later install a nested `Terminal` for multiplexed remote streams without
 changing the parser. Reserved, unimplemented, and documented as such.
 
----
+### 1.6 `HostAction` — what `advance` returns
+
+`HostActions<'_>` is the drain handle over the queue §1.3 shows: an iterator of
+`HostAction` borrowed from the `Terminal`, valid until the next mutation.
+`advance` is the crate's primary method, so this is the crate's primary output
+type alongside `Damage`, and it is enumerated here in full rather than being
+discovered one variant at a time.
+
+```rust
+pub struct HostActions<'a> { /* private; drains the queue */ }
+impl<'a> Iterator for HostActions<'a> { type Item = HostAction<'a>; }
+
+pub enum HostAction<'a> {
+    // ── Replies the host must write back to the PTY ──────────────────────────
+    /// Primary/secondary DA, DSR cursor/status, XTVERSION, XTGETTCAP, kitty
+    /// keyboard query, DECRQM. Pre-encoded; the host writes the bytes verbatim
+    /// and never interprets them.
+    Reply(&'a [u8]),
+
+    // ── Window/session properties the session layer owns ─────────────────────
+    SetTitle(&'a str),                       // OSC 0 / 2
+    SetIconName(&'a str),                    // OSC 1
+    SetCwd { url: &'a str },                 // OSC 7 → Session::cwd (05 §1.1)
+    SetUserVar { key: &'a str, value: &'a str }, // OSC 1337 SetUserVar
+    Bell,                                    // BEL → 05's `Bell` event
+    /// The program asked to resize/move/report the window (CSI t). omt reports
+    /// truthfully and **never** resizes on a program's request; the size is
+    /// 07 §4.3's to negotiate.
+    WindowOp(WindowOp),
+
+    // ── Clipboard, which is policy, not emulation ────────────────────────────
+    /// OSC 52 write. Honoured per 13's clipboard policy, never automatically.
+    ClipboardWrite { selection: ClipboardSelection, data: &'a [u8] },
+    /// OSC 52 read request. Answered only with explicit user consent; the reply
+    /// is sent back in as `Reply` bytes by the host.
+    ClipboardRead { selection: ClipboardSelection },
+
+    // ── Structured semantics the layers above consume ────────────────────────
+    /// OSC 133 A/B/C/D reached the block tracker. Carries the resulting
+    /// transition so 05 can emit `BlockOpened`/`BlockClosed` without re-parsing.
+    Block(BlockEvent),
+    /// OSC 8 hyperlink opened/closed on the current cell run.
+    Hyperlink(HyperlinkEvent),
+    /// A DEC private mode the host must know about because it changes how input
+    /// is encoded or forwarded: bracketed paste (2004), focus reporting (1004),
+    /// mouse modes, kitty keyboard (`>u`/`<u`), and the **alternate screen
+    /// (1049)** — the last is what §6.4's capability downgrade keys on.
+    ModeChanged { mode: TermMode, enabled: bool },
+    /// A payload hook (§1.4) produced a result: an image, a file transfer, an
+    /// omt backchannel message.
+    Payload(HookOutput),
+
+    // ── Things the host must be told about, not asked to do ──────────────────
+    /// The grid was resized by the program's own escape sequence (DECCOLM,
+    /// CSI t) rather than by `resize()`. The host must push the new size to the
+    /// PTY. Distinct from a host-initiated resize, which returns `ResizeReport`.
+    NotifyResize { cols: u16, rows: u16 },
+    /// A recoverable anomaly the user or the log should see: an oversized image
+    /// (§1.4), a budget-aborted hook, an unsupported sequence at a level the
+    /// config asked to be told about.
+    Warn(Warning),
+}
+```
+
+Rules that make the type behave:
+
+- **Every variant is a request to the *host*, never a mutation the core
+  performed.** The grid is already updated by the time `advance` returns; these
+  are the effects the core is forbidden to perform itself.
+- **The queue is bounded** (`TermConfig::max_host_actions`, default 256 per
+  `advance`). Overflow drops the oldest *coalescible* actions — `SetTitle`,
+  `SetCwd` and `NotifyResize` are last-wins by construction — and emits one
+  `Warn`. `Reply` and `ClipboardWrite` are never dropped; if they cannot be
+  queued, `advance` stops consuming and the caller re-enters, which applies
+  backpressure rather than losing a protocol reply.
+- **Order is preserved**, and it is the byte order the sequences arrived in. A
+  `Reply` must not be reordered ahead of a `ModeChanged` the program is about to
+  depend on.
+- The host must drain `HostActions` before the next `advance`; the borrow makes
+  that a compile-time requirement rather than a convention.
 
 ## 2. Grid and storage
 
@@ -944,9 +1024,54 @@ becomes true; and because there is no shell in the loop, no real OSC 133 `A`
 ever arrives either, so the second condition never fires. Both close conditions
 being unreachable, a naive segmenter would produce one unbounded, never-closing
 `Background` block whose contents are a cursor-addressed redraw stream flattened
-to lines. Note also that Claude Code is *not* an alt-screen program — its Ink
-renderer draws inline on the primary screen — so §6.3's alt-screen suspension
-rule does not save us here.
+to lines.
+
+Note that §6.3's alt-screen suspension rule does not save us here either, and
+**not for the reason an earlier draft of this section gave.** That draft stated
+"Claude Code is *not* an alt-screen program", which is a *default*, not a
+property. [`spike-card-answering.md` §6](../research/spike-card-answering.md)
+established VERIFIED-LIVE that v2.1.220 ships a second renderer:
+
+```js
+tui: E.enum(["default","fullscreen"]).optional().describe(
+  'Terminal UI renderer. "fullscreen" uses the flicker-free alt-screen renderer
+   with virtualized scrollback (equivalent to CLAUDE_CODE_NO_FLICKER=1).
+   "default" uses the classic main-screen renderer.')
+```
+
+reachable via `/tui fullscreen`, `CLAUDE_CODE_NO_FLICKER=1`, or
+`viewMode: "focus"` — and shipping with an **active in-product upsell**
+(`fullscreen-upsell`, `fullscreenUpsellSeenCount`, plus a downsell survey for
+switching back) that is deliberately growing the alt-screen population. In the
+default renderer `ESC[?1049h` appears zero times across ten captures; what
+Claude Code emits at startup is `ESC[?2004h`, `ESC[?1004h`, `ESC[?2031h` and a
+kitty-keyboard push/pop. So both renderers exist in one shipped version and the
+choice is the user's.
+
+**Therefore the alternate screen is detected at runtime, never assumed.**
+`omt-term` already tracks `ESC[?1049h` / `ESC[?1049l` for §6.3's suspension
+rule; that same signal is exported per session as a capability input, and
+entering the alt screen **downgrades capabilities** rather than merely
+suspending segmentation:
+
+- Block segmentation is suspended outright (§6.3) — which only *adds* intervals
+  where the block view is unavailable, so D14's conclusion is strengthened, not
+  weakened.
+- The **transcript view is unaffected**: it is fed by the agent event stream,
+  not by the grid ([D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work)),
+  so it is the surface that keeps working in `fullscreen`.
+- **Remote card answering is disabled** while the pane is on the alternate
+  screen. The gated transaction's preconditions are screen-derived
+  ([12 §4.6](12-collaboration.md#46-preconditions-on-a-synthetic-delivery),
+  precondition P5) and cannot be trusted against a virtualised scrollback omt
+  does not model. The card is shown read-only with the reason and the terminal
+  view one tap away.
+
+**D14's conclusion is unaffected by any of this**, and its stated reason in
+[`decisions.md`](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work)
+is already the correct one: *there is no shell in the loop, therefore no
+OSC 133* — true in **both** renderers, whether or not the alternate screen is in
+use. It was this section that carried the wrong premise.
 
 Therefore, per [D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work):
 

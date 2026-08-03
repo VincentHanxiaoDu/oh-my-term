@@ -24,9 +24,12 @@ sense without them.
    the domain model.
 2. [`01-principles.md`](01-principles.md) — the nine invariants every change is
    held to. `P3` (parity) and `P4` (native semantics) do the most work.
-3. [`decisions.md`](decisions.md) — nine decisions that constrain everything.
+3. [`decisions.md`](decisions.md) — sixteen decisions that constrain everything.
    `D1` (no omt permission policy), `D2` (remote equals local), `D8` (two session
-   modes) and `D9` (what omt may claim) change how you read every other document.
+   modes), `D11` (omt mirrors the agent's own card, never replaces it), `D13`
+   (synthetic delivery is a gated transaction), `D15` (five classes of pending
+   intent) and `D16` (remote answering is per-card-type) change how you read
+   every other document.
 4. [`03-capability-catalog.md`](03-capability-catalog.md) — the single door.
    Every mutation and every read goes through it; it is why parity is
    mechanically checkable rather than aspirational.
@@ -77,8 +80,8 @@ extend the owner rather than restating it.
 | 04 | [Terminal core](04-terminal-core.md) | `omt-term`: the VT parser, the grid, scrollback, reflow, `Position`, the block model, `TermPolicy`, selection and search primitives. |
 | 05 | [Session model](05-session-model.md) | The object graph, `SessionState`, **`SessionMode`**, attach/detach, the writer token's *data model*, persistence of the session tree, command history. |
 | 06 | [Agent layer](06-agent-layer.md) | `AgentAdapter`, `EventSource`, `Tier`, `AgentState`, the tiered merge, **the `Interaction` and `InteractionResponse` shapes**, `Responder`, argument editing. |
-| 07 | [Remote protocol](07-remote-protocol.md) | `Transport`, `Frame`, `ProtoMessage`, the handshake, **event `seq`, resume, replay and `Resync`**, **viewport negotiation (`ViewportPolicy`)**, backpressure, the push transport. |
-| 08 | [Web client](08-web-client.md) | The web package, codegen consumption, the two view modes, card rendering, gestures, PWA and offline. |
+| 07 | [Remote protocol](07-remote-protocol.md) | `Transport`, `Frame`, `ProtoMessage`, the handshake, **event `seq`, resume, replay and `Resync`**, **viewport negotiation (`ViewportPolicy`)**, backpressure, and the reserved `Notifier` extension point (no push backend ships in v1 — D12). |
+| 08 | [Web client](08-web-client.md) | The web package, codegen consumption, the three view modes (block, transcript, terminal — D14), card rendering, gestures, PWA and offline. |
 | 09 | [SSH and media](09-ssh-and-media.md) | **The blob store**, `BlobClass`, quotas and TTL, the clipboard tiers, the OSC bridge, `AttachmentReference`. |
 | 10 | [Configuration](10-configuration.md) | The layered config model, the typed schema, validation and diagnostic codes, **the keybinding file format**, themes, workflows, launch configs. |
 | 11 | [Plugins](11-plugins.md) | The manifest, the host protocol, the grant model and the escalation rule. |

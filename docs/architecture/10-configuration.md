@@ -86,8 +86,11 @@ Environment overrides, all resolved once at startup:
 | `OMT_NO_PROJECT_CONFIG=1` | disables the project layer (for untrusted checkouts) |
 | `OMT_<SECTION>__<KEY>` | single-setting override, `__` is the path separator |
 
-Windows uses `%APPDATA%\omt\`, Linux/macOS the XDG path above. `omt config path`
-prints all of them, resolved.
+macOS and Linux use the XDG path above; Windows is supported through WSL2, which
+is Linux and uses the same path
+([D10](decisions.md#d10--platform-targets-macos-and-linux-windows-via-wsl2)).
+There is no native-Windows `%APPDATA%` location in v1. `omt config path` prints
+all of them, resolved.
 
 ### 1.3 Secrets are a separate file with enforced permissions
 
@@ -598,7 +601,9 @@ applied through `toml_edit` at the reported span.
 
 ### 6.1 Watching
 
-`notify` (inotify/FSEvents/ReadDirectoryChangesW) watches the config *directory*,
+`notify` (inotify on Linux, FSEvents on macOS — the v1 targets per
+[D10](decisions.md#d10--platform-targets-macos-and-linux-windows-via-wsl2))
+watches the config *directory*,
 not individual files, so editor atomic-rename saves (vim, VS Code) are caught.
 Events are debounced 150 ms and coalesced. The project config for each open
 workspace is watched too, subject to the trust decision in §2.4.

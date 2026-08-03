@@ -20,6 +20,25 @@ There is no `TOUCHES_FS`; it was split into `READS_FS` and `WRITES_FS`
 ([15 §6](../architecture/15-workspace-explorer.md#6-capabilities)) and every
 prior declaration migrated.
 
+The **Effects** column is always the declared **maximum** over all inputs. Where
+a row reads "`DESTRUCTIVE` when `close_session`" or "only when `session` is
+`None`", that is a `refine_effects` narrowing, not a conditional declaration:
+the bit is declared unconditionally and narrowed per call by the pure
+`refine_effects` of
+[03 §2.1](../architecture/03-capability-catalog.md#21-conditional-effects).
+Authorization, credential scoping and the `Viewer` CI rule below read the
+maximum; the confirm gesture and the audit log read the refined set, and the
+audit entry carries both when they differ.
+
+**Intent.** Every `Command` also declares a
+[D15](../architecture/decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+delivery class. Rather than widen every table by a column, the classes are
+consolidated in [one section at the end](#intent-classes-for-every-command),
+which is also the only place the safety-relevant question — *which capabilities
+must never be retried?* — can be answered at a glance. A `Command` absent from
+that section is an unreconciled row, exactly as a `Command` with no `intent`
+fails the build.
+
 **Roles** are `V`iewer < `O`perator < `A`dmin. They answer *who you shared this
 instance with*; an authenticated `Operator` is equivalent to sitting at the TUI
 ([D2](../architecture/decisions.md#d2--remote-is-exactly-equivalent-to-local)).
@@ -233,7 +252,7 @@ generated doc entry.
 |---|---|---|---|---|---|
 | `interaction.list` | `list` | Query | V | — | Open interactions, optionally by session. |
 | `interaction.get` | `get` | Query | V | — | One interaction, including its `viewers`. |
-| `interaction.resolve` | `resolve` | Command | **O** | — | The flagship path. Exactly-once; idempotent by `(interaction, actor, response)`. **Not** writer-token-gated ([12 §3.1](../architecture/12-collaboration.md#31-what-it-governs)). An `Operator` may resolve **any** interaction the agent posed (D1, D2). |
+| `interaction.resolve` | `resolve` | Command | **O** | — | The flagship path. Exactly-once; idempotent by `(interaction_id, identity_or_device, intent_id)` — **not** by the actor, which changes on every reconnect ([D15](../architecture/decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism) c6, [12 §4.1](../architecture/12-collaboration.md#4-interaction-ownership)). A losing caller gets `conflict` with a discriminating `detail.state` of `already_resolved` / `cancelled` / `abandoned` (D15 c10). **Not** writer-token-gated ([12 §3.1](../architecture/12-collaboration.md#31-what-it-governs)). An `Operator` may resolve **any** interaction the agent posed (D1, D2). |
 | `interaction.cancel` | `cancel` | Command | O | — | Withdraw without answering, where the mechanism allows it. |
 | `interaction.focus_latest` | `focus-latest` | Command | O | — | Jump to the most recent open interaction ([16 §11](../architecture/16-input-and-keymap.md#11-capabilities-introduced-here)). |
 
@@ -328,6 +347,7 @@ are **CLI spellings** (`omt doctor term`), not catalog entries.
 | `usage.query` | `query` | Query | V | — | `{ scope, since, until?, group_by }` → `UsageReport`. |
 | `usage.limits` | `limits` | Query | V | — | `{ limits: [RateLimitState] }`. |
 | `usage.session` | `session` | Query | V | — | `{ totals, by_model, context_window, last_event }`. |
+| `attention.get` | `get` | Query | V | — | `{ session }` → the current attention state for one session: `{ signals, since, snoozed_until, cleared_at }`. **Required by the protocol, not merely convenient:** [07 §5.2](../architecture/07-remote-protocol.md#52-replay-window) makes refetching it one of the two mandatory refetches after a `Resync`, because live state plus the replay window cannot reconstruct attention that came and went inside an offline gap. It was assumed by 07 and declared nowhere; added here. `attention.list` is the instance-wide form of the same data. |
 | `attention.list` | `list` | Query | V | — | `{ signals: [AttentionSignal] }`. |
 | `attention.explain` | `explain` | Query | V | — | `{ baselines, reasons, thresholds, snoozes }`. |
 | `attention.snooze` | `snooze` | Command | O | `WRITES_FS` | Snoozes are persisted with the binding. |
@@ -556,6 +576,93 @@ server's clock. It is not `force`: it opens no `PendingTakeover`, fires no
 countdown, and is audited as `acquire`.
 
 ---
+
+## Intent classes for every `Command`
+
+Per [03 §2.2](../architecture/03-capability-catalog.md#22-intent-class-d15) and
+[D15](../architecture/decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism).
+`Query` capabilities declare no `intent` and are omitted. Dispatch reads the
+class to decide what a repeated `RequestId` means
+([03 §3.5](../architecture/03-capability-catalog.md#35-the-dispatch-path)).
+
+### `ExternallyConfirmed` — never retried, by anything
+
+The whole list, deliberately short and deliberately first. These write into a
+sink omt does not own; a duplicate is not a duplicate row but a keystroke
+landing somewhere else entirely. Dispatch rejects a repeated `RequestId` with
+`conflict`, and an unconfirmed write goes to `Undelivered`, never to a replay.
+
+| Capability | Confirmed by |
+|---|---|
+| `interaction.resolve` | the agent recording the answer — hook `PostToolUse`, a transcript entry, or a tool result ([06 §5.1](../architecture/06-agent-layer.md#5-interactions--the-flagship-path)) |
+| `agent.prompt` | the agent's own echo of the submitted prompt |
+| `agent.commands.run` | the agent's command-invocation receipt |
+| `agent.interrupt` | the observed transition out of `Working` |
+| `media.image.paste` | the injected reference appearing in the agent's input |
+
+> **Choice made here, and it is not free.** `interaction.resolve` is
+> `ExternallyConfirmed` **unconditionally**, even though a `native`-mode or ACP
+> resolve has a real response channel and would qualify as `Cas`. `intent` is a
+> static declaration and cannot vary per call, so the class must be the
+> strictest the capability can require; declaring `Cas` would let dispatch
+> replay a synthetic injection from cache, which is the one thing D15 forbids
+> outright. The cost is that a native-channel resolve gives up dispatch-level
+> retry it could have had — it still gets the ledger's own CAS on
+> `(interaction_id, identity_or_device, intent_id)`, which is where exactly-once
+> actually lives. Flagged rather than assumed.
+
+### `RawStream` — rejected loudly on repeat
+
+`session.send_text`, `session.send_keys`, `session.send_newline`,
+`session.write_bytes`, `session.blocks.rerun`, `layout.synchronize`,
+`session.signal`, and `workflow.run` (it renders placeholders and runs the
+result in the PTY; a replay runs the command twice).
+
+Resumption is the writer `epoch` plus the consumed-offset `ack`
+([07 §3.6](../architecture/07-remote-protocol.md#36-binary-payloads)), never
+repetition.
+
+`open.activate` and `open.hints.select` are **also `RawStream`**, for the same
+reason and against first appearances: both declare `WRITES_PTY` because one of
+their handlers inserts text at the shell prompt, and a replayed insertion lands
+in whatever the user is typing now. The class is set by the most dangerous
+handler in the union, not by the common case — the same rule that makes their
+`effects` a union in the first place ([18 §9](../architecture/18-semantic-open.md#9-capabilities)),
+and it is removed from the `Cas` residue below.
+
+### `Append { dedup }`
+
+`agent.queue.enqueue` (D15 c3: also carries a `BindingId`, requires
+`AgentState::Working`, and carries `valid_until`), `history.import`,
+`keys.capture`, `store.export`, `search.reindex`, `system.bug_report`.
+
+### `Lww`
+
+Per-client or per-identity soft state where a visible loser is the right
+outcome: `pane.scroll`, `pane.select`, `session.blocks.fold`,
+`layout.views.select`, `identity.prefs.set`, and the proposed
+`continuity.draft.set`.
+
+### `Cas`
+
+**Everything else** — every remaining `Command` in every table above. These have
+a CAS target (a version, a tree epoch, a registry epoch, a file layer) plus
+`(identity, intent_id)`, so a repeated `RequestId` returns the original result.
+This is the large majority: the whole of `workspace.*`, `pane.*` (other than the
+`Lww` rows), `layout.*` (other than `synchronize`), `session.*` lifecycle,
+`config.*`, `store.*`, `identity.*`, `device.*`, `instance.*`, `plugin.*`,
+`service.*`, `upgrade.*`, `setup.*`, `migrate.*`, `theme.*`, `workflow.*`,
+`launch.*`, `stt.*`, `media.*` other than `image.paste`, `open.*` other than
+`activate` and `hints.select`, `workflow.*` other than `run`,
+`attention.snooze`/`clear`, `interaction.cancel`, `agent.bind`/`unbind`,
+`agent.queue.remove`, `events.subscribe`/`resume`.
+
+It is stated as a residue rather than enumerated **because the enumeration is
+the generator's job**, and a second hand-maintained list of ~120 names would
+drift from the declarations within a week — the failure this whole document
+exists to postpone. The three unsafe classes are enumerated exhaustively because
+they are short, they are the ones a reader must be able to audit, and a mistake
+in them is a silently wrong answer rather than a redundant round trip.
 
 ## Parity exemptions
 

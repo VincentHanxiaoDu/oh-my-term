@@ -173,11 +173,14 @@ A `Synthetic` resolve is not a token-holding *write*, it is a **gated
 transaction** per [D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write):
 acquire the token, verify input quiescence (no human bytes for a quiet period),
 re-verify against the freshest source that the agent is still in the same
-interaction, write the answer as one unit, release. Any check failing fails the
+interaction, write the answer as one unit, release. The quiet period is
+`injection_quiescence` (§3.3.1) and the re-verification is the six checks of
+[§4.6](#46-preconditions-on-a-synthetic-delivery). Any check failing fails the
 resolve with `conflict` or `precondition_failed`, visibly, on the surface that
 attempted it; a partial write is never permitted. **The local TUI's passthrough
 bytes into a session with an open interaction pass through this same
-serialization point** — it is the only place the two writers can be ordered,
+serialization point** — designed in [§3.5](#35-the-serialization-point), and the
+only place the two writers can be ordered,
 because the human at the keyboard is not a capability caller and the ledger
 cannot see them. Delivery is confirmed by observation, never assumed: see §4.5.
 
@@ -235,13 +238,45 @@ in someone else's editing session.
 
 | Operation | Capability | Semantics |
 |---|---|---|
-| **Auto-acquire** | — (implicit, on the first write) | When **exactly one** client is attached with `Operator`+ and the token is `Free`, that client's first write acquires the token implicitly, with a new `epoch`, audited as a normal `acquire` by that actor. Single-user operation therefore never sees the mechanism at all — the token becomes visible only under contention, which is the correct ergonomic trade. Governed by `WriterPolicy.auto_acquire`, default `true` ([05 §5.2](05-session-model.md) holds the field; the semantics are here). It never applies when a second client is attached, and never to `Viewer`. |
+| **Auto-acquire** | — (implicit, on the first write) | The token is a **lease**. When the token is `Free`, the caller is `Operator`+, and **no other client has written to this session within `writer_quiet_period` (default 15 s)**, that client's first write acquires the token implicitly, with a new `epoch`, audited as a normal `acquire` by that actor. Governed by `WriterPolicy.auto_acquire`, default `true` ([05 §5.2](05-session-model.md) holds the field; the semantics are here). Never applies to `Viewer`. |
 | **Acquire** | `session.writer.acquire` | Succeeds immediately if `Free`. Fails `conflict` if held, with the holder in `detail`. Requires `Operator`. |
 | **Takeover** | `session.writer.acquire { force: true }` | Legal only for `Operator`+. Opens a `PendingTakeover` with a **grace window of 5 s**. Every surface shows a countdown. The holder may `session.writer.keep` to cancel it once per takeover; a second takeover request within 60 s cannot be cancelled. |
 | **Release** | `session.writer.release` | Immediate; token becomes `Free`. |
 | **Idle release** | — | After **90 s** with no input, the token auto-releases (`Actor::System`). Prevents a closed laptop from holding a session hostage. |
 | **Disconnect** | — | Token released immediately on transport close; no grace, because the holder is provably gone. |
 | **Daemon restart** | — | All tokens released. |
+
+**Why the auto-acquire rule keys on recency and not on attachment count.** The
+earlier rule was *"when exactly one client is attached"*, and
+[D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)
+supersedes it because it **never fires in
+[D4](decisions.md#d4--single-user-many-devices--with-the-interfaces-left-open-for-many-users)'s
+own primary scenario**: one person with a laptop and a phone always has two
+clients attached, so under the old rule every single write on either device
+would demand an explicit `session.writer.acquire` — the mechanism would be
+maximally visible in exactly the case it was meant to be invisible in.
+Recency gives the intended property (the mechanism disappears for one person
+working alone, on however many devices) without giving up arbitration (the
+moment two devices are *both* writing, the quiet period does not elapse and the
+second one gets `conflict` with a takeover offer).
+
+#### 3.3.1 Lease parameters
+
+All tunable under `[session.writer]`; the defaults are **chosen here, not
+measured**, and are expected to move once there is real use.
+
+| Parameter | Default | What it bounds |
+|---|---|---|
+| `writer_quiet_period` | **15 s** | Auto-acquire. Long enough to cover reading output between commands and a slow typist's think-time; short enough that picking up the phone after glancing away is not a takeover ceremony. |
+| `injection_quiescence` | **750 ms** | [D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write) step 2: no *human* byte may have arrived at the session's input channel for this long before a synthetic write is emitted. Above a fast typist's inter-keystroke interval (~80–150 ms) with a wide margin, and below the ~1 s at which a remote tap starts to feel unacknowledged. |
+| `injection_quiescence_wait` | **2 s** | How long the gated transaction *waits* for quiescence before giving up. On expiry the resolve fails `precondition_failed` with `detail.state = "local_input_active"` and the phone renders "couldn't answer — someone is typing at the terminal". It never waits indefinitely: a user typing steadily must produce a visible failure, not a write that lands minutes later. |
+| `idle_timeout` | 90 s | Idle release (below). |
+| `takeover_grace` | 5 s | Takeover (below). |
+
+`injection_quiescence` and `injection_quiescence_wait` are the two numbers D13
+requires and that no document previously gave. They are per-session overridable,
+because a session driven over a high-latency link may need a larger quiet period
+than one on the local machine.
 
 The grace window exists so takeover is *polite by default and never blocked*.
 Waiting forever for a consenting handoff fails the core use case (your laptop is
@@ -262,6 +297,72 @@ Not a suggestion — a parity requirement checked in review:
 The rule the whole design rests on: **a user must never type into a session and
 have the keystrokes silently go nowhere.** Every input path either succeeds,
 fails loudly, or is visibly disabled before the user starts typing.
+
+### 3.5 The serialization point
+
+[D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write),
+§3.1 and §4.5 all rest on the existence of one place where the human at the
+keyboard and an omt resolver can be ordered against each other. This section
+designs it. It is a **design choice made here**, not a number quoted from
+elsewhere.
+
+**Where it lives.** It is the **session input gate** in `omt-session`, the
+single function through which *every* byte reaches a `pty` session's PTY write
+end — the local TUI's passthrough, `session.send_text` / `send_keys` /
+`write_bytes` from any client, and the synthetic responder. There is exactly one
+per session, it is the owner of the `WriterToken`, and the PTY's write half is
+private to it: no other code in the daemon holds a writable handle. That
+exclusivity is the whole mechanism. The local TUI is *not* exempt — under
+[D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+the card in the pane is the agent's own, so the local user's keystrokes are the
+second writer, and a passthrough path that bypassed the gate would reintroduce
+exactly the `12\r\r` interleaving D13 exists to prevent.
+
+```rust
+/// The only writable handle to a `pty` session's input. One per session.
+pub struct InputGate {
+    pty_write: PtyWriteHalf,          // private; nothing else in the daemon holds one
+    writer: WriterState,              // §3.2
+    /// Timestamp of the last byte from a *human* source. Updated on every
+    /// passthrough and every client write; read only by `inject`.
+    last_human_byte_at: Instant,
+    /// `Some` while a session has an interaction the ledger considers in flight.
+    open_interaction: Option<InteractionId>,
+}
+
+pub enum InputSource { Human { actor: ActorId, epoch: u64 }, Synthetic { intent: IntentId } }
+
+impl InputGate {
+    /// The hot path. Epoch-checks, stamps `last_human_byte_at`, writes.
+    pub fn write(&mut self, src: InputSource, bytes: &[u8]) -> Result<usize, InputError>;
+    /// The gated transaction: quiescence, preconditions, ordered writes, all
+    /// while nothing else can reach `pty_write`. Never partial.
+    pub fn inject(&mut self, plan: &InjectionPlan) -> Result<Submitted, InjectError>;
+}
+```
+
+**What it costs on the keystroke path.** In the common case — `open_interaction`
+is `None` — `write` is an integer compare against the current epoch, one
+`Instant` store, and the `write(2)` that was going to happen anyway. No lock is
+contended, because in a `pty` session the gate is owned by that session's task
+and `omt-session` is single-threaded per session by construction
+([05](05-session-model.md)'s "synchronous, deterministic state machine"). The
+added cost is a branch and a timestamp: **nothing measurable** against the
+budget in [07 §7](07-remote-protocol.md#7-latency-budget), and well inside
+[04 §9.1](04-terminal-core.md#91-targets)'s targets. Crucially, a local
+keystroke is **never delayed to wait for a resolver**: the human always wins the
+race for the gate, and it is the injection that backs off (`injection_quiescence`
+above) and then fails visibly.
+
+**What it does when no interaction is open.** Nothing beyond the above. It does
+not buffer, does not batch, does not defer, and does not consult the ledger —
+`open_interaction` is a field the ledger sets, not a query the gate makes. There
+is no mode switch and no second code path: the gate is always in the loop, so it
+cannot be "forgotten" for a session that acquires an interaction a moment later,
+which a lazily-installed gate could be. `inject` is the only entry point that
+reads `last_human_byte_at`, and it exists only for the `Synthetic` deliverable;
+a `Native` resolve never touches the gate at all
+(§3.1's table), and a `native` session has no gate because it has no PTY.
 
 ---
 
@@ -285,10 +386,21 @@ reference:
 ```rust
 pub enum InteractionState {
     Open,
-    /// A resolution is in flight: the CAS won, the responder has not yet
-    /// confirmed delivery to the agent.
-    Resolving { by: Actor, at: OffsetDateTime },
-    Resolved { by: Actor, response: InteractionResponse, at: OffsetDateTime },
+    /// CAS won; the answer is committed as a decision but not yet written.
+    /// **Carries the `response`**: a crash between the CAS and the write must
+    /// be able to report what was lost
+    /// ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+    /// consequence 2).
+    Resolving { by: Actor, at: OffsetDateTime, response: InteractionResponse },
+    /// The bytes have been written to the delivery channel. **Not** proof the
+    /// agent received them — see §4.5.
+    Submitted { by: Actor, at: OffsetDateTime, response: InteractionResponse },
+    /// omt **observed the agent record the answer**. The only success state.
+    Resolved { by: Actor, at: OffsetDateTime, response: InteractionResponse },
+    /// Written (or committed and then lost), with no confirming observation
+    /// inside the bounded window. The response text is preserved.
+    Undelivered { by: Actor, at: OffsetDateTime, response: InteractionResponse,
+                  reason: UndeliveredReason },
     Cancelled { by: Actor, reason: CancelReason, at: OffsetDateTime },
     /// The agent went away (crashed, timed out and proceeded, or the user hit
     /// Esc in the TUI) before anyone answered. Terminal, distinct from
@@ -296,6 +408,19 @@ pub enum InteractionState {
     Abandoned { at: OffsetDateTime, detail: String },
 }
 ```
+
+Seven variants, matching [06 §5](06-agent-layer.md#5-interactions--the-flagship-path)
+verbatim — that document owns the type, this one owns the transitions.
+`Submitted` and `Undelivered` are not optional refinements: without them the
+ledger `fsync`s `Resolved` and asserts a delivery it has not verified, which is
+exactly the defect
+[D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 1 exists to fix. `UndeliveredReason` is
+`NotConfirmed | DaemonRestart | PreconditionFailed` (06 §5).
+
+Terminal states are `Resolved`, `Undelivered`, `Cancelled` and `Abandoned`.
+`Resolving` and `Submitted` are both in-flight and both reject a second
+resolver with `AlreadyResolved`.
 
 `Interaction::viewers: Vec<ActorId>` is advisory presence on a card (§4.4).
 
@@ -314,9 +439,28 @@ impl InteractionLedger {
     ) -> Result<Resolution, LedgerError> {
         let mut e = self.entry(id)?;
         match &e.state {
-            InteractionState::Open => { /* CAS: set Resolving, dispatch to the
-                                          Responder, then Resolved; emit events */ }
-            InteractionState::Resolving { by, at } | InteractionState::Resolved { by, at, .. } =>
+            InteractionState::Open => {
+                // 1. CAS `Open -> Resolving { by, at, response }`. The response
+                //    is stored *before* anything is written, so a crash here is
+                //    reportable rather than silent.
+                // 2. Hand to the `Responder`. For `Synthetic` delivery that is
+                //    §3.1's gated transaction (token, quiescence, the §4.6
+                //    preconditions, re-verification, atomic write); for `Native`
+                //    it is one RPC reply.
+                // 3. On a successful write: `-> Submitted { by, at, response }`.
+                //    A failed precondition instead leaves the interaction
+                //    `Undelivered { reason: PreconditionFailed }` and returns
+                //    `precondition_failed` to the caller. Nothing is retried.
+                // 4. `Submitted -> Resolved` happens **elsewhere**, when the
+                //    observation arrives (§4.5). `Submitted -> Undelivered
+                //    { reason: NotConfirmed }` when the window elapses first.
+                //    `resolve()` never writes `Resolved` itself.
+                // Every transition emits an event.
+            }
+            InteractionState::Resolving { by, at, .. }
+            | InteractionState::Submitted { by, at, .. }
+            | InteractionState::Resolved { by, at, .. }
+            | InteractionState::Undelivered { by, at, .. } =>
                 Err(LedgerError::AlreadyResolved { by: by.clone(), at: *at }),
             InteractionState::Cancelled { .. } => Err(LedgerError::Cancelled),
             InteractionState::Abandoned { .. } => Err(LedgerError::Abandoned),
@@ -324,6 +468,11 @@ impl InteractionLedger {
     }
 }
 ```
+
+`Undelivered` rejects a later resolver exactly like `Resolved` does: the
+decision was taken and the bytes are gone or unaccounted for, so a second
+injection would land in whatever the agent is doing *now*. The only actor
+permitted to re-answer is a human who can see the screen (§4.5).
 
 `interaction.resolve` is **idempotent by
 `(interaction_id, identity_or_device, intent_id)`** — a client-minted
@@ -370,7 +519,9 @@ The dangerous version is not two phones — it is a phone and the TUI, because
 they resolve through *different mechanisms*:
 
 ```
-t=0    Claude Code PreToolUse{AskUserQuestion} → hook → defer → Interaction int_88 Open
+t=0    Agent raises AskUserQuestion; omt observes it (PreToolUse hook, or an ACP
+       request) and the ledger opens Interaction int_88 as `Open`. The hook does
+       **not** defer (D11) — the walkthrough below is the `Native`-delivery case.
 t=1    Card rendered in the TUI and on the phone.
 t=2    Phone taps "Postgres".      TUI user presses Enter on "SQLite".
 ```
@@ -388,12 +539,17 @@ Resolution:
 4. The loser's surface additionally shows a transient, dismissible note: "Your
    answer was not applied — answered by iPhone 0.2 s earlier." Silent
    correction is unacceptable here; the user believes they made a decision.
-5. Only the winning response reaches the agent, via the single hook response
-   that `omt-hook` is blocking on.
+5. Only the winning response reaches the agent, over the single in-flight
+   request the `Native` channel is blocking on — an ACP
+   `session/request_permission`, an opencode-plugin `permission.ask`, a Codex
+   app-server approval.
 
-The one thing that made this safe was that `omt-hook` holds exactly one in-flight
-response slot per interaction and the daemon writes to it once — even a bug in
-the ledger could not produce two hook decisions.
+The thing that makes this safe is that a `Native` channel holds exactly **one**
+in-flight response slot per interaction and the daemon writes to it once — so
+even a bug in the ledger cannot produce two decisions. (`omt-hook` used to
+supply that slot; [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+removed the hook's response slot entirely, which is what the note below is
+about.)
 
 > **That property no longer holds for the `Synthetic` path, and this walkthrough
 > is now the `Native`-delivery case only.**
@@ -407,12 +563,37 @@ the ledger could not produce two hook decisions.
 
 ### 4.3 Timeouts
 
-`Interaction::timeout_at` comes from the agent (Claude Code's defer window, ACP
-timeouts). On expiry, `Actor::System` resolves it as
+`Interaction::timeout_at` comes from the agent, where the mechanism supplies one
+(an ACP request's own deadline; a configured `askUserQuestionTimeout`). On expiry, `Actor::System` resolves it as
 `Cancelled { reason: Timeout }`, which lets the agent fall back to *its own*
 default behaviour.
 
-**That is the only non-human resolution in the system.** There is no omt-side
+**There is a third resolver, and it is not omt's.** Local and remote humans are
+two; `Actor::System` above is omt's *own* timer firing on
+`Interaction::timeout_at` and is a third. The fourth is the agent resolving its
+own card with **no actor at all**: Claude Code's `askUserQuestionTimeout` /
+`CLAUDE_AFK_TIMEOUT_MS` makes an `AskUserQuestion` card **auto-advance itself**
+with whatever answers exist, emitting `tengu_ask_user_question_afk_auto_advance`
+([`spike-card-answering.md` §2.1](../research/spike-card-answering.md)). This is
+an event omt **observes** rather than one it causes, and the distinction is
+load-bearing: omt's own timer is a state transition it performs, the agent's is
+a fact it discovers from the event stream after the fact.
+
+It is modelled as `Cancelled { by: Actor::Agent { .. }, reason:
+CancelReason::AgentAutoAdvanced }`. Without that third resolver the ledger sees
+a card resolve that it neither performed nor attributed, and reports a **phantom
+conflict** — the phone is told "someone else answered" naming a human who did
+nothing. Two consequences:
+
+- The gated transaction refuses to inject when an AFK timeout is configured and
+  the card is within `afk_margin` (**default 3 s**, chosen here) of it — the
+  auto-advance would race the write ([§4.6](#46-preconditions-on-a-synthetic-delivery),
+  spike §4 precondition 4).
+- Where the agent exposes the configured timeout, omt renders it on the card as
+  a deadline exactly like `timeout_at`; where it does not, the card carries no
+  progress bar and the auto-advance surfaces only when it happens.
+
+**Otherwise there is no omt-side policy resolution.** There is no omt-side
 policy auto-resolution — no "always allow reads in this workspace" rule, no
 allow-list, no auto-approve — per
 [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics).
@@ -464,15 +645,20 @@ the ones this race violates
 
 1. The injection acquires the **writer token**, and the local TUI's passthrough
    bytes into a session with an open interaction go through the same
-   serialization point. That is the only place a human and a resolver can be
-   ordered against each other.
-2. **Input quiescence** is verified — no human bytes for a quiet period — so the
-   `t=2` user who is mid-keystroke blocks the injection rather than colliding
-   with it.
+   serialization point — the `InputGate` of [§3.5](#35-the-serialization-point).
+   That is the only place a human and a resolver can be ordered against each
+   other.
+2. **Input quiescence** is verified — no human bytes for `injection_quiescence`
+   (750 ms, §3.3.1) — so the `t=2` user who is mid-keystroke blocks the
+   injection rather than colliding with it. The gate waits at most
+   `injection_quiescence_wait` (2 s) and then fails visibly.
 3. The interaction is **re-verified against the freshest source** as still open
    and still the same, so a local answer that landed first is detected before
-   anything is typed.
-4. The answer is written as **one unit**, then the token is released.
+   anything is typed. This is [§4.6](#46-preconditions-on-a-synthetic-delivery)'s
+   six checks, which also catch the free-text focus hazard, an over-nine option
+   list, and an alt-screen renderer.
+4. The answer is written as **one unit** — one key per `write(2)`, never
+   bracket-wrapped (§4.6) — then the token is released.
 
 Any precondition failing fails the resolve with `conflict` or
 `precondition_failed` on the surface that attempted it — the phone says "couldn't
@@ -489,6 +675,47 @@ check the terminal"* (D15 consequence 1). And an injection is **never retried**:
 not on reconnect, not on daemon restart, not by any actor except a human who can
 see the screen. A crash between the CAS and the injection goes to `Undelivered`,
 which is why `Resolving` must carry the response (D15 consequence 2).
+
+### 4.6 Preconditions on a synthetic delivery
+
+D13's step 3 says "re-verify against the freshest source". This section says
+what that means concretely. Every check below was established **VERIFIED-LIVE**
+against Claude Code v2.1.220 in
+[`spike-card-answering.md`](../research/spike-card-answering.md) §3 and §4, and
+each one guards a failure that is **silent** — the remote user sees success and
+the local user sees something wrong — which is the class
+[D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+exists to prevent. All are evaluated against the **freshest rendered screen**,
+not the hook payload, inside the transaction while the token is held. Any one
+failing fails the resolve with `precondition_failed`, visibly, on the surface
+that attempted it; nothing is written.
+
+| # | Precondition | The failure it prevents |
+|---|---|---|
+| **P1** | The card is present and is the expected one — the question text from the payload matches the live screen. | A late answer landing in whatever the agent is doing now (§C10). |
+| **P2** | The intended row is **printed with its number** at the computed index: `\s*(❯\s*)?N\.\s*<label>`. | The single highest-value check. Claude Code's `hideIndexes` flag suppresses the printed number *and* the digit accelerator together, so a visible `N.` is direct evidence the digit will work and a matching label is direct evidence the index is right. No number → refuse. |
+| **P3** | The card is **not in text-entry mode** — the focused row is not `type: "input"`, no cursor is parked in an input row, and the hint line does not contain `ctrl+g to edit in`. | **The free-text focus hazard.** If the focused row is an input — which happens when the local user arrows onto "Other", or presses `Tab` on a permission card per its own `Tab to amend` hint — the digit is typed as **literal text into the box, silently**. The remote user sees no error and the local user sees a stray digit. Position-independence is a property of the *(card, state)* pair, not of the card type, and omt cannot learn the state from the hook payload. |
+| **P4** | The option list is **≤ 9 entries**. | Digits are `1`–`9` and `0` is a no-op (`parseInt("0")-1 == -1` fails the bounds test). A tenth option has no accelerator, so omt must refuse remote resolution outright rather than pick a reachable neighbour. |
+| **P5** | The pane is **not on the alternate screen**. | `tui: "fullscreen"` (or `CLAUDE_CODE_NO_FLICKER=1`) is a real, user-selectable, actively-upsold Claude Code renderer using the alt screen with virtualised scrollback. P1–P3 are screen-derived and cannot be trusted against a scrollback omt does not model. Detected at runtime from `ESC[?1049h` — see [04 §6.4](04-terminal-core.md#64-the-fallback-heuristic--no-shell-integration). |
+| **P6** | If an AFK timeout is configured, the card is not within `afk_margin` (3 s) of it. | The agent's own auto-advance would race the write (§4.3). |
+
+Two **transport** rules apply to the write itself, and are not preconditions but
+properties of how the bytes are emitted:
+
+- **Never bracket the write.** Claude Code enables `ESC[?2004h`; a digit wrapped
+  in `ESC[200~ … ESC[201~` does **nothing**, while a bare digit resolves. omt's
+  remote-input path bracket-wraps client text — correct for pasted prose — so
+  synthetic answers must bypass that path entirely. Silent failure, not loud.
+- **One key per write.** Coalesced bytes arriving in a single read are not
+  decoded as separate key events (`b"13"` toggled nothing; `b"1"` then `b"3"`
+  toggled both). Multi-byte answers are separate ordered `write(2)` calls, still
+  inside one token-held transaction, so "a partial write is never permitted"
+  still holds.
+
+Per-card answerability is
+[D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)'s
+table and is a separate, earlier gate: these preconditions are checked only for
+cards D16 already declares remotely answerable.
 
 ---
 

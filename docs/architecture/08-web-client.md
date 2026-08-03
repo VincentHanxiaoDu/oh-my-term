@@ -567,9 +567,14 @@ atlas produces mush. `FitAddon` then recomputes `(cols, rows)`.
 
 Viewport negotiation is specified once, in
 [07 §4.3](07-remote-protocol.md#43-the-resize-problem), and this document does
-not restate it: **the session has one authoritative `(cols, rows)`, owned by
-`SizeOwner::Writer` by default, `Pinned` when a user pins it, or `Smallest` when
-opted in.** Every client reports its viewport on `TermAttach`/`TermResize`;
+not restate it, in
+[17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)'s
+naming, which supersedes 07's `SizeOwner`: **the session has one authoritative
+`(cols, rows)`, resolved by its `SizePolicy` — `Driver` (the writer's view) by
+default, `Pinned` when a user pins it, or `Smallest` when opted in.** A web
+client attaches as a `Participation::Observer` by default and becomes a
+`Participant` only by explicitly choosing the full terminal.
+Every client reports its viewport on `TermAttach`/`TermResize`;
 `request_authoritative: true` is the explicit ask and is refused with
 `precondition_failed` unless the client holds the writer token.
 
@@ -672,24 +677,48 @@ and answered through `interaction.resolve`.
 agent emits           omt normalizes            web renders          web resolves
 ────────────────────────────────────────────────────────────────────────────────
 PreToolUse{           Event{payload:            <InteractionCard>    interaction.resolve
- AskUserQuestion}  →   Interaction{id, kind, →   picks a component →  {interaction, response}
- → hook defers         timeout_at, ...}}         by kind.type              │
-                                                                          ▼
-hook returns      ←   InteractionResolved   ←  broadcast to ALL surfaces (TUI too)
-{permissionDecision,   {id, response, by}
- updatedInput}
+ AskUserQuestion}  →   Interaction{id, kind, →   picks a component →  {interaction,
+ → hook reports        timeout_at, state}}       by kind.type          response, intent_id}
+   and returns {}      the agent draws its                                 │
+   (no defer, D11)     own card locally                                    ▼
+                                                          ledger CAS: Open → Resolving
+                                                                           │
+                                                              responder delivers
+                                                       (Native RPC, or D13's gated
+                                                        PTY transaction into the
+                                                        agent's own card)
+                                                                           │
+                                                                     → Submitted
+                                                                           │
+                                    ┌──────────────────────────────────────┴────────┐
+                        omt observes the agent record it          window elapses with
+                        (PostToolUse / transcript / tool result)   no observation
+                                    ▼                                      ▼
+                              → Resolved                            → Undelivered
+                                    └──────── broadcast to ALL surfaces (TUI too) ───┘
 ```
+
+[D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+deleted the `permissionDecision` return path: the hook **observes** and returns
+`{}`, the agent's own CLI draws its own card locally, and a remote answer is
+delivered to *that card*. The web client never sees the hook; what changed for
+it is that `Resolved` is no longer the state a successful resolve produces.
 
 Invariants the UI must respect:
 
 - **Resolve-once.** `interaction.resolve` is idempotent by
-  `(interaction, actor, response)` — a retry from this client with the same
-  answer is safe, which matters on mobile — and a *different* actor or answer
-  gets `conflict` ([12 §4.1](12-collaboration.md#41-the-invariant)).
-  A losing resolution must be surfaced, never silently corrected. The card therefore renders three states:
-  open, **resolving** (optimistic, controls disabled, spinner on the chosen
-  option), and **resolved by X**. A card resolved from the laptop while you were
-  reading it animates to "answered by `laptop`" — it does not vanish.
+  `(interaction, identity_or_device, intent_id)` — a client-minted `intent_id`
+  persisted in the outbox (§8.5) plus the stable identity behind the actor, per
+  [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+  consequence 6 and [12 §4.1](12-collaboration.md#41-the-invariant). A retry
+  under the same key returns the original outcome, which is what makes a flaky
+  mobile network survivable; a *different* identity gets `conflict`. The old key
+  `(interaction, actor, response)` broke on exactly that retry — `ActorId` is
+  minted per connection, so a reconnecting phone read as a stranger overriding
+  itself — and the client must not key its own dedup on the actor or the
+  response either.
+  A losing resolution must be surfaced, never silently corrected.
+- **Five renderable states, not three.** See §5.1.1.
 - **Timeouts are real.** `timeout_at` (when the agent gives one) drives a thin
   progress bar on the card's top edge. At <10 s remaining the card vibrates once
   (`navigator.vibrate(30)`) and the bar turns amber. On expiry the ledger records
@@ -704,6 +733,39 @@ Invariants the UI must respect:
   `native` mode the rule is vacuous rather than relaxed: every event on a
   `native` session is `protocol`-sourced, so nothing can ever fail it
   ([06 §2.1](06-agent-layer.md#21-session-modes)).
+
+#### 5.1.1 The card's state machine
+
+The client renders `InteractionState` ([06 §5](06-agent-layer.md#5-interactions--the-flagship-path),
+transitions in [12 §4.1](12-collaboration.md#41-the-invariant)) — **seven
+variants, five of them renderable as distinct card states.** An earlier draft
+listed three (open, resolving, resolved-by-X), which cannot express the two
+states [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 1 added, and §8.5 already refers to one of them. This table is the
+client's single state set; §8.5 defers to it.
+
+| State | Rendering | Copy |
+|---|---|---|
+| `Open` | interactive; options tappable | — |
+| `Resolving` | controls disabled, spinner on the chosen option | "sending…" |
+| `Submitted` | controls disabled, chosen option shown selected, a **distinct pending style** (not a success style) | **"Sent — waiting for the agent to confirm."** |
+| `Resolved { by }` | settled, success style, attribution | "Answered: Postgres — by iPhone (Vincent)" |
+| `Undelivered { response, reason }` | **warning** style, the preserved response text shown verbatim, and a primary **"Open terminal view"** action — never a "retry" | **"Your answer may not have reached the agent — check the terminal."** |
+| `Cancelled` / `Abandoned` | settled, muted | "This question was withdrawn" / "timed out — the agent used its own default" / "Too late — the agent continued without an answer", discriminated by `detail.state` (12 §4.1) |
+
+Three rules the component must not violate:
+
+- **`Submitted` is not a success state and must not be styled as one.** It is
+  the honest intermediate: the bytes went out, and on the `Synthetic` path a
+  successful write proves nothing because the sink is a UI omt does not own.
+  This is also why `interaction.resolve` is never optimistic
+  ([12 §7.1](12-collaboration.md#71-what-may-be-optimistic)) — `Submitted` is a
+  real server state, not a local guess.
+- **`Undelivered` never offers a retry.** An injection is at-most-once; the only
+  actor permitted to re-answer is a human who can see the screen. The offered
+  action is the terminal view.
+- A card resolved from the laptop while you were reading it **animates to its
+  new state — it does not vanish.**
 
 Cards appear in three places, driven by the same component: inline in block view
 at the position they occurred, as a **bottom sheet** when they arrive while that
@@ -929,8 +991,16 @@ a voice button (§7), and `⌘/Ctrl+Enter` to submit. Draft text is persisted pe
 
 ```tsx
 export interface InteractionCardProps {
-  interaction: OpenInteraction;              // 06 §5: id, kind, timeout_at, viewers, agent, session
+  /** The generated `Interaction` type verbatim — 06 §5 owns the shape:
+   *  { id, session, binding, kind, opened_at, timeout_at, state, responder,
+   *    viewers }. Note **`binding`, not `agent`**: the card is bound to an
+   *  `AgentBinding`, and the agent kind and label are read from it. There is no
+   *  `agent` field, and no `OpenInteraction` type — the card renders every
+   *  state in §5.1.1, not only the open one. */
+  interaction: Interaction;
   variant: "inline" | "sheet" | "list";      // block view / focused / dashboard
+  /** Called only while `interaction.state.type === "open"`. The client mints the
+   *  `intent_id` (§5.1) and the outbox owns it (§8.5). */
   onResolve(response: InteractionResponse): void;
 }
 
@@ -1227,7 +1297,10 @@ drive them and break discoverability for real users.
   - **The outbox never retries an injection's delivery.** `interaction.resolve`
     is retry-safe as a *capability call* (it is CAS'd), but if the ledger reports
     `Undelivered` the client shows that state and offers the terminal view — it
-    does not re-queue ([06 §5.1](06-agent-layer.md#51-lifecycle)).
+    does not re-queue ([06 §5.1](06-agent-layer.md#51-lifecycle)). The card's
+    rendering of `Undelivered`, and of every other state, is
+    [§5.1.1](#511-the-cards-state-machine)'s single table — this section defines
+    no state set of its own.
 - On reconnect the client resumes with `since_seq` per session; on `Resync` it
   fetches a snapshot and rebuilds. The user sees a brief
   skeleton, never a wrong state.

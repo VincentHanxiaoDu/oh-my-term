@@ -137,7 +137,7 @@ Implemented sources:
 | `AcpClient` | Protocol | generic ACP JSON-RPC client — covers opencode, Gemini, Goose, Qwen at once |
 | `AppServerClient` | Protocol | Codex `app-server` |
 | `OpencodeHttp` | Protocol | opencode `serve` REST + SSE |
-| `PtyHeuristics` | Heuristic | activity only; structurally incapable of emitting structured content (§6) |
+| `PtyHeuristics` | Heuristic | activity only; structurally incapable of emitting structured content (§6). It implements `HeuristicSource`, not `EventSource` — the tier-0 ban is a type, not a rule ([§8.4](#84-which-tier-may-produce-which-payload)) |
 
 Sources are registered, not hard-coded (principle P2). A plugin can add one.
 
@@ -793,8 +793,8 @@ mirror-don't-intercept shape and which nobody else does. Every other agent degra
   own resolution (never from omt guessing), giving the web client a real
   completion popup with descriptions and argument hints.
 - **File changes.** Tool calls that touch files are normalized into
-  `AgentEvent::FileChanged { path, change, tool, turn_id }`, where `change` is
-  `Created | Modified | Deleted | Renamed { from }`. Every tier-3/4/5 source
+  `AgentPayload::FileChanged { path, change, tool, turn }` (§8.2), where `change`
+  is `Created | Modified | Deleted | Renamed { from }`. Every tier-3/4/5 source
   already carries the information (hook `PostToolUse` for `Edit`/`Write`/
   `MultiEdit`, ACP `tool_call_update` with a file location, transcript tool
   results), so this is normalization, not new observation. It is *attribution*,
@@ -808,6 +808,366 @@ mirror-don't-intercept shape and which nobody else does. Every other agent degra
 - **Session summaries.** Claude Code emits an `away_summary` — a natural
   language "where is this session at". It is displayed verbatim on the session
   card; omt never generates one itself (P4: omt does not talk to models).
+
+### 8.1 `AgentEvent` — the envelope
+
+Everything above, plus the whole content of the transcript view, travels as one
+type. `AgentEvent` is the **normalized per-binding agent stream**: the single
+output of the merge in §4 and the single input of every read-side consumer.
+
+> **Ownership.** This document owns `AgentEvent`, `AgentPayload` and their inner
+> types. [07 §3.7](07-remote-protocol.md#37-subscriptions) wraps an `AgentEvent`
+> in the protocol `Event` envelope under `kind: "agent"` and owns nothing about
+> its shape. `web/src/generated/events.ts` ([08 §2.1](08-web-client.md#21-what-codegen-emits))
+> is generated from these types. Serde conventions are the glossary's:
+> `snake_case` fields and variants, `type` as the payload tag.
+>
+> Other documents write `AgentEvent::FileChanged` as shorthand; the exact path is
+> `AgentPayload::FileChanged`, carried in an `AgentEvent`. The two spellings mean
+> the same thing and the field is `turn`.
+
+```rust
+pub struct AgentEvent {
+    // ---- identity ----
+    pub session: SessionId,
+    /// Which binding produced this. Everything the read side keys by binding —
+    /// 15 §8.3's changed-file set, the queue, `agent.explain` — keys on this,
+    /// and clears when the binding ends (§2).
+    pub binding: BindingId,
+    pub agent: AgentKind,
+    pub agent_version: Option<String>,
+    /// The agent's own session identifier, when known (§7.2).
+    pub agent_session: Option<AgentSessionId>,
+    /// Which thread inside the binding. Subagents are threads, not bindings.
+    pub thread: ThreadRef,
+
+    // ---- ordering and provenance ----
+    /// The session's `Seq` space ([03 §4](03-capability-catalog.md#4-events-are-the-read-side-twin)).
+    pub seq: Seq,
+    pub ts: Timestamp,
+    /// The tier that produced this event, and the specific source inside it.
+    /// `tier` is what §4's merge and 08 §4.4's provenance chip read; `source`
+    /// is what `agent.explain` reports.
+    pub tier: Tier,
+    pub source: SourceId,
+
+    // ---- place ----
+    pub cwd: PathBuf,
+    pub git_branch: Option<String>,
+
+    pub payload: AgentPayload,
+}
+
+/// Subagent trees. Unifies Claude Code's `isSidechain`/`parent_tool_use_id`,
+/// Codex's subagent thread source, and opencode's `session.parent_id` (§8).
+pub struct ThreadRef {
+    pub id: ThreadId,
+    pub parent: Option<ThreadId>,
+    pub is_subagent: bool,
+    /// The agent's own label for the subagent, verbatim. omt never invents one.
+    pub label: Option<String>,
+}
+```
+
+**On the duplication with the protocol envelope.** `session`, `seq`, `ts` and a
+coarse `source` tag also appear in 07's `Event` envelope. That is deliberate and
+is not drift: the agent event log is persisted standalone
+([21 §1](21-data-lifecycle.md), row 7 — `agent.jsonl.zst`) and must be readable
+without the protocol frame that once carried it. The rule is that the values are
+**one value written twice**: the wrapping envelope copies them, never recomputes
+them, and codegen emits an equality assertion. `AgentEvent::tier` is the precise
+form; the envelope's `source` tag is the same value widened to the closed
+producer set of [07 §3.7](07-remote-protocol.md#37-subscriptions).
+
+### 8.2 `AgentPayload` — the variants
+
+Twenty variants in seven groups. Every one is consumed by a named document
+(§8.3); nothing here exists speculatively.
+
+```rust
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentPayload {
+    // ================= lifecycle =================
+    SessionStart {
+        reason: StartReason,
+        model: Option<String>,
+        /// The agent's own permission posture, verbatim and read-only (D1).
+        permission_mode: Option<String>,
+        transcript_path: Option<PathBuf>,
+    },
+    SessionEnd { reason: SessionEndReason, code: Option<i32> },
+    /// What this agent can do, as the agent itself reports it. Never probed,
+    /// never guessed (P4).
+    Capabilities {
+        tools: Vec<String>,
+        slash_commands: Vec<SlashCommand>,
+        mcp_servers: Vec<McpServerStatus>,
+        models: Vec<String>,
+        /// The modes the agent offers, and which one is live.
+        permission_modes: Vec<String>,
+        active_permission_mode: Option<String>,
+    },
+
+    // ================= turn state =================
+    TurnStart { turn: TurnId, trigger: TurnTrigger },
+    TurnEnd {
+        turn: TurnId,
+        outcome: TurnOutcome,
+        /// The agent's own closing message, when the mechanism reports it
+        /// (Claude Code's `Stop` hook carries `last_assistant_message`).
+        last_message: Option<String>,
+        turn_count: Option<u32>,
+    },
+    /// Extended thinking / reasoning. Subsumes the draft model's separate
+    /// `Thinking` variant — see the note below.
+    Reasoning { turn: Option<TurnId>, text: Option<String>, partial: bool,
+                tokens: Option<u64> },
+    /// The fields of [20 §11.2](20-recall-and-usage.md#112-normalization)'s
+    /// `UsageEvent` that are not already in the envelope. **`cost_usd` is
+    /// agent-reported only**; omt never computes a price from a token count and
+    /// a rate card, and `None` is rendered as *not reported*, never as 0.
+    Usage { model: Option<String>, tokens: Tokens, cost_usd: Option<f64>,
+            context_window: Option<u64>, accounting: Accounting },
+    /// Observed from the agent, never inferred (20 §11.3's `RateLimitState`).
+    RateLimit { kind: String, status: String, resets_at: Option<Timestamp>,
+                detail: Option<String> },
+    Compaction { phase: CompactionPhase, trigger: Option<String>,
+                 tokens_before: Option<u64>, tokens_after: Option<u64> },
+
+    // ================= content =================
+    UserMessage { turn: Option<TurnId>, text: String, origin: MessageOrigin,
+                  attachments: Vec<BlobId> },
+    AssistantText { turn: Option<TurnId>, text: String, partial: bool,
+                    phase: Option<AssistantPhase> },
+
+    // ================= tools =================
+    ToolCall {
+        turn: Option<TurnId>,
+        call: ToolCallId,
+        name: String,
+        /// Verbatim, unmodified — the same bytes the agent will act on.
+        input: serde_json::Value,
+        status: ToolStatus,
+        /// Set when this call was made by a tool, not by the model directly.
+        parent: Option<ToolCallId>,
+    },
+    ToolResult { call: ToolCallId, outcome: ToolOutcome,
+                 output: Option<ToolOutput>, error: Option<String>,
+                 duration_ms: Option<u64> },
+    /// The agent's own plan / todo list, as it revises it.
+    Plan { turn: Option<TurnId>, steps: Vec<PlanStep> },
+    /// Attribution, not truth about the filesystem — git status is the truth
+    /// ([15 §8.3](15-workspace-explorer.md#83-files-the-agent-changed-this-session)).
+    /// `path` is absolute as the agent reported it; the explorer maps it to a
+    /// `RelPath` against the workspace root and drops what falls outside.
+    FileChanged { path: PathBuf, change: FileChange, tool: Option<String>,
+                  turn: Option<TurnId> },
+
+    // ================= interaction =================
+    /// A card was raised. The `Interaction` object itself is owned by §5 and
+    /// lives in the ledger; this payload **references** it and restates only
+    /// what a transcript needs to render a row in place.
+    InteractionRaised { interaction: InteractionId, kind_tag: InteractionKindTag,
+                        summary: String, timeout_at: Option<Timestamp> },
+    /// The card reached a terminal state. `state` is §5's `InteractionState`,
+    /// which already carries `by`, `at`, `response` and the reason.
+    InteractionResolved { interaction: InteractionId, state: InteractionState },
+
+    // ================= queue =================
+    /// D15's `agent.queue.enqueue` semantics. Carries the `BindingId` of the
+    /// binding the queue belongs to — which is the envelope's `binding`, so it
+    /// is not repeated here; a consumer that has the payload has the binding.
+    QueueChanged { op: QueueOp, entry: Option<QueueEntry>, pending: QueueView },
+
+    // ================= fallback =================
+    /// The agent's own notification — Claude Code's `Notification` hook, a BEL
+    /// with text, an OSC 777 body. Never omt's words.
+    Notification { kind: String, message: String },
+    /// The heuristic floor's guess (§6). Structurally incapable of carrying
+    /// content: it holds `Activity` and nothing else, and it is the **only**
+    /// payload a tier-0 source can construct (§8.4).
+    Activity { guess: Activity },
+}
+
+pub enum StartReason { Startup, Resume, Clear, Compact, Fork }
+pub enum SessionEndReason { UserExit, Error, Timeout, Replaced, Unknown }
+pub enum TurnTrigger { Human, Queue, Remote, Hook, Subagent }
+pub enum TurnOutcome { Completed, Aborted, Error { message: String } }
+pub enum MessageOrigin { Human, Queue, Remote, Synthetic }
+pub enum AssistantPhase { Commentary, Final }
+pub enum ToolStatus { Pending, Running, Completed, Error }
+pub enum ToolOutcome { Ok, Error, Denied, Cancelled }
+pub enum CompactionPhase { Before, After }
+pub enum FileChange { Created, Modified, Deleted, Renamed { from: PathBuf } }
+pub enum QueueOp { Enqueue, Remove, Consume }
+pub struct QueueEntry {
+    pub id: QueueEntryId,
+    pub text: String,
+    pub origin: MessageOrigin,
+    pub created_at: Timestamp,
+    /// D15 consequence 3: an entry past this is re-confirmed, never silently
+    /// flushed.
+    pub valid_until: Option<Timestamp>,
+    pub state: QueueEntryState,
+}
+pub enum QueueEntryState { Pending, Queued, Consumed, Failed { reason: String } }
+/// Makes §8's fourth queue requirement unrepresentable-to-violate: a broken or
+/// absent reader cannot claim an empty queue, because "empty" and "I do not
+/// know" are different values.
+pub enum QueueView { Known(Vec<QueueEntry>), Unknown }
+/// The discriminant of §5's `InteractionKind`, without the payload — so the
+/// transcript can render "a permission card was raised here" without this
+/// stream becoming a second copy of the ledger.
+pub enum InteractionKindTag { Choice, Permission, PlanReview, Text }
+```
+
+`Tokens`, `Accounting`, `SlashCommand` and `BlobId` are owned elsewhere
+([20 §11.2](20-recall-and-usage.md#112-normalization), §7, [09 §2](09-ssh-and-media.md#2-the-blob-store))
+and are referenced, not restated.
+
+**Three choices recorded here.**
+
+1. **`Thinking` is folded into `Reasoning`.** The earlier draft
+   ([`agent-clis.md` §12.2](../research/agent-clis.md)) had both: `Thinking`
+   under turn state carrying a token delta, and `Reasoning` under content
+   carrying text. They are the same phenomenon observed through two mechanisms,
+   and two variants would mean every consumer handles both identically or
+   handles them inconsistently. One variant carries both `text` and `tokens`,
+   either of which may be absent. The *spinner-level* fact "the agent is
+   thinking right now" is not an event at all — it is `AgentState::Working`.
+2. **Interactions appear here as raise + terminal outcome only.** Intermediate
+   transitions (`Open → Resolving → Submitted`) travel on the protocol's
+   `interaction` kind ([07 §3.7](07-remote-protocol.md#37-subscriptions)), not
+   here. A transcript needs to render a card and how it ended; a client tracking
+   a live card subscribes to `interaction`. Duplicating every transition into
+   both streams would give two orderings of the same fact.
+3. **`InteractionRaised` does not inline the `Interaction`.** It carries the id,
+   the kind tag and a one-line `summary` for the transcript row. The object is
+   fetched from the ledger (`interaction.get`) or arrives on the `interaction`
+   kind. §5 is the single source of truth for the shape, and a second inlined
+   copy in a persisted log would age badly against the ledger's `state`.
+
+**Deliberately omitted**, so their absence is a decision rather than an
+oversight:
+
+- The draft's `RawPty { state_guess }` — replaced by `Activity`, which carries
+  §6's enum and cannot be extended with text without changing §6 first.
+- An `Error` payload. 20 §8.1's `EntryKind::Error` is *derived*, from
+  `TurnEnd { outcome: Error }`, `ToolResult { outcome: Error }` and
+  `SessionEnd { reason: Error }`. Instance- and session-level faults are
+  [22 §4.4](22-operations.md#44-per-session-fault-isolation-r7)'s `SessionFault`
+  and are not agent events.
+- A `Diff` field on `FileChanged`. The draft carried `diff: Option<String>`;
+  structured diffs are [15 §3.2](15-workspace-explorer.md#32-vcs-model)'s
+  `FileDiff`, fetched on demand, and a unified-diff string on every file write
+  would multiply the agent log's size for data git already has.
+- `SessionSummary`. `away_summary` is carried as `Notification`-adjacent session
+  metadata on the binding, not as a stream event; 20 §8.2's `AgentSummary` reads
+  it from there.
+
+### 8.3 Who consumes each payload
+
+Every row names a document that needs the variant. A variant with no consumer
+does not ship.
+
+| Payload | Consumed by |
+|---|---|
+| `SessionStart` / `SessionEnd` | [20 §8.1](20-recall-and-usage.md#81-the-timeline) `EntryKind::SessionStart`/`SessionEnd`; §2's binding lifecycle; [08 §4.4](08-web-client.md#44-transcript-view) transcript head |
+| `Capabilities` | [08 §6.2](08-web-client.md#62-slash-commands-as-a-real-completion-popup) completion popup; `agent.commands.list` (§8); §10 Q4 / [13 §7.2](13-security.md#72-remotely-resolving-an-agent-interaction) permission posture |
+| `TurnStart` / `TurnEnd` | 20 §8.1 `EntryKind::Turn`; 08 §4.4 turn grouping; §4's `Working`/`Idle` transitions; [20 §10.1](20-recall-and-usage.md#101-the-detector) `StuckReason::LongWorking` |
+| `Reasoning` | 08 §4.4 (collapsed by default); 20 §11 token accounting |
+| `Usage` | [20 §11.2](20-recall-and-usage.md#112-normalization) `UsageEvent`, `usage.query`, 20 §9's `ComparisonRow`; [08 §6](08-web-client.md#6-agent-session-dashboard) readout |
+| `RateLimit` | 20 §11.3 `RateLimitState`; the session card |
+| `Compaction` | 20 §8.1 `EntryKind::Compaction`; 08 §4.4's gap marker; [20](20-recall-and-usage.md)'s `Coverage` |
+| `UserMessage` | 08 §4.4; [20 §3.2](20-recall-and-usage.md#32-schema) `DocKind::user_msg` |
+| `AssistantText` | 08 §4.4; 20 `DocKind::assistant_msg` |
+| `ToolCall` / `ToolResult` | 08 §4.4; 20 `DocKind::tool_call`, `EntryKind::ToolCall`, `StuckReason::RepeatedCall`/`RepeatedFailure` |
+| `Plan` | 08 §4.4 inline plan rows; [20 §8.2](20-recall-and-usage.md#82-the-digest) |
+| `FileChanged` | [15 §8.3](15-workspace-explorer.md#83-files-the-agent-changed-this-session) changed-file set; 20 §8.1 `EntryKind::FileChanged`; 20 §9 `files_touched`; 20 `DocKind::file_change` |
+| `InteractionRaised` / `InteractionResolved` | 08 §4.4 inline cards; 20 §8.1 `EntryKind::Interaction` + `ResolutionSummary`; 20 `DocKind::interaction`; [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism) consequence 9's attention log |
+| `QueueChanged` | [08 §6.1](08-web-client.md#61-live-message-queue) live queue; §8's `agent.queue.*`; D15's confirm-by-observation |
+| `Notification` | [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)'s open-and-replay attention list; 20 §8.2 digest |
+| `Activity` | §4's merge input only. **Never rendered as content** — it produces an `AgentState`, and 08 renders that as a chip |
+
+### 8.4 Which tier may produce which payload
+
+§4 rule 3 — *a lower tier may never contradict a live higher tier* — is a merge
+rule. This table is the stricter, structural companion: which payloads a source
+at a given tier is permitted to construct **at all**.
+
+| Payload group | Heuristic 0 | Process 1 | Marker 2 | Transcript 3 | Hook 4 | Protocol 5 |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| `Activity` | **only this** | — | — | — | — | — |
+| `SessionStart` / `SessionEnd` | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Notification` | — | — | ✓ | ✓ | ✓ | ✓ |
+| `Capabilities` | — | — | — | ✓ | ✓ | ✓ |
+| `TurnStart` / `TurnEnd` / `Compaction` | — | — | — | ✓ | ✓ | ✓ |
+| `UserMessage` / `AssistantText` / `Reasoning` | — | — | — | ✓ | ✓ | ✓ |
+| `ToolCall` / `ToolResult` / `Plan` / `FileChanged` | — | — | — | ✓ | ✓ | ✓ |
+| `Usage` / `RateLimit` | — | — | — | ✓ | ✓ | ✓ |
+| `InteractionRaised` / `InteractionResolved` | — | — | — | ✓ ¹ | ✓ | ✓ |
+| `QueueChanged` | — | — | — | ✓ | ✓ | ✓ |
+
+¹ A transcript source observes an interaction **retroactively**, so its
+`InteractionRaised` may arrive after the card has already closed. The ledger
+treats a raise for an interaction it has never seen and whose window has passed
+as history, not as a new open card.
+
+**Enforced by the type system where it matters, by one table elsewhere.** The
+tier-0 ban is the row that is a security property (§6: a wrong card a user taps
+"Allow" on is an incident), so it is structural: a heuristic source does not get
+an `EventSink` at all.
+
+```rust
+/// Tier-0 sources implement this instead of `EventSource` (§3). There is no
+/// method on `ActivitySink` that accepts an `AgentPayload`, so "screen text
+/// became a tool call" is not a bug that can be written.
+#[async_trait]
+pub trait HeuristicSource: Send + Sync {
+    fn id(&self) -> SourceId;
+    fn supports(&self, kind: AgentKind) -> bool;
+    async fn attach(&self, binding: &AgentBinding, sink: ActivitySink)
+        -> Result<SourceHandle, SourceError>;
+}
+
+impl ActivitySink {
+    /// The only emit method that exists.
+    pub fn emit(&self, guess: Activity);
+}
+```
+
+The remaining rows are enforced by one table-driven check inside `EventSink`,
+which rejects an out-of-tier payload with `SourceError::TierViolation`, disables
+that source for the binding, and reports it through `agent.explain` — the same
+handling as a transcript schema mismatch (§9). Six marker types for forty
+cells would buy less than the fixture test that walks this table does.
+
+### 8.5 Sufficiency for the transcript view
+
+[D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work)
+makes the transcript view the primary mobile surface for an agent session, so
+the set above has to be enough to render a readable conversation without the
+grid. It is, and here is the mapping
+([08 §4.4](08-web-client.md#44-transcript-view) renders it):
+
+| Row a reader expects | Built from |
+|---|---|
+| "I asked this" | `UserMessage`, with an omt-typed chip when `origin` is `Remote` or `Synthetic` |
+| "it said this" | `AssistantText`, coalescing `partial: true` fragments into the final row |
+| "it thought about it" | `Reasoning`, collapsed by default |
+| "it ran this, and this happened" | `ToolCall` + the `ToolResult` with the same `call`, rendered as one expandable row |
+| "it is planning" | `Plan`, re-rendered in place on each revision |
+| "it changed these files" | `FileChanged`, grouped per turn, tapping through to 15's diff |
+| "it asked me something" | `InteractionRaised` → the inline card (08 §5), replaced in place by `InteractionResolved`'s outcome |
+| "a subagent did this" | any payload with `thread.is_subagent`, nested under the `ToolCall` whose id is `thread.parent` |
+| turn boundaries, elapsed time, token cost | `TurnStart`/`TurnEnd`/`Usage` as a turn footer |
+| "the context was compacted here" | `Compaction`, as a divider — which is also where the transcript legitimately loses history |
+| "this session started / ended" | `SessionStart`/`SessionEnd` |
+| provenance of any row | `AgentEvent::tier`, per 08 §4.4 |
+
+What the set deliberately cannot render is a heuristic-tier session, because
+`Activity` is all there is. That is D14's stated floor and §7.3's "grid only"
+column, and it is shown to the user rather than discovered.
 
 ---
 

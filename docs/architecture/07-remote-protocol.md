@@ -251,7 +251,8 @@ the daemon's uid is rejected before the handshake. Same-uid peers get the
 `Local` actor and `Admin` role by default, configurable down. See
 [13 §2](13-security.md).
 
-`omt-hook` uses this socket and nothing else; it never speaks WebSocket.
+`omt-hook` uses this socket and nothing else; it never speaks WebSocket. Its two
+messages are `HookEvent` and `HookAck`, specified in §3.8.
 
 ### 2.4 SSH stdio bridge — `omt --remote <target>`
 
@@ -369,6 +370,10 @@ pub enum ProtoMessage {
     BlobBegin(BlobBegin),               // either direction
     BlobAbort { blob: BlobId, reason: String },
     BlobDone { blob: BlobId, sha256: String },
+
+    // ---- agent hook ingress (unix socket only, §3.8) ----
+    HookEvent(HookEvent),               // omt-hook → daemon
+    HookAck(HookAck),                   // daemon → omt-hook
 }
 ```
 
@@ -595,37 +600,570 @@ and digest, and rejects on mismatch. Quotas and temp-file lifecycle are
   "policy": { "on_lag": "resync", "max_buffered_events": 2048 } }
 ```
 
-```json
-{ "t": "event", "sub": "sub_1", "session": "s_4b2f", "seq": 91381,
-  "ts": "2026-08-03T18:21:59.882Z", "source": "hook",
-  "payload": { "type": "interaction",
-               "id": "int_88",
-               "interaction": {
-                 "type": "choice",
-                 "questions": [{ "question": "Which database should I use?",
-                                 "header": "Database",
-                                 "multi_select": false,
-                                 "allow_free_text": true,
-                                 "options": [{ "label": "Postgres", "description": "…" },
-                                             { "label": "SQLite",   "description": "…" }] }]
-               },
-               "timeout_at": "2026-08-03T18:31:59.882Z" } }
-```
-
 Filters are coarse on purpose (session set × event-kind set). Fine-grained
 server-side filtering is a footgun: it makes resume semantics ambiguous, because
 `since_seq` must mean "everything you would have received", which depends on the
 filter. Coarse filters keep that mapping obvious.
-
-`kinds` mirrors the top-level grouping of `omt-events`: `terminal`, `agent`,
-`interaction`, `session_tree`, `presence`, `config`, `plugin`, `audit`,
-`workspace_fs` ([15 §4.6](15-workspace-explorer.md#46-file-watching)).
 
 `workspaces` is the workspace-scoped analogue of `sessions`: workspace-scoped
 events carry `workspace` instead of `session` in the envelope and have their own
 `Seq` space, so `since_seq` is keyed uniformly by whichever id the event carries.
 Subscribing to `workspace_fs` does **not** by itself create a watcher — that is
 `workspace.files.watch`'s job (15 §6).
+
+#### 3.7.1 The kinds, and the payload each carries
+
+`kinds` is the top-level grouping of `omt-events`. Ten, closed:
+
+```rust
+#[serde(rename_all = "snake_case")]
+pub enum EventKind {
+    Terminal, Agent, Interaction, SessionTree, Presence,
+    Config, Plugin, Audit, WorkspaceFs, Instance,
+}
+```
+
+> **Choice made here.** The set was nine; `instance` is added. Without it,
+> [22 §4.4](22-operations.md#44-per-session-fault-isolation-r7)'s
+> `instance.degraded` — the event that tells a client the daemon has stopped
+> persisting — has no kind, and an event with no kind is unsubscribable through
+> `filter.kinds`. `instance` is also the natural home for the third sequence
+> space (below), which `config`, `plugin` and `audit` share.
+
+**Scope decides which id and which `Seq` space an event carries**, per
+[03 §4](03-capability-catalog.md#4-events-are-the-read-side-twin):
+
+| Scope | Envelope carries | `since_seq` keyed by |
+|---|---|---|
+| session | `session`, `workspace` = `null` | `SessionId` |
+| workspace | `workspace`, `session` = `null` | `WorkspaceId` |
+| instance | neither | `InstanceId` |
+
+The instance space is the third one and it is new here: `config`, `plugin`,
+`audit` and `instance` events belong to no session and no workspace, and before
+this they had nowhere to be counted. `since_seq` therefore accepts the instance
+id as a key alongside session and workspace ids.
+
+```rust
+/// The payload of the protocol `Event` envelope. Tagged `type`; the `kind` in
+/// `Subscribe.filter.kinds` is the group, not a field on the wire — a client
+/// switches on `payload.type`, and the server uses the group to filter.
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EventPayload {
+    // ============ kind: terminal — session-scoped ============
+    // Block, cwd, title and bell facts from `omt-term` (05 §10.4).
+    BlockOpened   { block: BlockId, origin: BlockOrigin, at: Position },
+    BlockClosed   { block: BlockId, state: BlockState, exit: Option<i32>,
+                    duration_ms: Option<u64>, attribution: Attribution },
+    BlockUpdated  { block: BlockId, state: BlockState },
+    CwdChanged    { cwd: PathBuf },
+    TitleChanged  { title: String },
+    Bell          {},
+    /// 05 §9. Emitted on block closure, so it belongs with the block events.
+    HistoryAppended { entry: HistoryEntry },
+    /// 05 §10.4 / 17 §3.4. The negotiated size changed, and why.
+    SessionResized  { size: GridSize, policy: SizePolicy, reason: ResizeReason },
+
+    // ============ kind: agent — session-scoped ============
+    /// The whole of [06 §8.1](06-agent-layer.md#81-agentevent--the-envelope).
+    /// The envelope's `session`, `seq`, `ts` and `source` are copies of the
+    /// inner event's, never independently computed (06 §8.1).
+    AgentEvent    { event: AgentEvent },
+    BindingStarted { binding: AgentBinding },
+    BindingEnded   { binding: BindingId, at: Timestamp, reason: String },
+    /// 06 §4. Carried separately from `AgentEvent` because state is a *merge
+    /// result* over several sources, not something any one source emits.
+    AgentStateChanged { binding: BindingId, from: AgentState, to: AgentState,
+                        deciding_tier: Tier },
+
+    // ============ kind: interaction — session-scoped ============
+    /// The full [06 §5](06-agent-layer.md#5-interactions--the-flagship-path)
+    /// object, including `state`, `responder` and `viewers`.
+    InteractionOpened { interaction: Interaction },
+    /// Every transition after the open, including the terminal ones. Clients
+    /// switch on `state.type` — see the note below.
+    InteractionStateChanged { interaction: InteractionId, state: InteractionState },
+    /// Advisory only; the ledger still decides (12 §4.4).
+    InteractionViewersChanged { interaction: InteractionId, viewers: Vec<ActorId> },
+
+    // ============ kind: session_tree ============
+    WorkspaceOpened   { workspace: Workspace },                 // workspace-scoped
+    WorkspaceClosed   {},                                       // workspace-scoped
+    WorkspaceRenamed  { name: String },                         // workspace-scoped
+    ViewCreated       { view: LayoutView },                     // workspace-scoped
+    ViewClosed        { view: ViewId },                         // workspace-scoped
+    ViewSelected      { view: ViewId, by: Actor },              // workspace-scoped
+    /// 05 §10.4 / 17. Workspace-scoped because a `Layout` belongs to a
+    /// `LayoutView`, which belongs to a workspace — not to a session.
+    LayoutChanged     { view: ViewId, layout: Layout, geometry_hint: Option<Geometry> },
+    SessionCreated    { session: Session },                     // workspace-scoped
+    SessionClosed     { session: SessionId },                   // workspace-scoped
+    SessionRenamed    { name: String },                         // session-scoped
+    SessionStateChanged { from: SessionState, to: SessionState }, // session-scoped
+    FocusChanged      { view: ViewId, pane: Option<PaneId>, by: Actor }, // workspace-scoped
+
+    // ============ kind: presence — session-scoped ============
+    PresenceChanged   { presence: Presence },
+    /// 05 §10.4, semantics in 12 §3. Grouped with presence rather than with
+    /// session_tree: "who may type" is the same question as "who is here", and
+    /// a client that renders one always renders the other.
+    WriterChanged             { token: Option<WriterToken>, reason: WriterChangeReason },
+    WriterTakeoverRequested   { by: Actor, expires_at: Timestamp },
+    WriterTakeoverResolved    { by: Actor, granted: bool },
+
+    // ============ kind: config — instance- or workspace-scoped ============
+    /// 10 §4. `keys` are setting paths, never values — a value may be a secret.
+    ConfigChanged { keys: Vec<String>, scope: ConfigScope, source: ConfigSource,
+                    by: Actor, reload: ReloadKind },
+    /// 10 §5.3. A reload that failed validation; the old config stays live.
+    ConfigInvalid { diagnostics: Vec<Diagnostic> },
+
+    // ============ kind: plugin — instance-scoped ============
+    PluginLoaded   { plugin: PluginId, version: String, granted: Vec<CapabilityPattern> },
+    PluginUnloaded { plugin: PluginId, reason: String },
+    PluginFailed   { plugin: PluginId, diagnostic: Diagnostic },
+
+    // ============ kind: audit — instance-scoped, Admin only ============
+    /// 13 §6. Subscribing requires `Admin`; the bus filters per subscription,
+    /// so a non-admin subscription to `audit` yields nothing rather than an
+    /// error, exactly as a filtered-out session does.
+    AuditAppended { entry: AuditEntry },
+
+    // ============ kind: workspace_fs — workspace-scoped ============
+    /// 15 §4.6. Coalesced by the watcher; `truncated` says so honestly.
+    FilesChanged { changes: Vec<FileEvent>, truncated: bool },
+    VcsChanged   { summary: VcsSummary },
+    /// The watcher stopped (descriptor exhaustion, a rescan, an unmount).
+    /// A dropped watch is reported, never silently mistaken for "no changes".
+    WatchDropped { reason: String, rescan_required: bool },
+
+    // ============ kind: instance — instance-scoped ============
+    /// 22 §4.4. Added or cleared as instance-level capability degrades.
+    InstanceDegraded  { degradation: InstanceDegradation },
+    InstanceRecovered { kind: String },
+    InstanceShuttingDown { reason: String, grace_ms: u32 },
+}
+```
+
+**Inner types are owned elsewhere and referenced, never restated here.**
+`AgentEvent` is [06 §8.1](06-agent-layer.md#81-agentevent--the-envelope);
+`Interaction`, `InteractionState`, `AgentBinding`, `AgentState`, `Tier` are
+[06](06-agent-layer.md); `Block*`, `Attribution`, `Position` are
+[04](04-terminal-core.md); `Session`, `Workspace`, `SessionState`,
+`HistoryEntry`, `Presence`, `WriterToken` are [05](05-session-model.md) with
+writer/presence semantics in [12](12-collaboration.md); `Layout`, `LayoutView`,
+`Geometry`, `SizePolicy` are [17](17-panes-and-layout.md); `Diagnostic`,
+`ConfigSource` are [10](10-configuration.md); `AuditEntry` is
+[13](13-security.md); `FileEvent`, `VcsSummary` are
+[15](15-workspace-explorer.md); `InstanceDegradation` is
+[22 §4.4](22-operations.md#44-per-session-fault-isolation-r7).
+
+> **Choice: one transition event, not four.** `interaction` could have had
+> `interaction_resolved`, `interaction_cancelled`, `interaction_submitted` and
+> `interaction_undelivered` as separate variants. It has one
+> `interaction_state_changed` carrying [06 §5](06-agent-layer.md#5-interactions--the-flagship-path)'s
+> `InteractionState`, because that enum is already the authoritative state
+> machine ([12 §4.1](12-collaboration.md#41-the-invariant) owns its
+> transitions) and a second, parallel vocabulary on the wire would let the two
+> disagree. `Submitted` and `Undelivered` ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism))
+> are states in that enum, so they need no wire work — which is the point.
+
+#### 3.7.2 One example per kind
+
+The `interaction` example is the corrected form of the one that used to stand
+here alone: it carries the whole `Interaction`, including the `state`,
+`responder` and `viewers` that 06 §5 requires and the old illustration omitted.
+
+```json
+{ "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
+  "seq": 91380, "ts": "2026-08-03T18:21:58.400Z", "source": "core",
+  "caused_by": null,
+  "payload": { "type": "block_closed", "block": "blk_31",
+               "state": "finished", "exit": 0, "duration_ms": 812,
+               "attribution": "agent" } }
+```
+
+```json
+{ "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
+  "seq": 91381, "ts": "2026-08-03T18:21:59.100Z", "source": "hook",
+  "caused_by": null,
+  "payload": { "type": "agent_event",
+               "event": { "session": "s_4b2f", "binding": "bnd_5",
+                          "agent": "claude_code", "agent_version": "2.1.4",
+                          "agent_session": "1f0c…", 
+                          "thread": { "id": "th_0", "parent": null,
+                                      "is_subagent": false, "label": null },
+                          "seq": 91381, "ts": "2026-08-03T18:21:59.100Z",
+                          "tier": "hook", "source": "hook_bridge",
+                          "cwd": "/home/v/src/omt", "git_branch": "main",
+                          "payload": { "type": "tool_call", "turn": "t_12",
+                                       "call": "toolu_01A…", "name": "Edit",
+                                       "input": { "file_path": "…" },
+                                       "status": "running", "parent": null } } } }
+```
+
+```json
+{ "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
+  "seq": 91382, "ts": "2026-08-03T18:21:59.882Z", "source": "hook",
+  "caused_by": null,
+  "payload": { "type": "interaction_opened",
+               "interaction": {
+                 "id": "int_88", "session": "s_4b2f", "binding": "bnd_5",
+                 "kind": { "type": "choice",
+                           "questions": [{ "question": "Which database should I use?",
+                                           "header": "Database",
+                                           "multi_select": false,
+                                           "allow_free_text": true,
+                                           "options": [{ "label": "Postgres", "description": "…" },
+                                                       { "label": "SQLite",   "description": "…" }] }] },
+                 "opened_at": "2026-08-03T18:21:59.882Z",
+                 "timeout_at": "2026-08-03T18:31:59.882Z",
+                 "state": { "type": "open" },
+                 "responder": { "fidelity": "synthetic",
+                                "state_dependence": "independent",
+                                "supports_edit": false },
+                 "viewers": [] } } }
+```
+
+```json
+{ "t": "event", "sub": "sub_1", "session": null, "workspace": "w_9f3c",
+  "seq": 41209, "ts": "2026-08-03T18:22:03.010Z", "source": "core",
+  "caused_by": "dev_9a:41827",
+  "payload": { "type": "layout_changed", "view": "vw_1",
+               "layout": { "…": "17 §1.3" }, "geometry_hint": null } }
+```
+
+```json
+{ "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
+  "seq": 91383, "ts": "2026-08-03T18:22:04.113Z", "source": "core",
+  "caused_by": "dev_9a:41828",
+  "payload": { "type": "writer_changed",
+               "token": { "holder": { "id": "act_12", "kind": "remote" },
+                          "acquired_at": "2026-08-03T18:22:04.113Z",
+                          "epoch": 7 },
+               "reason": "auto_acquired" } }
+```
+
+```json
+{ "t": "event", "sub": "sub_2", "session": null, "workspace": null,
+  "seq": 5512, "ts": "2026-08-03T18:22:10.000Z", "source": "core",
+  "caused_by": "dev_9a:41830",
+  "payload": { "type": "config_changed", "keys": ["agent.confirm_window_ms"],
+               "scope": "instance", "source": "user_file", 
+               "by": { "id": "act_12", "kind": "remote" }, "reload": "live" } }
+```
+
+```json
+{ "t": "event", "sub": "sub_2", "session": null, "workspace": null,
+  "seq": 5513, "ts": "2026-08-03T18:22:11.400Z", "source": "plugin",
+  "caused_by": null,
+  "payload": { "type": "plugin_failed", "plugin": "ntfy-notifier",
+               "diagnostic": { "code": "OMT-P012", "message": "…" } } }
+```
+
+```json
+{ "t": "event", "sub": "sub_3", "session": null, "workspace": null,
+  "seq": 5514, "ts": "2026-08-03T18:22:12.900Z", "source": "core",
+  "caused_by": "dev_9a:41831",
+  "payload": { "type": "audit_appended",
+               "entry": { "at": "…", "actor": "act_12", "device": "dev_9a",
+                          "capability": "interaction.resolve",
+                          "effects": [], "outcome": "ok" } } }
+```
+
+```json
+{ "t": "event", "sub": "sub_4", "session": null, "workspace": "w_9f3c",
+  "seq": 41210, "ts": "2026-08-03T18:22:14.220Z", "source": "fs",
+  "caused_by": null,
+  "payload": { "type": "files_changed", "truncated": false,
+               "changes": [{ "rel": "crates/omt-agent/src/lib.rs", "change": "modified" }] } }
+```
+
+```json
+{ "t": "event", "sub": "sub_2", "session": null, "workspace": null,
+  "seq": 5515, "ts": "2026-08-03T18:22:20.000Z", "source": "core",
+  "caused_by": null,
+  "payload": { "type": "instance_degraded",
+               "degradation": { "kind": "not_persisting",
+                                "since": "2026-08-03T18:22:19.980Z",
+                                "detail": "store: no space left on device",
+                                "remedy": "free space under $XDG_STATE_HOME/omt" } } }
+```
+
+#### 3.7.3 The `source` vocabulary — one closed set
+
+Two documents disagreed. [06 §3](06-agent-layer.md#3-source-model) has
+`Tier = Heuristic | Process | Marker | Transcript | Hook | Protocol`;
+[08 §2.1](08-web-client.md#21-what-codegen-emits)'s generated `EventSourceTag`
+renamed `heuristic` → `pty` and added `workspace_fs` and `system`. Both claimed
+to be generated from `omt-events`, which cannot be true of both.
+
+The diagnosis: the two lists answer different questions that were conflated. A
+*tier* is a confidence ranking of agent-observation sources and exists only for
+`kind: agent`. A *source tag* is the producer class of **any** event, and most
+events have no tier at all — a `layout_changed` is not more or less confident
+than a `files_changed`. 08's additions were the symptom: `workspace_fs` and
+`system` are producers with no tier, so they had to be smuggled into a tier
+enum.
+
+**The single closed set**, which `omt-events` generates and both 06 and 08 defer
+to:
+
+```rust
+#[serde(rename_all = "snake_case")]
+pub enum EventSourceTag {
+    // the six agent-observation tiers, spelled exactly as `Tier`'s variants
+    Heuristic, Process, Marker, Transcript, Hook, Protocol,
+    // producers that are not agent observations and have no tier
+    Core,    // the daemon's own state machines: session tree, terminal,
+             // presence, writer token, config, instance health
+    Fs,      // the filesystem watcher (15 §4.6)
+    Plugin,  // a plugin, via the plugin host (11)
+}
+```
+
+Rules:
+
+1. For `kind: agent`, `source` **is** the inner `AgentEvent::tier`, lower-cased.
+   It is one of the first six, always, and codegen asserts the equality
+   (06 §8.1).
+2. For every other kind, `source` is one of `core`, `fs`, `plugin` — never a
+   tier name. An `interaction` event is the exception that proves the rule: it
+   carries the tier that observed the interaction, because it *is* an agent
+   observation, merely on its own kind.
+3. `pty` is **not** in the set. It was 08's rename of `heuristic`, and the tier
+   is named for what it is (a guess) rather than for where the bytes came from.
+   `Tier::Heuristic` in 06 is the owner; 08 regenerates.
+4. `workspace_fs` and `system` are **not** in the set as sources. `workspace_fs`
+   is an `EventKind`; `system` was standing in for what is now `core`.
+
+### 3.8 The `omt-hook` wire messages
+
+`omt-hook` is the tier-4 ingress: the agent's own hook system executes it, it
+reads the agent's JSON document on stdin, and it reports to the daemon over the
+unix socket of §2.3. This is the flagship observation path
+([D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):
+the `PreToolUse` hook fires *before* the agent draws its card and carries
+`tool_input` verbatim, which is everything needed to mirror the interaction
+remotely), so its encoding is specified here rather than left to the
+implementation.
+
+#### 3.8.1 Not a capability call — a distinct `ProtoMessage` pair
+
+**Decision: `HookEvent` / `HookAck` are `ProtoMessage` variants, and they do
+not go through `CapabilityRegistry::dispatch`.**
+
+The rejected alternative was an `agent.hook.report` capability, which is
+attractive because dispatch is where authorization and auditing live
+([03 §3](03-capability-catalog.md#3-dispatch)). It is wrong for three reasons:
+
+1. **A hook is not an actor requesting a mutation.** The capability catalog is
+   the surface through which an *actor* changes state, and every entry carries a
+   `Role`, an `Effects` set and an `Intent` class. A hook has no role, requests
+   no mutation and has no intent to deliver — it reports an observation, exactly
+   as `TranscriptTail` and `AcpClient` do, and neither of those is a capability
+   call either. Making one observation source RPC-shaped because it happens to
+   arrive over a socket would put the tier ladder on two different footings.
+2. **The authorization that matters already happened, at the right layer.** §2.3
+   checks `SO_PEERCRED`/`LOCAL_PEERCRED` and rejects any peer whose uid differs
+   from the daemon's before the handshake. That is precisely the right check for
+   a local process the agent spawned as the daemon's user. Dispatch would add a
+   role check with no meaningful answer.
+3. **Latency.** Claude Code alone has 30 hook events, several per tool call, on
+   a single-digit-millisecond budget (§3.8.4). Dispatch's per-call machinery —
+   the recent-results cache keyed by `RequestId`, effects refinement, the audit
+   append — is the wrong cost on that path, and the `RequestId` it is keyed by
+   is `(DeviceId, u64)`, which a hook does not have.
+
+**Auditing is preserved, in the right log.** [13 §6](13-security.md)'s audit log
+records actor-initiated capability calls; a hook event is not one. What it *is*
+is durably recorded, in full, in the agent event log
+([21 §1](21-data-lifecycle.md) row 7) once normalized into an `AgentEvent`, and
+`agent.explain` (06 §4) reports the `HookBridge` source's health, freshness and
+last event. So "what did the hook tell us and when" is answerable; it is simply
+not an audit question.
+
+#### 3.8.2 The messages
+
+```rust
+pub struct HookEvent {
+    /// Per-hook-process nonce, not a `RequestId` — a hook has no `DeviceId`
+    /// and lives for milliseconds. Echoed on the ack; the hook makes exactly
+    /// one call in its life, so uniqueness within the connection suffices.
+    pub nonce: u64,
+    /// Version of *this* message pair, negotiated separately from `proto`
+    /// because the hook binary is installed into the agent's config and may
+    /// be older or newer than the daemon (22 reports the skew).
+    pub hook_proto: u16,
+
+    // ---- who ----
+    pub agent: AgentKind,
+    pub agent_version: Option<String>,
+    /// The agent's own session id, when the payload or environ carries one.
+    pub agent_session: Option<AgentSessionId>,
+
+    // ---- what ----
+    /// The agent's own hook event name, **verbatim and un-normalized**:
+    /// `"PreToolUse"`, `"beforeShellExecution"`, `"AfterTool"`. The hook does
+    /// not map it; the daemon's per-agent normalizer does, and keeping the raw
+    /// name means an unrecognized event is loggable rather than lost.
+    pub event: String,
+    pub tool_name: Option<String>,
+    /// The agent's own id for this tool invocation, when it supplies one.
+    /// This is what correlates a `PreToolUse` with its `PostToolUse`, and
+    /// therefore what makes D15's confirm-by-observation possible.
+    pub tool_use_id: Option<String>,
+    /// **Verbatim.** The exact `tool_input` document, unmodified and
+    /// unredacted on the wire (the socket is local, same-uid, 0600).
+    /// Redaction happens on the daemon side before any write
+    /// ([21 §2.1](21-data-lifecycle.md#21-the-placement-rule)).
+    pub tool_input: Option<serde_json::Value>,
+    pub tool_response: Option<serde_json::Value>,
+    /// The whole stdin document, verbatim, for fields this schema does not
+    /// name. Bounded (§3.8.3); a hook never truncates silently.
+    pub raw: serde_json::Value,
+
+    // ---- where ----
+    pub correlation: HookCorrelation,
+
+    /// How long the hook is willing to wait for the ack before it fails open
+    /// (§3.8.4). Advisory: it tells the daemon whether a slow path is worth
+    /// starting, and the hook enforces it regardless of the answer.
+    pub deadline_ms: u32,
+}
+
+/// 06 §7.2. `OMT_SESSION` and `OMT_INSTANCE` are injected into every PTY omt
+/// spawns, so a hook already knows which pane it belongs to and no
+/// "match the transcript to the pane" heuristic runs.
+pub struct HookCorrelation {
+    pub instance: Option<InstanceId>,   // $OMT_INSTANCE
+    pub session: Option<SessionId>,     // $OMT_SESSION
+    pub pid: u32,                       // the agent process, = the hook's ppid
+    pub ppid: u32,
+    pub cwd: PathBuf,
+}
+
+pub struct HookAck {
+    pub nonce: u64,
+    /// The daemon recorded the event. `false` means it could not (unknown
+    /// agent, malformed payload) and is informational only — the hook's
+    /// behaviour is identical either way.
+    pub recorded: bool,
+    pub directive: HookDirective,
+}
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HookDirective {
+    /// The only value sent in v1. D11: omt observes and gets out of the way.
+    Proceed,
+    /// **Reserved, never sent in v1.** The opt-in deferral path of
+    /// [06 §5.3](06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization),
+    /// which takes the local user's native card away and is therefore
+    /// per-agent opt-in if it ever ships.
+    Defer { budget_ms: u32 },
+    /// **Reserved, never sent in v1.** Would be omt denying a tool call, which
+    /// [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
+    /// forbids: omt adds no policy layer over the agent's own permission
+    /// semantics. Present so the wire does not have to change if a *user*
+    /// ever configures a deny that the agent itself would have offered.
+    Deny { reason: String },
+}
+```
+
+**Correlation when omt did not spawn the agent.** `OMT_SESSION` is absent, so
+`correlation.session` is `None` and the daemon correlates by `agent_session`
+against its bindings, then by `(cwd, pid)` proximity — the last-resort path 06
+§7.2 already marks low-confidence in `agent.explain`. The hook never guesses a
+session id.
+
+#### 3.8.3 Fail-open, in wire terms
+
+The rule is unconditional and predates this section
+([06 §5.3](06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization)
+point 3): **an agent must never hang because omt is slow or dead.**
+
+| Situation | Hook behaviour |
+|---|---|
+| `OMT_SOCK` unset, or the socket does not exist | exit 0 immediately, empty document on stdout. No connect attempt. This is the guard clause at the top of the hook (06 §7.1) |
+| connect refused / socket stale | same, without retry |
+| `deadline_ms` elapses with no `HookAck` | abandon the read, empty document, exit 0. The partially-sent `HookEvent` is the daemon's problem, not the agent's |
+| `HookAck` malformed, or `directive` unknown to this hook version | treat as `Proceed` |
+| `HookAck { directive: Proceed }` | empty document, exit 0 — the normal path |
+| any panic in the hook binary | a `catch_unwind` at `main` emits the empty document and exits 0 |
+
+The hook's exit status is **always 0** except where the agent itself defines a
+non-zero status as meaningful and omt is not using that meaning — which today is
+nowhere.
+
+**Who renders the agent-appropriate stdout: the hook binary.** [06 §5.3](06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization)
+says the default on any error is to return `{}`, which is Claude Code's empty
+document and not universal. The mapping from `HookDirective` to the bytes a
+given agent expects on stdout lives in **`omt-hook`**, keyed by the `AgentKind`
+it was installed for (`omt-hook --agent claude-code`, with `OMT_HOOK_AGENT` as a
+fallback):
+
+```
+Proceed  →  claude-code : {}
+            codex       : {}
+            cursor      : {"permission": "allow"}      ← per-agent, in the hook
+            gemini/qwen : {}
+```
+
+> **Choice made here.** The alternative — the daemon returns the literal stdout
+> bytes and the hook echoes them — is rejected for one decisive reason: **the
+> fail-open path is exactly the path on which the daemon is unreachable.** A
+> hook that cannot render its own agent's empty document has nothing to print
+> when the socket is gone, which is the case the whole contract exists for. A
+> secondary reason: the table is per-agent knowledge, and per-agent knowledge
+> lives next to the agent (`AgentAdapter`, 06 §7) or in the binary the adapter
+> installs — not in the transport. The cost is that adding an agent means
+> shipping a new `omt-hook`; `omt-integration-version` (06 §7.1) already stamps
+> installs so a stale one is detectable.
+>
+> The exact per-agent documents are the adapter's to verify — 06 §10 question 2
+> ("do Codex/Cursor/Gemini hook payloads match the Claude-Code shape?") covers
+> the input side of the same question, and the output side rides with it.
+
+**Bounds.** A `HookEvent` is a control message and is subject to §2.2's 1 MiB
+control-frame limit. A `tool_input` that would exceed it (a large `Write`) has
+its `raw` field replaced by `{"omt_truncated": true, "bytes": N}` with
+`tool_input` retained if it alone fits, and the daemon marks the resulting
+`AgentEvent` as truncated. The hook never sends a frame the daemon will reject,
+and never silently drops the field without saying so.
+
+#### 3.8.4 Timing — which number applies to what
+
+Three numbers exist in three documents and they measure three different things.
+Stated plainly, because as previously written `omt doctor` would flag a
+correctly-behaving hook:
+
+| Operation | Budget | Owned by |
+|---|---|---|
+| `omt-hook` process start (exec → first byte written to the socket) | **single-digit milliseconds** | [02 — crate map](02-crate-map.md#omt-hook). It is a separate binary precisely to hit this |
+| socket connect + `HookEvent` + `HookAck`, on a healthy daemon | **target ≤ 10 ms, p99 ≤ 20 ms** | this section |
+| `omt doctor`'s `agents` check: full spawn → connect → ack → exit | **warns above 50 ms** | [22 §3.1](22-operations.md#31-the-checks) |
+| `omt-hook`'s wait for an ack before it gives up and fails open | **`deadline_ms`, default 250 ms** | [06 §5.3](06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization) |
+
+The reconciliation: doctor measures the **first three lines summed**, which for
+a healthy hook is roughly 5 + 10 ms, comfortably inside its 50 ms threshold. It
+does **not** measure the fourth. The 250 ms figure is an *abort deadline on the
+pathological path* — the time after which a hook stops waiting for a daemon that
+is not answering — and it is never an expected latency. A hook that actually
+reaches its deadline is by definition already degraded, and doctor reporting
+that as a failure is correct behaviour, not a false positive.
+
+Two consequences worth stating:
+
+- **Doctor must measure a real round trip, not a synthetic one.** Its check
+  spawns the installed `omt-hook` binary against the live socket with a
+  synthetic `SessionStart` event, so it measures the path the agent uses,
+  including the binary's startup. Measuring only the socket round trip would
+  miss the failure 02's budget exists to prevent (a hook that got slow to
+  start).
+- **`deadline_ms` is never raised to accommodate a slow daemon.** If the daemon
+  cannot ack inside 250 ms it is unhealthy, and the honest outcome is a
+  degraded tier-4 source reported by `agent.explain` — not an agent that
+  stutters on every tool call.
 
 ---
 

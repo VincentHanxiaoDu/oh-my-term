@@ -57,11 +57,20 @@ They are the first thing built, and the thing every parallel change reads.
 ### `omt-catalog`
 The **capability catalog** (see [03](03-capability-catalog.md)): the declarative
 list of every command and query omt supports, with their input/output types,
-required role, and metadata. Provides the `Capability` trait, the
-`CapabilityRegistry`, the dispatch types, and the build-time codegen that emits
-JSON Schema + a TypeScript client + the reference documentation.
+required role, and metadata. Provides the `capability!` macro, the `Capability`
+trait and its `Decl` metadata struct, the `CapabilityHandler`/`ErasedHandler`
+pair, the `CapabilityRegistry` and its sealed form, the declaration-level types
+(`Effects`, `Intent`, `Parity`, `CapabilityError`, `RequestId`), and the
+`DECLS` distributed slice that both the runtime registry and `cargo xtask
+codegen` enumerate. Codegen emits JSON Schema + a TypeScript client + the
+generated route table, CLI tree and reference documentation. All of this is
+specified in [03 §2.3 and §3](03-capability-catalog.md#23-the-declaration-level-types).
 
 Contains no implementations — only declarations and the dispatch machinery.
+Note that `DECLS` is populated by the *declaring* crates, so `omt-catalog`
+itself never sees them at compile time; codegen reads the list by running the
+`omt` binary, in which the slice is fully linked
+([03 §3.3](03-capability-catalog.md#33-how-declarations-are-collected)).
 
 ### `omt-events`
 The event model: `Event` envelope (`instance`, `session`, `seq`, `ts`,
@@ -180,6 +189,26 @@ The observation pipeline and state machine: source registry, confidence-tiered
 merge, agent binding lifetime, the `Interaction` ledger (open, resolve exactly
 once, broadcast), and the message-queue mirror. Depends on
 `omt-agent-adapters` only through traits.
+
+It also depends on **`omt-term`** (L2 → legal from L3, and no exception under
+the rules below, which govern L2↔L2 only). The dependency is required by
+[D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s
+step 3 and [D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)
+consequence 3: before a synthetic answer is written, omt must assert against the
+**rendered screen** that the row it intends to select literally renders
+`N. <label>`. Claude Code suppresses the printed `1.` `2.` prefixes with the
+same `hideIndexes` flag that disables numeric selection, so *"is a number
+rendered on that row?"* is the cheap runtime precondition that converts a
+version-fragile accelerator into a fail-closed one. Without it, a version bump
+turns into a silently wrong answer.
+
+**Interface requirement on `omt-term`, not yet present.** [04](04-terminal-core.md)'s
+public surface offers only `snapshot()` and `search()`; `Snapshot` must
+additionally expose plain-text extraction per visible row — minimally
+`Snapshot::row_text(Row) -> String` over the current screen, styling stripped,
+wide characters and combining marks resolved the way the user sees them. That is
+handed off to 04's owner; `omt-agent` reads it and nothing else, so the coupling
+stays one method wide.
 
 ### `omt-config`
 The layered configuration model: typed schema, loader, validator with rich
@@ -328,7 +357,7 @@ a clear blast radius:
 | Session tree | `omt-session` | terminal, pty |
 | Panes/layout | `omt-session` (`layout` module) | session tree |
 | Agent adapters | `omt-agent-adapters` | contracts |
-| Agent pipeline | `omt-agent` | adapters, session |
+| Agent pipeline | `omt-agent` | adapters, session, terminal (`Snapshot::row_text`, above) |
 | Config | `omt-config` | contracts |
 | Store | `omt-store` | contracts |
 | Data lifecycle | `omt-store` (sweeper, retention, redaction, purge, export, migrations) | store |

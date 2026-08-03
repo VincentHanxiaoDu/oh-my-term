@@ -281,7 +281,13 @@ underlines during output are worse than no underlines.
 
 ### 2.6 The `Match` and `Target` types
 
-`04 §8.3`'s `Target` enum is widened and moved to `omt-types`:
+**`Target` is defined by [04 §8.3](04-terminal-core.md#83-hyperlinks-and-detection),
+not here.** Only the type's *home crate* moves to `omt-types` (so `omt-open` can
+consume it without an L2 dependency exception); the definition text stays in 04,
+because 04 owns the scanner that produces it and this document owns only what is
+done with it afterwards. The enum is reproduced below **verbatim from 04** as a
+reading convenience — if the two ever differ, 04 wins and this copy is the bug.
+`Match` is new here and this document owns it.
 
 ```rust
 pub struct Match {
@@ -295,14 +301,27 @@ pub struct Match {
     pub block: Option<BlockId>,         // owning block; supplies cwd/host at resolve time
 }
 
+// Reproduced from 04 §8.3; that document is authoritative.
 pub enum Target {
-    Url { raw: String },
+    Url(Url),
     Path { raw: String, line: Option<u32>, col: Option<u32> },
     GitRef { raw: String },
-    Issue { owner: Option<String>, repo: Option<String>, number: Option<u64>, key: Option<String> },
-    Custom { rule: RuleId, slots: BTreeMap<String, String> },
+    Issue { raw: String, repo: Option<String> },
+    Custom { rule: RuleId, slots: SmallVec<[(Slot, Range<u16>); 4]> },
 }
 ```
+
+Three earlier divergences in this document are resolved *against* 04, and the
+reasoning is recorded because each was a deliberate widening that is now paid for
+elsewhere:
+
+| Variant | 18 used to say | 04 says, and now so does 18 | Where the lost information comes from |
+|---|---|---|---|
+| `Url` | `Url { raw: String }` | `Url(Url)` | A parsed `Url` is strictly stronger: the scheme allow-list of §3.2 needs a parse anyway, and `Url::as_str()` recovers `raw`. |
+| `Issue` | `{ owner, repo, number, key }` | `{ raw, repo }` | Recognition produces the raw reference; **decomposition into owner/number/key is a resolution concern**, performed by the issue handler (§4) from `raw` against the block's forge config. Recognition stays pure and forge-agnostic, which is the §2.4 rule. |
+| `Custom.slots` | `BTreeMap<String, String>` | `SmallVec<[(Slot, Range<u16>); 4]>` | The map form both allocated per match and *copied* the slot text out of the line. Ranges into the matched text are what `Match::slots` already carries two fields above — the two were inconsistent inside this one document, and the range form is the one that survives reflow, because it does not snapshot the text. Handlers index `Match::text` with the range; §4's action templates are unaffected, since `Slot` is still a name. |
+
+`Slot`, `RuleId` and `MatchId` are `omt-types` newtypes.
 
 #### The `ContentRef` generalisation — recorded, not built
 
@@ -532,7 +551,7 @@ Applied in order, before any syscall:
   gated: a path inside a workspace root goes through
   [15 §9.1](15-workspace-explorer.md#91-path-confinement)'s `confine()`; a path
   outside every root is offered only `reveal_in_editor` (Operator,
-  `SPAWNS_PROCESS`) and `copy`, never `explorer.reveal` or `read`. This mirrors
+  `SPAWNS_PROCESS`) and `copy`, never `workspace.explorer.reveal` or `read`. This mirrors
   [15 §8.4](15-workspace-explorer.md#84-open-in-editor)'s existing split exactly.
 - **Sensitivity** is computed with [15 §9.4](15-workspace-explorer.md#94-sensitive-files)'s
   matcher. A `Sensitive` target is badged 🔒 in the hint overlay, its *preview*
@@ -777,6 +796,23 @@ nothing more.
 
 When several agent panes are open, the target agent is the **focused** one; the
 menu offers "insert into…" with a pane list when it is ambiguous.
+
+**`agent_insert` is a paste, and a card suspends it.** Two consequences of
+[D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical),
+whose transport rules are specified in
+[16 §4.5](16-input-and-keymap.md#45-synthetic-answers-are-written-as-keys-never-as-text):
+
+- For a `pty`-mode agent with no structured prompt channel, this insertion is
+  `PtyWrite::Paste` — bracket-wrapped when the agent has enabled mode 2004, which
+  is the *correct* framing for text and the opposite of what a synthetic card
+  answer requires. The two paths must not be merged.
+- While an interaction card is open in the target pane, `agent_insert` is
+  **disabled**, not queued. A digit or a bracket sequence arriving at a card
+  resolves or corrupts it; a card is not a prompt box, and D3's "submitting typed
+  text to a prompt box" allowance does not reach it. The handler is greyed out
+  with that reason, and the user is offered the card instead. This is the same
+  target-identity failure [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+  item 3 names for a replayed enqueue.
 
 ### 4.6 User-defined command handlers
 
@@ -1459,6 +1495,18 @@ attribution consequence.
 ## 9. Capabilities
 
 Declared in [03](03-capability-catalog.md)'s style; all in group `open`.
+
+**These signatures are authoritative**, and
+[04 §8.4](04-terminal-core.md#84-semantic-click-targets) says so ("this document
+does not restate their shapes"). Its sketch `open.targets.list { session,
+position } -> [Target]` is illustrative and out of date on three counts, each of
+which matters: a `position` input can only ever return the matches on one line,
+so hint mode — which needs **every match in the viewport** in one round trip —
+could not be built on it; the return must be `Match`, not `Target`, because a
+phone needs the *span* to draw the hint and the `MatchId` to name what it then
+resolves; and `generation` is what lets a client know its cached match list is
+still valid without re-fetching. `TargetScope` and `MatchRef` are the shapes that
+follow. 04's sketch is a cross-document edit that 04's owner should apply.
 
 ```rust
 capability! {

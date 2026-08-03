@@ -386,7 +386,11 @@ lease (`watch.lease`, default 120 s) refreshed by any `files.*`/`vcs.*` call, so
 a client that vanishes without a clean detach — the normal mobile case —
 releases within one lease.
 
-**Backend:** `notify` native mode — FSEvents, inotify, ReadDirectoryChangesW. We
+**Backend:** `notify` native mode — FSEvents on macOS, inotify on Linux; those
+are the v1 platforms
+([D10](decisions.md#d10--platform-targets-macos-and-linux-windows-via-wsl2), which
+also covers Windows-via-WSL2, where inotify applies). A native-Windows backend is
+not a v1 commitment; the `WatchDriver` seam (§2, §3) is where one would go. We
 coalesce ourselves rather than using `notify-debouncer-full`, because our
 invalidation unit is a *directory* and its unit is a path, and because of the
 overflow behaviour below.
@@ -746,6 +750,34 @@ A confinement failure — note the code, not a 500 (§9.1):
 
 ---
 
+### 6.2 The `workspace.explorer.*` group — surface navigation
+
+The four above plus the nine in the table are the *data* capabilities. The
+explorer is also a **surface**, and [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace)
+binds keys to opening and moving around it. Those bindings must resolve to
+declared capability names or they fail
+[03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test, so the
+group is declared here — 15 owns the explorer, including its surface.
+
+| Capability | Kind/Role | Input → Output | Effects |
+|---|---|---|---|
+| `workspace.explorer.toggle` | C / V | `{workspace, visible: Option<bool>}` → `{visible}` | — |
+| `workspace.explorer.reveal` | C / V | `{workspace, path: RelPath}` → `{revealed: bool}` | — |
+| `workspace.explorer.goto` | C / V | *(prefix map root; §7.1's `g`)* `{workspace, target: GotoTarget}` → `Ack` | — |
+| `workspace.explorer.cycle_filter` | C / V | `{workspace, filter: Option<TreeFilter>}` → `{filter}` | — |
+
+**These declare no effects and mutate no instance state**, because the explorer's
+visibility and filter are *per client per workspace* (§7.2). They are in the
+catalog for the same reason `tui.open_command_palette` is: parity is checked
+against the catalog, and "reveal this file in the explorer" is an action a phone,
+the web client and the TUI must all offer. `workspace.explorer.reveal` is
+distinct from `workspace.files.reveal` — the former moves omt's own tree, the
+latter spawns the user's editor, which is why only the latter is `Operator` with
+`SPAWNS_PROCESS`. [18 §3.3](18-semantic-open.md#33-existence-confinement-and-sensitivity)
+relies on exactly that distinction.
+
+---
+
 ## 7. Surface parity
 
 [P3](01-principles.md#p3--parity-one-capability-three-surfaces) requires a
@@ -753,7 +785,7 @@ matching affordance on all three surfaces, not a subset.
 
 ### 7.1 TUI panel
 
-A side panel toggled by `<leader>e`. **It does not exist until toggled** — no
+A side panel toggled by `<leader>e` (`workspace.explorer.toggle`, §6.2). **It does not exist until toggled** — no
 widget, no state, no capability call. Toggling off dispatches `files.unwatch`
 and drops the panel state, returning to §4.1.
 
