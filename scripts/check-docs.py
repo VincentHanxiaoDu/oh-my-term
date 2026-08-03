@@ -128,6 +128,20 @@ def check_decisions_referenced(files: list[Path]) -> list[str]:
     ]
 
 
+# A "bindings name a real capability" check was tried here and removed. It is
+# the parity test's reverse direction, which 03 §5.1 rightly calls the half that
+# catches drift — but in prose it cannot be made accurate. A keybinding may
+# legitimately name a declared capability *or* a client-local action (the `ui.*`
+# family, which by design the instance never sees), and TOML config keys, plugin
+# example ids and match-rule names are all indistinguishable from a binding by
+# shape. The narrowed version still reported ~50% false positives, and a check
+# people learn to ignore is worse than no check.
+#
+# It becomes enforceable in code once two things exist: the generated catalog,
+# and a registry of client-local actions to check against. That is 03 §5's job,
+# not this script's.
+
+
 def main() -> int:
     verbose = "--verbose" in sys.argv
     files = markdown_files()
