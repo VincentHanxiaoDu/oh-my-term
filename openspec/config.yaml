@@ -1,32 +1,52 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Project: oh-my-term (binary: `omt`) — an agent-aware terminal multiplexer
+  with a remote web client. Open source, Apache-2.0.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Language policy: EVERYTHING in this repository is English-only — code,
+  comments, docs, specs, commit messages, issues and pull requests.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  Tech stack:
+    - Core / TUI / server: Rust (stable toolchain).
+      ratatui + crossterm for the TUI, portable-pty for PTY management,
+      tokio for async, axum + tower for HTTP/WebSocket, serde for schemas.
+    - Web client: TypeScript, xterm.js for terminal rendering.
+    - Workspace: a Cargo workspace of small, focused crates.
+
+  Architecture principles:
+    - Modular and pluggable by default. Agent adapters, transports, auth
+      backends, storage backends and STT providers all sit behind stable
+      traits with a registry; adding one must not touch core code.
+    - Native semantics first. Agent CLIs run in real PTYs; omt observes and
+      augments, it never re-implements or proxies an agent's own UX.
+    - Production-grade from the start: no MVP shortcuts, no stubbed layers.
+      Every crate ships with tests, error types and documented public APIs.
+    - Config is layered (file + TUI + per-instance web overrides) with strict
+      schema validation and precise, actionable error messages.
+
+  Conventions:
+    - Conventional Commits.
+    - `cargo fmt`, `cargo clippy -D warnings`, `cargo test` must pass.
+    - Design and research documents live in `docs/design`, `docs/architecture`
+      and `docs/research`.
+
+rules:
+  proposal:
+    - Write in English only.
+    - Always include a "Non-goals" section.
+    - State explicitly which other changes this one depends on, and which it
+      can run in parallel with.
+  design:
+    - Name the crate(s) the change creates or modifies.
+    - Define the public traits/types other changes will depend on before
+      describing internals.
+  tasks:
+    - Break tasks into chunks of at most two hours.
+    - Every change must end with tasks for tests, docs and clippy/fmt.
+
+operations:
+  apply:
+    guidance:
+      - Keep test summaries concise.
+      - Never leave `todo!()`/`unimplemented!()` in merged code.
