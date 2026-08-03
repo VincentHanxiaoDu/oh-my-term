@@ -250,3 +250,120 @@ change what omt says about itself and what it builds first.
    editing an argument is answering the agent's own prompt with a modified
    input, exactly as the agent's own UI allows, not omt adding a policy.)
 4. Marketing copy and the README are held to this table.
+
+---
+
+## D10 — Platform targets: macOS and Linux; Windows via WSL2
+
+**Decision.** v1 targets macOS and Linux natively. Windows users are supported
+**through WSL2**, which is Linux and therefore costs nothing extra. Native
+Windows (ConPTY, named-pipe hook transport, Windows process inspection) is
+explicitly **not** a v1 target.
+
+**Reasoning.** The observation pipeline — the thing that makes omt omt — is
+Unix-shaped end to end: Unix-socket hooks, `/proc` and `sysctl` process
+inspection, foreground process groups, `SO_PEERCRED`, and bash/zsh/fish
+integration. ConPTY is a different lifecycle model with no `SIGWINCH`, no
+process group and no `TIOCSWINSZ`, so a native port is not a porting layer but
+a second implementation of the core. Meanwhile several documents had acquired
+incidental Windows commitments (`omt-pty` "Unix and Windows",
+`ReadDirectoryChangesW`, `%APPDATA%`, Windows Terminal key encodings) that read
+as contracts nobody had agreed to.
+
+**Consequences.**
+- Those incidental commitments are qualified or removed. Where a design leaves
+  a Windows seam open at no cost (a `WatchDriver` trait, a `PtyHandle`
+  abstraction), the seam stays — it is cheap and honest.
+- `omt-pty` is scoped to Unix for v1. Native Windows becomes a future change
+  with its own decision, not an assumed obligation.
+- The README states the support matrix plainly, so no one discovers it by
+  failing to build.
+
+---
+
+## D11 — omt mirrors the agent's own card; it does not intercept or replace it
+
+**Decision.** When an agent raises a structured interaction, the agent's **own
+CLI draws its own card, normally, locally.** omt does not park the call and does
+not render a replacement in the pane. omt observes the interaction (via the
+`PreToolUse` hook, which fires before the card is drawn and carries the verbatim
+payload), mirrors it to every remote surface, and synchronizes the resolution in
+whichever direction it happens:
+
+- answered **locally** in the CLI → omt observes the resolution and every remote
+  surface updates to "already answered";
+- answered **remotely** → omt delivers the answer to the agent, and the CLI's
+  own card resolves.
+
+**Reasoning.** This is [P4](01-principles.md#p4--native-semantics-observe-never-re-implement)
+taken literally, and it corrects a design that had drifted. The earlier plan
+leaned on `permissionDecision: "defer"` to park the tool call for a phone
+round-trip — but parking means the CLI never draws its card, so the local user
+loses the native experience omt exists to preserve, and omt inherits the job of
+drawing an overlay on a live TUI and reconciling it with the agent's redraws.
+another tool's instinct here is right: never render a replacement for the agent's own
+UI. omt's addition is not a better card, it is *reach*.
+
+**Consequences.**
+- **The defer spike is demoted.** It was [D9](#d9--positioning-what-omt-may-and-may-not-claim)'s
+  load-bearing unverified assumption; it is now an optional optimization. The
+  hook payload alone supplies everything needed to render remotely.
+- **The risk moves, it does not vanish.** The remote-answer path now delivers
+  the answer through the agent's own card, which for agents with no native
+  response channel means synthetic input, governed by
+  [D3](#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger).
+  The spike's question changes to: **does Claude Code's `AskUserQuestion` card
+  accept a position-independent selection (typing a number or letter), or does
+  it require counting arrow keys?** That experiment is cheaper than the defer
+  one and its answer is needed either way.
+- Where a *native* response channel exists (ACP `session/request_permission`,
+  the opencode plugin, Codex app-server), it is used and no synthetic input is
+  involved. `native` sessions ([D8](#d8--two-session-modes-pty-default-and-native-acp-opt-in))
+  are unaffected — omt owns the rendering there by construction.
+- D9's differentiated claim survives and gets sharper: *answer the agent's own
+  card from your phone while the real TUI is on screen, with both sides in
+  sync.*
+- The local user is never shown an omt-drawn card in `pty` mode. If omt cannot
+  mirror an interaction, the remote surface says "needs you" and offers the
+  terminal view — the honest degradation already specified in
+  [06 §4](06-agent-layer.md).
+
+---
+
+## D12 — No push notifications in v1; open-and-replay instead
+
+**Decision.** omt ships **no push notification backend**. When a client is not
+connected, it is not notified. When the user opens a client, it reconnects,
+replays what it missed, and presents what needs attention first. The `Notifier`
+trait and its call sites are specified and reserved; **zero backends ship in
+v1**.
+
+**Reasoning.** A browser cannot be pushed to directly — with the tab closed, the
+only path is the browser vendor's relay (FCM for Chrome/Android, APNs for
+Safari/iOS). That means the daemon making an outbound connection to a third
+party, and it leaks the metadata *"this machine needs its owner, now"* even
+though the payload is encrypted. For a tool whose stated position is no cloud,
+no telemetry and no required egress
+([00 §8](00-overview.md)), making that the default is a contradiction, and
+making it optional still requires building and maintaining it. The alternative
+users would actually be told to use (self-hosted ntfy on a tailnet) adds an app
+and a deployment step to onboarding.
+
+**Consequences.**
+- **omt makes no outbound network connections at all.** This becomes a plain,
+  checkable property rather than a caveated one.
+- **A real capability is given up**, and the docs say so: the "agent blocks, the
+  phone buzzes in your pocket" journey is not in v1. Users learn an agent needs
+  them when they next open a client.
+- **Open-and-replay becomes the load-bearing path and must be excellent.** Cold
+  start to a useful screen, the continuity ranking that decides what to show
+  first, and complete recovery of everything missed while disconnected are now
+  primary features, not conveniences. See
+  [`../design/remote-continuity.md`](../design/remote-continuity.md).
+- The iOS Web Push reliability experiment is cancelled; that risk is retired.
+- **The extension point stays open on purpose.** A future native iOS/Android
+  app has a first-party push channel that does not route through a browser
+  vendor, and a user or third party can ship a `Notifier` plugin (ntfy,
+  Telegram, Bark, webhook) without touching core — per
+  [P2](01-principles.md#p2--pluggable-extension-without-modification). Nothing
+  in the design may assume notifications never exist.
