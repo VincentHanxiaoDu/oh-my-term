@@ -63,10 +63,18 @@ core directly — it dispatches catalog commands, exactly as a remote client doe
 just without a network hop.
 
 **Enforced by:** a parity test that walks the catalog and asserts, for every
-capability: (a) a generated API route and JSON Schema exist, (b) a TUI action is
-bound to it, (c) the web client's handler registry has an entry, and (d) the
-capability appears in the generated reference docs. Adding a capability without
-all four fails CI. See [03 — Capability catalog](03-capability-catalog.md).
+capability: (a) a generated API route and JSON Schema exist, (b) it is
+*reachable* in the TUI — via the command palette, which requires a `title`, or
+via an explicit binding — (c) the web client's handler registry has an entry,
+and (d) the capability appears in the generated reference docs. Adding a
+capability without all four fails CI.
+
+Clause (b) is deliberately weaker than "a binding exists", and
+[D17](decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances)
+records why: the palette is the universal TUI affordance, so requiring a
+per-capability chord would be a guarantee omt does not keep. The test is a floor
+against *unreachability*; whether something is *at hand* is a design-review
+question. See [03 §5.1](03-capability-catalog.md#51-what-artifact-2-actually-asserts-and-what-it-does-not).
 
 **Corollary — one event stream.** State is broadcast once. The TUI and every
 remote client subscribe to the same stream with the same schema. There is no

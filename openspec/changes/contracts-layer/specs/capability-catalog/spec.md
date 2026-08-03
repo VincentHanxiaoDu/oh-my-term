@@ -107,10 +107,15 @@ transport or client.
 ### Requirement: Parity is enforced for every capability
 
 For every declared capability the build SHALL verify that a route and schema
-exist, that a TUI action is bound to it, that the web client has a handler, that
-it appears in the generated reference, and that it is reachable by name from the
-command palette — or that it carries an explicit, listed exemption for the
-surfaces it omits.
+exist, that it is **reachable** in the TUI, that the web client has a handler,
+that it appears in the generated reference, and that it is reachable by name
+from the command palette — or that it carries an explicit, listed exemption for
+the surfaces it omits.
+
+TUI reachability is satisfied by palette membership **or** by an explicit
+binding. It is deliberately not "a binding exists": the palette is the universal
+TUI affordance, so requiring a per-capability chord would assert a guarantee the
+system does not keep.
 
 #### Scenario: A capability missing a surface fails CI
 
@@ -128,7 +133,22 @@ surfaces it omits.
 #### Scenario: Administrative capabilities are not required on every surface
 
 - **WHEN** a capability requires the administrative role
-- **THEN** it is not required to have a bound TUI action
+- **THEN** it is not required to be reachable in the TUI
+
+#### Scenario: A capability hidden from the palette needs a real binding
+
+- **WHEN** a capability is marked hidden, and is therefore absent from the
+  palette
+- **THEN** palette membership cannot satisfy its TUI reachability
+- **AND** it must carry either an explicit binding or an exemption naming the
+  TUI surface
+
+#### Scenario: A binding may name a capability or a client-local action
+
+- **WHEN** the reverse direction runs over the keymap
+- **THEN** a bound name resolves against the declared capabilities *and* the
+  client-local action registry
+- **AND** a name in neither fails the build
 
 #### Scenario: Declaration soundness is checked with parity
 

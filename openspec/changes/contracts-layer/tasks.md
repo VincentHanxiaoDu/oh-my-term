@@ -176,9 +176,12 @@
       `CatalogHash`, and `Origin` including its `Plugin` variant, which the
       proposal promises is declared even though hosting is doc 11's change
 - [ ] 8.2 The parity test over the registry, all five artifacts and both
-      directions: route + schema, TUI action (non-`Admin` only), web handler,
-      docs entry, palette entry — or a listed per-surface exemption — **and**
-      the reverse check that every bound action names a real capability, which
+      directions: route + schema, TUI reachability (palette membership or a
+      binding; non-`Admin` only; a `hidden` capability needs a real binding since
+      it has no palette entry), web handler, docs entry, palette entry — or a
+      listed per-surface exemption — **and** the reverse check that every bound
+      name resolves against the capabilities *or* the client-local action
+      registry, which
       [03 §5](../../../docs/architecture/03-capability-catalog.md) singles out
       as the half that catches drift
 - [ ] 8.2a The declaration-soundness checks the same test enumerates: every

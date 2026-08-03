@@ -463,7 +463,11 @@ dedicated chord"**. The resolution is two mechanisms:
 
 The parity test in [03 §5](03-capability-catalog.md) is amended accordingly: a
 capability satisfies "has a TUI affordance" if it has a binding **or** appears in
-the palette, and the palette's contents are the catalog, so the second clause is
+the palette. The palette's contents are the catalog — except for `hidden`
+capabilities, which [03 §2](03-capability-catalog.md) omits from it and which
+therefore need a real binding
+([03 §5.1](03-capability-catalog.md#51-what-artifact-2-actually-asserts-and-what-it-does-not)
+clause 3). For everything else the second clause is
 always true. Bindings become an *optimization for frequency*, not a requirement
 for reachability. That is the whole argument for a tiny key budget.
 

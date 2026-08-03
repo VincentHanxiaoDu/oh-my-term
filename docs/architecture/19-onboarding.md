@@ -678,7 +678,7 @@ literal for every row.
 | 2 | `new-window` (`c`) | `session.create` | `⟨leader⟩ c` |
 | 3 | `kill-pane` (`x`) | `session.close` | `⟨leader⟩ x` |
 | 4 | `kill-window` (`&`) | `session.close` (all panes) | `⟨leader⟩ X` |
-| 5 | `detach-client` (`d`) | `tui.detach` | `⟨leader⟩ d` |
+| 5 | `detach-client` (`d`) | `session.detach` | `⟨leader⟩ d` |
 | 6 | `attach-session` | `session.attach` | `omt attach [<name>]` |
 | 7 | `choose-tree` / `choose-window` (`w`, `s`) | `ui.open_session_picker` | `⟨leader⟩ w` |
 | 8 | `split-window -h` (`%`) | `pane.split{vertical}` | `⟨leader⟩ \|` |
@@ -699,7 +699,7 @@ literal for every row.
 | 23 | `select-window -t N` (`0`–`9`) | `pane.focus_index`⁵ | `⟨leader⟩ 0`–`9` |
 | 24 | `rename-window` (`,`) | `session.rename` | `⟨leader⟩ .`² |
 | 25 | `rename-session` (`$`) | `workspace.rename` | `⟨leader⟩ $` |
-| 26 | `copy-mode` (`[`) | `tui.enter_copy_mode` | `⟨leader⟩ [` |
+| 26 | `copy-mode` (`[`) | `ui.copy_mode.enter` | `⟨leader⟩ [` |
 | 27 | `paste-buffer` (`]`) | `media.paste_buffer` — **proposed, not yet declared**⁴ | `⟨leader⟩ ]` |
 | 28 | `list-buffers` / `choose-buffer` (`=`) | `media.buffers.list` — **proposed, not yet declared**⁴ | `⟨leader⟩ =` |
 | 29 | `save-buffer` / `load-buffer` | `media.buffers.save` / `.load` — **proposed, not yet declared**⁴ | palette |
@@ -717,7 +717,7 @@ literal for every row.
 | 41 | `respawn-pane` | `session.restart` | palette |
 | 42 | `swap-window` / `move-window` | `pane.swap` / `pane.move_to_workspace` (17 §9.1) | palette |
 | 43 | `find-window` (`f`) | palette search | `⟨leader⟩ p` |
-| 44 | `refresh-client` (`r`) | `tui.redraw` — **proposed, not yet declared**⁴ | `⟨leader⟩ r` |
+| 44 | `refresh-client` (`r`) | `ui.redraw` — **proposed, not yet declared**⁴ | `⟨leader⟩ r` |
 
 ¹ `⟨leader⟩ !` is `agent.interrupt` in the default keymap
 ([16 §8.2](16-input-and-keymap.md#82-the-leader-namespace)); in the `tmux`
@@ -778,7 +778,7 @@ Rows tmux has and omt does not are listed in `unmapped` and reported by
 ["<leader> c"]      = "session.create"
 ["<leader> x"]      = { capability = "session.close",  args = { confirm = true } }
 ["<leader> &"]      = { capability = "session.close",  args = { scope = "window", confirm = true } }
-["<leader> d"]      = "tui.detach"
+["<leader> d"]      = "session.detach"
 ["<leader> %"]      = { capability = "pane.split",     args = { direction = "vertical" } }
 ['<leader> "']      = { capability = "pane.split",     args = { direction = "horizontal" } }
 ["<leader> o"]      = "pane.focus_next"
@@ -793,7 +793,7 @@ Rows tmux has and omt does not are listed in `unmapped` and reported by
 ["<leader> ,"]      = "session.rename"
 ["<leader> ctrl-,"] = "ui.open_settings"    # displaced by the row above
 ["<leader> $"]      = "workspace.rename"
-["<leader> ["]      = "tui.enter_copy_mode"
+["<leader> ["]      = "ui.copy_mode.enter"
 ["<leader> ]"]      = "media.paste_buffer"     # proposed, §5.1 note 4
 ["<leader> ="]      = "media.buffers.list"     # proposed, §5.1 note 4
 ["<leader> :"]      = "ui.open_command_palette"
@@ -802,7 +802,7 @@ Rows tmux has and omt does not are listed in `unmapped` and reported by
 ["<leader> p"]      = { capability = "pane.focus_cycle", args = { reverse = true } }   # NOTE: not the palette, in this keymap
 ["<leader> l"]      = "pane.focus_last"
 ["<leader> f"]      = "ui.open_command_palette"
-["<leader> r"]      = "tui.redraw"             # proposed, §5.1 note 4
+["<leader> r"]      = "ui.redraw"             # proposed, §5.1 note 4
 ["<leader> t"]      = "none"                 # clock-mode: unmapped, see `unmapped`
 ["<leader> up"]     = { capability = "pane.navigate", args = { dir = "up" } }
 # … down/left/right, `<leader> 0`–`9` → pane.focus_index, `<leader> ctrl-<arrow>`

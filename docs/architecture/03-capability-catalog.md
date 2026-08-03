@@ -751,10 +751,19 @@ What artifact 2 therefore asserts, precisely:
    the palette, which requires a `title` (artifact 5), or via an explicit
    binding.
 2. **The reverse direction, which is the half with teeth.** Every action bound
-   in the keymap names a capability that exists. This is what catches drift: a
-   binding pointing at a renamed or deleted capability fails CI, which is
-   exactly the defect that would otherwise ship as a key that silently does
-   nothing.
+   in the keymap resolves — to a declared capability, or to a name in the
+   client-local action registry ([16 §7.1](16-input-and-keymap.md), the `ui.*`
+   family the instance never sees). A binding that resolves to neither fails CI,
+   which is exactly the defect that would otherwise ship as a key that silently
+   does nothing.
+
+   Both halves of that lookup are required, and this is why: a binding is
+   allowed to name either kind, so checking only the catalog would reject every
+   legitimate `ui.*` binding, and checking neither is how a renamed family
+   survived in an example keymap users copy from. Prose cannot tell the two
+   apart — a documentation linter attempting this reported roughly half false
+   positives and was withdrawn — so the check lives here, in code, where both
+   registries are enumerable.
 3. **`hidden` capabilities need a real binding or an exemption.** A `hidden`
    capability is omitted from the palette (§2), so palette membership cannot
    satisfy clause 1 for it. It must carry either an explicit binding or a
@@ -792,7 +801,7 @@ or a specific list, so a CLI-only exemption does not silently excuse the web.
 Exemptions are enumerated in the generated
 docs so they are visible, and the test asserts the list matches an explicit
 allow-list in the repo — you cannot add one silently. Legitimate examples:
-`instance.shutdown` (admin, no phone affordance needed), local-only debug dumps.
+`debug.dump_grid`, a local-only diagnostic dump.
 
 **The exhaustiveness trick for the web client** is what makes surface #3 real
 rather than aspirational: codegen emits

@@ -1087,7 +1087,7 @@ capability = "interaction.resolve"
 [[binding]]
 trigger = "esc"
 when    = "copy_mode"
-capability = "tui.exit_copy_mode"
+capability = "ui.copy_mode.exit"
 
 [[binding]]
 trigger = "ctrl-c"

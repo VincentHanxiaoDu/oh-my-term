@@ -768,7 +768,7 @@ group is declared here — 15 owns the explorer, including its surface.
 
 **These declare no effects and mutate no instance state**, because the explorer's
 visibility and filter are *per client per workspace* (§7.2). They are in the
-catalog for the same reason `ui.open_command_palette` is: parity is checked
+catalog for the same reason `session.search` is: parity is checked
 against the catalog, and "reveal this file in the explorer" is an action a phone,
 the web client and the TUI must all offer. `workspace.explorer.reveal` is
 distinct from `workspace.files.reveal` — the former moves omt's own tree, the

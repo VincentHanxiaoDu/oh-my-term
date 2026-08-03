@@ -110,8 +110,8 @@ information the failure surface needs. This change implements 06's placement.
 
 ### D-6. Stub surfaces ship here, so the parity gate is whole
 
-The parity check needs four arms: generated route and schema, a TUI action, a web
-handler, and a docs entry ([03 §5](../../../docs/architecture/03-capability-catalog.md)).
+The parity check needs four arms: generated route and schema, TUI reachability,
+a web handler, and a docs entry ([03 §5](../../../docs/architecture/03-capability-catalog.md)).
 Three of them live in crates and a package this change would not otherwise
 create, which would leave the gate testing one arm of four — and a gate that
 cannot fail does not prove anything.

@@ -1487,11 +1487,17 @@ verbatim under a busy session:
 - `+ add to queue…` calls `agent.queue.enqueue`; `[×]` calls
   `agent.queue.remove`. Both are ordinary catalog capabilities, so they work
   from the CLI too.
-- Reordering is offered **only** if the instance reports a queue-reorder
-  capability; Claude Code's observed operations are `enqueue` and `remove` only,
-  so reorder is implemented as remove+enqueue and labelled as such in the
-  optimistic UI (it briefly shows the item moving, then reconciles against the
-  event).
+- Reordering calls `agent.queue.reorder`, and is offered **only** where that
+  capability reports itself supported. It is **not** implemented as
+  remove+enqueue: [06 §8](06-agent-layer.md) rules that out, because those are
+  two separate externally-confirmed intents and the removal is the unconfirmable
+  one — a failure in the middle loses the message with no record of what it was.
+  Claude Code's observed operations are `enqueue` and `remove` only, so on a
+  mirrored queue the capability returns `unsupported` and the client **hides the
+  drag handles** rather than offering a reorder it cannot complete.
+- Editing a queued item calls `agent.queue.edit` where supported. The inline
+  rendering above invites it, which is why the capability exists; where the
+  queue is mirrored rather than owned, the row is read-only and says so.
 - For agents that emit no queue events, the section is absent — not shown empty.
 
 ### 6.2 Slash commands as a real completion popup

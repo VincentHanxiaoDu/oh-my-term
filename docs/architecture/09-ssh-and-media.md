@@ -470,7 +470,7 @@ above is *free* over SSH when the file is on the remote and merely *hard* when i
 is local — which is exactly the §5 problem, and is why the composer's
 attach-this-path chip says which side of the connection the path resolved on.
 
-**`omt ssh` / `omt ssh` thin client** — the recommended case. omt owns both
+**`omt ssh` — the thin client** — the recommended case. omt owns both
 ends, reads the local clipboard natively, and streams over the existing control
 channel with no base64 and no pty (§6.1).
 
@@ -947,6 +947,16 @@ omt probes downward at session start and records the achieved tier in the
 session state, so every surface can say exactly *why* paste behaves the way it
 does. A tier is never claimed without a positive handshake.
 
+**Tiers 0 and 2 are the same command.** `omt ssh box` first probes for omt on the
+far side ([22 §7](22-operations.md#7-bootstrap-onto-a-host-with-no-omt-r38) — the
+probe and the connection are one ssh exec, so the common case costs nothing). If
+omt is there, or the user accepts the offer to install it, the session is tier 0:
+a native stdio bridge with omt on both ends. If it is not there and will not be —
+a locked-down host, a declined install, `bootstrap = "assume-installed"` — the
+same command falls back to running `ssh` inside a local omt-managed PTY, which is
+tier 2's precondition (§5.3). The user types one thing; what they get is reported
+in the session state rather than chosen by which command they remembered.
+
 ### 5.2 Tier 1 — the reverse socket (the recommended answer)
 
 If the user runs omt on their laptop too — which is the expected case, since omt
@@ -1019,7 +1029,8 @@ omt's OSC requests and replies by writing into the pty as if typed.
 Wait — in tier 2 the outer terminal is foreign, so omt cannot see its output. So
 tier 2 requires the local end to be *in the pipe*. Two supported shapes:
 
-**(2a) `omt ssh` as a pty wrapper.** `omt ssh box` spawns ssh inside a local
+**(2a) `omt ssh` falling back to a pty wrapper.** When the probe of §5.1 finds no
+omt on the far side and none will be installed, `omt ssh box` spawns ssh inside a local
 omt-managed PTY. omt now sees every byte in both directions and can implement the
 bridge without any cooperation from the outer emulator. The outer emulator is
 just rendering omt's local session. This is the shape that makes tier 2 work,
@@ -1167,8 +1178,8 @@ an image-shaped clipboard that omt cannot reach produces:
 |---|---|---|
 | omt local only (case a) | **Yes** | Direct OS clipboard. |
 | Web client (case c) | **Yes** | Native browser paste/drop/camera. |
-| `omt ssh box` | **Yes** | omt owns both ends; §6. |
-| `omt ssh box` (omt wraps ssh) | **Yes** | Tier 1 socket, or tier 2 OSC bridge. |
+| `omt ssh box`, omt on the far side | **Yes** | Tier 0 — omt owns both ends; §6. |
+| `omt ssh box`, no omt on the far side | **Yes** | Same command, degraded (§5.1): tier 1 socket, or tier 2 OSC bridge. |
 | Foreign terminal + local omt daemon + `ssh -R` configured by hand | **Yes** | Tier 1. Requires user config. |
 | kitty + plain `ssh`, `clipboard_control` allows read | **Yes** | Tier 3; kitty may prompt per read. |
 | iTerm2 + plain `ssh` | **No — semi-automatic** | File picker via `RequestUpload`. Clipboard-only images need a manual save first. |
@@ -1176,7 +1187,7 @@ an image-shaped clipboard that omt cannot reach produces:
 | Ghostty / Alacritty / Terminal.app / Windows Terminal + plain `ssh` | **No** | Tier 4 (QR / `omt paste` / switch to `omt ssh`). |
 | Any of the above with tmux in between and `allow-passthrough off` | **No** | Even tier 3 breaks. omt detects and says so. |
 
-The product consequence: **`omt ssh` and `omt ssh` are the documented way
+The product consequence: **`omt ssh` is the documented way
 to get this feature**, and the first-run experience nudges toward them. Chasing
 universal foreign-terminal clipboard access is a losing engineering bet against
 software omt does not control.

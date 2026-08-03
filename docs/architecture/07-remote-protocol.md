@@ -268,7 +268,7 @@ jump hosts, agent forwarding, and corporate policy compliance. Concretely:
 
 - omt generates a temporary SSH config that includes the user's config first,
   then adds `ServerAliveInterval 15`, `ServerAliveCountMax 4`, and a private
-  `ControlPath` so a second `--remote` to the same host reuses the connection.
+  `ControlPath` so a second `omt ssh` to the same host reuses the connection.
   `[remote].manage_ssh_config = false` opts out entirely.
 - Remote binary resolution: `PATH` → known install prefixes → prompt to install
   a version-matched binary to `~/.local/bin/omt`. `OMT_REMOTE_BINARY` overrides
