@@ -1315,6 +1315,32 @@ power user reaches and the answer should not be "we do not know":
 
 ## 10. Capabilities
 
+### 10.1 Jobs — the shape long-running commands return
+
+A command that can take longer than a user will hold a phone still returns a
+`JobId` rather than blocking: `upgrade.apply`, `remote.bootstrap`,
+`store.export` ([21 §8](21-data-lifecycle.md#8-capabilities)) and
+`search.reindex` ([20 §12](20-recall-and-usage.md#12-capabilities)). Progress
+arrives as `instance`-scoped events, so a client that reconnects mid-job learns
+where it got to instead of waiting on a call it can no longer hear the answer
+to.
+
+| Capability | Kind | Role | Input | Output | Effects |
+|---|---|---|---|---|---|
+| `job.list` | Query | V | `{ include_finished? }` | `[{ id, capability, actor, started_at, progress, state }]` | — |
+| `job.get` | Query | V | `{ job }` | `{ …, outcome? }` | — |
+| `job.cancel` | Command | O | `{ job }` | `{ state }` | — |
+
+**Cancellation is cooperative and says so.** A job reaches its next checkpoint
+and stops; one that has passed its point of no return — an install that has
+begun the atomic rename ([§7](#7-bootstrap-onto-a-host-with-no-omt-r38)) —
+returns `precondition_failed` with the reason rather than reporting a success it
+cannot deliver. `job.cancel` carries a binding rather than living in the palette
+alone
+([16 §11](16-input-and-keymap.md#11-capabilities-introduced-here),
+[D17](decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances)):
+stopping something is reached for under pressure.
+
 Declared per [03 §2](03-capability-catalog.md#2-declaring-a-capability). Roles:
 `V`iewer < `O`perator < `A`dmin.
 

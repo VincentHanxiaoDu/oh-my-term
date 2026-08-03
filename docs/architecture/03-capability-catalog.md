@@ -808,7 +808,7 @@ rather than aspirational: codegen emits
 
 ```ts
 export type CoreCapabilityName = "session.send_text" | "session.list" | ...;
-export const handlers: { [K in CoreCapabilityName]: Handler<K> } = { ... };
+export const handlers: { [K in Exclude<CoreCapabilityName, ExemptName>]: Handler<K> } = { ... };
 ```
 
 A new capability breaks the web build until someone writes the handler. That is

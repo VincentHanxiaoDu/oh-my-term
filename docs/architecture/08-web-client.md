@@ -190,7 +190,13 @@ export type Handler<K extends CapabilityName> = {
   invoke(ctx: HandlerCtx, input: Input<K>): Promise<Output<K>>;
 };
 
-type Handled = Exclude<CapabilityName, ExemptName>;
+// Two independent exclusions, both required:
+//   CoreCapabilityName — plugin-contributed capabilities are registered at
+//     runtime and cannot be in a compile-time union (03 §3.6); they reach the
+//     client through the generic schema-driven renderer.
+//   ExemptName — a capability with a web-surface parity exemption owes no
+//     handler.
+type Handled = Exclude<CoreCapabilityName, ExemptName>;
 
 export const handlers: { [K in Handled]: Handler<K> } = {
   "session.send_text":    sendText,
