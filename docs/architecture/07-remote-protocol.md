@@ -686,12 +686,20 @@ pub enum EventKind {
 |---|---|---|
 | session | `session`, `workspace` = `null` | `SessionId` |
 | workspace | `workspace`, `session` = `null` | `WorkspaceId` |
-| instance | neither | `InstanceId` |
+| instance | neither | the reserved id `s_instance` |
 
-The instance space is the third one and it is new here: `config`, `plugin`,
-`audit` and `instance` events belong to no session and no workspace, and before
-this they had nowhere to be counted. `since_seq` therefore accepts the instance
-id as a key alongside session and workspace ids.
+The instance space is the third one: `config`, `plugin`, `audit` and `instance`
+events belong to no session and no workspace, and before this they had nowhere
+to be counted.
+
+**It is keyed by the reserved id `s_instance`, not by an `InstanceId`**, for the
+reason given in [§1.2](#12-instance-identity): a connection is already
+bound to exactly one instance, so wire messages never carry an `InstanceId` —
+sending one would be redundant at best and a second, contradictable source of
+truth at worst. `s_instance` is a reserved value in the same id space as
+`SessionId` and `WorkspaceId`, which keeps `since_seq` a single uniformly-typed
+key across all three scopes rather than a union. [§5.1](#51-sequence-spaces) and
+[§5.2](#52-replay-window) use the same reserved id.
 
 ```rust
 /// The payload of the protocol `Event` envelope. Tagged `type`; the `kind` in
