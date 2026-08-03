@@ -362,7 +362,7 @@ frames.** No camelCase renaming anywhere.
 | `InteractionActivity` | [rc §3.3](../design/remote-continuity.md#33-answering-right-now--the-one-new-presence-signal) | `{ interaction, actor, device, activity: CardActivity, expires_at }` — the one new presence signal, so two devices do not race the same card. It is advisory; the ledger ([12 §4.1](12-collaboration.md#41-the-invariant)) still decides. |
 | `CardActivity` | [rc §3.3](../design/remote-continuity.md#33-answering-right-now--the-one-new-presence-signal) | `Viewing \| Composing \| Submitting`. |
 | `PresencePeer` | [rc §3.1](../design/remote-continuity.md#31-the-single-user-two-device-case-is-the-common-one) | `{ kind: "me", device, label, liveness } \| { kind: "other", actor, label, liveness }` — the rendering-side view of presence, which distinguishes *my other phone* from *another person*. |
-| `SurfaceIntent` | [rc §1.4](../design/remote-continuity.md#14-the-one-deliberate-exception-surface-intent) | `Auto \| Blocks \| Terminal` — the one per-device preference that deliberately does **not** follow the actor across devices. |
+| `SurfaceIntent` | [rc §1.4](../design/remote-continuity.md#14-the-one-deliberate-exception-surface-intent) | `Auto \| Blocks \| Transcript \| Terminal` — the one per-device preference that deliberately does **not** follow the actor across devices. |
 
 ---
 

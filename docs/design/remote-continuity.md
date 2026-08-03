@@ -191,7 +191,6 @@ it fails in the same benign way — an offline instance contributes nothing.
 `preferred_surface` is per-actor but is *overridden* per-device whenever the
 device cannot honour it:
 
-```rust
 **There are three explicit surfaces, not two**, per
 [D14](../architecture/decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work):
 a `pty` session has block, transcript and terminal views, and transcript is the

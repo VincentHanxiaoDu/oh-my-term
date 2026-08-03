@@ -416,7 +416,8 @@ ledger `fsync`s `Resolved` and asserts a delivery it has not verified, which is
 exactly the defect
 [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
 consequence 1 exists to fix. `UndeliveredReason` is
-`NotConfirmed | DaemonRestart | PreconditionFailed` (06 §5).
+`NotConfirmed | AnsweredDifferently { observed } | DaemonRestart |
+PreconditionFailed` (06 §5).
 
 Terminal states are `Resolved`, `Undelivered`, `Cancelled` and `Abandoned`.
 `Resolving` and `Submitted` are both in-flight and both reject a second

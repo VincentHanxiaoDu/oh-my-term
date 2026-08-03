@@ -552,7 +552,7 @@ for the synthetic responder. After D11 it is the entire remote-answer path.
    exactly the retry it was written for: a reconnecting device gets a new
    `ActorId`, so its own retry reads as a stranger overriding it. Key on
    `(interaction_id, identity_or_device, intent_id)`.
-7. **Reserve `ack: u32` in the terminal frame header before the wire freezes.**
+7. **Reserve `ack: u64` in the terminal frame header before the wire freezes.**
    It was already required for mosh-style predictive echo; it is *also* the only
    safe resumption mechanism for the byte-stream class. Recording both rationales
    so it cannot be value-engineered out as "a v2 feature".
