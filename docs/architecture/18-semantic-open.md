@@ -755,8 +755,8 @@ images. The trait gains a sibling method:
 // One method; `attachment_reference` (09 §4.3.7) already covers the disk-blob case.
 
     /// How this agent wants to be handed a *source file* the user is pointing at.
-    /// Returns `AttachmentReference` — the single reference type, of which
-    /// `ImageReference` is a deprecated alias ([09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)).
+    /// Returns `AttachmentReference`, the single reference type
+    /// ([09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)).
     fn file_reference(&self, path: &Path, line: Option<u32>, col: Option<u32>)
         -> AttachmentReference;
 ```
@@ -1711,9 +1711,9 @@ Genuine uncertainties, and the cross-document edits this file implies.
    `omt-types`.
 2. **[04 §8.3–8.4](04-terminal-core.md#83-hyperlinks-and-detection)** — `Target`
    moves to `omt-types` and gains `GitRef`/`Issue`; `Custom` gains named slots.
-   `session.target_at` / `session.target_resolve` sketched there are **superseded
-   by** `open.targets.list` / `open.resolve` in §9 — 04 should link here rather
-   than declare its own. §5.4 also redefines `SelectionMode::Semantic` in terms
+   The click-target capabilities it points at are `open.targets.list` /
+   `open.resolve` from §9 — 04 links here rather than declaring its own.
+   §5.4 also redefines `SelectionMode::Semantic` in terms
    of match spans, which 04 §8.2 currently leaves to `word_chars`.
 3. **[03 §6](03-capability-catalog.md#6-capability-groups-initial-surface)** —
    add an `open` row to the group table.

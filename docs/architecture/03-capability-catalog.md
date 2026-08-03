@@ -248,9 +248,8 @@ Two mechanical checks worth naming, because both have already caught a real
 contradiction in these documents:
 
 - **Artifact 2 in both directions.** *Every action names a real capability* is
-  the half that catches drift: [16 §11](16-input-and-keymap.md) bound
-  `<leader> h j k l` to `pane.focus_direction`, which no capability declares, and
-  it would have failed on the first CI run.
+  the half that catches drift: a keybinding in [16 §11](16-input-and-keymap.md)
+  that names an action no capability declares fails on the first CI run.
 - **`refine_effects` is sound** (§2.1) and **every `Command` declares an
   `intent`** (§2.2). Both are enumerated over the registry by the same test.
 
@@ -300,14 +299,9 @@ The full consolidated list, with kinds, roles and effects, is the hand-written
 [`docs/reference/capabilities-draft.md`](../reference/capabilities-draft.md),
 which §5 artifact #4 replaces with generated output.
 
-`layout.*` is a group of its own rather than `pane.layout.*`, because these
+`layout.*` is a group of its own rather than a `pane.*` sub-group, because these
 operations act on a **view** and not on a pane
-([17 §9.3](17-panes-and-layout.md#93-reconciliation-with-the-existing-catalog)).
-`pane.layout.get` appeared in an earlier draft of this table and is **superseded
-by `layout.get`**. It never shipped, so no alias is warranted — §7's
-two-minor-version alias rule applies to released names. `workspace.layout.get` /
-`.set` / `.preset` *did* appear in a released surface and are kept as deprecated
-aliases per §7 ([05 §10.1](05-session-model.md#101-workspace)).
+([17 §9.3](17-panes-and-layout.md#93-how-this-surface-sits-in-the-catalog)).
 
 Two of these deserve emphasis:
 

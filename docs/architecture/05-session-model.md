@@ -226,9 +226,8 @@ pub enum LayoutTree {
 pub struct Split {
     pub id: SplitId,
     /// Column-wise (children side by side) or row-wise (children stacked).
-    /// **Not** `Direction { Horizontal, Vertical }` — "horizontal split" is
-    /// ambiguous in every multiplexer's documentation
-    /// ([17 §1.2](17-panes-and-layout.md#12-types)).
+    /// Named for what is divided: "horizontal split" is ambiguous in every
+    /// multiplexer's documentation ([17 §1.2](17-panes-and-layout.md#12-types)).
     pub axis: Axis,
     /// Children with fractional weights summing to 1.0. N-ary, not binary —
     /// see rationale below.
@@ -249,9 +248,9 @@ pub struct Layout {
 }
 ```
 
-**Zoom is a flag beside the tree, not a variant in it.** An earlier draft had
-`Zoom { pane, saved: Box<Layout> }`, which is tmux's design and forces an
-unzoom-resize-rezoom on every container resize. A flag consulted by `compute`
+**Zoom is a flag beside the tree, not a variant in it.** Carrying zoom as a tree
+node holding a saved layout — tmux's design — forces an unzoom-resize-rezoom on
+every container resize. A flag consulted by `compute`
 serializes trivially and — the reason that decides it — lets one client render
 zoomed while another renders the tiling from one tree
 ([17 §1.3](17-panes-and-layout.md#13-the-whole-layout-of-a-workspace),
@@ -796,12 +795,7 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `workspace.open` | O | `{ path, name? }` | `{ workspace, created: bool }` |
 | `workspace.close` | O | `{ workspace, close_sessions: bool }` | `{ closed_sessions: [SessionId] }` |
 | `workspace.rename` | O | `{ workspace, name }` | `WorkspaceInfo` |
-| `workspace.layout.get` | V | `{ workspace, view? }` | `{ layout: Layout, geometry: Geometry }` — **deprecated alias** for `layout.get` ([17 §9.2](17-panes-and-layout.md#92-layout)); kept two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
-| `workspace.layout.set` | O | `{ workspace, layout, view? }` | `{ layout }` — **deprecated alias** for `layout.set` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
-| `workspace.layout.preset` | O | `{ workspace, preset, view? }` | `{ layout }` — **deprecated alias** for `layout.preset` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
 | `workspace.focus` | O | `{ workspace, pane, view? }` | `{ view: ViewId, focused: PaneId }` |
-| `workspace.git.status` | V | `{ workspace }` | `VcsSummary` — **deprecated alias** for `workspace.vcs.summary` ([15 §6](15-workspace-explorer.md#6-capabilities)); kept for two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
-| `workspace.worktree.list` | V | `{ workspace }` | `{ worktrees: [WorktreeInfo] }` |
 | `workspace.worktree.add` | O | `{ workspace, path, branch, create_branch }` | `{ workspace: WorkspaceId }` — effects: `WRITES_FS`, `SPAWNS_PROCESS` |
 | `workspace.history` | V | `HistoryQuery` (scope forced to this workspace) | `{ entries, next_cursor }` |
 
@@ -824,8 +818,6 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `session.signal` | O | `{ session, signal }` | `Ack` — effects: `DESTRUCTIVE` |
 | `session.scrollback.get` | V | `{ session, from: Position?, lines, mode }` | `{ lines: [StyledLine], from, to }` |
 | `session.search` | V | `{ session, query, cursor? }` | `{ matches, cursor, exhausted }` |
-| `session.target_at` | V | `{ session, position }` | `Option<Target>` — **deprecated alias** for `open.targets.list` ([18 §9](18-semantic-open.md#9-capabilities)) |
-| `session.target_resolve` | V | `{ session, position }` | `ResolvedTarget` (carries `explorer: Option<ExplorerRef>`, [15 §8.1](15-workspace-explorer.md#81-fileline-from-terminal-output)) — effects: `READS_FS`; **deprecated alias** for `open.resolve` ([18 §9](18-semantic-open.md#9-capabilities)) |
 | `session.blocks.list` | V | `{ session, before?, limit, filter? }` | `{ blocks: [BlockInfo], next_cursor }` |
 | `session.blocks.get` | V | `{ session, block, include_output, max_lines }` | `{ block, output: [StyledLine], truncated }` |
 | `session.blocks.rerun` | O | `{ session, block, target_session? }` | `{ seq }` — effects: `WRITES_PTY`, `DESTRUCTIVE` |
@@ -859,8 +851,8 @@ The names this document relies on: `pane.list`, `pane.split`, `pane.close`,
 `pane.zoom`, `pane.set_session`, `pane.scroll`, `pane.select`, `layout.get`,
 `layout.set`, `layout.preset`, `layout.views.*`, `layout.promote`.
 
-`pane.navigate` is the one name for directional focus movement. `pane.focus_direction`
-does not exist ([17 §9.1](17-panes-and-layout.md#91-pane)).
+`pane.navigate` is the one name for directional focus movement
+([17 §9.1](17-panes-and-layout.md#91-pane)).
 
 **Every layout capability carries an optional `view: Option<ViewId>`**, defaulting
 to the caller's current view, because a `PaneId` alone does not say which

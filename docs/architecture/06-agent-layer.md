@@ -647,14 +647,16 @@ pub trait AgentAdapter: Send + Sync {
     /// [15 §8.2](15-workspace-explorer.md#82-inserting-a-path-or-file-into-an-agent-prompt).
     fn path_mention(&self, rel: &RelPath) -> Option<String> { None }
 
-    /// How this agent wants to be handed an image that already exists on disk.
-    /// See [09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent) for
-    /// the per-agent table and the `ImageReference` enum.
-    fn image_reference(&self, path: &Path, meta: &BlobMeta) -> ImageReference;
+    /// How this agent wants to be handed an attachment that already exists on
+    /// disk. See [09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)
+    /// for the per-agent table and [09 §4.3.7](09-ssh-and-media.md#437-what-the-agent-finally-receives)
+    /// for the `AttachmentReference` enum.
+    fn attachment_reference(&self, path: &Path, meta: &BlobMeta,
+                            class: &AttachmentClass) -> Option<AttachmentReference>;
 }
 ```
 
-Both `path_mention` and `image_reference` are agent-native knowledge, so they
+Both `path_mention` and `attachment_reference` are agent-native knowledge, so they
 live on the adapter rather than in a central table keyed by `AgentKind`
 ([P4](01-principles.md#p4--native-semantics-observe-never-re-implement)).
 `path_mention` is defaulted, so adding it does not break third-party adapters

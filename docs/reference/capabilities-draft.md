@@ -528,25 +528,6 @@ It is not in the `media` capability table above and must not be added to it.
 
 ---
 
-## Deprecated aliases
-
-Kept two minor versions per
-[03 §7](../architecture/03-capability-catalog.md#7-versioning), marked deprecated
-in the generated docs.
-
-| Deprecated name | Superseded by | Source |
-|---|---|---|
-| `workspace.layout.get` | `layout.get` | [17 §9.2](../architecture/17-panes-and-layout.md#92-layout), [05 §10.1](../architecture/05-session-model.md#101-workspace) |
-| `workspace.layout.set` | `layout.set` | 17 §9.2, 05 §10.1 |
-| `workspace.layout.preset` | `layout.preset` | 17 §9.2, 05 §10.1 |
-| `workspace.git.status` | `workspace.vcs.summary` | [15 §6](../architecture/15-workspace-explorer.md#6-capabilities) |
-| `workspace.worktree.list` | `workspace.vcs.worktrees` | 15 §6 |
-| `session.target_at` | `open.targets.list` | [18 §9](../architecture/18-semantic-open.md#9-capabilities), [05 §10.2](../architecture/05-session-model.md#102-session) |
-| `session.target_resolve` | `open.resolve` | 18 §9, 05 §10.2 |
-| `pane.layout.get` (doc 03 only) | `layout.get` | [17 §9.3](../architecture/17-panes-and-layout.md#9-capabilities) |
-
----
-
 ## `continuity` — **proposed, not yet in the catalog**
 
 > ⚠️ [`docs/design/remote-continuity.md`](../design/remote-continuity.md) is a

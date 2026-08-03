@@ -1086,7 +1086,7 @@ in block segmentation.
 ```rust
 pub struct Query {
     pub pattern: Pattern,        // Literal { s, case: Case } | Regex(regex::Regex)
-    pub direction: Direction,
+    pub direction: SearchDirection,   // Forward | Backward
     pub scope: Scope,            // Viewport | Scrollback | Block(BlockId)
     pub wrap: bool,
 }
@@ -1190,14 +1190,13 @@ a per-frame cap, and results are cached on the line keyed by `Generation`.
 `omt-session` and is exposed as a capability so a phone can act on it too:
 
 ```
-session.target_at        { session, position }         -> Option<Target>
-session.target_resolve   { session, position }         -> ResolvedTarget
+open.targets.list   { session, position }         -> [Target]
+open.resolve        { session, position }         -> ResolvedTarget
 ```
 
-Both are **deprecated aliases**, superseded by the `open.*` group in
-[18 §9](18-semantic-open.md#9-capabilities): `session.target_at` →
-`open.targets.list`, `session.target_resolve` → `open.resolve`. They are kept
-for two minor versions per [03 §7](03-capability-catalog.md#7-versioning).
+Both belong to the `open.*` group, declared in
+[18 §9](18-semantic-open.md#9-capabilities); this document does not restate their
+shapes.
 
 `ResolvedTarget` carries the absolute path (resolved against the owning block's
 `cwd`, which is why blocks carry `cwd`), whether it exists, and the suggested

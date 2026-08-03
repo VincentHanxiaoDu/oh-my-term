@@ -1554,14 +1554,12 @@ Events emitted on the shared bus ([03 §4](03-capability-catalog.md#4-events-are
 | `usage.updated { session, totals }` | coalesced, ≤ 1/2 s |
 | `digest.available { scope }` | |
 
-> **Naming footnote.** These events were spelled `HistoryAppended`, `DocIndexed`,
-> `AttentionRaised`/`AttentionCleared`, `UsageUpdated` and `DigestAvailable` in
-> an earlier draft of this document. Event names are **dotted lowercase**
-> throughout omt — it matches the capability naming convention and the
-> `snake_case` serde rule in the glossary, and it is what
-> [21 §8](21-data-lifecycle.md#8-capabilities) (`store.sweep.completed`) and
-> [12 §2](12-collaboration.md#2-presence-is-first-class-state) (`presence.changed`)
-> already emit. A PascalCase event name anywhere is a stale draft.
+> **Naming footnote.** Event names are **dotted lowercase** throughout omt — it
+> matches the capability naming convention and the `snake_case` serde rule in the
+> glossary, and it is what [21 §8](21-data-lifecycle.md#8-capabilities)
+> (`store.sweep.completed`) and
+> [12 §2](12-collaboration.md#2-presence-is-first-class-state)
+> (`presence.changed`) already emit.
 
 ---
 

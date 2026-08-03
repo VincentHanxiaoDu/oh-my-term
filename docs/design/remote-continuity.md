@@ -1246,8 +1246,7 @@ Every capability above is `Operator` and appears on all three surfaces, per
 [03 §5](../architecture/03-capability-catalog.md#5-the-parity-contract). The TUI
 bindings are not decorative: the TUI writes drafts (that is where handoff
 *starts*), calls `continuity.touch` on focus change, advances read marks, and
-renders `interaction.activity`. No capability here is `Parity::Exempt` — the
-one that was, `continuity.notification.ack`, no longer exists (D12).
+renders `interaction.activity`. No capability here is `Parity::Exempt`.
 
 ---
 

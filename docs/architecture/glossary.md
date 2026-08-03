@@ -65,8 +65,8 @@ frames.** No camelCase renaming anywhere.
 
 | Name | Owner | Definition |
 |---|---|---|
-| `AgentAdapter` | [06 §7](06-agent-layer.md#7-adapters) | Per-agent knowledge: fingerprint, spawn env, sources, responders, integration installer, commands, `path_mention`, `image_reference`. |
-| `SessionModeSet` | [05 §1.1](05-session-model.md#11-types) | `bitflags u8`: `PTY_ONLY, NATIVE` — which `SessionMode`s an adapter supports ([06 §7](06-agent-layer.md#7-adapters)); `PTY_ONLY` is the default. **Renamed from 06's `ModeSet`**, which collided with the keymap `ModeSet` ([16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)), and defined in 05 alongside `SessionMode` because it is a set of those. |
+| `AgentAdapter` | [06 §7](06-agent-layer.md#7-adapters) | Per-agent knowledge: fingerprint, spawn env, sources, responders, integration installer, commands, `path_mention`, `attachment_reference`. |
+| `SessionModeSet` | [05 §1.1](05-session-model.md#11-types) | `bitflags u8`: `PTY_ONLY, NATIVE` — which `SessionMode`s an adapter supports ([06 §7](06-agent-layer.md#7-adapters)); `PTY_ONLY` is the default. Distinct from the keymap's `ModeSet` ([16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)), and defined in 05 alongside `SessionMode` because it is a set of those. |
 | `AcpSpawn` | [06 §7](06-agent-layer.md#7-adapters) | Argv and env for spawning an agent in `SessionMode::Native`, returned by `AgentAdapter::acp_spawn`; `None` when the adapter has no native mode. Named but **defined nowhere** — open. |
 | `AgentBinding` | [06 §2](06-agent-layer.md#2-the-two-axis-model) | *Which* agent occupies a session, with a lifetime and the agent's own session id. Retained evidence is cleared on binding end. |
 | `AgentState` | [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting) | `Starting \| Idle \| Working \| Blocked \| Exited \| Unknown`. The **only** vocabulary for agent activity. There is no `busy` or `needs_attention` state. |
@@ -130,7 +130,6 @@ frames.** No camelCase renaming anywhere.
 | `BlobStore` / `BlobId` / `BlobMeta` | [09 §2](09-ssh-and-media.md#2-the-blob-store) | One content-addressed, quota'd, TTL'd landing zone. Every media path is a different way of getting bytes into it. |
 | `BlobClass` | [09 §2](09-ssh-and-media.md#2-the-blob-store) | `Runtime \| Mirror { host, remote_path, read_only }` — which lifetime/quota class a blob belongs to. `Mirror` is what [18 §6.3](18-semantic-open.md#63-where-the-file-lands-and-why-the-layout-matters)'s remote file mirror uses; it is not a second store. |
 | `AttachmentReference` | [09 §4.3.7](09-ssh-and-media.md#437-what-the-agent-finally-receives) | How an agent wants to be handed an on-disk attachment: `PromptText \| InlineContent { fence, body, name } \| Command { command, then } \| Structured`. Returned by `AgentAdapter::attachment_reference`, whose trait is owned by [06 §7](06-agent-layer.md#7-adapters). One type for every attachment class; there is no separate image method. |
-| `ImageReference` | [09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent) | **Deprecated alias** of `AttachmentReference`, kept only so older references resolve. `AttachmentReference` is a strict superset (it adds `InlineContent`). New code names `AttachmentReference` directly. |
 | Media tiers 0–4 | [09 §5.1](09-ssh-and-media.md#51-tier-overview) | The ladder for image paste over SSH: omt-on-both-ends → reverse socket → in-band OSC bridge → terminal-native → out-of-band. A tier is never claimed without a positive handshake. |
 | `FileTreeProvider` / `VcsProvider` | [15 §3](15-workspace-explorer.md#3-traits-and-types) | The two extension points of `omt-workspace-fs`. Read-only: the crate ships zero write capabilities. |
 | `FileDiff` / `Hunk` / `DiffLine` | [15 §3.2](15-workspace-explorer.md#32-vcs-model) | Structured hunks on the wire, never a unified-diff string. Used by the explorer **and** by permission cards ([15 §8.5](15-workspace-explorer.md#85-diffs-inside-permission-cards)), so there is one diff renderer per surface. |
@@ -156,7 +155,7 @@ frames.** No camelCase renaming anywhere.
 | `CompiledBinding` | [16 §2.3](16-input-and-keymap.md#23-resolution) | `{ trigger, when, action, specificity: u16, source: BindingSource }` — the resolved form the dispatcher matches against. |
 | `BindingSource` | [16 §2.3](16-input-and-keymap.md#23-resolution) | `Builtin \| User { file, span } \| Project \| Runtime` — provenance, so a conflict can name the file and span that caused it. |
 | `Action` | [16 §2.3](16-input-and-keymap.md#23-resolution) | `Capability { name, args } \| SendKey(KeyEvent) \| None`. A binding invokes the catalog or forwards a key; there is no third kind. |
-| `ChordResolution<'a>` | [16 §2.3](16-input-and-keymap.md#23-resolution) | `Dispatch(&CompiledBinding) \| Pending { prefix, deadline, candidates } \| Passthrough` — the outcome of matching input against the keymap. **Renamed from 16's `Resolution`** to free that name for [18 §3](18-semantic-open.md#3-resolution); see the unified-names table. |
+| `ChordResolution<'a>` | [16 §2.3](16-input-and-keymap.md#23-resolution) | `Dispatch(&CompiledBinding) \| Pending { prefix, deadline, candidates } \| Passthrough` — the outcome of matching input against the keymap. Distinct from [18 §3](18-semantic-open.md#3-resolution)'s `Resolution`, which is a different concept. |
 | `ContextSet` | [16 §4.1](16-input-and-keymap.md#41-the-context-set) | `bitflags u32` of 20 named context flags (`TERMINAL_FOCUSED`, `COPY_MODE`, `ALT_SCREEN`, `CARD_FOCUSED`, …). The single context vocabulary; supersedes 10 §8.2's. |
 | `ContextPredicate` | [16 §4.1](16-input-and-keymap.md#41-the-context-set) | A boolean expression over `ContextSet` flag names, e.g. `"explorer_focused && !search_active"`. Authored as a string, compiled at config load. |
 | `FocusOwner` | [16 §4.2](16-input-and-keymap.md#42-focus-and-exclusivity) | `Pty(PaneId) \| Overlay(OverlayId) \| Panel(PanelId) \| Card(InteractionId)` — exactly one thing owns the keyboard. |
@@ -177,14 +176,14 @@ frames.** No camelCase renaming anywhere.
 
 | Name | Owner | Definition |
 |---|---|---|
-| `LayoutTree` | [17 §1.2](17-panes-and-layout.md#12-types) | `Empty \| Leaf(PaneId) \| Split(Split)` — the n-ary split tree. **This is what an earlier draft of 05 called `Layout`**; [05 §2](05-session-model.md#2-layout-the-bsp-tree) now uses these names. |
+| `LayoutTree` | [17 §1.2](17-panes-and-layout.md#12-types) | `Empty \| Leaf(PaneId) \| Split(Split)` — the n-ary split tree. [05 §2](05-session-model.md#2-layout-the-bsp-tree) uses the same names. |
 | `Split` | [17 §1.2](17-panes-and-layout.md#12-types) | `{ id: SplitId, axis: Axis, children: Vec<Child> }`. Invariants: ≥ 2 children, weights sum to 1.0 ± `WEIGHT_EPSILON`, no same-axis child. |
 | `Child` | [17 §1.2](17-panes-and-layout.md#12-types) | `{ weight: Weight, node: LayoutTree }`. |
-| `Axis` | [17 §1.2](17-panes-and-layout.md#12-types) | `Columns \| Rows`. Deliberately **not** `Direction { Horizontal, Vertical }`, which was ambiguous about what was being divided; 05 §2 and 10 §9.1's launch YAML have both adopted it (`horizontal`/`vertical` still read, `columns`/`rows` written). |
+| `Axis` | [17 §1.2](17-panes-and-layout.md#12-types) | `Columns \| Rows`. Names what is being divided rather than the direction of the divider, which is ambiguous in every multiplexer's documentation. Used by 05 §2 and by 10 §9.1's launch YAML, which writes `columns`/`rows` and also reads the `horizontal`/`vertical` that tmux and another terminal files use. |
 | `Weight` | [17 §1.2](17-panes-and-layout.md#12-types) | `Weight(f32)` newtype, with `WEIGHT_EPSILON = 1e-4` and `MIN_WEIGHT = 1e-3`. Fractional, never absolute cells. |
 | `Constraints` | [17 §1.2](17-panes-and-layout.md#12-types) | `{ min: GridSize (20×3), divider: u16, title_rows: u16 }` — what geometry must respect. |
 | `LayoutView` | [17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default) | `{ id: ViewId, name, layout: Layout, kind: ViewKind, clients, synchronize: Option<SyncGroup> }` — one arrangement, watched by zero or more clients. A workspace holds several. |
-| `ViewKind` | [17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default) | `Primary \| Adaptive { derived_from, owner } \| Named` — **what kind of arrangement a `LayoutView` is.** Unrelated to `ViewMode` ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing)); see the unified-names table. |
+| `ViewKind` | [17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default) | `Primary \| Adaptive { derived_from, owner } \| Named` — **what kind of arrangement a `LayoutView` is.** Unrelated to `ViewMode` ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing)); see "Two name pairs that are easy to confuse" below. |
 | `ViewId` | [17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default) | Opaque id for one `LayoutView` within a workspace. Used opaquely; 17 gives no representation. |
 | `Geometry` | [17 §2.1](17-panes-and-layout.md#21-compute--the-only-place-geometry-exists) | `{ panes: Vec<PanePlacement>, dividers: Vec<Divider>, hidden: Vec<PaneId>, degraded: Option<Degradation> }` — the **only** place cell coordinates exist. Derived, never stored. |
 | `PanePlacement` | [17 §2.1](17-panes-and-layout.md#21-compute--the-only-place-geometry-exists) | `{ pane, outer: Rect, content: Rect, edges: EdgeFlags, stack: Option<StackId> }`. |
@@ -290,7 +289,7 @@ frames.** No camelCase renaming anywhere.
 | `StoreHealth` | [22 §4.1](22-operations.md#41-systemhealth) | The store's contribution to `Health`. Named but not given a shape by 22 — **open**. |
 | `SourceHealth` | [22 §4.1](22-operations.md#41-systemhealth) | Per observation source ([06 §3](06-agent-layer.md#3-source-model)), one entry. Named but not given a shape by 22 — **open**. |
 | `EgressStatus` | [22 §4.1](22-operations.md#41-systemhealth) | What can leave this machine and whether any of it is enabled — the same data `instance.health` ([13 §9.1](13-security.md)) reports, in structured form. Shape not given by 22 — **open**. |
-| `InstanceDegradation` | [22 §4.1](22-operations.md#41-systemhealth) | `{ kind: NotPersisting \| MetricsOff \| RegistryUnreachable \| ClockSkew \| HooksStale, since, detail, remedy }` — a currently-degraded instance-level capability, added or cleared with the `instance.degraded` event ([22 §4.4](22-operations.md#44-per-session-fault-isolation-r7)). **Renamed from 22's `Degradation`** to free that name for [17 §2.3](17-panes-and-layout.md#23-minimums-and-what-happens-when-they-cannot-be-met). |
+| `InstanceDegradation` | [22 §4.1](22-operations.md#41-systemhealth) | `{ kind: NotPersisting \| MetricsOff \| RegistryUnreachable \| ClockSkew \| HooksStale, since, detail, remedy }` — a currently-degraded instance-level capability, added or cleared with the `instance.degraded` event ([22 §4.4](22-operations.md#44-per-session-fault-isolation-r7)). Distinct from [17 §2.3](17-panes-and-layout.md#23-minimums-and-what-happens-when-they-cannot-be-met)'s layout `Degradation`. |
 | `SessionFault` | [22 §4.4](22-operations.md#44-per-session-fault-isolation-r7) | The fault-class vocabulary that isolates one session's failure from the rest: `ParserPanic, RunawayOutput, ScrollbackExhaustion, NativeTransportClosed, AgentOom, AgentCrash, SlowConsumer, StoreError, PluginFault`. |
 | `DoctorGroup` | [22 §3.1](22-operations.md#31-the-checks) | Which family of checks to run: `term, shell, agents, keys, media, store, net, service`. Doctor is **one parameterized capability**; other documents contribute groups, not their own `doctor.*` capabilities. |
 | `Check` | [22 §10](22-operations.md#10-capabilities) | `{ id, group, status, detail, remedy, auto_fixable }` — one diagnostic result. Every failure carries a remedy. |
@@ -333,7 +332,6 @@ frames.** No camelCase renaming anywhere.
 |---|---|---|
 | `capability!` fields `title` / `aliases` / `hidden` / `hidden_reason` | [03 §2](03-capability-catalog.md#2-declaring-a-capability) | Proposed by [19 §2.4](19-onboarding.md#24-the-command-palette-as-the-universal-escape-hatch) and now **adopted into 03's declaration table**. `title` is mandatory for non-hidden capabilities (imperative, ≤ 40 chars) and is deliberately *not* derived from `group`/`verb`; `aliases` are palette search terms, matched but not displayed; `hidden = true` requires a `hidden_reason` and is a presentation flag, never access control. The palette entry is parity artifact #5 ([03 §5](03-capability-catalog.md#5-the-parity-contract)). |
 | Keymap file schema | [19 §5.2](19-onboarding.md#52-the-tmux-keymap-shipped-as-data) | The on-disk TOML form of a `Keymap` (`#:schema .../keymap.schema.json`): `id`, `display`, `extends`, `modal`, `notes`, a chord-keyed binding table, and repeated `[[unmapped]] { tmux, reason }`. The Rust `Keymap` is owned by [16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction); 19 owns the file form, `notes` and `unmapped`. |
-| `Direction` | — | **No owner.** Used by [05 §2](05-session-model.md#2-layout-the-bsp-tree) and [19 §2.4](19-onboarding.md#24-the-command-palette-as-the-universal-escape-hatch) but never defined in a code block anywhere. For layout it is superseded by `Axis` ([17 §1.2](17-panes-and-layout.md#12-types)); for directional focus, by `Direction2D { Left, Right, Up, Down }` ([17 §2.4](17-panes-and-layout.md#24-manual-resize--what-dragging-a-border-does)). |
 
 ## Proposed — remote continuity
 
@@ -355,56 +353,17 @@ frames.** No camelCase renaming anywhere.
 
 ---
 
-## Names that were unified, and what they replaced
+## Two name pairs that are easy to confuse
 
-Recorded so a stale draft is recognisable.
-
-**Not** a unification, and the trap most likely to catch a reader: `ViewKind`
-([17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default),
+`ViewKind` ([17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default),
 `Primary | Adaptive | Named`) and `ViewMode`
 ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing),
 `Grid | Blocks`) are **different concepts with confusingly similar names**.
 `ViewKind` says what kind of *arrangement* a `LayoutView` is; `ViewMode` says
-which *surface* a client attached with. Neither is an alias of the other, and
-neither has been renamed.
+which *surface* a client attached with. Neither is an alias of the other.
 
-| Canonical | Replaced |
-|---|---|
-| `AgentState::Blocked` / `Working` | `needs_attention`, `busy` |
-| `Tier::Heuristic = 0 … Protocol = 5` | the inverted 0–6 table in an earlier 00 §5 |
-| `InteractionKind::Permission { options }` | `suggestions` |
-| `Interaction::timeout_at` | `expires_at`, `timeout_ms` |
-| `interaction.resolve { interaction, response }` | `{ session, interaction_id, response }` |
-| `InteractionResponse::Choices { answers }` | `{ kind: "choices", choices: [[…]] }` |
-| `BlockState::{at_prompt,…,truncated}` | another terminal-shaped `before_execution`/`executing`/`done`/`static` |
-| `Effects::{READS_FS, WRITES_FS}` | `TOUCHES_FS` |
-| `WriterToken` + `writer.acquire { force }` + `writer.keep` | `Writer` + `writer.takeover` + `writer.respond` + `TakeoverPolicy` |
-| `ViewportPolicy`/`SizeOwner` ([07 §4.3](07-remote-protocol.md#43-the-resize-problem)) | "minimum over non-lazy viewers" + `SizePolicy::{Participant,Observer}`; client-side `fit_width` |
-| `CredentialScope` | `CredentialPolicy` (removed by [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)) |
-| `Viewer` + capability scope | the proposed `Media` role |
-| `notification.push.subscribe` | `notify.subscribe` |
-| `workspace.vcs.summary` | `workspace.git.status` (deprecated alias) |
-| port `7878` | `7681` |
-| `Layout` (struct, [17 §1.3](17-panes-and-layout.md#13-the-whole-layout-of-a-workspace)) + `LayoutTree` ([17 §1.2](17-panes-and-layout.md#12-types)) | 05 §2's `Layout` **enum**, including its `Zoom { pane, saved }` variant (now `Option<PaneId>` beside the tree) |
-| `Workspace { views, primary }` ([17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)) | `Workspace { layout, focus }` — a workspace holds *several* arrangements, and focus lives inside one ([05 §1.1](05-session-model.md#11-types)) |
-| `ViewFocus { session, view }` / `ClientView::viewing: [(ViewId, SessionId)]` ([12 §2](12-collaboration.md#2-presence-is-first-class-state)) | `ClientView { panes: [PaneId] }` and `ViewFocus { pane }` — a `PaneId` does not cross views |
-| `Axis { Columns, Rows }` ([17 §1.2](17-panes-and-layout.md#12-types)) | `Direction { Horizontal, Vertical }` (YAML still accepts `horizontal`/`vertical` on read; `columns`/`rows` canonical on write) |
-| `SizePolicy::Driver` ([17 §3.4](17-panes-and-layout.md#34-the-pty-size-question-which-per-client-layout-does-not-solve)) | `SizeOwner::Writer` ([07 §4.3](07-remote-protocol.md#43-the-resize-problem)); "minimum over participants" becomes `SizePolicy::Smallest` |
-| `layout.*` ([17 §9.2](17-panes-and-layout.md#92-layout)) | `workspace.layout.get`/`.set`/`.preset` (deprecated aliases for two minor versions, per [03 §7](03-capability-catalog.md)) and `pane.layout.get` (**no alias** — it never shipped) |
-| `pane.navigate` ([17 §9.1](17-panes-and-layout.md#91-pane)) | `pane.focus_direction`, a name bound by 16 §11 that no capability ever declared |
-| `ChordResolution` ([16 §2.3](16-input-and-keymap.md#23-resolution)) | 16's `Resolution`, which collided with [18 §3](18-semantic-open.md#3-resolution)'s `Resolution` |
-| `SessionModeSet` ([05 §1.1](05-session-model.md#11-types)) | 06's `ModeSet`, which collided with the keymap `ModeSet` ([16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)) |
-| `InstanceDegradation` ([22 §4.4](22-operations.md#44-per-session-fault-isolation-r7)) | 22's `Degradation`, which collided with [17 §2.3](17-panes-and-layout.md#23-minimums-and-what-happens-when-they-cannot-be-met)'s layout `Degradation` |
-| `ContextSet` flags `terminal_focused` / `card_focused` ([16 §4.1](16-input-and-keymap.md#41-the-context-set)) | 10 §8.2's `session_focused` / `interaction_card_focused` (deprecated aliases) |
-| `Target` in [`omt-types`](02-crate-map.md#omt-types), widened ([18 §2.6](18-semantic-open.md#26-the-match-and-target-types)) | the narrower `Target` declared in 04 §8.3, which now defers |
-| `open.targets.list` / `open.resolve` ([18 §9](18-semantic-open.md#9-capabilities)) | `session.target_at` / `session.target_resolve` (sketched in 04 §8.3) |
-| `AttachmentReference` ([09 §4.3.7](09-ssh-and-media.md#437-what-the-agent-finally-receives)) | `ImageReference` (kept as a `#[deprecated]` type alias) |
-| `system.doctor { groups: Vec<DoctorGroup> }` ([22 §10](22-operations.md#10-capabilities)) | per-area doctor capabilities — a `doctor.term` ([19 §9](19-onboarding.md#9-capabilities-this-document-requires)), a `doctor.keys` ([16 §11](16-input-and-keymap.md)) or a `doctor.media` of their own. Doctor is one parameterized capability; documents contribute *groups*. The CLI spellings `omt doctor term`/`keys`/`media` remain |
-| `system.health` (structured, [22 §4.1](22-operations.md#41-systemhealth)) **alongside** `instance.health` (egress only, [13 §9.1](13-security.md)) | two capabilities, one source of truth — `Health.egress` *is* what `instance.health` reports. No `instance.status` capability is declared ([19 §1.4](19-onboarding.md#14-second-run)) |
-| dotted-lowercase event names — `history.appended`, `recall.doc.indexed`, `attention.raised`/`.cleared`, `usage.updated`, `digest.available` ([20 §12.5](20-recall-and-usage.md#125-attention-and-the-durable-attention-log)) | `HistoryAppended`, `DocIndexed`, `AttentionRaised`/`AttentionCleared`, `UsageUpdated`, `DigestAvailable`. **A PascalCase event name anywhere is a stale draft.** |
-| `timeline.get` paging by opaque `from_cursor`/`next_cursor` ([20 §12.3](20-recall-and-usage.md#123-timeline--digest)) | `from_seq` — protocol `Seq` ([07 §5.1](07-remote-protocol.md#51-sequence-spaces)) is a different sequence space |
-| `[store.retention] scrollback_max_bytes_per_session` ([21 §3.1](21-data-lifecycle.md#31-the-principle-compact-then-delete)) | `store.max_scrollback_bytes` (still spelled the old way in [22 §4.4](22-operations.md#44-per-session-fault-isolation-r7) and §9 — a stale reference) |
-| `<redacted:CLASS[:detail]:len=N>` ([21 §2.3](21-data-lifecycle.md#23-what-gets-written-instead)) | every other redaction-marker format; this is *the* marker, and every document referring to one refers to this |
-| `RevocationSubject` ([13 §3.1](13-security.md#31-the-trait)) | `is_revoked(&CredentialId)` — the unit a user revokes is a **device**, and a `DeviceGrant` carries no `CredentialId` |
-| `Grant` ([13 §3.1](13-security.md#31-the-trait)) / `DeviceGrant` ([23 §1.3](23-identity-and-devices.md#13-devicegrant--the-certificate-that-makes-this-decentralized)) / `[[auth.tailnet.mappings]]` ([13 §3.5](13-security.md#35-tailnet-identity)) | one overloaded "grant". They are the auth *result*, the root-signed *certificate*, and a *config table* respectively, and are never interchangeable. `[[auth.tailnet.grants]]` is the stale spelling of the third |
-| `Resync` ([07 §5.2](07-remote-protocol.md#52-replay-window)) | `resync_required` — the old spelling, now corrected everywhere in `docs/`; any reappearance is a stale draft |
+`Grant` ([13 §3.1](13-security.md#31-the-trait)), `DeviceGrant`
+([23 §1.3](23-identity-and-devices.md#13-devicegrant--the-certificate-that-makes-this-decentralized))
+and `[[auth.tailnet.mappings]]` ([13 §3.5](13-security.md#35-tailnet-identity))
+are the auth *result*, the root-signed *certificate*, and a *config table*
+respectively. They are never interchangeable.

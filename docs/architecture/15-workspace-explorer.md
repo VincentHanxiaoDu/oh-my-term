@@ -577,11 +577,10 @@ permitted for `Viewer`; `WRITES_FS` joins the
 [13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog) CI rule that
 fails the build when paired with `Viewer`.
 
-**One deprecation.** [05 §10.1](05-session-model.md#101-workspace) declares
-`workspace.git.status` returning `GitIdentity + { dirty, ahead, behind }` —
-precisely `workspace.vcs.summary`. Per
-[03 §7](03-capability-catalog.md#7-versioning) it becomes an alias for two minor
-versions, marked deprecated in the generated docs.
+**One name.** The branch/dirty/ahead-behind summary that
+[05 §10.1](05-session-model.md#101-workspace) relies on is
+`workspace.vcs.summary`, declared here, returning
+`GitIdentity + { dirty, ahead, behind }`.
 
 ```rust
 capability! {
@@ -841,8 +840,7 @@ Where a naive port fails, so it is specified concretely.
 
 [04 §8.4](04-terminal-core.md#84-semantic-click-targets) already produces
 `Target::Path { raw, line, col }`, and
-[18 §9](18-semantic-open.md#9-capabilities)'s `open.resolve` — which supersedes
-the `session.target_at` / `session.target_resolve` sketched in 04 — returns a
+[18 §9](18-semantic-open.md#9-capabilities)'s `open.resolve` returns a
 `ResolvedTarget` with the path resolved against the owning block's `cwd`. This
 document contributes one type to it:
 

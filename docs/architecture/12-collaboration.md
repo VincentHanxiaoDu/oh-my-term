@@ -644,7 +644,7 @@ consequence 9).
 ### C8 — Two agents in two sessions want the same worktree
 
 Out of scope for the runtime: omt does not lock the filesystem and will not
-pretend to. It *does* surface it — `workspace.git.status` marks a worktree with
+pretend to. It *does* surface it — `workspace.vcs.summary` marks a worktree with
 more than one active agent session, and the dashboard shows a warning badge.
 Detection, not prevention.
 

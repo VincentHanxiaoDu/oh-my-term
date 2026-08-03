@@ -1258,18 +1258,9 @@ syntax. This is per-adapter data on `AgentAdapter`, not a global format:
 
 The method is [§4.3.7](#437-what-the-agent-finally-receives)'s
 `attachment_reference` with `class = Image` — there is no separate image method
-and no separate return type:
-
-```rust
-// `AttachmentReference` — see §4.3.7. Owned by [06 §7](06-agent-layer.md#7-adapters)
-// as part of `AgentAdapter`.
-
-/// Deprecated alias for `AttachmentReference`, kept only so older references
-/// resolve. `AttachmentReference` is a strict superset — it adds
-/// `InlineContent` — and is the single type; new code names it directly.
-#[deprecated(note = "use AttachmentReference")]
-pub type ImageReference = AttachmentReference;
-```
+and no separate return type. `AttachmentReference`, owned by
+[06 §7](06-agent-layer.md#7-adapters) as part of `AgentAdapter`, is that single
+type.
 
 `Structured` is always preferred when available, per
 [P4](01-principles.md#p4--native-semantics-observe-never-re-implement) — answers

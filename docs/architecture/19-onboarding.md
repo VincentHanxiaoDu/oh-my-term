@@ -317,7 +317,7 @@ capability! {
     verb  = "split",
     kind  = Command,
     role  = Role::Operator,
-    input  = Split { pane: PaneId, direction: Direction, cwd: Option<PathBuf> },
+    input  = PaneSplit { pane: PaneId, dir: Direction2D, cwd: Option<PathBuf> },
     output = SplitAck { pane: PaneId },
     effects = [Effects::SPAWNS_PROCESS],
 
@@ -349,8 +349,8 @@ capability! {
   docs, exactly like `Parity::Exempt`. Internal/debug capabilities use it;
   nothing user-facing may.
 - **Enum-valued arguments enumerate into rows.** `pane.split` with
-  `Direction::{Vertical, Horizontal}` produces two rows, not one row and a form,
-  per [16 §3.5](16-input-and-keymap.md#35-the-palette).
+  `Direction2D::{Left, Right, Up, Down}` produces one row per direction, not one
+  row and a form, per [16 §3.5](16-input-and-keymap.md#35-the-palette).
 
 **Ranking**, in order: exact title match → prefix of title → alias match →
 subsequence over title → subsequence over description → recency of the user's own

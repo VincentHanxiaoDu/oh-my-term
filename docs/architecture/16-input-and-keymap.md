@@ -1865,7 +1865,7 @@ pub enum ContentPlan {
 
 | Clipboard content | What omt transfers | What is inserted at the cursor |
 |---|---|---|
-| Image bytes | the decoded image, EXIF-stripped ([09 §8](09-ssh-and-media.md)) | the agent's image reference via `AgentAdapter::image_reference` — `@<remote-path>` for Claude Code, a structured resource block over ACP, `/add <path>` for Aider ([09 §7.1](09-ssh-and-media.md)) |
+| Image bytes | the decoded image, EXIF-stripped ([09 §8](09-ssh-and-media.md)) | the agent's attachment reference via `AgentAdapter::attachment_reference` — `@<remote-path>` for Claude Code, a structured resource block over ACP, `/add <path>` for Aider ([09 §7.1](09-ssh-and-media.md)) |
 | One file | the file | `@<remote-path>` (or the adapter's form) |
 | Several files | all of them, one transfer id | one reference per file, space-separated, on one line |
 | A local path (text that resolves to a local file) | **the file's contents**, not the string | `@<remote-path>`, with a one-line confirm: *"paste the file `report.pdf` (2.1 MB), or the literal path text?"* — the ambiguity is real and omt asks rather than guessing |
@@ -2041,7 +2041,7 @@ name, which is the web equivalent for every row without a more specific one.
 | `<leader> x` | `session.close` (confirm) | long-press ▸ Close | tmux parity; confirm because `effects` includes `DESTRUCTIVE`. |
 | `<leader> w` | `tui.open_session_picker` | session list | tmux parity. |
 | `<leader> \|` / `<leader> -` | `pane.split` v/h | split buttons (desktop) | Mnemonic glyphs beat tmux's `%`/`"`. |
-| `<leader> h j k l` / arrows | `pane.navigate` | tap a pane | Directional focus; arrows for non-vi users. The capability is `pane.navigate` ([17 §9.1](17-panes-and-layout.md#91-pane), [05 §10.3](05-session-model.md#103-pane)) — there is no `pane.focus_direction`, and binding a name that does not resolve fails [03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test. |
+| `<leader> h j k l` / arrows | `pane.navigate` | tap a pane | Directional focus; arrows for non-vi users. The capability is `pane.navigate` ([17 §9.1](17-panes-and-layout.md#91-pane), [05 §10.3](05-session-model.md#103-pane)); binding a name that does not resolve fails [03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test. |
 | `<leader> z` | `pane.zoom` | expand button | tmux parity. |
 | `<leader> [` | `tui.enter_copy_mode` | scroll / select | tmux parity. |
 | `<leader> /` | `tui.search` | search field | Searches omt's scrollback, not the inner program's. |
@@ -2304,10 +2304,8 @@ construction, per [03 §5](03-capability-catalog.md).
 ## 13. OPEN QUESTIONS
 
 1. **Resolved, see [10 §8.2](10-configuration.md#82-keybinding-format) — context
-   names.** 10 no longer enumerates a context vocabulary; it points at §4.1's
-   `ContextSet`, which is the authoritative superset. The two renamed names
-   (`session_focused` → `terminal_focused`, `interaction_card_focused` →
-   `card_focused`) are accepted as deprecated aliases, diagnosed as a note.
+   names.** 10 does not enumerate a context vocabulary; it points at §4.1's
+   `ContextSet`, which is the authoritative superset, so the two cannot drift.
 2. **Resolved, see [10 §8.2](10-configuration.md#82-keybinding-format) — the
    `leader` key itself.** `keybindings.toml` now has a top-level `leader` key and
    `<leader>` is legal in any trigger position; literal `ctrl-b` remains legal

@@ -98,8 +98,8 @@ pub const WEIGHT_EPSILON: f32 = 1e-4;
 pub const MIN_WEIGHT: f32 = 1e-3;
 ```
 
-`Axis` deliberately replaces the earlier `Direction { Horizontal,
-Vertical }`, which doc 05 §2 has since adopted. "Horizontal split" is ambiguous in every multiplexer's
+`Axis` names what is being divided rather than the direction of the divider.
+"Horizontal split" is ambiguous in every multiplexer's
 documentation — tmux's `split-window -h` produces a *vertical* divider. `Columns`
 and `Rows` describe the arrangement of the children and cannot be misread. A
 `Direction2D { Left, Right, Up, Down }` remains, for navigation and for
@@ -1084,10 +1084,10 @@ decides).
 | `pane.focus_edge { dir }` | Outermost pane in a direction. |
 
 `pane.navigate` is the single name for this operation, agreeing with
-[05 §10.3](05-session-model.md#103-pane). `pane.focus_direction` was a stray name
-in [16 §11](16-input-and-keymap.md) and has been corrected there — it would have
-failed [03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test,
-which asserts that every bound action names a registered capability.
+[05 §10.3](05-session-model.md#103-pane) and with the binding in
+[16 §11](16-input-and-keymap.md). Any other spelling would fail
+[03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test, which
+asserts that every bound action names a registered capability.
 
 ---
 
@@ -1341,24 +1341,18 @@ It belongs to the `session` group, not `layout` — its prefix is authoritative 
 naming, catalog registration and CLI shape ([05 §10.2](05-session-model.md#102-session)).
 It rejects `native` sessions (§3.7).
 
-### 9.3 Reconciliation with the existing catalog
+### 9.3 How this surface sits in the catalog
 
 [05 §10.3](05-session-model.md#103-pane) and
-[03 §6](03-capability-catalog.md#6-capability-groups-initial-surface) already
-sketch this surface. The differences below are settled; those two documents have
-been edited to match:
+[03 §6](03-capability-catalog.md#6-capability-groups-initial-surface) carry the
+same surface. Two shaping decisions are worth stating explicitly:
 
-- Doc 03 listed `pane.layout.get`; this document puts layout operations in a
-  `layout.*` group, because they act on a *view*, not a pane, and because the
-  CLI reads better (`omt layout preset tiled`). `pane.layout.get` has been
-  dropped in favour of `layout.get`, with no alias — it never shipped, and doc 03
-  §7's two-minor-version alias rule covers released names.
-- Doc 05 lists `workspace.layout.get` / `.set` / `.preset`. Same objection:
-  those become `layout.*` with a `workspace` in the input. Aliases are kept for
-  two minor versions per doc 03 §7.
-- Doc 05's `pane.resize { pane, edge, delta }` becomes the richer
-  `ResizeTarget`/`ResizeAmount` pair; `{ pane, edge, delta }` maps onto
-  `Edge` + `Fraction` exactly, so the old shape is an accepted input variant.
+- Layout operations live in a `layout.*` group of their own, because they act on
+  a *view*, not a pane, and because the CLI reads better that way
+  (`omt layout preset tiled`). The workspace, where one is needed, is an input.
+- `pane.resize` takes the `ResizeTarget`/`ResizeAmount` pair rather than a flat
+  `{ pane, edge, delta }`, so an edge drag and a proportional nudge are the same
+  capability.
 
 ### 9.4 Events
 
@@ -1501,38 +1495,32 @@ a virtual clock:
 
 ---
 
-## 12. Open questions and contradictions with existing docs
+## 12. Open questions
 
-### 12.1 Contradictions with other documents — all resolved
+### 12.1 The adopted model, in one place
 
-Every contradiction this document once listed here has been **decided and the
-other document edited to match**; the list is deliberately not retained, because
-a to-do list of open contradictions invites a second round of divergence. The
-adopted model, in one place:
+The model this document defines, stated compactly so every other document has a
+single place to check itself against:
 
 - The layout types of §1.2 and §1.3 are canonical: `LayoutTree` / `Split` /
-  `Axis { Columns, Rows }`, and `Layout::zoom: Option<PaneId>` beside the tree
-  rather than a `Zoom` variant inside it. Doc 05 §2 now defines these.
+  `Axis { Columns, Rows }`, with `Layout::zoom: Option<PaneId>` as a flag beside
+  the tree. Doc 05 §2 defines these.
 - A workspace owns `views: IndexMap<ViewId, LayoutView>` plus a `primary`
-  (§3.3), not a single `layout` — doc 05 §1.1 now says so, and focus and zoom
-  live inside a view.
+  (§3.3); doc 05 §1.1 says so, and focus and zoom live inside a view.
 - Presence and `ClientView` are keyed on `(ViewId, SessionId)`
   ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing),
   [12 §2](12-collaboration.md#2-presence-is-first-class-state)), never a bare
   `PaneId`.
 - Zoom is per view (§5.1); [05 §13](05-session-model.md#13-open-questions) Q5 is
   closed accordingly.
-- `layout.*` and `pane.navigate` are the winning capability names (§9.3);
-  `pane.layout.get` and `pane.focus_direction` do not exist, and
-  `workspace.layout.*` survives only as a deprecated alias.
+- `layout.*` and `pane.navigate` are the capability names (§9.3).
 - Launch-config YAML writes `columns`/`rows` and keeps reading
   `horizontal`/`vertical` ([10 §9.1](10-configuration.md#91-launch-configurations)).
 - `pane.split`'s conditional `SPAWNS_PROCESS` is handled by
   [03 §2](03-capability-catalog.md#2-declaring-a-capability)'s conditional-effects
   rule.
 
-Two items were *not* contradictions but requests to another owner, and remain
-live: doc 12 must ratify `writer.acquire { keep_size }` and the 20 % takeover
+Two items are requests to another owner, and remain live: doc 12 must ratify `writer.acquire { keep_size }` and the 20 % takeover
 warning threshold (§3.4 consequence 1), and doc 15's owner must confirm that the
 explorer panel is a `FloatKind::Overlay` float (§5.2) rather than a second
 overlay system.

@@ -1076,7 +1076,7 @@ keymap = "default"     # "default" | "vim" | "emacs" | a name in keymaps/
 # ── Context-scoped: `when` restricts the binding ──────────────────────────
 [[binding]]
 trigger = "enter"
-when    = "interaction_card_focused"
+when    = "card_focused"
 capability = "interaction.resolve"
 
 [[binding]]
@@ -1144,8 +1144,7 @@ Grammar:
   named contexts. **The vocabulary is
   [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet`**, which is
   the authoritative superset; this document does not enumerate it, so the two
-  cannot drift. `session_focused` and `interaction_card_focused` are accepted as
-  deprecated aliases for `terminal_focused` and `card_focused`.
+  cannot drift.
 - **Resolution** — how competing bindings are ordered is **not** decided here.
   [16 §2.3](16-input-and-keymap.md#23-resolution) owns it, in five rules
   (pending chord, modal context, specificity, config layer, passthrough). This
@@ -1241,14 +1240,14 @@ Semantics:
 - **`split` is `columns` | `rows`**, matching the `Axis` type
   ([17 §1.2](17-panes-and-layout.md#12-types),
   [17 §4.2](17-panes-and-layout.md#42-the-serialization-format)). `columns` puts
-  children side by side; `rows` stacks them. The older spellings `horizontal` and
-  `vertical` **are still accepted on read** — there is a corpus of hand-written
-  files and breaking them buys nothing — and map to `columns` and `rows`
-  respectively. Everything omt *writes*, including `omt launch save`, uses the
-  canonical spelling, and `config.validate` reports the legacy spellings as a
-  deprecation rather than an error. The rename exists because "horizontal split"
-  means opposite things in tmux and in most GUI terminals, so the old names
-  cannot be read without a footnote.
+  children side by side; `rows` stacks them. The spellings `horizontal` and
+  `vertical` that tmux, another terminal and hand-written files use **are accepted on read**
+  — there is a corpus of them and breaking it buys nothing — and map to
+  `columns` and `rows` respectively. Everything omt *writes*, including
+  `omt launch save`, uses the canonical spelling, and `config.validate` reports
+  the foreign spellings as a note rather than an error. omt writes `columns`/
+  `rows` because "horizontal split" means opposite things in tmux and in most GUI
+  terminals, so those words cannot be read without a footnote.
 - `agent:` is the omt-specific extension: it declares which adapter to bind, its
   argv, and an optional initial prompt delivered through the adapter's native
   channel, not synthesized keystrokes (P4).
