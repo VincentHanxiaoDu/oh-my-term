@@ -1,0 +1,91 @@
+name: docs
+
+# The design set is large, heavily cross-referenced, and edited by several
+# people at once. Every check here caught a real defect during the design
+# phase — and several caught defects introduced by *fixing* other defects.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structure:
+    name: structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links, anchors, fences and decision propagation
+        run: python3 scripts/check-docs.py --verbose
+
+  openspec:
+    name: openspec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install OpenSpec
+        run: npm install -g openspec
+
+      - name: Validate every change strictly
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          changes=(openspec/changes/*/)
+          if [ ${#changes[@]} -eq 0 ]; then
+            echo "no changes to validate"
+            exit 0
+          fi
+          fail=0
+          for dir in "${changes[@]}"; do
+            name=$(basename "$dir")
+            [ "$name" = "archive" ] && continue
+            echo "── $name"
+            openspec validate "$name" --strict || fail=1
+          done
+          exit $fail
+
+  provenance:
+    name: provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # omt is Apache-2.0. The studied codebases are not: another terminal is AGPL-3.0 and
+      # iTerm2 is GPL-2.0. Their interfaces are facts we may reimplement; their
+      # code is not. `.research/` is gitignored and must never be committed.
+      # See docs/architecture/14-licensing.md.
+      - name: Refuse vendored research checkouts
+        run: |
+          if git ls-files --error-unmatch .research >/dev/null 2>&1; then
+            echo "::error::.research/ is tracked. It holds AGPL and GPL sources"
+            echo "::error::that must never enter this Apache-2.0 repository."
+            exit 1
+          fi
+          echo "no research checkout tracked"
+
+      - name: Refuse a real checkout path copied into the repository
+        run: |
+          # Illustrative paths like /home/x/src/api or /Users/ada/code are
+          # deliberate placeholders and are fine. What is not fine is a real
+          # developer checkout path, which only ever arrives by pasting a
+          # terminal transcript and immediately rots for everyone else.
+          #
+          # docs/research/ is exempt: those notes cite the actual transcript
+          # and source-tree paths they were read from, which is what makes
+          # their findings checkable rather than asserted.
+          if git grep -n -E '/(Users|home)/[A-Za-z0-9._-]+/(Desktop|Documents|Downloads)/' \
+               -- docs/ scripts/ .github/ ':!docs/research/' ; then
+            echo "::error::a real developer checkout path is committed —"
+            echo "::error::replace it with a repo-relative path or a placeholder."
+            exit 1
+          fi
+          echo "no real checkout paths committed"

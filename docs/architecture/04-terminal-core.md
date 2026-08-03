@@ -51,6 +51,10 @@ for byte→event tokenization, and write omt's own semantic layer on top of it.*
 Extend `vte` only where it is genuinely insufficient (DCS/APC hooks and
 multi-megabyte OSC payloads — §1.4).
 
+This is [D6](decisions.md#d6--terminal-emulation-is-built-on-a-third-party-byte-level-parser)
+in the decision log, recorded there because it is foundational and hard to
+reverse; the evaluation below is its rationale.
+
 ### 1.2 Options considered
 
 | Option | Verdict | Reasoning |
