@@ -295,6 +295,10 @@ pub enum InteractionState {
 pub enum UndeliveredReason {
     /// No confirming observation inside the bounded window.
     NotConfirmed,
+    /// A completion arrived for this call, but the agent recorded a *different*
+    /// answer — almost always because the local user answered by hand first.
+    /// See §5.1.1; this is never retried and is surfaced with both answers.
+    AnsweredDifferently { observed: InteractionResponse },
     /// The daemon restarted with a decision recorded but unwritten, or
     /// written and unconfirmed. Never retried — see below.
     DaemonRestart,
@@ -396,6 +400,47 @@ agent emits ──► source normalizes ──► ledger opens Interaction ─�
                      ▼                                          ▼
                  → Resolved                              → Undelivered
 ```
+
+#### 5.1.1 What counts as a confirming observation
+
+The window alone is not a predicate. An observation confirms a *specific*
+submitted answer only when all three hold:
+
+1. **Same call.** The observation carries the `tool_use_id` the interaction was
+   opened from. For agents with no such id, the correlation is
+   `(agent_session, interaction kind, opened_at ± window)` and is marked
+   low-confidence in `agent.explain`.
+2. **Terminal for that call.** It is a completion, not progress — a
+   `PostToolUse`, a `tool_result`, or the transcript's own record of the answer.
+3. **The recorded answer equals the submitted one.**
+
+Rule 3 is the one that matters and it is not redundant with rule 1. The failure
+it catches is the common one: the local user answers the card by hand, with a
+*different* option, a moment before omt's bytes land. Rules 1 and 2 alone would
+see a completion on the right `tool_use_id` and report `Resolved` — omt would
+tell the remote user their answer was applied when a different answer was.
+
+Equality is compared on the **recorded selection**, not on rendered prose:
+`ChoiceAnswer.labels` against the labels omt submitted, and a permission
+decision against the option id. Where an agent records only prose — Claude Code's
+`tool_result` is a sentence of `"question"="label"` pairs — the labels are
+extracted and compared, and a parse failure is treated as *not* confirming.
+
+A mismatch is never silent and never a retry. It resolves as
+`Undelivered { reason: AnsweredDifferently { observed } }`, every surface shows
+what the agent actually recorded next to what was submitted, and the event is
+**loud and reportable** — per
+[`spike-card-answering.md`](../research/spike-card-answering.md), a mismatch is
+the designed signal that the accelerator mechanism itself broke on a new agent
+version, which is exactly the failure
+[D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)
+relies on being visible rather than silent.
+
+Per-agent coverage for observing a *resolution* — as distinct from raising one —
+is a column of §7.3's matrix. Where it is absent the interaction must **expire**
+rather than linger: a denied permission may emit no completion at all, and a
+card left open indefinitely invites an answer that lands in whatever the agent is
+doing by then.
 
 **Exactly-once resolution** is enforced by a compare-and-swap on
 `InteractionState` inside the ledger. The loser of a race gets

@@ -601,7 +601,7 @@ pub struct ClientView {
     /// Reported viewport. Authoritative only per the session's `SizePolicy`
     /// (17 §3.4), negotiated per 07 §4.3.
     pub size: GridSize,
-    pub mode: ViewMode,                   // Grid | Blocks
+    pub mode: ViewMode,                   // Grid | Blocks | Transcript
 }
 ```
 

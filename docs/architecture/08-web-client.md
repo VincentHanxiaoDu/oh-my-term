@@ -136,9 +136,13 @@ JSON in a devtools panel matches the Rust type and the docs.
 
 ```ts
 // generated/events.ts (excerpt)
+// The one closed set, owned by [07 §3.7.3](07-remote-protocol.md#373-the-source-vocabulary--one-closed-set):
+// the six agent-observation tiers, plus three producers that have no tier.
+// `pty` was this document's rename of `heuristic` and is gone; `workspace_fs`
+// is an `EventKind`, not a source, and `system` is now `core`.
 export type EventSourceTag =
-  | "hook" | "protocol" | "transcript" | "marker" | "process" | "pty"
-  | "workspace_fs" | "system";
+  | "heuristic" | "process" | "marker" | "transcript" | "hook" | "protocol"
+  | "core" | "fs" | "plugin";
 
 export interface EventEnvelope<P = AgentPayload | TermPayload | TreePayload | WorkspaceFsPayload> {
   instance: InstanceId;
@@ -529,6 +533,8 @@ for tests.
 - **Input.** Keystrokes go through `session.write_bytes`; pasted text goes
   through `session.send_text` (which applies bracketed-paste and chunk pacing
   server-side — the pacing logic lives in `omt-term`, not duplicated here).
+  **This path is for human typing and pasting only.** A synthetic answer to an
+  agent card never goes through it — see §5.1.2.
 - **Writer token.** The view is read-only until the client holds the writer
   token ([12](12-collaboration.md)). The header shows *"`laptop` is driving —
   tap to take over"*; takeover is explicit and broadcast.
@@ -727,8 +733,13 @@ Invariants the UI must respect:
   the agent continued with its own default", because we cannot un-time-out it.
   This is the **only** non-human resolution in the system; omt never
   auto-answers ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
-- **Never synthesize.** If the interaction's `source` is `pty`, it is not an
-  interaction and the card is not rendered.
+- **Never synthesize.** If the interaction's `source` is `heuristic`, it is not
+  an interaction and the card is not rendered. An interaction must be *observed*
+  by a tier that carries the payload (`marker` and above); a guess derived from
+  scraping the grid is a guess, and rendering it as a card would put words in the
+  agent's mouth. (`heuristic` is 07 §3.7.3's spelling; this branch previously
+  read `pty`, which was this document's own rename of the same tier and is no
+  longer in the closed set — the check is unchanged, only its spelling.)
   [P4](01-principles.md#p4--native-semantics-observe-never-re-implement). In
   `native` mode the rule is vacuous rather than relaxed: every event on a
   `native` session is `protocol`-sourced, so nothing can ever fail it
@@ -770,6 +781,112 @@ Three rules the component must not violate:
 Cards appear in three places, driven by the same component: inline in block view
 at the position they occurred, as a **bottom sheet** when they arrive while that
 session is focused, and in the dashboard's "needs you" list (§6).
+
+#### 5.1.2 Answerability is read from `deliverable`, never inferred from the kind
+
+[D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)
+settled that remote answering of a `pty`-mode card is **per card type**, and that
+the constraints are empirical rather than derivable. Three of Claude Code's four
+card types cannot be answered position-independently at all. So the web client
+does **not** decide answerability. It reads one field:
+
+```ts
+// From the generated `Interaction` (06 §5.2.1 owns it):
+type Deliverable =
+  | { type: "native" }
+  | { type: "synthetic"; requires_token: boolean }
+  | { type: "none"; reason: NotDeliverableReason };
+
+type NotDeliverableReason =
+  | "not_position_independent"    // submitting needs cursor navigation
+  | "index_not_derivable"         // the option's absolute index is not in the payload
+  | "inferred_responder_disabled" // D3: the responder is a guess and is off
+  | "no_responder";               // nothing covers this kind for this agent
+```
+
+`deliverable` is computed **once, in the daemon's normalizer**, from
+`(responder, kind, agent, mode)` and D16's verified table
+([06 §5.2.1](06-agent-layer.md#521-deliverable--a-field-of-interaction-computed-by-the-normalizer)).
+The view layer never branches on `kind.type` to decide whether something is
+answerable — that is precisely the inference D16 forbids, and it is what would
+let a Claude Code version bump silently turn a correct card into a wrong one.
+`kind.type` selects the *renderer*; `deliverable` gates the *controls*. Three
+rules follow:
+
+- **`{ type: "none" }` renders the card in full, read-only** — §5.1.3.
+- **`{ type: "synthetic", requires_token: true }`** renders the controls, but
+  the resolve is gated on the writer token
+  ([12 §3.1](12-collaboration.md#31-what-it-governs)); a client that does not
+  hold it shows the ordinary "`laptop` is driving — tap to take over" affordance
+  on the action row rather than a disabled card.
+- **`{ type: "native" }`** renders the controls ungated.
+
+A kind whose per-option answerability differs — permissions, §5.3 — reads the
+per-option detail from `PermissionOption.kind` and never widens what
+`deliverable` allows.
+
+**The synthetic write is not `session.send_text`, and this is a silent failure
+if got wrong.** Claude Code enables bracketed paste (`ESC[?2004h`); a digit
+wrapped in `ESC[200~ … ESC[201~` does **nothing**, while the same bare digit
+resolves the option and submits (D16 §1, verified live). `session.send_text`
+bracket-wraps and paces by design — correct for the prose a human types into
+terminal view (§4.3), wrong for an answer. A `Synthetic` resolve therefore
+**cannot be expressed as a `session.send_text` call; it is a distinct gate entry
+point** ([05 §5.4](05-session-model.md#54-what-is-not-gated)), raw bytes outside
+bracketed paste, one key per write. The web client never composes those bytes: it
+posts an `InteractionResponse` to `interaction.resolve` and the daemon owns the
+delivery. There is no path from this client to a card answer that runs through
+`session.send_text`, and adding one would fail silently rather than loudly.
+
+#### 5.1.3 The read-only "not answerable here" state
+
+When `deliverable.type === "none"`, the card still **renders completely** — the
+question, every option with its description, the diff, the command, the plan.
+That is not a concession, it is the point:
+[D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+mirrors the agent's own card to every surface, and knowing *what you are being
+asked* while away from the desk is most of the value. What is removed is the
+**answering affordance**, and only that.
+
+The read-only presentation has four parts, and `<ReadOnlyFooter>` renders all
+four for every kind:
+
+1. **The controls are inert, not disabled-looking.** Options render as a
+   **list**, not as radio rows or checkboxes: no tap targets, no selection
+   affordance, no press-and-hold ring. A greyed-out button invites a tap and
+   then punishes it; a plain list never promised anything. The card keeps its
+   `Open` chrome — the timeout bar (§5.1.1) still runs, because the question is
+   still live and may still expire.
+2. **A reason, stating *why*, in the agent's terms.** Not "unavailable". The
+   copy is a fixed map from `NotDeliverableReason`, written so the user learns
+   something true about the mechanism rather than about omt's limits:
+
+   | `reason` | Copy |
+   |---|---|
+   | `not_position_independent` | **"Answer this one at the terminal."** Submitting this card means moving the cursor to a Submit row, and omt can only send a keystroke that resolves an option outright — it cannot navigate the agent's own list without seeing where the cursor is. |
+   | `index_not_derivable` | **"Answer this one at the terminal."** This prompt shows a different number of options depending on what the agent has already been allowed, and omt is not told which — so it cannot know which number means *No*. (`Esc` is offered separately, see §5.3.) |
+   | `inferred_responder_disabled` | **"Answer this one at the terminal."** omt is inferring this agent's card from screen output rather than being told about it, so remote answering is off ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)). |
+   | `no_responder` | **"Answer this one at the terminal."** omt has no channel back to this agent for this kind of question — it can watch it, not answer it. |
+
+   The reason is a **disclosure**, collapsed to its bold first line with a "why?"
+   toggle. The headline is what the user needs in two seconds; the explanation is
+   there for the one time they want it, and does not push the question itself off
+   a phone screen.
+3. **One primary action: `Open terminal view`.** Full-width, in the footer,
+   focused. It switches the surface (§4.3) and scrolls the grid to the bottom,
+   because the agent's own card is on screen there and is fully answerable by a
+   human who can see it. This is the same action `Undelivered` offers (§5.1.1)
+   and it is deliberately the same control in the same place. On a **`native`
+   session there is no terminal view** — but `native` mode has no `none`
+   deliverable either (every row of D16's table is `Native` under ACP), so the
+   combination does not arise; if a future agent produces one, the fallback is
+   `<UnknownInteraction>`'s (§5.6).
+4. **No secondary action, and never a "notify me" or "try anyway".** The honest
+   set of things the user can do here is one thing.
+
+When the card is later answered at the keyboard, it transitions through the
+ordinary `Resolved { by }` path and animates in place like any other card — a
+read-only card is a normal card that is watching, not a dead one.
 
 ### 5.2 `AskUserQuestion` cards — `kind.type === "choice"`
 
@@ -818,9 +935,25 @@ Behavior:
   stacked and the chips become a sticky in-page index.
 - **`multi_select: false`** → radio semantics; selecting an option advances to the
   next question after a 250 ms confirmation flash. This makes the common case
-  (3 single-select questions) three taps.
-- **`multi_select: true`** → checkbox semantics with an explicit **Next**; no
-  auto-advance.
+  (3 single-select questions) three taps. This is the one Claude Code card type
+  D16 rates **fully** answerable: one ASCII digit resolves the option at that
+  absolute index and submits in the same keystroke.
+- **`multi_select: true`** → **not answerable from this surface in `pty` mode.**
+  The normalizer sets `deliverable = None { NotPositionIndependent }` for a
+  `Choice` where *any* question is multi-select, and the card renders read-only
+  per §5.1.3: every option listed with its description, no checkboxes, no
+  **Next**, and the terminal-view action in the footer. The mechanism reason is
+  worth stating because it is not obvious — the digit accelerator *does* work
+  here, but on a multi-select card a digit only **toggles** the row; *submitting*
+  requires navigating to a Submit row, and cursor navigation is exactly what omt
+  cannot do without seeing where the cursor is (D16). Half a working mechanism is
+  not a working mechanism. In `native` mode the row is `Native` and the checkbox
+  UI below applies unchanged.
+- **When it is answerable** (`native` mode, or a non-Claude agent whose responder
+  reports otherwise), `multi_select: true` → checkbox semantics with an explicit
+  **Next**; no auto-advance. The component keeps this branch; `deliverable`
+  decides whether it is reachable, and the component does not test
+  `multi_select` to make that decision (§5.1.2).
 - **Descriptions** are clamped to two lines with a "more" affordance; they are
   the whole reason this card beats reading ANSI on a phone, so they are never
   hidden entirely.
