@@ -35,7 +35,7 @@ Four cases, one row each. "Mechanism" names the section that specifies it.
 |---|---|---|---|---|
 | **(a)** | omt runs locally; user pastes an image from the local clipboard into an agent prompt | Image is read from the OS clipboard, written to the instance's blob store, and the agent receives a path in its own reference syntax | Direct OS clipboard read (§4.1) | **Fully solved.** No terminal involvement at all — omt owns the process. |
 | **(b)** | User SSHes into a remote box, runs omt there, pastes an image that lives in the **local** machine's clipboard | The bytes must cross from the local machine into the remote instance's blob store, through the ssh tty or a side channel | Tiered: reverse socket (§5.2) → in-band OSC bridge (§5.3) → terminal-specific clipboard read (§5.4) → phone/web fallback (§5.5) | **Partially solved, tier-dependent.** See §5.6 for the honest matrix. |
-| **(c)** | User is on the web client (phone) attached to a remote omt and attaches a photo | Photo uploads over the existing WebSocket into the blob store; agent gets a path | `media.image.upload` over the control channel (§4.2) | **Fully solved.** This is the easiest case and, not coincidentally, the universal fallback for (b). |
+| **(c)** | User is on the web client (phone) attached to a remote omt and attaches a photo | Photo uploads over the existing WebSocket into the blob store; agent gets a path | `media.image.upload` over the control channel (§4.2); the mobile capture paths, preprocessing and share-target flow are §4.3 | **Fully solved.** This is the easiest case and, not coincidentally, the universal fallback for (b). |
 | **(d)** | User copies text or a file **out of** a remote omt back to the local clipboard | Text lands in the local OS clipboard; files land in a local directory | OSC 52 out (§3), `media.file.pull` for the web client (§7), chunked OSC 52 for large text (§3.3) | **Text: solved with caveats.** **Files: solved for omt-controlled ends, best-effort otherwise.** |
 
 The design principle across all four: **there is exactly one blob store and one
@@ -260,6 +260,626 @@ user opens the web client — which they already have, on the phone in their
 pocket — and drops the image there. It lands in the same blob store, in the same
 session. That is a genuinely good answer, not a consolation prize.
 
+### 4.3 Attachments — any file, from any surface
+
+§4.2 says "the browser has the bytes" and moves on. That sentence hides two
+problems. On a phone there is **no screenshot in the clipboard** — the image
+comes from the camera roll, from the camera right now, or from the OS share
+sheet, and on iOS it arrives as HEIC at 4032×3024 with GPS attached. And images
+are not the whole story: users attach logs, CSVs, diffs, PDFs, config files and
+whole directories, and **an opaque binary upload is the wrong handling for most
+of them**.
+
+This section specifies attachments generally: what kinds exist, what each agent
+can actually accept, every source path, and the single pipeline they all
+converge on. It does not redefine the SSH tier ladder (§5) — a tier is a way of
+getting bytes to the instance, and everything below happens after that.
+
+Prior art worth naming: opencode's `serve` mode carries structured attachment
+parts over its HTTP API
+([agent-clis §3.2](../research/agent-clis.md#32-machine-readable-modes--the-richest-of-any-cli-here)),
+which is why its web UI can attach a file without any terminal involvement. That
+is the shape below; omt's advantage is that one blob store also serves the TUI
+and every SSH tier.
+
+#### 4.3.1 Content taxonomy — the decision table
+
+Treating everything as an opaque blob is the tempting simplification and it is
+wrong, because the *best* thing to hand an agent differs by kind. An agent given
+a path to a 3 KB log will read it with its own tool and waste a turn; an agent
+given 200 KB of inlined CSV will blow its context. The decision is made once, in
+`omt-media`, from the sniffed type and the size.
+
+| Content kind | Detection | What omt does | What the agent receives |
+|---|---|---|---|
+| **Image** (PNG/JPEG/WebP/GIF/HEIC) | `infer` + successful decode with the `image` crate | Preprocess (§4.3.5), store, materialize | Structured image block where the agent has one; else the materialized path in the agent's reference syntax (§4.3.7) |
+| **Text, small** (< `inline_max`, default **32 KiB**) | sniffed non-binary **and** valid UTF-8 (or transcodable, §4.3.5) | Store the blob *and* inline the content in a fenced block with the filename as the info string | The text itself, in the prompt. No tool call needed, no round trip. |
+| **Text, large** (≥ 32 KiB) | as above | Store, materialize, **do not inline** | The materialized path. Every agent in the covered set has a file-read tool; making it read 400 KB itself is correct and is how the agent controls its own context. |
+| **Diff / patch** (`.diff`, `.patch`, or content matching a unified-diff header) | content sniff | Treated as text, but rendered as a diff in every omt surface via the shared renderer ([15 §7.4](15-workspace-explorer.md#74-reading-a-diff-on-a-phone)) | Same as text, with the fence tagged `diff` |
+| **Structured data** (JSON/YAML/TOML/CSV/TSV) | extension + parse probe | Text rules apply. CSV additionally gets a **head/tail preview** (first 20 + last 5 rows) inlined when the file is large, with the path | Preview + path, so the agent knows the shape before deciding to read it all |
+| **PDF** | magic bytes `%PDF-` | Store, materialize; **never** re-encode | Path. Claude Code reads PDFs natively (§4.3.2); others read them via their own tools or fail honestly. Page count is surfaced in the tray. |
+| **Office documents** (`docx`, `xlsx`, `pptx`) | zip container + OOXML part probe | Store, materialize | Path. omt does **not** convert to text: a lossy in-house docx→markdown step would be omt inventing semantics ([P4](01-principles.md#p4--native-semantics-observe-never-re-implement)), and several agents have real converters already. |
+| **Audio / video** | `infer` | Store, materialize, **never transcode, never truncate** | Path plus an explicit note that most agents cannot read it. The tray labels it *"most agents can't read this"* before sending, not after. Audio destined for *transcription* is a different feature — `stt.*` ([08 §7](08-web-client.md#7-voice-input)) — and the tray offers "transcribe instead" for audio. |
+| **Archives** (`zip`, `tar`, `tar.gz`, `tar.zst`) | magic bytes | Store, materialize. **Never auto-extract.** | Path, plus an inlined listing of up to 200 entries (name, size) so the agent can decide what to ask for. Auto-extraction would write N unreviewed files into the user's workspace from a blob; the listing gives the same usefulness with none of the risk. |
+| **Directory / multi-file selection** | source path reports a directory, or > 1 file selected | Two modes, user-chosen in the tray, defaulting by count and size | **≤ 8 files, ≤ 1 MiB total** → each attached individually (the common case: "these three files"). **Otherwise** → one `tar.zst` blob plus an inlined tree listing, with the archive materialized. Same rule as `media.file.pull`'s directory handling (§7.4), so there is one archive path. |
+| **Executable / unknown binary** | fails every probe | Store, materialize | Path, plus a tray warning. omt neither refuses it nor pretends it is useful. |
+| **Empty file** | `len == 0` | Refuse at staging | Nothing. An empty attachment is always a mistake, and finding out after the prompt is sent is worse. |
+
+Two rules govern the whole table:
+
+- **Inlining is a size decision, never a type decision.** A 2 KB `.py` and a
+  2 KB `.log` are both inlined; a 2 MB `.py` is a path. The threshold is one
+  config key (`media.inline_max_bytes`, default 32 KiB) rather than a per-type
+  policy nobody can predict.
+- **omt never converts content into a different format** except where the target
+  cannot accept the source at all (HEIC → JPEG, §4.3.5) or where the user asked
+  (transcribe this audio). Handing an agent a file the user did not produce is
+  the kind of helpfulness that costs an hour of debugging.
+
+```rust
+/// The classification, computed once, server-side, from sniffed bytes.
+pub enum AttachmentClass {
+    Image { width: u32, height: u32 },
+    Text { encoding: Encoding, lines: u64, inline: bool },
+    Diff { files: u32 },
+    Data { format: DataFormat, preview: Option<String> },
+    Pdf { pages: Option<u32> },
+    Office { kind: OfficeKind },
+    Media { duration: Option<Duration>, transcribable: bool },
+    Archive { entries: Option<u32>, listing: Option<String> },
+    Binary,
+}
+```
+
+#### 4.3.2 What each agent CLI actually accepts
+
+**This table is the most load-bearing artifact in the section**, because
+`AgentAdapter::attachment_reference()` is generated from it. Evidence tiers
+follow [P4](01-principles.md#p4--native-semantics-observe-never-re-implement)'s
+discipline and the convention in
+[agent-clis](../research/agent-clis.md): **VERIFIED** = observed on a running
+install or in its on-disk artifacts; **DOCUMENTED** = stated in official docs;
+**UNCERTAIN** = inferred, or reported only by third parties.
+
+| Agent | Image paste in its TUI | File reference syntax | PDF / non-image binary | Documented size limits | Evidence |
+|---|---|---|---|---|---|
+| **Claude Code** | **Yes.** Paste (`Ctrl-V`, not `Cmd-V`, on macOS) and drag-and-drop. Mechanism, observed: the file is copied to `~/.claude/uploads/<session-uuid>/<8hex>-<original-name>` and the **composer text becomes `@"<absolute path>" …`**; the transcript then carries a real `{"type":"image","source":{"type":"base64","media_type":"image/png"}}` content block. So the TUI's own paste is *path-insertion plus agent-side inlining*, not a terminal image protocol. | `@<path>`, and `@"<path with spaces>"`. **Absolute paths outside the project root work** — Claude Code itself writes them. | **Yes.** Its `Read` tool takes a `pages` parameter for PDFs (max 20 pages per request; required above 10 pages) and reads Jupyter notebooks as cells. Non-images generally: the same `uploads/` dir accepts them (a `.zip` was observed there). | Images: JPEG, PNG, GIF, WebP (DOCUMENTED). Byte limits not documented for the CLI. | **VERIFIED** on v2.1.220 from `~/.claude/uploads`, `~/.claude/paste-cache`, transcript JSONL, and the `Read` tool contract |
+| **Codex CLI** | Launch-time only, as far as the CLI surface shows: `-i, --image <FILE>...` — *"Optional image(s) to attach to the initial prompt"*. No documented mid-session attach. | Absolute path in the prompt; its own read tools. | UNCERTAIN. `-i` is image-specific; other files go via path. | Not documented | `-i` flag **VERIFIED** from `codex exec --help` on the installed build; mid-session behaviour **UNCERTAIN** |
+| **opencode** | Not via a CLI flag — `--help` exposes no image option. Its **server API and ACP mode carry structured attachment parts**, and the `part` type census in its SQLite store includes a `file` type. | `@`-style file mentions in the TUI (UNCERTAIN on exact syntax); structured parts over the API are the real path. | Likely yes via structured parts, by MIME. UNCERTAIN. | Not documented | `--help` surface **VERIFIED**; `file` part type **VERIFIED** from [agent-clis §3.3](../research/agent-clis.md#33-session-storage); attachment semantics **UNCERTAIN** |
+| **Gemini CLI** | **No image flag exists** in `--help` (checked on the installed build): no `-i`, no `--image`. | `@<path>` file inclusion, plus `--include-directories` for extra workspace roots. | UNCERTAIN; assume path-only. | Not documented | `--help` **VERIFIED**; `@` syntax **DOCUMENTED** |
+| **Cursor CLI** (`cursor-agent`) | **Partial and platform-dependent.** Clipboard image paste is reported not to work on Windows, and pasting from inside Cursor's own integrated terminal is reported broken; the working path is a pre-existing file referenced by path or `@`. | Path / `@` mention. | UNCERTAIN | Not documented | **UNCERTAIN** — community reports only; `--help` on the installed build emits a JS dump rather than usable help, so nothing could be verified locally |
+| **Amp** | **Yes, by reference**: paste the file path, drag a file into the terminal, or press `@` to fuzzy-find. | `@` mention. | UNCERTAIN | Up to **3 reference images** for style guidance (DOCUMENTED); no byte limit stated | **DOCUMENTED** |
+| **Aider** | **Yes**: `/paste` pastes an image *or* text from the clipboard. Also `/add <image-file>` in chat, and `aider <image-file>` at launch. The most explicit clipboard story of the set. | `/add <path>`, then reference it by name. | UNCERTAIN; images are the documented case. | Not documented | **DOCUMENTED** |
+| **Goose** | **No CLI attach path.** Multimodal input is supported by the model layer, but adding a file or image to the context from the CLI is an open feature request (`@`-file tagging exists in the desktop UI, not the CLI). | None in the CLI today. | No | — | **DOCUMENTED** (open issues) |
+| **Qwen Code** | Gemini-CLI-derived; assume Gemini's behaviour (`@` inclusion, no image flag). | `@<path>` | UNCERTAIN | — | **UNCERTAIN** — not separately verified |
+| **Crush** | Drag-and-drop of files and large pastes are handled explicitly, and attachments are removable in the composer. Clipboard *image* paste: UNCERTAIN. | UNCERTAIN | UNCERTAIN | — | **DOCUMENTED** for drag-drop/attachment UX; specifics **UNCERTAIN** |
+| **ACP-generic** | n/a (no TUI of its own) | `session/prompt` content blocks carry typed resources — the cleanest target in the set. | Yes, by MIME, subject to the agent behind it | — | **DOCUMENTED** ([agent-clis §11](../research/agent-clis.md#11-cross-cutting-acp-agent-client-protocol)) |
+
+**Four conclusions omt should design on, and one that changes an existing
+decision:**
+
+1. **The absolute path is a *good* fallback, not a consolation prize.** Every
+   agent in this set has a file-read tool. Handing it an absolute path and a
+   sentence is a first-class interaction: the agent reads what it needs, when it
+   needs it, and controls its own context. The only kinds where a path is
+   genuinely worse than a structured attachment are images (a path costs the
+   agent a read turn and some agents will not read image bytes at all) and text
+   small enough to inline. That is why §4.3.1's table inlines small text and
+   structures images, and paths everything else — it is not a compromise, it is
+   the right answer for those kinds.
+2. **`@"<absolute path>"` outside the project root is proven.** Claude Code's own
+   TUI writes exactly that for a pasted image, pointing at `~/.claude/uploads/`,
+   which is outside every workspace. **This resolves OPEN QUESTION §9.4 in this
+   document**: omt does *not* need to materialize into the workspace's
+   `.omt/media/` to stay on the well-trodden path, and therefore does not need to
+   litter the user's repo or write a `.gitignore` entry. Materializing under the
+   instance's managed root (§2) is correct. The quoting form matters — omt must
+   emit `@"…"` whenever the path contains a space.
+3. **Large *text* pastes already spill to a file in the wild.** Claude Code
+   keeps `~/.claude/paste-cache/<16-hex>.txt`, content-hash-named, rather than
+   inlining a huge paste into the composer. omt's 32 KiB inline threshold is the
+   same instinct, and the convergence is reassuring rather than coincidental.
+4. **Nobody strips EXIF.** The images in `~/.claude/uploads/` retain full Exif —
+   camera orientation, device software string, and, on a phone that records it,
+   GPS. An agent handed that file, with a network tool available, can read the
+   user's coordinates. omt stripping metadata (§4.3.5, §8) is therefore not
+   belt-and-braces; it is the only place in this chain where it happens.
+5. **Image paste in a foreign terminal is unreliable across the board** —
+   Cursor's Windows and integrated-terminal reports are the visible tip of the
+   same problem §5 spends five tiers on. This is a point in favour of omt's
+   design, not a gap in it: omt reads the OS clipboard directly (§4.3.3) instead
+   of asking a terminal to deliver bytes it has no protocol for.
+
+#### 4.3.3 Every source path, evaluated
+
+One row per source: what is technically possible, and what omt does.
+
+**Desktop web**
+
+| Source | Possible? | omt's behaviour |
+|---|---|---|
+| Clipboard **paste** | Yes — `ClipboardEvent.clipboardData.files` and `.items` carry real `image/png` bytes and, for a file copied in the OS file manager, a file list. **The browser can do what a TUI cannot**, because the user's paste gesture *is* the consent, with no permission prompt. | Bound on the composer. Image items are staged directly; text items above the inline threshold become a text attachment rather than a wall of composer text. |
+| `navigator.clipboard.read()` | Yes, but prompts | Only behind an explicit "paste from clipboard" button, for the case where there is no keyboard. The `paste` event is always preferred. |
+| **Drag and drop** | Yes — `DataTransfer.files`, and `webkitGetAsEntry()` for **directories** | Dropping onto the composer stages; dropping onto a block offers "attach to this agent turn" (§7.4). Directories are walked (depth-capped at 6, 500 entries) and go through §4.3.1's directory rule. |
+| **File picker** | Yes | `<input type="file" multiple>`, no `accept` restriction beyond a deny-list, because the whole point is "any file". |
+| **Web Share Target** | Chromium desktop only | Registered; see §4.3.4. |
+
+**Mobile web / PWA**
+
+| Source | Possible? | omt's behaviour |
+|---|---|---|
+| **Photo library** | Yes | `<input type="file" accept="image/*" multiple>` → the system photo picker. |
+| **Live camera** | Yes | `<input type="file" accept="image/*" capture="environment">` — a **separate control**, not a mode of the first. `capture` forces the camera and removes the library option, so one button that sometimes skips the picker would be a bad surprise. Two icons: `⧉` library, `⌾` camera. |
+| **Files app / document picker** | Yes — this is the one people forget | A third control with **no `accept` filter**, opening iOS Files / Android SAF. This is how a log, a PDF or a CSV gets attached from a phone, and without it "attach any file" is a desktop-only claim. |
+| **Share sheet → PWA** | Android/Chromium yes; **iOS Safari: no** | §4.3.4, including the honest platform statement. |
+| Clipboard paste | Partial — mobile keyboards do deliver `paste` events with image data | Bound; not advertised, because it is inconsistent across keyboards. |
+
+**Native TUI, running locally**
+
+| Source | Possible? | omt's behaviour |
+|---|---|---|
+| **OS clipboard, read directly** | **Yes, trivially** | omt is a local process. It reads `NSPasteboard` / X11 / Wayland / Win32 directly (§4.1) — including `public.file-url` and `text/uri-list`, which is how a file *copied in Finder* arrives. This is dramatically better than any terminal escape protocol and it is why §4.1 is a one-liner while §5 is five tiers. |
+| **Drag a file onto the terminal window** | Yes, but note what arrives | Every terminal emulator inserts **a path as text**, not the bytes — often shell-quoted or backslash-escaped, sometimes as a `file://` URL. omt therefore detects a pasted-path-shaped line in the composer: if the text resolves to an existing readable file, the composer offers *"attach this file?"* as an inline chip rather than sending a path the agent may or may not understand. Unquoting handles `'…'`, `"…"`, backslash escapes and `file://` percent-decoding. **This is the single highest-value TUI affordance in this section** and it costs a path-resolve. |
+| **A file picker inside omt** | Yes | `media.picker.open` opens omt's own fuzzy file browser over the workspace (reusing the explorer's index, [15](15-workspace-explorer.md)), bound to the attach key. Necessary because a TUI has no OS file dialog, and because attaching a *workspace* file is the most common non-image case. |
+| **`@`-completion in the composer** | Yes | Typing `@` in omt's composer completes workspace paths and stages the match as an attachment. Deliberately the same character the agents themselves use, so muscle memory transfers. |
+
+**Native TUI over SSH** — cross-reference only. The tier ladder in §5 decides how
+the *bytes* reach the instance (tier 0 `omt --remote`, tier 1 reverse socket,
+tier 2 OSC bridge, tier 3 terminal-native, tier 4 out-of-band). Once they arrive,
+everything in this section applies unchanged. Note that the drag-a-file case
+above is *free* over SSH when the file is on the remote and merely *hard* when it
+is local — which is exactly the §5 problem, and is why the composer's
+attach-this-path chip says which side of the connection the path resolved on.
+
+**`omt ssh` / `omt --remote` thin client** — the recommended case. omt owns both
+ends, reads the local clipboard natively, and streams over the existing control
+channel with no base64 and no pty (§6.1).
+
+**CLI** — so scripting and "I am already in a shell" work:
+
+```
+omt attach ./crash.log --to <instance>:<session>        # stage in the tray
+omt attach ./crash.log --to <instance>:<session> --send  # stage and submit
+omt attach ~/Downloads/*.png --to :current               # globs; :current = focused session
+omt paste --to <instance>:<session>                      # read THIS machine's clipboard
+cat report.csv | omt attach - --name report.csv --to :current
+```
+
+`omt attach` is `media.blob.begin`/chunks/`commit` plus a tray insert — the same
+three calls as every other source. `omt paste` (already named in §5.5) is
+`omt attach` with the clipboard as the source. Both are ordinary catalog
+capabilities, so they exist on all three surfaces by construction
+([03 §5](03-capability-catalog.md#5-the-parity-contract)).
+
+#### 4.3.4 Mobile capture specifics
+
+```tsx
+// web/src/views/composer/Attach.tsx — the whole capture surface.
+<input ref={library}  type="file" accept="image/*" multiple hidden
+       onChange={e => ingest(e.currentTarget.files, "picker")} />
+<input ref={camera}   type="file" accept="image/*" capture="environment" hidden
+       onChange={e => ingest(e.currentTarget.files, "camera")} />
+<input ref={anyFile}  type="file" multiple hidden
+       onChange={e => ingest(e.currentTarget.files, "files_app")} />
+```
+
+All sources — these three, drag, paste, share target, and the CLI — call one
+function:
+
+```ts
+async function ingest(files: FileList | File[] | null, origin: SubOrigin) {
+  for (const f of Array.from(files ?? [])) {
+    const staged = await stage(f, origin);   // classify + preprocess, off the main thread
+    tray.push(staged);                       // §4.3.8 — visible immediately
+    void upload(staged);                     // §4.3.6 — resumable, cancellable
+  }
+}
+```
+
+The tray entry appears **before** the upload starts. A phone photo takes seconds
+on LTE, and a composer that looks empty for three seconds after you pick a file
+reads as broken.
+
+**Web Share Target — sharing a file *into* omt.** The delightful path, and the
+one that makes the PWA a citizen of the OS: screenshot, Share, omt. No app
+switch, no picker, no navigating to a session first. It is not images-only —
+`accept` includes documents, so sharing a PDF from a mail client works too.
+
+```json
+// web/manifest.webmanifest (excerpt)
+{
+  "share_target": {
+    "action": "/#/share", "method": "POST", "enctype": "multipart/form-data",
+    "params": {
+      "title": "title", "text": "text",
+      "files": [{ "name": "media",
+                  "accept": ["image/*", "application/pdf", "text/*",
+                             "application/json", "application/zip"] }]
+    }
+  }
+}
+```
+
+The `POST` is intercepted by the service worker, because there is no server to
+post to — an omt instance serves a static bundle and a WebSocket, and the share
+target must work before any instance is reachable.
+
+```ts
+// service-worker.ts
+self.addEventListener("fetch", (e: FetchEvent) => {
+  const url = new URL(e.request.url);
+  if (e.request.method === "POST" && url.pathname === "/share") {
+    e.respondWith((async () => {
+      const form  = await e.request.formData();
+      const files = form.getAll("media") as File[];
+      const id = crypto.randomUUID();
+      const inbox = await caches.open("share-inbox");
+      await Promise.all(files.map((f, i) => inbox.put(`/share/${id}/${i}`, new Response(f))));
+      return Response.redirect(`/#/share?id=${id}&n=${files.length}`, 303);
+    })());
+  }
+});
+```
+
+**Where does it go?** Not a picker, in the common case — the **continuity
+ranking**:
+
+1. If exactly one session is plausibly current (the app was open on it within
+   5 minutes, or exactly one session is in `needs you`), the share lands in that
+   session's tray, with a header chip naming it and a one-tap **"not this one"**.
+   Guessing with a cheap correction beats a mandatory picker.
+2. Otherwise: the ranked session list, filtered to sessions with an agent
+   binding, with the file already staged and preprocessed. One tap starts the
+   upload.
+3. Shared `text`/`title` seed the composer, so a screenshot shared from a browser
+   arrives with the page URL as context.
+
+Ranking and "current session" are specified in
+[remote continuity §2.3](../design/remote-continuity.md#23-the-continuity-ranking).
+
+**Platform honesty.** Web Share Target is implemented in Chromium (Android and
+desktop) and is **not** available in iOS Safari at the time of writing. omt does
+not advertise a share target it could not register — `navigator.share` presence
+is *not* a proxy, that is share-*from*, not share-*to* — and the onboarding tip
+appears only where registration succeeded. On iOS the Files picker and the photo
+picker are the answer. §9.10 tracks it.
+
+#### 4.3.5 Preprocessing — images, text, and the things omt must not touch
+
+Preprocessing runs in a `Worker` with `OffscreenCanvas` on the web, and in
+`omt-media` for the TUI and CLI paths, so one policy serves all sources. Where
+`OffscreenCanvas` is unavailable the main-thread path runs with a visible
+"preparing…" state rather than silently blocking.
+
+```ts
+export interface StagedAttachment {
+  id: string;                   // staging id, distinct from BlobId
+  blob: Blob;                   // the bytes actually uploaded
+  class: AttachmentClass;       // §4.3.1, computed client-side, re-derived server-side
+  mime: string;
+  bytes: number;
+  hash: string;                 // BLAKE3 (WASM) of `blob`, for §4.2 dedup
+  original: { name: string; mime: string; bytes: number };
+  transforms: ("downscale" | "reencode" | "heic_decode" | "exif_strip" | "orient"
+             | "transcode_utf8" | "tar_zst")[];
+  preview: PreviewKind;         // thumbnail URL, first lines, page count, entry listing
+  insertion: string;            // exactly what will go into the prompt (§4.3.8)
+}
+```
+
+**Images — the budget, with concrete numbers.** A 12 MB, 4032×3024 HEIC helps no
+agent and costs the user a minute on LTE.
+
+| Knob | Value | Rationale |
+|---|---|---|
+| Max longest edge | **1568 px** | Above this no vision model in the covered set gains accuracy, and it is the point where a screenshot's text is still legible after re-encode. A 4032 px photo becomes 1568×1176. |
+| Re-encode target | **JPEG q=0.82**, or **PNG** when the source is PNG *and* the decoded image has ≤256 distinct colours or an alpha channel | Screenshots are PNG-shaped (flat colour, sharp text, where JPEG ringing is visibly bad); photos are JPEG-shaped. Deciding by content rather than extension is a few lines and avoids both failure modes. |
+| Soft size target | **≤ 1.5 MB** | On overflow, quality steps 0.82 → 0.72 → 0.62, then the longest edge halves once. Two passes maximum; this is not a search. |
+| Hard refusal | **> 32 MiB source** | Matches `max_blob_bytes` (§2). Refused before decode, with the limit named. |
+| Skip entirely | ≤ 1568 px **and** ≤ 512 KiB **and** not HEIC | Re-encoding a small PNG screenshot only loses fidelity. Strip metadata, upload as-is. |
+| Animated GIF/WebP | pass through, capped at 8 MiB | Downscaling an animation in a browser means decoding every frame; rarely what an agent needs. |
+
+**EXIF and privacy — and §4.3.2 finding 4 is why this matters.** Re-encoding
+through `ImageBitmap` drops metadata as a *side effect*, which is the desired
+outcome but must not be the mechanism, because the skip-entirely path does not
+re-encode. Therefore:
+
+- **Orientation is applied to the pixels**
+  (`createImageBitmap(file, { imageOrientation: "from-image" })`), then the tag
+  is gone. A sideways photo handed to an agent is a support ticket.
+- **All other metadata is stripped, GPS explicitly.** On the pass-through path a
+  minimal chunk stripper runs (JPEG APPn, PNG `tEXt`/`iTXt`/`eXIf`) rather than
+  the step being skipped.
+- **The instance strips again** (§8) regardless of what the client claims. The
+  client-side strip is for bandwidth and defence in depth; the server-side strip
+  is the guarantee. Never trust the client, including our own.
+
+**HEIC.** iOS photos are `image/heic`/`heif` and several agents in §4.3.2's table
+will not accept them. In order: (1) **`createImageBitmap(file)`** — Safari on
+iOS 17+ decodes HEIC natively, so the platform that produces HEIC also solves it,
+for free, and this is the path taken in practice; (2) a lazily-loaded `libheif`
+WASM build (~700 KiB), on first HEIC only, never in the initial bundle; (3)
+upload untouched and let the instance decode with the `image` crate — last
+resort, because the point of preprocessing is to *not* send 8 MB. A HEIC never
+reaches an agent.
+
+**Text.** Encoding is sniffed; UTF-16/Latin-1 is transcoded to UTF-8 and the
+transform is recorded, because an agent handed UTF-16 sees mojibake. A BOM is
+stripped. CRLF is **preserved** — rewriting line endings in a file the agent may
+edit is a real way to produce a spurious diff. Files that fail UTF-8 validation
+after transcoding are reclassified `Binary` and never inlined.
+
+**Everything else is untouched.** PDFs, office documents, archives, audio and
+video are uploaded byte-exact. Their hash is their identity, and re-encoding
+would break both dedup and the user's expectations.
+
+#### 4.3.6 One pipeline
+
+Every source above converges on the pipeline this document already specifies.
+**A per-source code path is explicitly rejected**: five ingress paths with five
+quota checks is five places to forget one, and §8's guarantee ("enforced in
+`omt-media`, not in the callers") only holds if there is one road.
+
+```
+  desktop paste ┐
+  drag & drop   │
+  file picker   │
+  share target  │      ┌───────────┐   ┌──────────┐   ┌──────────────┐   ┌───────────┐
+  camera roll   ├────► │  stage    ├──►│  admit   ├──►│  transfer    ├──►│  commit   │
+  live camera   │      │ classify  │   │ quota    │   │ chunked      │   │ sniff     │
+  Files app     │      │ preprocess│   │ dedup by │   │ resumable    │   │ decode-   │
+  TUI clipboard │      │ hash      │   │ hash     │   │ progress     │   │ verify    │
+  TUI drag-path │      └───────────┘   └──────────┘   └──────────────┘   │ EXIF stri │
+  omt picker    │            §4.3.5          §2            §4.2/§3.6      │ materiali │
+  omt attach CLI│                                                         └─────┬─────┘
+  SSH tiers 0–4 ┘                                                               │
+                                                                                ▼
+                                                                      ┌──────────────────┐
+                                                                      │ tray → insertion │
+                                                                      │  §4.3.7 / §4.3.8 │
+                                                                      └──────────────────┘
+```
+
+The wire is §4.2's three calls, unchanged, with the fields the general case
+needs:
+
+```ts
+await instance.rpc("media.blob.begin", {
+  len: staged.bytes, mime: staged.mime, filename: staged.original.name,
+  hash: staged.hash, session: sessionId, purpose: "prompt_attachment",
+  origin: staged.origin,          // picker | camera | files_app | share_target
+                                  // | paste | drop | tui_clipboard | cli | osc_bridge
+});
+// → { have: true }                       ⇒ send nothing; done in one round trip
+// → { have: false, transfer, chunk_bytes, resume_from: 0 }
+```
+
+- **Dedup first.** The hash is computed during staging, so re-attaching the same
+  screenshot or the same log to a second session costs exactly one round trip
+  (§2). The same file shared twice is free.
+- **Chunking at 256 KiB** as `kind=3` binary frames
+  ([07 §3.6](07-remote-protocol.md#36-binary-payloads)), with the server naming
+  `chunk_bytes` so it is tunable per transport without a client change.
+- **Resumability.** The instance retains a partial for **10 minutes**, keyed by
+  `(hash, len)`. A reconnect re-issues `media.blob.begin` with the same hash and
+  gets `resume_from: <bytes stored>`; the client seeks and continues. Restarting
+  an 8 MB upload from zero because a train entered a tunnel is the difference
+  between a feature people use and one they avoid.
+- **Progress** rides the existing `media.transfer.progress` event (§5.3.1), so
+  the tray, the TUI and a second device show the same bar. Start an upload on the
+  phone, open the laptop, see it in flight.
+- **Cancel** is `media.blob.abort`; the partial is unlinked immediately. Removing
+  a tray entry cancels an in-flight transfer.
+- **Priority.** Media frames are the low-priority logical stream (§6.1). An
+  upload must never delay an `interaction` event —
+  [07 §9 Q6](07-remote-protocol.md#9-open-questions) flags that a large upload
+  from a phone needs its own queue class, and this is precisely why.
+- **Offline.** A staged attachment with no connection stays in the draft
+  ([remote continuity §2.4](../design/remote-continuity.md#24-drafts)) and uploads
+  on reconnect. The tray shows `⇧ waiting for network`, and the prompt cannot be
+  sent until every attachment has committed — sending a prompt that references a
+  file which does not exist yet is worse than waiting.
+
+#### 4.3.7 What the agent finally receives
+
+The blob is materialized exactly as §2 specifies —
+`$root/refs/<session>/<short>-<sanitized-name>.<ext>`, a hard link to the
+content-addressed blob — and referenced through the adapter. §4.3.2 finding 2
+means the managed root is fine; materializing inside the workspace is no longer
+required.
+
+```rust
+pub trait AgentAdapter {
+    /// How this agent wants to be handed an attachment that exists on disk.
+    /// `None` = this agent cannot accept this class at all, in a running session.
+    fn attachment_reference(&self, path: &Path, meta: &BlobMeta, class: &AttachmentClass)
+        -> Option<AttachmentReference>;
+
+    /// True when the agent accepts this class only at launch (e.g. `codex -i`).
+    fn attachment_at_launch_only(&self, class: &AttachmentClass) -> bool { false }
+}
+
+pub enum AttachmentReference {
+    /// Inline into the prompt text at the cursor. Carries the exact rendered
+    /// string so the tray can show the user what will be sent (§4.3.8).
+    PromptText(String),
+    /// Inline the *content*, not a path — small text (§4.3.1).
+    InlineContent { fence: String, body: String, name: String },
+    /// Run a slash command first, then reference it.
+    Command { command: String, then: String },
+    /// Structured attachment over the agent's own protocol. Always preferred.
+    Structured(serde_json::Value),
+}
+```
+
+Per-agent rendering, derived from §4.3.2:
+
+| Agent | Image | Small text | Everything else |
+|---|---|---|---|
+| Claude Code | `PromptText("@\"<abs>\"")` — its own verified form, quoted | `InlineContent` | `PromptText("@\"<abs>\"")` |
+| ACP-generic / opencode | `Structured` resource block | `Structured` | `Structured` where the MIME is accepted, else path |
+| Codex | `PromptText(abs)`; `attachment_at_launch_only` → offer `-i` on restart | `InlineContent` | `PromptText(abs)` |
+| Gemini / Qwen | `PromptText("@<abs>")` | `InlineContent` | `PromptText("@<abs>")` |
+| Aider | `Command { "/add <abs>", then: "…" }` | `InlineContent` | `Command` |
+| Amp | `PromptText("@<abs>")` | `InlineContent` | `PromptText("@<abs>")` |
+| Cursor / Crush | `PromptText(abs)` | `InlineContent` | `PromptText(abs)` |
+| Goose, and anything unknown | `None` for images | `InlineContent` (always safe — it is just text) | `PromptText(abs)` with a lead-in sentence |
+
+`Structured` is always preferred where available, per
+[P4](01-principles.md#p4--native-semantics-observe-never-re-implement) — answers
+go back the way they came.
+
+**Agents that accept nothing.** Handled honestly rather than by uploading and
+hoping. `None` → the tray entry is marked before send: *"`goose` can't take an
+image. Save it to the workspace instead?"* — offering `media.file.push`, which is
+a real answer. The control is **disabled with a reason, never hidden**
+([08 §3.4](08-web-client.md#34-graceful-degradation-across-catalog-versions)).
+`attachment_at_launch_only` → the blob is stored and the composer offers
+*"restart this session with the file attached"*, which makes §9.5's requirement
+concrete instead of a surprise at send time.
+
+Either way **the blob is never silently dropped**: it is in the store, it is in
+the session's attachment list, and it has a path the user can copy.
+
+#### 4.3.8 The attachment tray
+
+Attachments are **staged, not sent instantly**. The tray is where the user sees
+what they have, what it will cost, and — critically — **exactly what will be
+inserted into the prompt**. That last column is the honesty requirement: a user
+who cannot see that omt is about to paste `@"/run/user/1000/omt/…"` into their
+prompt cannot predict what the agent will do.
+
+Parity is required on all three surfaces
+([P3](01-principles.md#p3--parity-one-capability-three-surfaces)); the shape
+differs, the operations do not.
+
+**Common model:**
+
+```ts
+interface TrayEntry {
+  id: string;
+  name: string;                     // original filename
+  class: AttachmentClass;           // drives the icon and the preview
+  bytes: number; originalBytes: number;
+  state: "staging" | "uploading" | "committed" | "failed" | "waiting_network";
+  progress: number;                 // 0..1
+  insertion: string;                // EXACTLY what goes into the prompt
+  warning: string | null;           // "most agents can't read this", "EXIF stripped", …
+}
+```
+
+Operations, identical everywhere: **reorder**, **remove**, **retry**, **preview**,
+**copy path**, **change disposition** (inline ↔ path, where both are legal).
+
+**Desktop web / mobile web**
+
+```
+┌ attachments (3) ──────────────────────────── 1.9 MB ┐
+│ ▣ IMG_4417.jpg   1568×1176  412 KB  ✓   @"/…/a1-IMG_4417.jpg"      ×│
+│ ▤ crash.log      2 140 lines 96 KB  ▓▓▓░ 62%   → inlined as ```log ×│
+│ ▦ spec.pdf       28 pages   1.4 MB  ✓   @"/…/9f-spec.pdf"          ×│
+└──────────────────────────────────────────────────────┘
+  [ message claude…                                            ] [↑]
+```
+
+- A horizontal strip of 64 px thumbnails (images) or type icons above the text
+  field on mobile; a vertical list on desktop where there is room for the
+  insertion column.
+- Tap opens a preview: lightbox for images, first 200 lines for text, page count
+  and first page for PDF, entry listing for archives.
+- **Long-press-and-drag reorders**, and **order is preserved into the prompt** —
+  "the first screenshot shows the error, the second shows the fix" is meaningful
+  and silently reordering it would be a lie.
+- Removing cancels an in-flight transfer, drops the reference and decrements the
+  blob's refcount. It does **not** delete the blob: content is shared and TTL'd
+  (§2), and another session may reference the same bytes.
+- Each entry's state is independent; one failure does not block the others. The
+  failed chip offers **Retry**, and the prompt cannot be sent while any entry is
+  `failed`, `uploading` or `waiting_network`.
+
+**TUI** — the same tray, drawn above the composer, no modal:
+
+```
+ ▣ IMG_4417.jpg  412K  ✓   ▤ crash.log  96K ▓▓▓░ 62%   ▦ spec.pdf  1.4M  ✓
+ ─────────────────────────────────────────────────────────────────────────
+ > @"…/a1-IMG_4417.jpg" the login screen is misaligned▏
+```
+
+`a` opens omt's file picker, `Ctrl-V` reads the OS clipboard, `Tab` cycles tray
+entries, `x` removes the selected one, `Enter` on an entry previews it (image via
+`GraphicsProtocol` §7.2, text in a pager), `<`/`>` reorders. The insertion text
+is visible in the composer itself, which is the TUI's natural advantage and the
+reason the web tray shows an insertion column to match.
+
+**Limits.** **8 attachments per prompt**, refused at the 9th with the limit
+named. No agent in the covered set handles more usefully, and a phone user has
+not deliberately picked nine.
+
+#### 4.3.9 Limits and security
+
+Consistent with §8, which is where these are enforced. Restated only where the
+general-attachment path adds something.
+
+| Control | Value | Enforced |
+|---|---|---|
+| Size cap | 32 MiB source (`max_blob_bytes`) | Client refuses early with the reason; the **instance** re-checks before allocating (§8). |
+| Inline cap | 32 KiB (`media.inline_max_bytes`) | Server-side. The inlined body counts against nothing but the agent's context, which is exactly why the cap exists. |
+| MIME | Sniffed with `infer`; images must additionally decode | Server side, always. The client's `mime` and the `accept` attribute are hints; `accept` is trivially bypassed, and a `.png` from a phone may be anything. |
+| Filename | One path component, hash-prefixed, Windows reserved names suffixed | §8. |
+| Quota | `max_blobs_per_session` = 200, `max_total_bytes` = 512 MiB | §2. A camera roll is large and a determined thumb can fill a disk. |
+| TTL | 24 h, 7 d once referenced by an agent | §2. |
+| EXIF/GPS | Stripped client-side *and* server-side | §4.3.5, §8. §4.3.2 finding 4: no agent does this for us. |
+| Decode limits | `image::Limits`, 256 MiB alloc, 16384² dims | §8. Untrusted images are decoded for thumbnailing and validation only. |
+| Archives | Listed, **never extracted** | §4.3.1. No zip-slip surface, because nothing is unpacked. |
+| Directory walk | depth ≤ 6, ≤ 500 entries, symlinks not followed | Client and server. A dropped `node_modules` must fail fast and clearly. |
+| Deny-list | none by extension | Deliberate: refusing `.sh` or `.env` by extension is theatre. Secret *content* redaction is [13 §8](13-security.md#8-secret-redaction)'s job and applies to what is inlined. |
+| Audit | origin + sub-origin, size, sniffed type, session, actor | §8. "Which device uploaded what, when" stays answerable — hence `BlobOrigin::WebUpload` gaining a sub-origin (`picker | camera | files_app | share_target | paste | drop`), because "came from the OS share sheet" is a meaningfully different provenance from "the user pasted it". |
+
+One mobile-specific addition: **the staging cache is cleaned.** The service
+worker's `share-inbox` entries are deleted the moment the page reads them, and
+swept on every SW activation. A shared file must not persist in a browser cache
+after delivery.
+
+Inlined text is passed through [13 §8](13-security.md#8-secret-redaction)'s
+redaction before it enters a prompt, on the same rule as the audit log — a user
+who drops a `.env` into the tray should see the redaction in the insertion
+preview *before* they send it, which is precisely what §4.3.8's insertion column
+is for.
+
+#### 4.3.10 The reverse direction — files the agent produces
+
+A plot from a script, a screenshot from a browser tool, a generated report. The
+phone must see it, and the mechanism must not be a second one.
+
+1. **Detection**, in confidence order: the agent's own structured output (an ACP
+   resource block, an opencode `file` part — the `part` census in
+   [agent-clis §3.3](../research/agent-clis.md#33-session-storage) shows these
+   exist); a tool call whose result names a written path under the workspace,
+   correlated by the same rule as block attribution
+   ([08 §4.2](08-web-client.md#42-block-view)); and an inline image sequence in
+   the PTY stream (kitty `APC _G`, iTerm2 `OSC 1337;File=`) which `omt-term`
+   already parses (§7.2).
+2. **Ingestion.** Whichever source, the bytes land in the same blob store with
+   `BlobOrigin::AgentOutput`, classified by §4.3.1 and attached to the block they
+   occurred in. No copy, no second index.
+3. **In the TUI**: images drawn inline via `GraphicsProtocol` (§7.2); everything
+   else as a bordered card with name, type, size and `o` to open / `w` to view in
+   the web client. Never nothing.
+4. **On the phone**: images render from the server-generated WebP thumbnail
+   (longest edge 512) with full resolution on tap (§7.3); text and diffs render
+   in the shared renderer; PDFs get a page-1 thumbnail and an open action. A
+   phone on LTE loads a page of attachments fast and pays for full bytes only
+   when asked.
+5. **Getting it out.** **Save** (a normal download from the authenticated
+   `GET /v1/blob/<id>`, landing in Photos or Files) and **Share** via
+   `navigator.share({ files: [...] })` — the exact inverse of §4.3.4, and the
+   reason the loop feels closed: an agent draws a chart, you share it into a
+   chat, without a laptop entering the story. On desktop, dragging out uses
+   `DataTransfer`'s `DownloadURL` entry (§7.4).
+6. **Correlation is never guessed.** Where the source is a heuristic path match
+   and correlation is ambiguous, the file attaches to the *session* rather than
+   the block and is not claimed to be "produced by" that tool call. Same
+   discipline as [P4](01-principles.md#p4--native-semantics-observe-never-re-implement).
 ---
 
 ## 5. Case (b): image paste over SSH — the core mechanism
@@ -593,7 +1213,7 @@ syntax. This is per-adapter data on `AgentAdapter`, not a global format:
 
 | Agent | Reference form | Confidence |
 |---|---|---|
-| **Claude Code** | A path in the prompt text; `@<path>` for an explicit file reference, which Claude Code expands. The `Read` tool handles image files, so an absolute path in the prompt is reliably picked up. omt injects `@<abs-path>` plus a short lead-in when the user typed one. | High for the path form; the exact `@`-expansion rules for absolute paths outside the workspace are **UNCERTAIN** — omt materializes into the workspace's `.omt/media/` when the blob store's root is outside it, to stay on the well-trodden path. |
+| **Claude Code** | `@"<abs-path>"` in the prompt text — the exact form Claude Code's own TUI writes for a pasted image ([§4.3.2](#432-what-each-agent-cli-actually-accepts)). Its `Read` tool handles images, PDFs and notebooks, so the path form is reliably picked up. omt adds a short lead-in when the user typed one. | High, and now **VERIFIED**: absolute paths outside the workspace expand, so omt materializes under its own managed root and no longer needs `.omt/media/` inside the repo. |
 | **Codex CLI** | `codex -i <path>` at launch; for a running session, an absolute path in the prompt. | Medium |
 | **Gemini CLI / Qwen** | `@<path>` file reference, same as their file-inclusion syntax. | Medium |
 | **Aider** | `/add <path>` then reference it. | High (documented command) |
@@ -803,17 +1423,21 @@ be answerable.
    ask for the *clipboard's* image (as opposed to a file picker)? `RequestUpload`
    is a picker. If not, the honest phrasing is "iTerm2 supports file upload, not
    clipboard image paste", which is what §5.4 currently says.
-4. **Claude Code's `@` expansion for absolute paths outside the project root.**
-   Whether `@/run/user/1000/omt/blobs/…` is expanded, or only workspace-relative
-   paths are, decides whether omt must always materialize inside the workspace
-   (`.omt/media/`). Current design materializes inside the workspace to be safe,
-   at the cost of littering the repo — mitigated with a `.gitignore` entry omt
-   writes on first use, which is itself mildly presumptuous. Needs a decision
-   after testing.
+4. ~~**Claude Code's `@` expansion for absolute paths outside the project
+   root.**~~ **RESOLVED — see [§4.3.2](#432-what-each-agent-cli-actually-accepts)
+   finding 2.** Claude Code's own TUI writes `@"<absolute path>"` pointing into
+   `~/.claude/uploads/`, which is outside every workspace, so absolute paths are
+   expanded and omt does **not** need to materialize into `.omt/media/` inside
+   the repo. The `.gitignore`-writing mitigation is dropped. What remains open is
+   narrower: whether the quoting form (`@"…"`) is required only for paths
+   containing spaces or is always accepted — omt emits it unconditionally, which
+   is safe if the second is true and needs a check if not.
 5. **Whether a running Claude Code session accepts an image at all without a
-   restart.** The `-i` style flags are launch-time for several CLIs. If a given
-   agent only accepts images at launch, omt's paste must be honest about that
-   and offer "restart with this image attached".
+   restart.** Partially answered: pasting mid-session works in Claude Code's own
+   TUI (§4.3.2, VERIFIED), so the launch-time constraint is not universal. It
+   remains open for **Codex**, whose only documented image surface is the
+   launch-time `-i, --image` flag; if mid-session attach is unsupported there,
+   `attachment_at_launch_only` (§4.3.7) is the honest path and needs testing.
 6. **Multiple images in one paste.** Clipboards can hold several; the OSC bridge
    protocol handles it (N offers under one request id) but the agent reference
    syntax for multiple files is per-agent and only verified for a couple.
@@ -828,7 +1452,34 @@ be answerable.
    graphics protocol has historically been incomplete (placement and deletion in
    particular). We may need to force `GraphicsProtocol::ITerm2` or `Sixel` under
    tmux even when kitty is detected outside it.
-10. **Clipboard *monitoring*.** A tempting feature ("omt notices you copied an
+10. **Web Share Target on iOS** (§4.3.2). Not supported in Safari today, which
+    removes the most delightful capture path from the platform whose screenshots
+    are most likely to be shared. Needs re-checking per iOS release; if it never
+    arrives, the fallback is a documented Shortcuts recipe that posts to the
+    instance, which is worse but real.
+11. **HEIC decode coverage** (§4.3.3). The design assumes Safari/iOS decodes HEIC
+    via `createImageBitmap`. Verified in documentation, not on a device, and the
+    fallback (`libheif` WASM, ~700 KiB lazy) is a real bundle cost if the
+    assumption is wrong on older iOS.
+12. **The 1568 px longest-edge budget** (§4.3.3) is taken from vision-model
+    guidance, not measured against the agents in [D5](decisions.md#d5--initial-agent-coverage).
+    If an agent re-encodes or re-tiles anyway, a larger upload is pure waste and
+    the number should drop.
+13. **Screenshot-vs-photo detection** for the PNG/JPEG re-encode choice
+    (§4.3.3) uses a colour-count and alpha heuristic. It will misfire on
+    screenshots of photos. The failure is mild (a slightly larger or slightly
+    softer file), but it is a heuristic in a document that is otherwise hostile
+    to them, and it should be measured before it is defended.
+14. **Partial-transfer retention of 10 minutes** (§4.3.4) is a guess, and it
+    interacts with the blob quota: an abandoned 8 MB partial counts against
+    something for ten minutes. Whether partials are quota'd separately is
+    unspecified.
+15. **Reverse-direction correlation** (§4.3.8) for agents with no structured file
+    output relies on path matching in tool results, which is the same class of
+    inference [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting)
+    treats as low confidence. The conservative fallback (attach to session, not
+    block) may be too conservative to be useful in practice.
+16. **Clipboard *monitoring*.** A tempting feature ("omt notices you copied an
     image and offers to attach it") is deliberately not designed here: polling
     the OS clipboard is a privacy hazard and, on macOS, triggers system paste
     notifications. If it is ever built it must be explicitly enabled and visibly
