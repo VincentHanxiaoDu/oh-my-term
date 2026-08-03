@@ -33,7 +33,9 @@ jobs:
           node-version: '22'
 
       - name: Install OpenSpec
-        run: npm install -g openspec
+        # The binary is `openspec`; the package is scoped. Installing the
+        # unscoped name silently succeeds and yields no binary.
+        run: npm install -g @fission-ai/openspec@1
 
       - name: Validate every change strictly
         run: |
