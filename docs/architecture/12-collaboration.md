@@ -54,7 +54,7 @@ pub enum ActorKind {
 ```
 
 `Actor` is carried in `CallContext` (see
-[03 §3](03-capability-catalog.md#3-dispatch)), stamped onto every event, and
+[03 §3](03-capability-catalog.md#35-the-dispatch-path)), stamped onto every event, and
 written to the audit log (§8). An `ActorId` is stable for the lifetime of a
 connection; a device that reconnects gets a new `ActorId` but keeps its
 `DeviceId`, which is what presence and audit group by.

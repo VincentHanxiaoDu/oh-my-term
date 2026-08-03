@@ -955,7 +955,7 @@ not go through `CapabilityRegistry::dispatch`.**
 
 The rejected alternative was an `agent.hook.report` capability, which is
 attractive because dispatch is where authorization and auditing live
-([03 §3](03-capability-catalog.md#3-dispatch)). It is wrong for three reasons:
+([03 §3](03-capability-catalog.md#35-the-dispatch-path)). It is wrong for three reasons:
 
 1. **A hook is not an actor requesting a mutation.** The capability catalog is
    the surface through which an *actor* changes state, and every entry carries a

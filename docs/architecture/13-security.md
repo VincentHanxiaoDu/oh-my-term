@@ -213,7 +213,7 @@ to roles. They are never interchangeable.
 Backends issue and verify. They perform no transport work and no routing (P1),
 and authorization itself happens in capability dispatch, not in the transport —
 so no surface can bypass it
-([03 §3](03-capability-catalog.md#3-dispatch)).
+([03 §3](03-capability-catalog.md#35-the-dispatch-path)).
 
 ### 3.2 Invite links (the primary onboarding path)
 

@@ -1122,7 +1122,7 @@ configurable to `off` like everything else, with a one-line warning.
 ### 7.3 Enforcement is server-side
 
 In dispatch, not in the UI — the same argument
-[03 §3](03-capability-catalog.md#3-dispatch) makes for roles.
+[03 §3](03-capability-catalog.md#35-the-dispatch-path) makes for roles.
 
 ```rust
 pub struct CallContext {

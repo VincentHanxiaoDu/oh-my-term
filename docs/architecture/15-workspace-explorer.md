@@ -113,7 +113,7 @@ and a thread-free `Poll` implementation used by tests.
 **It performs no I/O on behalf of a surface except through the catalog.** The
 crate exposes providers, not endpoints; `omt-daemon` registers handlers over
 them and dispatch applies role and effects before any syscall
-([03 §3](03-capability-catalog.md#3-dispatch)). There is no path from `omt-tui`
+([03 §3](03-capability-catalog.md#35-the-dispatch-path)). There is no path from `omt-tui`
 into this crate — the TUI panel dispatches `workspace.files.list` with
 `Actor::Local` exactly as a phone dispatches it over WebSocket. Path confinement
 (§9.1) lives *inside* the crate, so a future second caller cannot bypass it.
