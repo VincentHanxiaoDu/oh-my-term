@@ -35,7 +35,7 @@ Four cases, one row each. "Mechanism" names the section that specifies it.
 |---|---|---|---|---|
 | **(a)** | omt runs locally; user pastes an image from the local clipboard into an agent prompt | Image is read from the OS clipboard, written to the instance's blob store, and the agent receives a path in its own reference syntax | Direct OS clipboard read (§4.1) | **Fully solved.** No terminal involvement at all — omt owns the process. |
 | **(b)** | User SSHes into a remote box, runs omt there, pastes an image that lives in the **local** machine's clipboard | The bytes must cross from the local machine into the remote instance's blob store, through the ssh tty or a side channel | Tiered: reverse socket (§5.2) → in-band OSC bridge (§5.3) → terminal-specific clipboard read (§5.4) → phone/web fallback (§5.5) | **Partially solved, tier-dependent.** See §5.6 for the honest matrix. |
-| **(c)** | User is on the web client (phone) attached to a remote omt and attaches a photo | Photo uploads over the existing WebSocket into the blob store; agent gets a path | `media.image.upload` over the control channel (§4.2); the mobile capture paths, preprocessing and share-target flow are §4.3 | **Fully solved.** This is the easiest case and, not coincidentally, the universal fallback for (b). |
+| **(c)** | User is on the web client (phone) attached to a remote omt and attaches a photo | Photo uploads over the existing WebSocket into the blob store; agent gets a path | `media.image.upload` over the control channel (§4.2); **§4.3 generalizes this to attachments of any type** — capture paths, per-kind handling, preprocessing, the tray, and the per-agent acceptance matrix | **Fully solved.** This is the easiest case and, not coincidentally, the universal fallback for (b). |
 | **(d)** | User copies text or a file **out of** a remote omt back to the local clipboard | Text lands in the local OS clipboard; files land in a local directory | OSC 52 out (§3), `media.file.pull` for the web client (§7), chunked OSC 52 for large text (§3.3) | **Text: solved with caveats.** **Files: solved for omt-controlled ends, best-effort otherwise.** |
 
 The design principle across all four: **there is exactly one blob store and one
@@ -1438,9 +1438,11 @@ be answerable.
    remains open for **Codex**, whose only documented image surface is the
    launch-time `-i, --image` flag; if mid-session attach is unsupported there,
    `attachment_at_launch_only` (§4.3.7) is the honest path and needs testing.
-6. **Multiple images in one paste.** Clipboards can hold several; the OSC bridge
-   protocol handles it (N offers under one request id) but the agent reference
-   syntax for multiple files is per-agent and only verified for a couple.
+6. **Multiple attachments in one prompt.** Clipboards can hold several and a
+   picker returns many; the OSC bridge protocol handles it (N offers under one
+   request id) and the tray (§4.3.8) owns ordering. What is still unverified is
+   the *reference syntax for multiple files* per agent — Amp documents a limit of
+   3 reference images, and nobody else states one. See §4.3.2.
 7. **`ssh -R` Unix-socket forwarding availability in practice.** Corporate sshd
    configs frequently disable forwarding entirely. If tier 1 fails often in the
    real world, tier 2 (`omt ssh` pty wrapper) becomes the primary path and
@@ -1452,34 +1454,60 @@ be answerable.
    graphics protocol has historically been incomplete (placement and deletion in
    particular). We may need to force `GraphicsProtocol::ITerm2` or `Sixel` under
    tmux even when kitty is detected outside it.
-10. **Web Share Target on iOS** (§4.3.2). Not supported in Safari today, which
+10. **Web Share Target on iOS** (§4.3.4). Not supported in Safari today, which
     removes the most delightful capture path from the platform whose screenshots
     are most likely to be shared. Needs re-checking per iOS release; if it never
     arrives, the fallback is a documented Shortcuts recipe that posts to the
     instance, which is worse but real.
-11. **HEIC decode coverage** (§4.3.3). The design assumes Safari/iOS decodes HEIC
-    via `createImageBitmap`. Verified in documentation, not on a device, and the
+11. **HEIC decode coverage** (§4.3.5). The design assumes Safari/iOS decodes HEIC
+    via `createImageBitmap`. Documented, not verified on a device, and the
     fallback (`libheif` WASM, ~700 KiB lazy) is a real bundle cost if the
     assumption is wrong on older iOS.
-12. **The 1568 px longest-edge budget** (§4.3.3) is taken from vision-model
-    guidance, not measured against the agents in [D5](decisions.md#d5--initial-agent-coverage).
-    If an agent re-encodes or re-tiles anyway, a larger upload is pure waste and
-    the number should drop.
-13. **Screenshot-vs-photo detection** for the PNG/JPEG re-encode choice
-    (§4.3.3) uses a colour-count and alpha heuristic. It will misfire on
-    screenshots of photos. The failure is mild (a slightly larger or slightly
-    softer file), but it is a heuristic in a document that is otherwise hostile
-    to them, and it should be measured before it is defended.
-14. **Partial-transfer retention of 10 minutes** (§4.3.4) is a guess, and it
+12. **The 1568 px longest-edge budget** (§4.3.5) is taken from vision-model
+    guidance, not measured against the agents in
+    [D5](decisions.md#d5--initial-agent-coverage). If an agent re-encodes or
+    re-tiles anyway, a larger upload is pure waste and the number should drop.
+13. **Screenshot-vs-photo detection** for the PNG/JPEG re-encode choice (§4.3.5)
+    uses a colour-count and alpha heuristic. It will misfire on screenshots of
+    photos. The failure is mild (a slightly larger or softer file), but it is a
+    heuristic in a document otherwise hostile to them, and it should be measured
+    before it is defended.
+14. **Partial-transfer retention of 10 minutes** (§4.3.6) is a guess, and it
     interacts with the blob quota: an abandoned 8 MB partial counts against
     something for ten minutes. Whether partials are quota'd separately is
     unspecified.
-15. **Reverse-direction correlation** (§4.3.8) for agents with no structured file
-    output relies on path matching in tool results, which is the same class of
-    inference [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting)
+15. **Reverse-direction correlation** (§4.3.10) for agents with no structured
+    file output relies on path matching in tool results, which is the same class
+    of inference [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting)
     treats as low confidence. The conservative fallback (attach to session, not
-    block) may be too conservative to be useful in practice.
-16. **Clipboard *monitoring*.** A tempting feature ("omt notices you copied an
+    block) may be too conservative to be useful.
+16. **The 32 KiB inline threshold** (§4.3.1) is the single most consequential
+    number in the attachment design — it decides whether an agent spends context
+    or a tool call — and it is currently a guess. It probably wants to be
+    per-agent (a model with a 1 M context and a cheap read tool wants a different
+    answer from one without) and possibly derived from the adapter's reported
+    context window. Needs use before it is fixed.
+17. **Per-agent attachment facts marked UNCERTAIN in §4.3.2** — Cursor, Crush,
+    Qwen, opencode's exact TUI mention syntax, and PDF/non-image acceptance for
+    everything except Claude Code. Each needs a hands-on test, not more
+    documentation reading. Until then `attachment_reference` falls back to the
+    absolute-path form, which §4.3.2 finding 1 argues is genuinely adequate — so
+    the cost of being wrong is a missed optimization, not a broken feature. This
+    is the intended failure direction.
+18. **`omt attach` and reading from stdin** (§4.3.3). Piping into `omt attach -`
+    means the content hash is only known after the whole stream is buffered,
+    which defeats the offer-hash-first dedup (§2) and needs either a temp spool
+    or a streaming-commit variant of `media.blob.begin`. Unspecified.
+19. **Directory attachment defaults** (§4.3.1): the ≤8 files / ≤1 MiB threshold
+    between "attach individually" and "one archive plus a listing" is
+    unvalidated, and the archive path hands the agent something it must unpack
+    with a tool call. Whether users actually want the archive form, or would
+    rather be told to narrow their selection, is unknown.
+20. **Does inlining text actually beat handing over a path?** §4.3.1 assumes yes
+    below 32 KiB because it saves a round trip. But an agent that re-reads the
+    file anyway (to get line numbers for an edit) pays for both. Worth measuring
+    per agent before the threshold is defended.
+21. **Clipboard *monitoring*.** A tempting feature ("omt notices you copied an
     image and offers to attach it") is deliberately not designed here: polling
     the OS clipboard is a privacy hazard and, on macOS, triggers system paste
     notifications. If it is ever built it must be explicitly enabled and visibly

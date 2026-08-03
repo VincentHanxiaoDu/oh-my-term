@@ -140,6 +140,57 @@ adapter is therefore built *early*, not last.
 
 ---
 
+## D8 — Two session modes: `pty` (default) and `native` (ACP)
+
+**Decision.** omt supports two ways to run an agent, chosen per session:
+
+- **`pty` — the default.** omt spawns the user's real CLI in a real PTY. The
+  agent draws its own TUI; omt observes it through the tiered source model of
+  [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting). This is the
+  product premise and stays the default everywhere.
+- **`native` — opt-in.** omt spawns the agent in ACP mode
+  (`opencode acp`, `gemini --acp`, `cursor-agent acp`, the official Claude and
+  Codex adapters, …) and speaks JSON-RPC to it. The agent has **no TUI**; omt
+  renders the whole session itself from typed events.
+
+Invoked as `omt claude` versus `omt claude --native`, and settable per workspace
+in config.
+
+**Reasoning.** Research ([`acp-and-elicitation.md` §10](../research/acp-and-elicitation.md))
+established that these are mutually exclusive: **ACP is not an observability
+sidecar, it is a replacement front end.** You cannot run a CLI's TUI and speak
+ACP to the same process. That research also corrected three earlier beliefs:
+the ACP ecosystem is ~40 agents rather than four and includes first-party
+Claude, Codex, Cursor and Copilot adapters; `session/request_permission` is
+verified live and is a blocking request with **no timeout** — a materially
+better shape for a phone round-trip than Claude Code's still-unverified
+`permissionDecision: "defer"`; and ACP has its own `elicitation/create`, so
+`Choice` is not permanently Claude-only.
+
+Refusing `native` would forfeit a verified mechanism that is better than the one
+the flagship feature currently depends on. Making it the default would turn omt
+into "another ACP client" competing with Zed and JetBrains, and would silently
+take away the user's actual CLI — its keybindings, its `/voice`, its permission
+UX, its on-disk sessions. Note especially that the Claude ACP adapter wraps the
+**Agent SDK, not the Claude Code CLI**: a user in `native` mode is not running
+Claude Code at all. That must be a deliberate, informed choice, never a default.
+
+**Consequences.**
+- `SessionMode` is part of the session model, visible on every surface. A
+  `native` session is always labelled as such — the user must never be confused
+  about which product they are talking to.
+- The `AgentAdapter` trait must express both modes; adapters declare which they
+  support. The tiered `EventSource` model applies to `pty` only.
+- In `native` mode omt owns the rendering, which makes the block view, the
+  interaction cards and the mobile experience strictly better. That is the
+  honest selling point, and the honest cost is stated next to it.
+- ACP v1 is the build target; v2 (Draft, with a `state_update` notification that
+  maps directly onto `AgentState`) is negotiated where offered.
+- `native` mode does not weaken [D1](#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics):
+  omt still surfaces exactly the agent's own permission requests.
+
+---
+
 ## D6 — Terminal emulation is built on a third-party byte-level parser
 
 See [04 — Terminal core](04-terminal-core.md) for the full evaluation. Recorded
