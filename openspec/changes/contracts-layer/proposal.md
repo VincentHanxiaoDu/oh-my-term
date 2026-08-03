@@ -59,9 +59,10 @@ None. This is the first change; no specs exist yet.
 
 ## Non-goals
 
-- **No handlers.** This change declares capabilities and dispatches them; it
-  implements none. A capability with no handler is registered and returns
-  `unsupported` until the change that owns it lands.
+- **Few handlers.** This change ships the dispatch machinery and only the three
+  capabilities needed to prove it. It does *not* declare capabilities it cannot
+  implement: `seal()` is strict, so "declared but unimplemented" is a boot
+  failure rather than a state to live in (design D-8).
 - **No I/O.** No PTY, no sockets, no storage, no rendering. `omt-proto` defines
   the messages; `omt-transport` (a later change) moves the bytes.
 - **No agent knowledge.** `AgentEvent` is the normalized shape; per-agent
@@ -74,6 +75,9 @@ None. This is the first change; no specs exist yet.
   real one.
 - **No plugin host.** `Origin::Plugin` and the generic renderer path are
   declared so the type system accounts for them; hosting is doc 11's change.
+- **No working surfaces.** `omt-tui`, `omt-server`, `omt` and `web/` are created
+  as stubs so the parity gate has four arms to check (design D-6). They render
+  nothing, listen on nothing and serve nothing.
 
 ## Dependencies and parallelism
 
@@ -87,8 +91,9 @@ None. This is the first change; no specs exist yet.
 
 ## Impact
 
-- Creates the workspace root, `crates/omt-{types,catalog,events,proto}`,
-  `xtask/`, and the committed `schemas/` + `web/src/generated/` outputs.
+- Creates the workspace root, `crates/omt-{types,util,catalog,events,proto}`,
+  stub `crates/omt-{tui,server}` and `crates/omt`, `xtask/`, `web/`, and the
+  committed `schemas/` + generated outputs.
 - Establishes the CI gates every later change inherits: `cargo fmt`,
   `clippy -D warnings`, the codegen `--check` diff, the layering test, and the
   parity test over the registry.

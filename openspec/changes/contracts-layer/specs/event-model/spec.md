@@ -19,12 +19,6 @@ native TUI subscribes on the same terms as a remote client.
   the same schema and the same identifiers
 - **AND** no event exists that only the TUI can observe
 
-#### Scenario: Events derive from state, never substitute for it
-
-- **WHEN** a handler mutates state
-- **THEN** the state layer emits the event
-- **AND** handlers do not publish events by hand
-
 ### Requirement: Every event is ordered within its scope
 
 Each event SHALL carry a monotonically increasing sequence number within its
@@ -49,11 +43,13 @@ scope, so that a reconnecting client can resume exactly and can detect a gap.
 - **THEN** the client is told it must resynchronize, and how much was dropped
 - **AND** the client is never left believing it is current when it is not
 
-#### Scenario: Sequence numbers survive a restart
+#### Scenario: A sequence position is never reused
 
-- **WHEN** the instance restarts
-- **THEN** sequence numbers continue from where they left off rather than
-  restarting, so a stale resume request is recognizable
+- **WHEN** a position has been issued for a scope
+- **THEN** no later event in that scope is issued the same or a lower position,
+  for the lifetime of that scope's identity
+- **AND** a client presenting a position from the future is recognizable as such
+  rather than silently accepted
 
 ### Requirement: Kind and source vocabularies are closed
 
@@ -119,6 +115,13 @@ whether and how omt can deliver an answer to it.
 - **THEN** the interaction is in a state distinct from both unanswered and
   successfully answered
 - **AND** no surface presents that state as success
+
+#### Scenario: A committed decision records what was decided
+
+- **WHEN** an answer has been accepted but not yet written toward the agent
+- **THEN** the recorded state carries the response itself
+- **AND** an interruption at that moment can report what the answer was, rather
+  than only that one existed
 
 #### Scenario: A lost answer preserves what was lost
 

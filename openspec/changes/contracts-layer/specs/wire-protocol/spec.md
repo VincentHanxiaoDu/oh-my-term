@@ -38,11 +38,11 @@ capability or subscribe to events.
   authenticating
 - **THEN** the request is refused and no state is disclosed
 
-#### Scenario: A local peer on the instance's own socket is identified by the OS
+#### Scenario: A local peer's established identity is carried, not re-asserted
 
-- **WHEN** a process on the same machine connects over the local socket
-- **THEN** its identity is established from the operating system's peer
-  credentials, and a peer whose user differs from the instance's is refused
+- **WHEN** a connection arrives over the local socket
+- **THEN** the protocol carries the peer identity the transport established, and
+  provides no way for a message to claim an identity of its own
 
 ### Requirement: Requests are identified stably across reconnection
 
@@ -78,11 +78,13 @@ to resume a subscription from a stated position.
 When a subscriber cannot keep up, the instance SHALL apply a stated policy that
 never silently drops an event a client believes it received.
 
-#### Scenario: A backlogged terminal stream collapses rather than lies
+#### Scenario: A client is told when it fell behind, and by how much
 
-- **WHEN** terminal output outpaces a subscriber
-- **THEN** buffered output may be collapsed into a current snapshot
-- **AND** the client is informed that this happened
+- **WHEN** a subscriber falls behind and the instance sheds or collapses what it
+  had buffered
+- **THEN** the protocol carries a notice naming what class of data was affected
+  and how much
+- **AND** there is no encoding in which data is dropped without such a notice
 
 #### Scenario: A permanently slow subscriber is disconnected, not starved
 
@@ -114,17 +116,20 @@ Raw terminal input SHALL NOT be re-sent on reconnection; a client that loses a
 connection mid-input SHALL fail loudly rather than risk applying a fragment
 twice.
 
-#### Scenario: Typing into a dead connection fails visibly
+#### Scenario: Terminal input has no resend encoding
 
-- **WHEN** a client sends terminal input while the connection is down
-- **THEN** the attempt fails visibly to the user
-- **AND** the bytes are not queued for later delivery
+- **WHEN** a connection is re-established
+- **THEN** the protocol offers no message by which previously-sent terminal input
+  can be replayed
+- **AND** a client that lost input therefore cannot silently re-apply it
 
 ### Requirement: An agent's hook reports over a local ingress
 
-An agent's own hook mechanism SHALL be able to report an observation to the
-instance over the local socket, carrying the agent's payload verbatim, and SHALL
-never block or break the agent when the instance is slow, unreachable or absent.
+The protocol SHALL define messages by which an agent's own hook reports an
+observation to the instance, carrying the agent's payload verbatim, and SHALL
+encode a directive back to the hook that is safe to act on when the instance is
+slow, unreachable or absent. The hook binary's own behaviour is delivered by the
+change that builds it; what is specified here is the encoding it depends on.
 
 #### Scenario: The hook reports and the agent proceeds
 
@@ -133,12 +138,13 @@ never block or break the agent when the instance is slow, unreachable or absent.
   instance
 - **AND** the agent continues without perceptible delay
 
-#### Scenario: A dead or slow instance never wedges the agent
+#### Scenario: The safe directive requires no reply to construct
 
-- **WHEN** the instance is unreachable, or does not answer within the hook's
-  budget
-- **THEN** the hook returns the response its agent expects and exits successfully
-- **AND** the agent's behaviour is indistinguishable from omt not being installed
+- **WHEN** the instance is unreachable, or does not answer within the budget the
+  request carries
+- **THEN** the directive that lets the agent proceed unchanged is one the hook can
+  produce without having received anything
+- **AND** no encoding requires a round trip in order to fail safely
 
 #### Scenario: An unrecognized hook event is recorded, not discarded
 

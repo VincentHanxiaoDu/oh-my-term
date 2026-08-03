@@ -107,14 +107,73 @@ stays meaningful in `Submitted` and `Undelivered`, where a client must say
 whether a retry is even possible — putting it inside `Open` deletes exactly the
 information the failure surface needs. This change implements 06's placement.
 
-### D-6. Errors are typed per crate; no `anyhow` below the binaries
+### D-6. Stub surfaces ship here, so the parity gate is whole
+
+The parity check needs four arms: generated route and schema, a TUI action, a web
+handler, and a docs entry ([03 §5](../../../docs/architecture/03-capability-catalog.md)).
+Three of them live in crates and a package this change would not otherwise
+create, which would leave the gate testing one arm of four — and a gate that
+cannot fail does not prove anything.
+
+So this change creates **minimal stubs**: `crates/omt` (the binary, which codegen
+must run anyway to dump the catalog), `crates/omt-tui` with an action table and
+no rendering, `crates/omt-server` with a route table and no listener, and a
+`web/` package with a tsconfig and the generated handler map. Each is a few dozen
+lines. They exist so the gate is real from the first commit, and so the changes
+that own them start from a compiling skeleton rather than a blank directory.
+
+Rejected: descoping the gate to the artifacts this change already produces. P3 is
+the reason the catalog exists, and a parity test that only checks generated files
+against themselves is a tautology.
+
+### D-7. Payload bodies ship only for the kinds the slice needs
+
+The closed ten-value `EventKind` set and the envelope freeze here — they are wire
+surface and every later change reads them. The variant **bodies** do not all
+follow: `07 §3.7.1`'s `session_tree`, `config`, `plugin`, `audit` and
+`workspace_fs` payloads name roughly thirty types owned by L2 and L3 documents
+(`Layout`, `Session`, `Presence`, `WriterToken`, `BlockState`, `Diagnostic`,
+`ConfigScope` …). `omt-events` is L1 and cannot depend on any of them, so
+shipping those bodies now would mean hoisting thirty types into `omt-types` —
+which [02](../../../docs/architecture/02-crate-map.md) describes as having no
+behaviour — before the crates that own them exist to say what they are.
+
+This change therefore ships bodies for `terminal` (the subset the frame path
+needs), `agent`, `interaction` and `instance`, and leaves the rest declared as
+kinds with their bodies to be added by their owning change. The rule is stated so
+it is an extension point rather than an omission: **a kind is frozen; a body is
+added by the change that owns the types it names.** The vertical slice touches
+none of the deferred five.
+
+Genuinely shared types do move to `omt-types` here, because more than one crate
+names them: `Actor`/`ActorId`, `Timestamp`, `Tier`, `SourceId`, `AgentSessionId`,
+`ResponderRef`, and `FileDiff` — the last because `06 §5` types
+`InteractionKind::Permission.diff` as one while `15` owns the crate that produces
+it, and L1 cannot depend on L2.
+
+### D-8. `seal()` is strict; there is no "declared but unimplemented"
+
+[03 §3.2](../../../docs/architecture/03-capability-catalog.md) makes a declared
+capability with no handler a **boot failure**, and this change follows it rather
+than the softer `unsupported` an earlier draft of the spec proposed.
+
+The softer form looked necessary because this change declares capabilities it
+does not implement — but it does not. Declarations live in the crates that own
+them, so a capability exists only when its crate does, and that crate brings its
+handler. The three capabilities declared here (§8.1) all ship with handlers.
+
+Same principle as D-1: prefer the failure that is loud. A missing handler found
+at boot names the capability; found at runtime it is a call that fails at an
+inconvenient hour.
+
+### D-9. Errors are typed per crate; no `anyhow` below the binaries
 
 Per [P5](../../../docs/architecture/01-principles.md). Each crate defines its own
 error enum with `thiserror`. `CapabilityError`'s closed code set plus structured
 detail is what lets a caller distinguish "already resolved" from "withdrawn" from
 "timed out" — a distinction D15 requires and that a stringly-typed error destroys.
 
-### D-7. Schema generation via `schemars`, checked in
+### D-10. Schema generation via `schemars`, checked in
 
 Input and output types derive `JsonSchema`. Generated artifacts are committed and
 diffed in CI rather than produced at build time, so a schema change is visible in

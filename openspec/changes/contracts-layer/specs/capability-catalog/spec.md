@@ -68,11 +68,12 @@ role check before invoking a handler.
 - **WHEN** the TUI invokes a capability in-process
 - **THEN** the same dispatch path and the same role check apply
 
-#### Scenario: An unimplemented capability answers honestly
+#### Scenario: A declared capability with no handler is a startup failure
 
-- **WHEN** a declared capability has no registered handler
-- **THEN** invoking it returns `unsupported` rather than failing to resolve the
-  name
+- **WHEN** the registry is sealed and any declared capability has no registered
+  handler
+- **THEN** startup fails, naming the capability
+- **AND** the gap is found at boot rather than by a caller at runtime
 
 ### Requirement: Errors are a closed, discriminating set
 
@@ -105,10 +106,11 @@ transport or client.
 
 ### Requirement: Parity is enforced for every capability
 
-For every declared capability the build SHALL verify that an API route and
-schema exist, a TUI action is bound to it, the web client has a handler, and it
-appears in the generated reference — or that it carries an explicit, listed
-parity exemption.
+For every declared capability the build SHALL verify that a route and schema
+exist, that a TUI action is bound to it, that the web client has a handler, that
+it appears in the generated reference, and that it is reachable by name from the
+command palette — or that it carries an explicit, listed exemption for the
+surfaces it omits.
 
 #### Scenario: A capability missing a surface fails CI
 
@@ -116,10 +118,30 @@ parity exemption.
 - **THEN** the parity check fails and names both the capability and the missing
   surface
 
+#### Scenario: The check runs in both directions
+
+- **WHEN** a surface binds a name that no capability declares
+- **THEN** the check fails
+- **AND** it fails for the same reason as the forward direction: a surface and
+  the catalog disagreeing
+
+#### Scenario: Administrative capabilities are not required on every surface
+
+- **WHEN** a capability requires the administrative role
+- **THEN** it is not required to have a bound TUI action
+
+#### Scenario: Declaration soundness is checked with parity
+
+- **WHEN** the check runs
+- **THEN** it also verifies that every command declares an intent class and that
+  no capability's refined effects exceed its declared effects
+
 #### Scenario: Exemptions are visible and enumerated
 
 - **WHEN** a capability declares a parity exemption
-- **THEN** it appears in the generated reference with its stated reason
+- **THEN** the exemption names the specific surfaces it covers rather than
+  waiving the check wholesale
+- **AND** it appears in the generated reference with its stated reason
 - **AND** it matches an explicit allow-list, so an exemption cannot be added
   silently
 
