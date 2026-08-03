@@ -1072,7 +1072,7 @@ keymap = "default"     # "default" | "vim" | "emacs" | a name in keymaps/
 "<leader> |"      = { capability = "pane.split", args = { direction = "vertical" } }
 "<leader> -"      = { capability = "pane.split", args = { direction = "horizontal" } }
 "<leader> z"      = "pane.zoom"
-"<leader> ["      = "tui.enter_copy_mode"
+"<leader> ["      = "tui.copy_mode.enter"
 "<leader> w"      = "tui.open_session_picker"
 "<leader> a"      = "tui.open_agent_dashboard"
 "<leader> ,"      = "tui.open_settings"
