@@ -367,3 +367,119 @@ and a deployment step to onboarding.
   Telegram, Bark, webhook) without touching core — per
   [P2](01-principles.md#p2--pluggable-extension-without-modification). Nothing
   in the design may assume notifications never exist.
+
+---
+
+## D13 — Synthetic delivery is a gated transaction, never a bare write
+
+**Decision.** Amends [D11](#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it).
+When a remote resolution is delivered by synthetic input, it is an **atomic,
+gated PTY transaction**, never a bare write:
+
+1. acquire the session's writer token;
+2. verify **input quiescence** — no human bytes for a quiet period;
+3. **re-verify against the freshest source** that the agent is still in the same
+   interaction;
+4. write the answer as one unit;
+5. release.
+
+Any check failing fails the resolve with `conflict` or `precondition_failed`,
+visibly, on the surface that attempted it. A partial write is never permitted.
+
+**Reasoning.** D11 moved the delivery channel from the hook's response slot to
+the PTY, and in doing so gave up a safety property that was doing real work:
+[12 §4.2](12-collaboration.md) noted that `omt-hook` holds exactly one in-flight
+response slot per interaction, so *even a bug in the ledger cannot produce two
+hook decisions*. A PTY has no such property — it accepts arbitrarily many
+writers and has no compare-and-swap. The interaction ledger still serializes
+omt's own resolvers against each other, but it **cannot** serialize omt against
+the human at the keyboard, because the human is not a capability caller.
+
+The concrete failure: a phone resolves and types `1\r` while the local user
+types `2\r`. The streams interleave into `12\r\r` and the agent reads option
+"12". Neither side observes a conflict — the ledger records resolved-by-phone,
+the agent did something else, and the audit log is false. Silent divergence with
+a false record is a worse failure than the two-phase-commit problem D11
+removed.
+
+The rule underneath is simple and was previously an unstated assumption:
+**synthetic input is only safe into an idle input path.** D13 makes it a
+precondition that is checked rather than hoped for.
+
+**Consequences.**
+- The local TUI's passthrough bytes into a session with an open interaction must
+  pass through the same serialization point; that is the only place the two
+  writers can be ordered.
+- The writer token is a **lease**, and auto-acquisition must key on "no other
+  client has written recently" rather than "exactly one client is attached" —
+  the latter never fires in [D4](#d4--single-user-many-devices--with-the-interfaces-left-open-for-many-users)'s
+  own primary two-device scenario.
+- Interactions are modelled as **observed, not owned**:
+  `Open { deliverable: Native | Synthetic { requires_token } | None }`. Remote
+  answerability renders from `deliverable`, never from mere openness — so a card
+  omt cannot safely answer is never shown as answerable.
+- Per-agent coverage for observing a **resolution** (not just for raising one)
+  belongs in [06 §7.3](06-agent-layer.md)'s matrix. Where it is absent — a
+  denied permission may emit no `PostToolUse` at all — the card must expire
+  rather than linger, or a late remote answer lands in whatever the agent is
+  doing *now*.
+- **`native` mode has no such race**, because ACP supplies a real response
+  channel and no synthetic input is involved. This partially inverts
+  [D5](#d5--initial-agent-coverage)'s ordering rationale: Claude Code is the
+  depth ceiling but also the *least safe* delivery path, so the ACP adapter's
+  priority rises.
+
+---
+
+## D14 — Agent sessions get a transcript surface; blocks are for shell work
+
+**Decision.** A `pty` session has **three** surfaces, not two:
+
+| Surface | For | Source |
+|---|---|---|
+| **Block view** | ordinary shell work | OSC 133 segmentation ([04 §6](04-terminal-core.md)) |
+| **Transcript view** | agent sessions | the merged agent event stream ([06](06-agent-layer.md)), available whenever the binding has a tier ≥ Transcript source |
+| **Terminal view** | always available | the grid |
+
+The mobile default is chosen by session kind: block view for a shell, transcript
+view for an agent, terminal view one tap away from either.
+
+**Reasoning.** The block model does not work for agent sessions, and cannot be
+made to. Two independent reasons:
+
+- An alt-screen TUI produces no command boundaries at all — [04 §6.3](04-terminal-core.md)
+  correctly suspends segmentation there.
+- **Worse, and less obvious: Claude Code is not an alt-screen program.** Its Ink
+  renderer draws inline on the primary screen, so the alt-screen rule never
+  fires. There is no shell in the loop, so no OSC 133 ever arrives, so the
+  heuristic segmenter runs — and its close conditions are "PTY quiet **and the
+  foreground pgid returned to the shell**" or "a real OSC 133 `A`". In a
+  long-lived agent session the foreground pgid is the agent for the whole
+  session and no `A` ever arrives, so **neither close condition can ever fire**.
+  The result is one unbounded block, open forever, whose contents are a
+  cursor-addressed redraw stream flattened to lines — incoherent at 40 columns.
+
+So on a phone, the flagship use case would have shown an empty list or one card
+of garbage, falling back to a letterboxed 200-column grid — precisely what the
+block model existed to fix.
+
+The remedy was already built and merely unexposed: the tier 3/4/5 sources carry
+full assistant messages, tool calls and results, and `native` mode's renderer
+already displays exactly this. It was reserved for `native` sessions only.
+
+**Consequences.**
+- **[D9](#d9--positioning-what-omt-may-and-may-not-claim) is corrected.** The
+  honest claim is two sentences, both true: *the block model makes ordinary
+  shell work first-class on a phone — genuinely unclaimed; agent sessions are
+  made first-class by the observed-transcript view plus interaction cards,
+  derived from the agent's own structured sources.* The previous single claim
+  was not true for the primary use case.
+- The heuristic segmenter must never open a block it cannot close: block view is
+  suppressed for a session with an agent binding and no OSC 133, and the UI says
+  why. [04 §6.4](04-terminal-core.md) must state that its first close condition
+  is unreachable when the foreground process never returns to the shell.
+- **State the floor honestly.** A heuristic-tier agent (Aider, Amp, Crush in TUI
+  mode — [D5](#d5--initial-agent-coverage) track 4) gets neither blocks nor a
+  transcript: only busy/idle/needs-you and a letterboxed grid.
+  [06 §7.3](06-agent-layer.md)'s coverage matrix gains a "mobile surface"
+  column, so this is visible rather than discovered.
