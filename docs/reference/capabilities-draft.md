@@ -72,7 +72,7 @@ any more: the `workspace.vcs.*` family is covered by the carve-out, and
 | `instance.peers.list` | `peers-list` | Query | V | — | Other instances this one knows of. Federation is client-side; this is a hint list. |
 | `instance.peers.add` | `peers-add` | Command | A | — | Record a peer instance. |
 | `instance.detach` | `detach` | Command | V | — | Detach this client from everything ([05 §4](../architecture/05-session-model.md#4-attachment-detach-and-multi-client-viewing)). |
-| `instance.shutdown` | `shutdown` | Command | A | `DESTRUCTIVE` | `{ force, wait, grace }` → `{ blocked_by, shutting_down }`. **Parity-exempt.** |
+| `instance.shutdown` | `shutdown` | Command | A | `DESTRUCTIVE` | `{ force, wait, grace }` → `{ blocked_by, shutting_down }`. Reachable on every surface behind the standard `DESTRUCTIVE` confirm gesture; its former parity exemption is closed (see [Parity exemptions](#parity-exemptions)). |
 | `instance.restart` | `restart` | Command | A | `DESTRUCTIVE` | `{ force, wait }` → `{ blocked_by }` ([22 §10](../architecture/22-operations.md#10-capabilities)). |
 
 `instance.status` does **not** exist — [19 §2.1](../architecture/19-onboarding.md#2-discoverability-without-documentation)
@@ -242,7 +242,9 @@ generated doc entry.
 | `agent.wait` | `wait` | Query | V | — | Block until an agent reaches a terminal state → `AgentWaitResult` ([22 §8.3](../architecture/22-operations.md#8-automation-and-ci-g14)). |
 | `agent.queue.list` | `queue-list` | Query | V | — | The agent's own pending message queue, mirrored. |
 | `agent.queue.enqueue` | `queue-enqueue` | Command | O | — | Queue work for an agent that is mid-turn. Additive, conflict-free. |
-| `agent.queue.remove` | `queue-remove` | Command | O | — | Remove a queued item. |
+| `agent.queue.remove` | `queue-remove` | Command | O | — | Remove a queued item. Constrained exactly as `enqueue` is: a `BindingId`, `AgentState::Working`, and the entry named by id **and** text hash. On a mirrored queue the receipt is Claude Code's own `queue-operation remove` line; unconfirmed inside the window it renders *"removal not confirmed — the item may still be queued"* and is **never** retried ([06 §8](../architecture/06-agent-layer.md#8-ancillary-semantics)). |
+| `agent.queue.edit` | `queue-edit` | Command | O | — | Rewrite a queued entry in place, CAS on the entry version. **omt-managed queues only**; returns `unsupported` on a mirrored queue, because the agent emits no edit verb and remove+re-enqueue is two externally-confirmed intents that can lose the message between them ([06 §8](../architecture/06-agent-layer.md#8-ancillary-semantics)). |
+| `agent.queue.reorder` | `queue-reorder` | Command | O | — | CAS over the whole ordering, `{ binding, order, expected_version }`. **omt-managed queues only**; `unsupported` for Claude Code, which has no reorder verb and no receipt. This is the capability [08 §6.1](../architecture/08-web-client.md#61-live-message-queue)'s "only if the instance reports a queue-reorder capability" refers to; before this row it referred to nothing. |
 | `agent.commands.list` | `commands-list` | Query | V | — | The agent's **own** resolved slash-command list. Never omt guessing. |
 | `agent.commands.run` | `commands-run` | Command | O | — | Invoke one, through the agent's own channel. |
 
@@ -293,18 +295,73 @@ generated doc entry.
 | `keys.registry` | `registry` | Query | V | — | Dump an `InnerKeymap`. |
 | `keys.probe` | `probe` | Query | V | — | The `TerminalProfile` ([16 §5.5](../architecture/16-input-and-keymap.md#5-conflict-detection-and-resolution)). |
 | `keys.capture` | `capture` | Command | O | — | Record a chord's bytes for the corpus. |
+| `keys.use` | `use` | Command | O | — | Switch the active keymap at runtime (`Runtime` config layer); `omt keys use vim`. Formerly `tui.set_keymap` — see the `tui` note below. |
 
-## `tui` — [16 §11](../architecture/16-input-and-keymap.md#11-capabilities-introduced-here)
+## `tui` — **removed; there is no `tui` capability group** — [16 §7.1](../architecture/16-input-and-keymap.md#71-what-the-thin-client-intercepts-vs-forwards)
+
+Per [D17](../architecture/decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances),
+**surface-local UI verbs do not belong in the catalog**, and this group was
+entirely made of them. `tui.zoom_font` was demoted to a client preference first;
+the rest of the family follows for the same reason. Six former rows are now
+client-local **actions** in the non-catalog `ui.*` namespace, and one is renamed
+into an existing group:
+
+| Former name | Now | Why |
+|---|---|---|
+| `tui.open_command_palette` | `ui.open_command_palette` | Opening the palette opens *this* client's palette. No second surface owes anything. |
+| `tui.open_keymap_help` | `ui.open_keymap_help` | " |
+| `tui.open_session_picker` | `ui.open_session_picker` | " |
+| `tui.open_settings` | `ui.open_settings` | " |
+| `tui.open_agent_dashboard` | `ui.open_agent_dashboard` | " |
+| `tui.copy_mode.*` | `ui.copy_mode.*` | One client's viewport state machine. See below. |
+| `tui.set_keymap` | **`keys.use`** — still a capability, in the `keys` group above | There is exactly one keymap and it is the instance's, served to every attached client ([16 §6.9](../architecture/16-input-and-keymap.md#69-parity-the-web-client-and-mobile)); switching it changes what every surface resolves keys against, and writes the `Runtime` config layer. It was in `tui.*` by association only. |
+
+Copy mode is the row that made this worth doing. It is a selection anchor, a
+motion cursor and a scroll pin over one client's viewport — no instance state,
+and one externally visible effect, the yank, which is `media.clipboard.write` and
+**is** declared. Declaring the motion set here obliged the web client to
+implement a handler for *"enter copy mode"* when its honest answer is native
+browser text selection ([16 §6.9](../architecture/16-input-and-keymap.md#69-parity-the-web-client-and-mobile)):
+long-press, drag handles, **Copy**. That is the better affordance, not a gap.
+
+`ui.*` and `pref.*` are not part of the catalog, do not appear in generated
+output, and **must not be added to this file**. Each client merges its own action
+table into its own palette, which is where their discoverability lives.
+
+## `job` — long-running work — [16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace)
+
+> **Needs an owning architecture document.** These belong in
+> [22 §10](../architecture/22-operations.md#10-capabilities) next to `system.*`
+> and `upgrade.*`; they are declared here because the gap they close spans four
+> documents and no single one of them owns it. Moving the declaration into 22 is
+> a follow-up, not a redesign.
 
 | Name | Verb | Kind | Role | Effects | Description |
 |---|---|---|---|---|---|
-| `tui.open_command_palette` | `open-command-palette` | Command | V | — | Open the palette ([16 §3.5](../architecture/16-input-and-keymap.md#3-the-leader-key)). |
-| `tui.open_keymap_help` | `open-keymap-help` | Command | V | — | Open the keymap cheat sheet ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace)). |
-| `tui.open_session_picker` | `open-session-picker` | Command | V | — | Open the session list ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace), `<leader> w`); the web equivalent is the session list view. |
-| `tui.open_settings` | `open-settings` | Command | V | — | Open the settings surface over [10](../architecture/10-configuration.md) ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace), `<leader> ,`). It opens a view; it does not write config, so no `WRITES_CONFIG`. |
-| `tui.open_agent_dashboard` | `open-agent-dashboard` | Command | V | — | Open the agent dashboard ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace), `<leader> A`). |
-| `tui.set_keymap` | `set-keymap` | Command | O | — | Switch keymap at runtime (`Runtime` layer); `omt keys use vim`. |
-| `tui.copy_mode.*` | `copy-mode-*` | Command | O | — | Motions, selection, yank — the action set the vim and emacs keymaps both target ([16 §6.6](../architecture/16-input-and-keymap.md#6-modal-keymaps-vim-mode-and-emacs-mode), §6.7). Enumerated in 16, not restated here. |
+| `job.list` | `list` | Query | V | — | Every live `JobId` on this instance: capability that started it, actor, `started_at`, `phase`, progress where the job reports it, and whether it is cancellable. Bound to `⟨leader⟩ J`. |
+| `job.get` | `get` | Query | V | — | One job, including its terminal outcome for a bounded retention window after it finishes. |
+| `job.cancel` | `cancel` | Command | O | — | Ask a job to stop. Cooperative: the job reaches its next checkpoint, rolls back or abandons its partial output per its own contract, and ends `Cancelled`. Never `kill -9`. `Operator`, matching the roles of the capabilities that start jobs. |
+
+**Why one general cancel and not a cancel per capability.** The long-running
+capabilities — `search.reindex`, `store.export`, `upgrade.apply`,
+`remote.bootstrap` — already share a shape: work that outlives the call and is
+identified by a `JobId` (`store.export.progress` is already keyed on one). A
+per-capability cancel would multiply that shape by four, each needing its own
+name, its own TUI binding and its own web control, and the fifth long-running
+capability added next year would silently ship without one — which is exactly how
+this gap appeared. One cancel over one job registry means a new long-running
+capability inherits cancellation by returning a `JobId`, and the rule that makes
+it true is stated as a rule: **a capability whose work outlives its call returns
+a `JobId` and registers the job.** `upgrade.apply` and `remote.bootstrap`
+currently block instead, and must change accordingly.
+
+`media.blob.abort` is **not** folded into `job.cancel` and is the deliberate
+exception. It is not a cancel of background work but a verb of the transfer
+protocol itself, with an effect no generic cancel can have — the partial file is
+unlinked immediately — and a client that has begun a `blob` transfer already holds
+the handle it needs. Two cancels exist because they cancel two different kinds of
+thing; the test is whether the caller is stopping *a job the instance is running*
+or *a protocol exchange it is itself half-way through*.
 
 ## `setup` / `onboarding` / `help` / `migrate` / `term` / `uninstall` / `nesting` — [19 §9](../architecture/19-onboarding.md#9-capabilities-this-document-requires)
 
@@ -320,8 +377,8 @@ All palette-visible with a `title` unless marked hidden.
 | `onboarding.dismiss_hints` | `dismiss-hints` | Command | O | `WRITES_FS` | Permanent. |
 | `help.topics` | `topics` | Query | V | — | The generated help tree. |
 | `help.render` | `render` | Query | V | — | `{ topic \| context }` → the help overlay's model. |
-| `migrate.tmux.preview` | `tmux-preview` | Query | O | `READS_FS` | Parse + map + report, writing nothing. |
-| `migrate.tmux.apply` | `tmux-apply` | Command | A | `WRITES_FS` | Requires the preview's hash. |
+| `migrate.tmux.preview` | `tmux-preview` | Query | O | `READS_FS` | Parse + map, writing nothing → `TmuxPreview`, the per-directive decision set ([19 §5.3](../architecture/19-onboarding.md#53-the-tmuxconf-importer)). |
+| `migrate.tmux.apply` | `tmux-apply` | Command | A | `WRITES_FS` | Requires the preview's hash **and** a decision for every `MappedReview` directive; never silently takes a default. |
 | `migrate.zellij.preview` | `zellij-preview` | Query | O | `READS_FS` | Best-effort ([19 §5.1](../architecture/19-onboarding.md#5-tmux-and-zellij-migration-and-coexistence)). |
 | `migrate.zellij.apply` | `zellij-apply` | Command | A | `WRITES_FS` | Best-effort. |
 | `term.profile` | `profile` | Query | V | — | Advertised `TERM`, entry resolution result, outer-terminal probe, disagreements. |
@@ -613,6 +670,16 @@ landing somewhere else entirely. Dispatch rejects a repeated `RequestId` with
 | `agent.commands.run` | the agent's command-invocation receipt |
 | `agent.interrupt` | the observed transition out of `Working` |
 | `media.image.paste` | the injected reference appearing in the agent's input |
+| `agent.queue.remove` | the agent's own `queue-operation remove` line ([06 §8](../architecture/06-agent-layer.md#8-ancillary-semantics)) |
+
+> **`agent.queue.remove` moved here from the `Cas` residue**, by the same
+> argument recorded for `interaction.resolve` below: on a mirrored queue the
+> removal is an at-most-once write into the agent's own UI, `intent` is static
+> and cannot vary per call, so the class must be the strictest the capability can
+> require. A replayed removal against a queue that has since drained removes a
+> *different* message. `agent.queue.edit` and `agent.queue.reorder` stay `Cas`
+> because they are offered **only** on the omt-managed queue, where omt owns the
+> sink and the write confirms itself.
 
 > **Choice made here, and it is not free.** `interaction.resolve` is
 > `ExternallyConfirmed` **unconditionally**, even though a `native`-mode or ACP
@@ -654,18 +721,20 @@ and it is removed from the `Cas` residue below.
 
 Per-client or per-identity soft state where a visible loser is the right
 outcome: `pane.scroll`, `pane.select`, `session.blocks.fold`,
-`layout.views.select`, `identity.prefs.set`, the `tui.open_*` family
-(`open_command_palette`, `open_keymap_help`, `open_session_picker`,
-`open_settings`, `open_agent_dashboard`) and `tui.copy_mode.*`, and the proposed
+`layout.views.select`, `identity.prefs.set`, and the proposed
 `continuity.draft.set`.
 
-> **Choice made here.** The `tui.*` commands were previously covered only by the
-> `Cas` residue below, which is wrong for them: opening a surface has no CAS
-> target — no version, no epoch, no file layer — so the residue's own
-> justification does not hold, and a replayed "open the palette" should simply
-> leave the palette open rather than return a cached result. They are per-client
-> view state, which is exactly `Lww`. `tui.set_keymap` is **not** in this list:
-> it writes the `Runtime` config layer and keeps its `Cas` target.
+> **What this class used to hold, and no longer does.** The `tui.open_*` family
+> was moved here out of the `Cas` residue on the argument that opening a surface
+> has no CAS target — no version, no epoch, no file layer — so a replayed "open
+> the palette" should leave the palette open rather than replay a cached result.
+> That argument was right and it went one step further than it was taken:
+> something with no instance state to CAS against has nothing for the instance to
+> hold at all. [D17](../architecture/decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances)
+> finished the move, and those six are now `ui.*` client-local actions with no
+> intent class, because they are not commands the instance ever sees. `keys.use`
+> — the former `tui.set_keymap` — stays a `Cas` command: it writes the `Runtime`
+> config layer, which is a real CAS target.
 
 ### `Cas`
 
@@ -678,8 +747,8 @@ This is the large majority: the whole of `workspace.*`, `pane.*` (other than the
 `service.*`, `upgrade.*`, `setup.*`, `migrate.*`, `theme.*`, `workflow.*`,
 `launch.*`, `stt.*`, `media.*` other than `image.paste`, `open.*` other than
 `activate` and `hints.select`, `workflow.*` other than `run`,
-`attention.snooze`/`clear`, `interaction.cancel`, `agent.bind`/`unbind`,
-`agent.queue.remove`, `events.subscribe`/`resume`.
+`attention.snooze`/`clear`, `agent.bind`/`unbind`,
+`agent.queue.edit`/`reorder`, `job.cancel`, `events.subscribe`/`resume`.
 
 It is stated as a residue rather than enumerated **because the enumeration is
 the generator's job**, and a second hand-maintained list of ~120 names would
@@ -696,10 +765,25 @@ exemption cannot be added silently
 
 | Capability | Surface | Reason (verbatim from the source) | Source |
 |---|---|---|---|
-| `instance.shutdown` | all | admin, no phone affordance | [07](../architecture/07-remote-protocol.md) |
 | `debug.dump_grid` | all | local-only diagnostic dump | [03](../architecture/03-capability-catalog.md#5-the-parity-contract) |
 | `instance.registry.revocations.push` | all | `peer-to-peer replication; no human surface` | [23 §12](../architecture/23-identity-and-devices.md#12-capabilities) |
 | `continuity.notification.ack` | **CLI only** | `no notification surface` | [remote-continuity §10.4](../design/remote-continuity.md#104-parity-notes) — proposed, along with the rest of `continuity.*` |
+
+**`instance.shutdown`'s exemption is closed, not moved.** Its stated reason —
+*"admin, no phone affordance"* — is a preference about what a phone screen should
+show, not a statement that the surface cannot carry the operation, and
+`instance.restart` sits in the same group with the same `Admin` role, the same
+`DESTRUCTIVE` bit and the same blast radius while taking no exemption at all. An
+exemption that one of an identical pair carries and the other does not is a
+drafting accident. [D2](../architecture/decisions.md#d2--remote-is-exactly-equivalent-to-local)
+settles which way to resolve it: an authenticated `Admin` on a phone is sitting
+at the TUI, and *"are you sure you want to shut this instance down"* is the
+confirm gesture every `DESTRUCTIVE` capability already gets — not a reason to
+withhold the operation from a surface. Both are now reachable everywhere, with
+the confirm gesture and the audit entry doing the work the exemption was
+standing in for. [03 §5](../architecture/03-capability-catalog.md#5-the-parity-contract)
+still cites `instance.shutdown` as its example of a legitimate exemption and must
+be updated to cite `debug.dump_grid` instead.
 
 [18 §9](../architecture/18-semantic-open.md#9-capabilities) states explicitly that
 the `open` group takes **no** exemptions, and
@@ -730,8 +814,17 @@ easiest to mistake for a declared capability.
   (`since = "0.4"`) and [18 §9](../architecture/18-semantic-open.md#9-capabilities)
   (`since = "0.5"`) state them; every other document omits the field. The
   generator emits them from the declarations.
-- **`tui.copy_mode.*` is a wildcard.** 16 §11 declares the family without
-  enumerating leaves; the individual motion/selection/yank capability names are
-  in §6.6–6.7 prose and are not reproduced here.
+- **`ui.copy_mode.*` is a wildcard, and no longer a catalog concern.** 16 §11
+  declares the family without enumerating leaves; the individual
+  motion/selection/yank names are in 16 §6.6–6.7 prose. They are client-local
+  actions, so the generator will not emit them and this file does not list them.
+- **Two rows still need their source document updated**, and the update is
+  editorial rather than a decision to re-take: `job.*` belongs in
+  [22 §10](../architecture/22-operations.md#10-capabilities), and `upgrade.apply`
+  / `remote.bootstrap` must return a `JobId` rather than block, so that
+  `job.cancel` reaches them.
+- **`instance.shutdown`'s parity exemption was removed here**; the sentence in
+  [03 §5](../architecture/03-capability-catalog.md#5-the-parity-contract) naming
+  it as a legitimate example has not been.
 - Input/output type names are given in the owning documents, not repeated here.
 - The `debug.*` group is not enumerated beyond its one exemption.

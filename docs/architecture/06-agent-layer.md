@@ -470,7 +470,8 @@ who can see the screen**. The reason is D15's: a duplicate keystroke into a UI i
 not a duplicate row that dedup can absorb, it is a keystroke landing *somewhere
 else entirely* — whatever the agent is doing now. `Undelivered` is therefore a
 terminal state that the system never tries to repair on its own; it is a report
-to a human, and the offered action is "open the terminal view", never "retry".
+to a human, and the offered action is "open the terminal view" or "go to the
+card", never "retry" — §5.2.2 specifies which surface offers which.
 (`interaction.resolve`'s idempotency key still replays the *stored result* of an
 already-applied call — that is a read of the ledger, not a second write.)
 
@@ -577,8 +578,9 @@ exactly the inference step this rule forbids.
 > variant**, and D13's spelling is to be read as shorthand for it. The reason is
 > that deliverability is a property of the *interaction and its responder*, not
 > of its openness: it stays meaningful in `Submitted` and `Undelivered`, where a
-> client must be able to say whether a retry is even possible or whether the
-> answer now needs a human at the keyboard. Putting it inside `Open` would
+> client must be able to say whether the card was answerable from here at all or
+> whether it always needed a human at the keyboard — which is what §5.2.2's
+> failure affordance renders. Putting it inside `Open` would
 > delete exactly the information the failure surface needs. It also keeps
 > `InteractionState`'s variants about *transitions* and nothing else, and it
 > matches how [12 §3.1](12-collaboration.md#31-what-it-governs) and
@@ -629,7 +631,51 @@ The runtime preconditions ([12 §4.6](12-collaboration.md#46-preconditions-on-a-
 including D16's *"is a number rendered on the row?"* check) are evaluated at
 **delivery** time, not here. A card can be `Synthetic` and still fail its
 transaction; that is `Undelivered { PreconditionFailed }`, and `deliverable` is
-what tells the client the retry is worth offering.
+what tells the client what to offer next — which is the subject of the next
+section.
+
+#### 5.2.2 What `deliverable` drives when delivery fails
+
+The reason `deliverable` survives into `Submitted` and `Undelivered` (§5.2.1) is
+that a failed delivery has to tell a human what they can still do. Until this
+section it did not: every surface rendered *"your answer may not have reached the
+agent — check the terminal"* and offered nothing to act on. The field now drives
+a concrete affordance, and the affordance differs by **where the client is**, not
+by role — [D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) is intact,
+because the difference is physical reach, not authority.
+
+There is **no Retry control on any surface, ever.** An injection is D15's
+externally-confirmed class and is never repeated by an automated actor; the
+ledger rejects a second resolver on an `Undelivered` interaction
+([12 §4.1](12-collaboration.md#41-the-invariant)); and the only actor permitted
+to re-answer is a human who can see the screen. What every surface offers
+instead is a way to *become* that human, or to reach one.
+
+| Surface | What is offered on an `Undelivered` card |
+|---|---|
+| A client attached to the session's own instance with the pane on screen — the local TUI, or a desktop web client showing that session | **Go to the card** (`interaction.focus_latest`, §4.4: focus the pane, unzoom, scroll it into view) and **Copy my answer** (the preserved `response`, onto *this* client's clipboard — `media.clipboard.write`, `Locality::Local`). The agent's own card is most likely still waiting; the human answers it there, by hand, with the text one paste away. |
+| Any other client — a phone, a client attached to a different instance | **Open the terminal view** for that session ([D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work)'s third surface, always available), with the preserved response shown read-only above it. This is the honest answer: a remote user cannot answer the card, but they can *look* at exactly what the agent is showing and decide whether to walk to the machine. |
+
+`deliverable` decides the sentence attached to both, and the distinction is the
+one a user actually needs:
+
+- **`Native` or `Synthetic { .. }`** — the card *was* answerable from here, and
+  the delivery is what failed. The copy reads *"your answer was not confirmed —
+  the agent's card is probably still waiting. Answer it at the terminal."* Paired
+  with `reason`: `PreconditionFailed` adds *"nothing was typed"* (the strongest
+  case for the card still being open and untouched), `NotConfirmed` adds *"omt
+  typed an answer but never saw the agent record it"*, and
+  `AnsweredDifferently { observed }` shows what the agent recorded instead, which
+  usually means someone at the keyboard already dealt with it.
+- **`None { reason }`** — the card was never answerable from omt at all
+  (multi-select, a plan review, a specific deny, no responder). The copy says so
+  and names the reason: *"this card can only be answered at the terminal."* There
+  is nothing to re-attempt, and telling the user that is more useful than an
+  identical failure banner.
+
+A client that cannot render either affordance — a CLI printing a result — prints
+the same two facts as text: the preserved response, and the session to open.
+That is the third surface's answer and it needs no capability of its own.
 
 ### 5.3 The deferral mechanism — demoted to an optional optimization
 
@@ -711,6 +757,37 @@ adding entries to the agent's own option list. The rule:
   is **rejected and recorded as such**: it would make the feature unavailable on
   channels that demonstrably support it, purely because an agent's suggestion
   list is a UI hint rather than a capability declaration.
+
+**Where it is available, and where it is not.** `supports_edit()` is a property
+of the channel, and the channels do not agree — so this feature is present on one
+session mode and absent on the other. That has to be stated here rather than
+discovered from a table three sections up:
+
+| Responder | `supports_edit()` | Consequence |
+|---|---|---|
+| ACP `session/request_permission` — every `native` session ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)), and the ACP agents in `pty` mode that still answer natively | **true** | The full editor, on every surface: [08 §5.3](08-web-client.md#53-permission--approval-cards--kindtype--permission)'s sheet on the web, and the `CARD_FOCUSED` map's `e` in the TUI ([16 §8.3](16-input-and-keymap.md#83-contextual-maps)) |
+| opencode plugin reply, Codex app-server approval | **true** where the reply carries a modified input; each adapter declares it | as above |
+| **Claude Code in `pty` mode** — the synthetic responder | **false** | No edit affordance anywhere. The channel is a single ASCII digit into the agent's own card (§5.2.1, [D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)); a keystroke cannot carry an `updated_input`, and there is no second channel to carry one alongside it |
+
+Two things follow, and both are deliberate:
+
+1. **The affordance is absent, not disabled.** A greyed-out *Edit* button would
+   advertise a feature the transport cannot perform and invite the user to hunt
+   for the setting that enables it. [08 §5.3](08-web-client.md#53-permission--approval-cards--kindtype--permission)
+   already renders it this way; this document had simply never said why.
+2. **No TUI argument editor is specified for `pty` mode**, and none should be.
+   In `pty` mode the local user is looking at the agent's own card, which has its
+   own amend affordance (Claude Code prints `Tab to amend` on permission cards) —
+   omt drawing a second editor over it would be exactly the replacement card
+   [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+   forbids, and it would have to deliver its result through the digit channel it
+   does not fit through. The `e` binding is therefore installed only where the
+   responder reports `supports_edit()`.
+
+This is a real gap against the competitor [D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)
+measured omt against, in the flagship agent's default mode, and it is recorded as
+one rather than hidden: `native` mode is where argument editing lives, and that
+is one more honest reason `native` exists.
 
 **Validation.** omt does not validate `updated_input` against a schema it
 invented. Where the channel supplies the tool's own input schema, the editor is
@@ -951,6 +1028,7 @@ mirror-don't-intercept shape and which nobody else does. Every other agent degra
      stale, disabled or has never seen a `queue-operation` line for a binding
      that should have one, surfaces show `unknown`, never an empty queue. An
      empty queue is a claim; a broken reader must not be able to make it.
+
 - **Slash commands.** Surfaced through `agent.commands.list` from the agent's
   own resolution (never from omt guessing), giving the web client a real
   completion popup with descriptions and argument hints.
@@ -971,6 +1049,92 @@ mirror-don't-intercept shape and which nobody else does. Every other agent degra
   language "where is this session at". It is displayed verbatim on the session
   card; omt never generates one itself (P4: omt does not talk to models).
 
+**The queue operations, and which of them each agent has.**
+
+There are two kinds of queue behind one group of capabilities, and every
+operation's semantics follow from which one it is acting on. This distinction is
+load-bearing and was previously left implicit:
+
+| Queue kind | Who owns the order | Agents |
+|---|---|---|
+| **Mirrored** | the agent. omt observes `queue-operation` lines and reproduces them; every mutation is an injection into a UI omt does not own | Claude Code |
+| **omt-managed** | omt. The entries are rows in omt's own durable intent log, flushed into the agent when it goes idle, and labelled as omt-managed on every surface | every other agent — the fallback described above |
+
+**`agent.queue.remove` is constrained exactly as `enqueue` is.** The four
+requirements above constrain `enqueue` to the hilt and said nothing about
+`remove`, which is backwards: removing the wrong entry is a silent loss of work,
+and on a mirrored queue a removal is the same class of act as an enqueue — an
+at-most-once write into the agent's own UI.
+
+- It carries a `BindingId` and requires `AgentState::Working`, for requirement
+  1's reason unchanged: a stale `remove` against a session whose agent has exited
+  has no queue to act on and must fail rather than type.
+- It names the entry by the id `agent.queue.list` returned **and** by a hash of
+  the entry's text. If the entry at that id no longer carries that text — the
+  agent consumed it, or the local user reordered around it — the call fails
+  `precondition_failed` and nothing is written. An id alone is a position, and a
+  position in a queue that is draining is not a stable target.
+- **What confirms it: Claude Code writes a `queue-operation remove` line, and
+  that line is the receipt.** Requirement 3's rule applies unchanged and in the
+  same direction — the line is delivery confirmation, not mirror data. omt waits
+  a bounded window (the same per-adapter default as an enqueue) for a
+  `queue-operation remove` naming that entry.
+- **When it is not confirmed inside the window**, the entry renders
+  `Removal not confirmed — the item may still be queued; check the terminal`,
+  with the entry's text preserved and still shown in the mirrored queue. It is
+  **never retried automatically**, for D15's reason: a repeated removal against a
+  queue that has since drained removes a *different* message. Exactly as with an
+  interaction, the offered action is to open the terminal view, never to try
+  again.
+- On an omt-managed queue a removal is a row deletion in omt's own log, is
+  confirmed by the write itself, and needs none of the above.
+
+`remove`'s intent class therefore moves from `Cas` to
+[D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
+**externally-confirmed** class, because `intent` is static and must be the
+strictest the capability can require — the same argument already recorded for
+`interaction.resolve`.
+
+**`agent.queue.edit` — new, and offered only on an omt-managed queue.**
+[08 §6.1](08-web-client.md#61-live-message-queue) renders queued text inline, which
+invites editing it, and the composition *remove + re-enqueue* is not an
+acceptable substitute: it is two separate externally-confirmed intents, each with
+its own confirmation window, and the first one is the unconfirmable one. A
+removal that lands followed by an enqueue that does not leaves the user with a
+queue that has silently lost a message and nothing safe to retry. So:
+
+- On an **omt-managed** queue, `agent.queue.edit { binding, entry, expected_hash,
+  text }` rewrites the row in place under a CAS on the entry version. omt owns
+  the sink, so this is an ordinary `Cas` command with no confirmation window and
+  no loss mode.
+- On a **mirrored** queue it returns `unsupported`, with the reason: Claude Code
+  emits `enqueue` and `remove` and no third verb, so there is no edit primitive
+  to drive and no receipt that would confirm one. The surface renders those
+  entries read-only rather than offering an edit that would decompose into the
+  lossy pair.
+
+**Queue reorder — declared, and `agent.queue.reorder` is what
+[08 §6.1](08-web-client.md#61-live-message-queue)'s "only if the instance reports a
+queue-reorder capability" refers to.** The condition was written against a
+capability that did not exist anywhere in the catalog. It exists now, with the
+same split and for the same reason:
+
+- **omt-managed queues can be reordered.** The order is a column in omt's own
+  log; `agent.queue.reorder { binding, order: Vec<EntryId>, expected_version }`
+  is a CAS over the whole ordering, which is the only shape that is safe when two
+  clients drag at once.
+- **Claude Code's mirrored queue cannot be, and no shipped agent's own queue
+  can.** There is no `queue-operation move`, no documented reorder gesture omt
+  could drive position-independently ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+  would forbid an inferred one), and therefore no receipt. The capability returns
+  `unsupported` for that binding and the client hides the drag handles — the same
+  absent-not-disabled rule §5.4 applies to argument editing.
+
+Stated plainly, because it is the sort of thing a reader will otherwise assume
+the other way round: **the flagship agent is the one that cannot reorder or edit
+its queue, and every other agent can, precisely because omt is holding their
+queue for them.** That inversion is real and is worth naming rather than
+smoothing over.
 ### 8.1 `AgentEvent` — the envelope
 
 Everything above, plus the whole content of the transcript view, travels as one

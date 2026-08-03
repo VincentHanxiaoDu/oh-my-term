@@ -667,26 +667,64 @@ This is the subtlest rule in the document, because two programs can be drawing a
 question at the same moment.
 
 An `Interaction` ([06 — Agent layer](06-agent-layer.md)) reaches omt through a
-structured source: a deferred `PreToolUse` hook, an ACP permission request, an
-`AskUserQuestion` tool call. omt can render it natively as a card. Meanwhile,
-the agent CLI is *also* rendering it in its own TUI inside the pane, because omt
-runs the real CLI in a real PTY ([P4](01-principles.md#p4--native-semantics-observe-never-re-implement))
-and does not rewrite its output.
+structured source: a `PreToolUse` hook, an ACP permission request, an
+`AskUserQuestion` tool call.
 
-**The rule: omt renders the card, but does not focus it, unless the user asks.**
+**Where a card exists at all is decided by
+[D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+and [D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp).** In a
+`pty` session the agent CLI draws its **own** card in the pane, and omt draws
+none locally: omt runs the real CLI in a real PTY
+([P4](01-principles.md#p4--native-semantics-observe-never-re-implement)), does
+not rewrite its output, and does not render a replacement over it. omt's card
+exists only on the surfaces where there is no agent-drawn card to preserve —
+remote clients, and the local TUI of a `native` session, where omt owns the
+rendering by construction.
+
+**So `CARD_FOCUSED` can be set in exactly two places**, and this is the whole of
+the flag's domain:
+
+| Surface | Can `CARD_FOCUSED` be set? | Why |
+|---|---|---|
+| Local TUI, `native` session | **Yes** | omt renders the session from typed events (D8); the card is omt's, so focusing it is meaningful |
+| Web / API client, any session mode | **Yes** — the client's own equivalent of the flag | The remote surface has no agent-drawn card to defer to; omt's card is the only one there is |
+| Local TUI, `pty` session | **Never** | omt draws no card here. There is nothing to focus |
+
+**The rule, in the surfaces where a card exists: omt renders the card, but does
+not focus it unless the user asks.**
 
 | State | `CARD_FOCUSED` | Keys go to |
 |---|---|---|
-| Interaction arrives, user is at the laptop | no | the agent — its own TUI is visible and correct |
-| User presses `<leader> a` (answer) or clicks/taps the card | yes | omt — the card |
-| User presses `Esc` on a focused card | no | back to the agent, card stays visible |
-| Interaction arrives, no local surface is attached (phone only) | n/a | the web client's card — the only surface there is |
+| Interaction arrives | no | the session — in `native` mode, omt's own prompt surface |
+| User presses `⟨leader⟩ a` or clicks/taps the card | yes | omt — the card |
+| User presses `Esc` on a focused card | no | back to the session, card stays visible |
 
 Why not focus automatically: an auto-focusing card would steal the keystroke of
-a user who was already typing `1` into Claude Code's own prompt, and would
-resolve the interaction twice — once natively, once by the user's original
-keystroke arriving late. That is the double-handling failure this section
-exists to prevent.
+a user who was already typing into the agent's prompt, and would resolve the
+interaction twice — once natively, once by the user's original keystroke
+arriving late. That is the double-handling failure this section exists to
+prevent.
+
+**What the card bindings do in a `pty` session: nothing, so they are not
+installed there.** `CARD_FOCUSED` is unreachable in `pty` mode, so a binding
+scoped to it — the `n`-comment binding below — would be dead, and
+`⟨leader⟩ a` → `interaction.focus_latest` would focus nothing. Both are
+installed per session mode rather than unconditionally:
+
+- The `CARD_FOCUSED` map (`↑`/`↓`/digits/`n`/`e`/`Enter`/`Esc`, §8.3) is
+  installed only for `native` sessions. In a `pty` session `n` is an ordinary
+  key and reaches the agent, which is the only correct answer while the agent's
+  own card is on screen.
+- `⟨leader⟩ a` stays bound in **both** modes, because
+  `interaction.focus_latest` is not a card-focus verb: it means *bring the
+  latest open interaction to the foreground on this surface*. In `native` mode
+  and on the web that focuses omt's card; in a `pty` session it focuses the
+  **pane whose agent is asking** — selecting its layout view, unzooming if
+  needed, and scrolling it into view — and sets no context flag. That is the
+  useful thing a `pty` user wants from that chord, and it is the same affordance
+  a failed remote delivery offers ([06 §5.2.2](06-agent-layer.md#522-what-deliverable-drives-when-delivery-fails)).
+- `omt keys list` reports the uninstalled bindings with the reason, rather than
+  listing keys that do nothing.
 
 **Double-handling is prevented structurally, not by focus discipline:**
 
@@ -706,16 +744,11 @@ exists to prevent.
    type are shown before it types them.
 
 The `n`-key comment affordance ([08 §5.2.1](08-web-client.md)) is bound to
-literal `n` **only** in `CARD_FOCUSED`, so it never shadows `n` in the agent's
-own card — a direct instance of the registry rule in §5.1.
-
-> **Pending correction (D11).** The table above predates
-> [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it),
-> under which omt draws **no** card in the local `pty` TUI — the agent's own CLI
-> draws it, and omt's card exists only on remote surfaces. The keyboard-ownership
-> rule survives unchanged in the surfaces where a card does exist; the row "user
-> is at the laptop" now reads "keys go to the agent, always". Owned by
-> [06 §5](06-agent-layer.md#5-interactions--the-flagship-path) to restate.
+literal `n` **only** in `CARD_FOCUSED`, and therefore — by the rule above — only
+in a `native` session. It never shadows `n` in an agent's own card, because in
+the mode where an agent draws its own card the binding does not exist. That is a
+stronger guarantee than the registry rule in §5.1 gives, and it comes from
+installation rather than from scoping.
 
 ### 4.5 Synthetic answers are written as keys, never as text
 
@@ -940,18 +973,18 @@ $ omt config validate
 warning[OMT-C406]: `ctrl-o` shadows a key Claude Code needs
   ┌─ ~/.config/omt/keybindings.toml:12:1
   │
-12 │ "ctrl-o" = "tui.open_command_palette"
+12 │ "ctrl-o" = "ui.open_command_palette"
   │ ^^^^^^^^ bound here, in every context
   │
   = note: Claude Code binds `ctrl-o` to "open the command palette" (severity: critical)
   = note: a pane running Claude Code will never receive this key
   = help: use the leader namespace instead:
-              "<leader> p" = "tui.open_command_palette"
+              "<leader> p" = "ui.open_command_palette"
   = help: or scope the binding so it does not apply to agent panes:
               [[binding]]
               trigger = "ctrl-o"
               when    = "terminal_focused && !agent_bound"
-              capability = "tui.open_command_palette"
+              capability = "ui.open_command_palette"
   = note: registry checked against Claude Code 2.1.x — `omt keys registry claude_code`
 
 warning[OMT-C408]: `ctrl-shift-v` cannot be delivered by your terminal
@@ -1027,7 +1060,7 @@ ctrl-o  →  passes through to Claude Code
                          kitty keyboard protocol: ACTIVE (flags 0b1111)
   L3  omt                no binding in context {terminal_focused, agent_bound}
                          (2 bindings exist for `ctrl-o` in other contexts:
-                            when=copy_mode          → tui.copy_mode.open_link
+                            when=copy_mode          → ui.copy_mode.open_link
                             when=explorer_focused   → workspace.files.reveal)
   L4  Claude Code 2.4.0  binds ctrl-o → "open the command palette" (critical)
 
@@ -1185,7 +1218,7 @@ bracketed     enabled
 focus report  enabled
 
 available because of the kitty protocol:
-  ctrl-shift-p   tui.open_command_palette   (also <leader> p)
+  ctrl-shift-p   ui.open_command_palette   (also <leader> p)
   ctrl-shift-v   media.image.paste          (also <leader> v)
   shift-enter    session.send_newline       (also alt-enter)
 
@@ -1444,7 +1477,7 @@ leader = "ctrl-b"              # orthogonal — the leader is not part of the mo
 trigger    = "space"
 when       = "copy_mode"
 modes      = ["normal"]
-capability = "tui.copy_mode.toggle_selection"
+capability = "ui.copy_mode.toggle_selection"
 
 # Unbind one.
 [[binding]]
@@ -1466,7 +1499,7 @@ extends = "vim"
 trigger = "H"
 when    = "copy_mode"
 modes   = ["normal","visual"]
-capability = "tui.copy_mode.goto_viewport_top"
+capability = "ui.copy_mode.goto_viewport_top"
 ```
 
 Resolution order is unchanged from §2.3, with one term inserted:
@@ -1749,6 +1782,12 @@ the palette:
 | `"+y` | **Copy** — the phone's clipboard is the system clipboard, so the register distinction evaporates |
 | Mode itself | An optional mode chip in the header (§6.10), off by default on mobile |
 
+The first row is not a downgrade and is not a parity exemption: copy mode is a
+client-local action rather than a capability (§7.1), so the web client owes no
+handler for it, and native selection with drag handles is the affordance a phone
+user already has and already knows. The catalog carries the yank's actual
+effect — `media.clipboard.write` — and nothing else from that state machine.
+
 The virtual key bar ([08 §4.3.1](08-web-client.md)) already provides `Esc`,
 `Tab`, sticky `Ctrl` and sticky `Alt` — which is what a mobile user needs to
 drive **the inner program's** vim, and that is the case that actually matters on
@@ -1860,16 +1899,66 @@ pub enum Locality {
 | `Remote` | Everything else: `session.*`, `pane.*`, `agent.*`, `workspace.*`, `workflow.*`, the palette's contents | The state lives there. |
 | `Composite` | `media.image.paste`, `media.file.push`, `media.clipboard.read` → `session.send_text` (paste local clipboard text into a remote session), `keys.explain` on a full chord | Read locally, act remotely. §7.2. |
 
-**Client-local preferences are not `Local` bindings — they are not capabilities
-at all.** Font zoom is the example: it changes nothing on the instance, it is not
+**Client-local things are not `Local` bindings — they are not capabilities at
+all.** Font zoom is the example: it changes nothing on the instance, it is not
 observable by another client, and there is nothing for a parity test to check on
 the other two surfaces beyond "the client has a zoom control", which every client
-already has natively. A binding may target a named **client preference**
-(`pref.font_size.increase`) instead of a capability; the config loader accepts
-both namespaces and §5.2 validates `pref.*` against the client's own preference
-schema ([10 §3.4](10-configuration.md#34-what-a-device-may-shadow)) rather than
-against the catalog. `Locality::Local` remains for capabilities that genuinely
-call into the local OS.
+already has natively. There are **two** non-catalog namespaces a binding may
+target, and the config loader accepts both alongside capability names:
+
+| Namespace | What it names | Validated against |
+|---|---|---|
+| `pref.*` | a client **preference** — a persisted setting of this client: `pref.font_size.increase` | the client's own preference schema ([10 §3.4](10-configuration.md#34-what-a-device-may-shadow)) |
+| `ui.*` | a client-local **action** — a surface of this client that the instance neither holds nor observes: `ui.open_command_palette`, `ui.copy_mode.enter` | the client's own action table, published by `keys.list` with `origin = "client"` |
+
+`Locality::Local` remains for capabilities that genuinely call into the local OS.
+
+**This is where the whole `tui.*` family went**, per
+[D17](decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances):
+*surface-local UI verbs do not belong in the catalog*. `tui.zoom_font` was
+demoted first, on the argument that it changes nothing on the instance; the rest
+of the family is the same argument with more steps, so the family is now
+`ui.open_command_palette`, `ui.open_keymap_help`, `ui.open_session_picker`,
+`ui.open_settings`, `ui.open_agent_dashboard` and `ui.copy_mode.*`. There is no
+`tui` capability group.
+
+The test the namespaces divide on is *"when this is invoked, does a **second**
+surface owe the user anything?"*
+
+- **Copy mode: no.** It is a keyboard state machine over *this client's*
+  viewport — a selection anchor, a motion cursor, a pin on the scroll offset.
+  None of it is instance state and none of it is visible to another client. Its
+  one externally-visible effect, the yank, is `media.clipboard.write`, which is
+  a capability and is where the parity obligation belongs.
+- **Opening a surface: also no**, once stated plainly. "Open the palette" on the
+  phone opens *the phone's* palette; it does not open the laptop's, and nobody
+  would want it to. Each client already has the view, reaches it its own way —
+  `⌘K`, a tab, a button — and a capability call would be a client instructing
+  itself through the instance.
+
+The consequence that made this worth changing is copy mode's. Declaring the
+motion set in the catalog obliged the web client to implement a handler for
+*"enter copy mode"* when its honest answer is the one §6.9 already gives:
+**native browser text selection** — long-press, drag handles, **Copy**. That is
+not a gap standing in for a missing feature; it is the better affordance, it is
+what a phone user already knows, and routing it through an omt state machine
+would take a working selection away and give a worse one back. It was the one
+place the design ported a terminal metaphor *into* the catalog and then required
+another surface to reimplement it.
+
+**One member does not follow the family, and is renamed rather than demoted.**
+`tui.set_keymap` is now **`keys.use`**, in the existing `keys` group. It is not a
+surface-local verb at all: there is exactly one keymap and it is the instance's
+("Keymap composition" below, §6.9), served to every attached client, so switching it changes what
+*every* surface resolves keys against and writes the `Runtime` config layer while
+doing it. It was only ever in `tui.*` by association. `omt keys use vim` was
+already its CLI spelling.
+
+**Client-local actions are still in the palette** — each client merges its own
+action table into the palette alongside the catalog, marked as client-local. They
+are absent from the *catalog*, which is a statement about what other surfaces
+owe, not a statement about discoverability
+([03 §5.1](03-capability-catalog.md#51-what-artifact-2-actually-asserts-and-what-it-does-not)).
 
 **Keymap composition.** There is exactly one keymap, and it is the **remote
 instance's**, fetched at attach and cached. Local device overrides
@@ -2106,12 +2195,16 @@ palette.
 | Chord | Context | Capability | Web equivalent | Rationale |
 |---|---|---|---|---|
 | `<leader>` (`ctrl-b`) | `terminal_focused` | *(prefix)* | key-bar `⌘` button → leader menu | The one key that buys the whole namespace. |
-| `ctrl-shift-p` | any | `tui.open_command_palette` | `⌘K` / palette button | Only installed when the kitty protocol or `modifyOtherKeys` is negotiated; otherwise `<leader> p` is the only palette chord. Universal muscle memory where it exists. |
+| `ctrl-shift-p` | any | `ui.open_command_palette` | `⌘K` / palette button | Only installed when the kitty protocol or `modifyOtherKeys` is negotiated; otherwise `<leader> p` is the only palette chord. Universal muscle memory where it exists. |
 | `ctrl-shift-v` | `terminal_focused` | `media.image.paste` | `⌘V` / paste button | Same conditional installation. The chord users try first. |
-| wheel / trackpad scroll | `terminal_focused && !mouse_reporting` | `tui.copy_mode.enter` + scroll | native scroll | Not a key, but it is input, and taking it only when the inner program has not asked for the mouse is the whole rule. |
+| wheel / trackpad scroll | `terminal_focused && !mouse_reporting` | `ui.copy_mode.enter` + scroll¹ | native scroll | Not a key, but it is input, and taking it only when the inner program has not asked for the mouse is the whole rule. |
 | `shift-enter` | `terminal_focused && agent_bound` | `session.send_newline` | composer newline button | Only under the kitty protocol; inserts a literal newline in an agent prompt instead of submitting. The single most-requested agent-CLI ergonomic. Falls back to `alt-enter`, which *is* deliverable in legacy encoding. |
 
 That is it. Four conditional, one unconditional.
+
+¹ `ui.copy_mode.enter` is a **client-local action**, not a capability (§7.1).
+The column is otherwise capability names; this is the one row where a binding
+targets something the catalog deliberately does not know about.
 
 ### 8.2 The leader namespace
 
@@ -2121,28 +2214,29 @@ name, which is the web equivalent for every row without a more specific one.
 | Chord | Capability | Web equivalent | Rationale |
 |---|---|---|---|
 | `<leader> <leader>` | `SendKey(leader)` | key-bar `Ctrl`+`b` | Escape hatch. Non-negotiable for a prefix design. |
-| `<leader> p` | `tui.open_command_palette` | `⌘K` / palette button | The P3 workhorse. |
-| `<leader> ?` | `tui.open_keymap_help` | help sheet | Shows the resolved map *and* the active inner keymap side by side. |
+| `<leader> p` | `ui.open_command_palette` | `⌘K` / palette button | The P3 workhorse. |
+| `<leader> ?` | `ui.open_keymap_help` | help sheet | Shows the resolved map *and* the active inner keymap side by side. |
 | `<leader> c` | `session.create` | `+` in the session list | tmux parity. |
 | `<leader> x` | `session.close` (confirm) | long-press ▸ Close | tmux parity; confirm because `effects` includes `DESTRUCTIVE`. |
-| `<leader> w` | `tui.open_session_picker` | session list | tmux parity. Declared in §11. |
+| `<leader> w` | `ui.open_session_picker` | session list | tmux parity. Declared in §11. |
 | `<leader> \|` / `<leader> -` | `pane.split` v/h | split buttons (desktop) | Mnemonic glyphs beat tmux's `%`/`"`. |
 | `<leader> h j k l` / arrows | `pane.navigate` | tap a pane | Directional focus; arrows for non-vi users. The capability is `pane.navigate` ([17 §9.1](17-panes-and-layout.md#91-pane), [05 §10.3](05-session-model.md#103-pane)); binding a name that does not resolve fails [03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test. |
 | `<leader> z` | `pane.zoom` | expand button | tmux parity. |
-| `<leader> [` | `tui.copy_mode.enter` | scroll / select | tmux parity. Member of the `tui.copy_mode.*` group enumerated in §11 — the earlier name `tui.enter_copy_mode` was a second spelling and is gone. |
+| `<leader> [` | `ui.copy_mode.enter` | scroll / select | tmux parity. A **client-local action**, not a capability (§7.1); the web equivalent is the browser's own text selection (§6.9), which is why the catalog does not carry it. The earlier names `tui.enter_copy_mode` and `tui.copy_mode.*` are gone. |
 | `<leader> /` | `session.search` | search field | Searches omt's scrollback, not the inner program's. Owned by [05 §10.2](05-session-model.md#102-session); the earlier name `tui.search` was a second spelling and is gone. |
 | `<leader> e` | `workspace.explorer.toggle` | explorer rail / sheet | Already specified in [15 §7.1](15-workspace-explorer.md#71-tui-panel), which owns the declaration. The earlier unqualified `explorer.toggle` did not match the `workspace` group its handlers live in. |
-| `<leader> a` | `interaction.focus_latest` | tap the card | §4.4 — the *only* way a card takes focus. |
+| `<leader> a` | `interaction.focus_latest` | tap the card | §4.4 — in a `native` session the *only* way a card takes focus; in a `pty` session it focuses the pane whose agent is asking, because omt draws no card there. |
 | `<leader> v` | `media.image.paste` | paste button / `⌘V` | **The universal paste chord.** Works in every terminal, on every platform, with no configuration. §7.2. |
 | `<leader> V` | `media.picker.open` | attach button | Choose what to paste when the clipboard has several representations. |
 | `<leader> y` | `media.clipboard.write` (selection) | copy button | Sends the current selection to the *local* clipboard via the best available path ([09 §3](09-ssh-and-media.md)). |
 | `<leader> d` | `session.detach` | close the tab | Detach, leaving sessions running ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing)). In thin-client mode the local wrapper additionally exits (§7.1); that is client behaviour, not a second capability. The earlier name `tui.detach` was a second spelling and is gone. |
-| `<leader> ,` | `tui.open_settings` | settings | Parity with [10](10-configuration.md). Declared in §11. |
+| `<leader> ,` | `ui.open_settings` | settings | Parity with [10](10-configuration.md). Declared in §11. |
 | `<leader> f` | `open.hints.begin` (default action) | hint overlay / tap a match | Hint mode over every match in the viewport ([18 §5.2](18-semantic-open.md#52-hint-mode--the-primary-mechanism)). The primary, mouse-free way to act on a `file:line` or a URL. |
 | `<leader> F` | `open.hints.begin` `{ action = "menu" }` | hint overlay ▸ menu | Same, but always show the action menu on select rather than the per-kind default. |
 | `<leader> g` | `open.hints.begin` `{ kinds = ["url"] }` when `terminal_focused`; *(prefix)* when `explorer_focused` | hint overlay, URLs only | URL-restricted hint mode. The same chord is the explorer's `g`-prefixed map ([15 §7.1](15-workspace-explorer.md#71-tui-panel)) when the explorer has focus — two bindings differing by `when`, resolved by §2.3 rule 3, not a collision. |
-| `<leader> A` | `tui.open_agent_dashboard` | dashboard tab | The mobile-first view, on the desktop too. Declared in §11. |
+| `<leader> A` | `ui.open_agent_dashboard` | dashboard tab | The mobile-first view, on the desktop too. Declared in §11. |
 | `<leader> !` | `agent.interrupt` | swipe left on a dashboard row | Interrupt the bound agent *without* sending `Ctrl+C` to the pane — for agents with a native interrupt channel. |
+| `<leader> J` | `job.list` | jobs sheet | The background-work sheet: every live `JobId` — reindex, export, upgrade, bootstrap, an in-flight transfer — with elapsed time, phase, and **Cancel** on each row. `job.cancel` is reached from here and from the palette; it is the one operation a user reaches for in a hurry and must not be palette-only ([03 §5.1](03-capability-catalog.md#51-what-artifact-2-actually-asserts-and-what-it-does-not)). Declared in the catalog, not here — see §11. |
 
 ### 8.3 Contextual maps
 
@@ -2158,8 +2252,26 @@ own map. Two rules govern all of them:
    `Esc` three times is always back to a plain pane.
 
 The explorer's map is specified in [15 §7.1](15-workspace-explorer.md#71-tui-panel)
-and is not restated here; card focus uses `↑`/`↓`/digits to select, `n` for a
-comment ([08 §5.2.1](08-web-client.md)), `Enter` to resolve, `Esc` to unfocus.
+and is not restated here.
+
+**Card focus** (`CARD_FOCUSED`, and therefore `native` sessions only — §4.4) uses
+`↑`/`↓`/digits to select, `n` for a comment ([08 §5.2.1](08-web-client.md)),
+`e` to **edit the proposed argument before approving**, `Enter` to resolve and
+`Esc` to unfocus. `e` opens
+[06 §5.4](06-agent-layer.md#54-editing-an-argument-before-approving)'s editor in
+an `Exclusive` overlay, and it is installed **only when the interaction's
+responder reports `supports_edit()`** — which in `pty` mode it never does, the
+second reason the card map is a `native`-mode map.
+
+**Hint mode** (`HINT_MODE`, [18 §5.2](18-semantic-open.md#52-hint-mode--the-primary-mechanism))
+is entered by `⟨leader⟩ f`/`F`/`g` and left by **`Esc` → `open.hints.cancel`**,
+which is rule 2 above applied to the one surface that had been left without it.
+A hint overlay labels every match in the viewport and swallows the next
+keystroke; *"I pressed the wrong thing"* is the most likely next thought a user
+has in it, and until now nothing was bound to that thought. `Esc` is the binding
+because it is the same key that leaves every other omt surface, and it is bound
+to the capability rather than to a client-local dismissal so that the instance
+tears down the hint session it is holding for this client.
 
 ---
 
@@ -2348,32 +2460,49 @@ The web client's composition path is testable in Playwright with
 | `keys.capture` | Command | Operator | Record a chord's bytes for the corpus (§10.1) |
 | `system.doctor` | Query | Viewer | Owned by [22 §10](22-operations.md#10-capabilities); §7.5 is its `keys` group (`DoctorGroup::Keys`), spelled `omt doctor keys` on the CLI. This document introduces no doctor capability of its own |
 | `system.doctor.fix` | Command | Admin | Owned by [22 §10](22-operations.md#10-capabilities); §7.4/§7.5's terminal remap is `omt doctor keys --fix`, with `Effects::WRITES_FS` |
-| `tui.open_command_palette` | Command | Viewer | §3.5 |
-| `tui.open_keymap_help` | Command | Viewer | §8.2 |
-| `tui.open_session_picker` | Command | Viewer | §8.2 (`<leader> w`). Opens the session list; the web equivalent is the session list view |
-| `tui.open_settings` | Command | Viewer | §8.2 (`<leader> ,`). Opens the settings surface over [10](10-configuration.md); it opens a view, it does not write config |
-| `tui.open_agent_dashboard` | Command | Viewer | §8.2 (`<leader> A`). Opens the agent dashboard |
-| `interaction.focus_latest` | Command | Operator | §4.4 |
+| `interaction.focus_latest` | Command | Operator | §4.4. Not a card-focus verb: in a `pty` session it focuses the pane the agent is asking in |
 | `media.picker.open` | Command | Operator | Owned by [09 §4.3](09-ssh-and-media.md#4-getting-images-in-the-easy-cases); §7.3 binds it. This document introduces no picker capability of its own — the earlier name `media.paste_picker` was a duplicate and is gone |
 | `media.blob.abort` | Command | Operator | Owned by [09 §5](09-ssh-and-media.md#5-case-b-image-paste-over-ssh--the-core-mechanism); §7.3 binds it to cancel a transfer. The earlier name `media.transfer.cancel` was a duplicate and is gone |
 | `session.send_newline` | Command | Operator | §8.1 |
-| `tui.copy_mode.enter` | Command | Viewer | §8.1, §8.2. Entering copy mode reads scrollback and is `Viewer`; the mutating members below are `Operator` |
-| `tui.copy_mode.*` | Command | Operator | Motions, selection, yank — the action set the vim and emacs keymaps both target (§6.6, §6.7) |
-| `tui.set_keymap` | Command | Operator | Switch keymap at runtime (`Runtime` layer); `omt keys use vim` |
+| `keys.use` | Command | Operator | Switch the active keymap at runtime (`Runtime` layer); `omt keys use vim`. Formerly `tui.set_keymap`, renamed rather than demoted with the rest of that family — §7.1 |
 
 **Bound here, declared elsewhere.** §8's defaults also bind
 `session.search` ([05 §10.2](05-session-model.md#102-session)),
-`session.detach` ([05 §10.2](05-session-model.md#102-session)) and
+`session.detach` ([05 §10.2](05-session-model.md#102-session)),
 `workspace.explorer.toggle` / `workspace.explorer.goto`
-([15 §6.2](15-workspace-explorer.md#62-the-workspaceexplorer-group--surface-navigation)).
+([15 §6.2](15-workspace-explorer.md#62-the-workspaceexplorer-group--surface-navigation)),
+`open.hints.begin` / `open.hints.cancel`
+([18 §9](18-semantic-open.md#9-capabilities)) and `job.list` / `job.cancel`
+([`capabilities-draft.md` § `job`](../reference/capabilities-draft.md)).
 This document introduces no capability of its own for any of them; the earlier
 spellings `tui.search`, `tui.detach`, `tui.enter_copy_mode` and the unqualified
 `explorer.*` were second names for capabilities that already exist or belong to
-another owner, and they are gone. `tui.zoom_font` is not a capability at all —
-it is a client preference (§7.1's `Locality` note).
+another owner, and they are gone.
 
-All of them are surfaced in the palette and in the web settings UI by
-construction, per [03 §5](03-capability-catalog.md).
+**Declared nowhere, on purpose.** Two families this document's bindings target
+are not capabilities and must not be added to the catalog (§7.1):
+
+- `pref.*` — client **preferences**: `pref.font_size.increase`. `tui.zoom_font`
+  was the first of these to be recognised as misfiled.
+- `ui.*` — client-local **actions**, and this is where the whole former `tui.*`
+  family now lives, per [D17](decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances):
+  `ui.open_command_palette` (§3.5), `ui.open_keymap_help`,
+  `ui.open_session_picker`, `ui.open_settings`, `ui.open_agent_dashboard`
+  (§8.2), and `ui.copy_mode.enter` plus the whole `ui.copy_mode.*`
+  motion/selection/yank set the vim and emacs keymaps target (§6.6, §6.7).
+  Opening a surface opens *this* client's surface, and copy mode is *this*
+  client's viewport state machine; neither obliges a second surface to do
+  anything, which is the test §7.1 states. Copy mode's one cross-surface effect
+  is the yank, which is `media.clipboard.write` and *is* a capability, and the
+  web client's answer to the rest of it is native browser selection (§6.9) — a
+  better affordance than a ported copy-mode handler, not a gap.
+
+Both namespaces appear in this client's palette and keymap help, and in
+`keys.list` with `origin = "client"`. They are absent from the **catalog**, which
+is a statement about what other surfaces owe, not about discoverability.
+
+Every **capability** in the table above is surfaced in the palette and in the
+web settings UI by construction, per [03 §5](03-capability-catalog.md).
 
 ---
 

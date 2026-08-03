@@ -473,7 +473,9 @@ impl InteractionLedger {
 `Undelivered` rejects a later resolver exactly like `Resolved` does: the
 decision was taken and the bytes are gone or unaccounted for, so a second
 injection would land in whatever the agent is doing *now*. The only actor
-permitted to re-answer is a human who can see the screen (§4.5).
+permitted to re-answer is a human who can see the screen (§4.5), and what each
+surface offers such a card instead of a Retry is
+[06 §5.2.2](06-agent-layer.md#522-what-deliverable-drives-when-delivery-fails).
 
 `interaction.resolve` is **idempotent by
 `(interaction_id, identity_or_device, intent_id)`** — a client-minted
@@ -676,6 +678,19 @@ check the terminal"* (D15 consequence 1). And an injection is **never retried**:
 not on reconnect, not on daemon restart, not by any actor except a human who can
 see the screen. A crash between the CAS and the injection goes to `Undelivered`,
 which is why `Resolving` must carry the response (D15 consequence 2).
+
+**"Only a human who can see the screen" is a rule about actors, not an excuse to
+offer nothing.** Every surface renders an `Undelivered` card with a way to reach
+that human or to become one: a client attached to the session's own instance
+offers *go to the card* (`interaction.focus_latest`, which in a `pty` session
+focuses the pane the agent is drawing in) plus *copy my answer* onto its own
+clipboard; every other client offers the session's terminal view with the
+preserved response read-only above it. No surface offers a Retry, on any path,
+ever — the ledger would reject it and the injection would land somewhere else.
+The affordance and the copy it carries are specified in
+[06 §5.2.2](06-agent-layer.md#522-what-deliverable-drives-when-delivery-fails),
+which is also where `Interaction.deliverable` earns its keep in the failure
+states.
 
 ### 4.6 Preconditions on a synthetic delivery
 

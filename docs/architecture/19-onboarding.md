@@ -234,7 +234,7 @@ Rules:
 
 ### 2.2 `⟨leader⟩ ?` — the help overlay
 
-`⟨leader⟩ ?` (`tui.open_keymap_help`, [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace))
+`⟨leader⟩ ?` (`ui.open_keymap_help`, [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace))
 opens a scrollable, searchable overlay — `Exclusive` capture
 ([16 §4.2](16-input-and-keymap.md#42-focus-and-exclusivity)), so nothing leaks
 to the pane — with **three panes of content, generated, never hand-written**:
@@ -308,6 +308,15 @@ as the catalog grows.
 **Palette entries are derived from the catalog declaration
 ([03 §2](03-capability-catalog.md#2-declaring-a-capability)), never written by
 hand.** Three fields are added to `capability!` for this purpose:
+
+> A client's own `ui.*` actions and `pref.*` preferences
+> ([16 §7.1](16-input-and-keymap.md#71-what-the-thin-client-intercepts-vs-forwards))
+> are merged into its palette from the client's action table, with the same
+> `title`/`aliases` shape and marked client-local. They are not catalog entries —
+> per [D17](decisions.md#d17--parity-is-a-floor-against-unreachability-not-a-promise-of-good-affordances)
+> a surface-local UI verb makes no claim on another surface — but "findable by
+> someone who does not know its name" is a promise about *this* client's palette,
+> so it covers them too.
 
 ```rust
 capability! {
@@ -599,7 +608,7 @@ Undo everything: `omt uninstall --keep-config`     Details: `omt setup --status`
 Plus **contextual help**: `?` inside any omt overlay (palette, picker, explorer,
 settings, copy mode, card focus) opens that surface's key list, filtered to the
 active context set. It is one binding — `?` when
-`!terminal_focused && !search_active` — resolving to `tui.open_keymap_help` with
+`!terminal_focused && !search_active` — resolving to `ui.open_keymap_help` with
 `{ context: "current" }`. One capability, one binding, N surfaces; no per-surface
 help text exists to fall out of date.
 
@@ -671,7 +680,7 @@ literal for every row.
 | 4 | `kill-window` (`&`) | `session.close` (all panes) | `⟨leader⟩ X` |
 | 5 | `detach-client` (`d`) | `tui.detach` | `⟨leader⟩ d` |
 | 6 | `attach-session` | `session.attach` | `omt attach [<name>]` |
-| 7 | `choose-tree` / `choose-window` (`w`, `s`) | `tui.open_session_picker` | `⟨leader⟩ w` |
+| 7 | `choose-tree` / `choose-window` (`w`, `s`) | `ui.open_session_picker` | `⟨leader⟩ w` |
 | 8 | `split-window -h` (`%`) | `pane.split{vertical}` | `⟨leader⟩ \|` |
 | 9 | `split-window -v` (`"`) | `pane.split{horizontal}` | `⟨leader⟩ -` |
 | 10 | `select-pane -L/-D/-U/-R` (`←↓↑→`) | `pane.navigate` ([17 §9.1](17-panes-and-layout.md#91-pane)) | `⟨leader⟩ h j k l` / arrows |
@@ -694,8 +703,8 @@ literal for every row.
 | 27 | `paste-buffer` (`]`) | `media.paste_buffer` — **proposed, not yet declared**⁴ | `⟨leader⟩ ]` |
 | 28 | `list-buffers` / `choose-buffer` (`=`) | `media.buffers.list` — **proposed, not yet declared**⁴ | `⟨leader⟩ =` |
 | 29 | `save-buffer` / `load-buffer` | `media.buffers.save` / `.load` — **proposed, not yet declared**⁴ | palette |
-| 30 | `command-prompt` (`:`) | `tui.open_command_palette` | `⟨leader⟩ p`³ |
-| 31 | `list-keys` (`?`) | `tui.open_keymap_help` | `⟨leader⟩ ?` |
+| 30 | `command-prompt` (`:`) | `ui.open_command_palette` | `⟨leader⟩ p`³ |
+| 31 | `list-keys` (`?`) | `ui.open_keymap_help` | `⟨leader⟩ ?` |
 | 32 | `send-prefix` (`C-b`) | `SendKey(leader)` | `⟨leader⟩ ⟨leader⟩` |
 | 33 | `clock-mode` (`t`) | — | **not implemented** (§5.5) |
 | 34 | `capture-pane -p` | `session.capture` | CLI / palette |
@@ -782,17 +791,17 @@ Rows tmux has and omt does not are listed in `unmapped` and reported by
 ["<leader> ctrl-c"] = "agent.interrupt"      # displaced by the row above
 ["<leader> space"]  = "layout.preset"          # cycles presets
 ["<leader> ,"]      = "session.rename"
-["<leader> ctrl-,"] = "tui.open_settings"    # displaced by the row above
+["<leader> ctrl-,"] = "ui.open_settings"    # displaced by the row above
 ["<leader> $"]      = "workspace.rename"
 ["<leader> ["]      = "tui.enter_copy_mode"
 ["<leader> ]"]      = "media.paste_buffer"     # proposed, §5.1 note 4
 ["<leader> ="]      = "media.buffers.list"     # proposed, §5.1 note 4
-["<leader> :"]      = "tui.open_command_palette"
-["<leader> ?"]      = "tui.open_keymap_help"
+["<leader> :"]      = "ui.open_command_palette"
+["<leader> ?"]      = "ui.open_keymap_help"
 ["<leader> n"]      = { capability = "pane.focus_cycle", args = { reverse = false } }
 ["<leader> p"]      = { capability = "pane.focus_cycle", args = { reverse = true } }   # NOTE: not the palette, in this keymap
 ["<leader> l"]      = "pane.focus_last"
-["<leader> f"]      = "tui.open_command_palette"
+["<leader> f"]      = "ui.open_command_palette"
 ["<leader> r"]      = "tui.redraw"             # proposed, §5.1 note 4
 ["<leader> t"]      = "none"                 # clock-mode: unmapped, see `unmapped`
 ["<leader> up"]     = { capability = "pane.navigate", args = { dir = "up" } }
@@ -928,6 +937,46 @@ Nothing about your tmux setup was modified. `tmux` still works exactly as before
 The last line is not decoration. A user running an importer on a config they
 depend on daily needs to be told, in the tool's own voice, that the source was
 not touched.
+
+**The shape preview and apply exchange.** The `[k/s/d]` prompt above is a CLI
+*rendering* of a decision, not a CLI-only feature, and `migrate.tmux.preview`'s
+output has to carry the decisions or preview/apply cannot express what the user
+answered. So the preview returns a list of directives, not a rendered report:
+
+```rust
+pub struct TmuxPreview {
+    pub hash: PreviewHash,             // what `apply` must echo back
+    pub sources: Vec<PathBuf>,
+    pub directives: Vec<Directive>,
+    pub would_write: Vec<WouldWrite>,  // path, new-or-merge, counts
+}
+
+pub struct Directive {
+    pub id: DirectiveId,               // stable across a re-preview of the same bytes
+    pub source: SourceSpan,            // file, line, verbatim text
+    pub outcome: Outcome,              // Mapped | MappedReview | Unmapped | Ignored | Unparsed
+    pub mapping: Option<Mapping>,      // the `[[binding]]` or config key it becomes
+    pub diagnostics: Vec<Diagnostic>,  // 16 §5.2's codes, verbatim
+    /// Present exactly when `outcome == MappedReview`. The set of answers this
+    /// directive accepts, and which one applies if the caller says nothing.
+    pub choices: Option<Choices>,
+}
+
+pub struct Choices { pub options: Vec<ChoiceOption>, pub default: ChoiceId }
+```
+
+`migrate.tmux.apply { hash, decisions: Map<DirectiveId, ChoiceId> }` refuses on a
+hash mismatch as before, and additionally refuses if a `MappedReview` directive
+has no decision — **it never silently takes the default**, because the default
+for the `ctrl-h` case above is a binding the user may not want and would not
+discover until a key stopped working.
+
+That is what makes the three surfaces the same feature rather than three
+features: the CLI walks the `MappedReview` directives and prompts `[k/s/d]`, the
+web client renders the same list as a form with the same three buttons per row,
+and an API caller posts the map directly. The report text — the block printed
+above — is generated from `TmuxPreview` by each client, so `--json` and the
+human output cannot disagree about what was decided.
 
 **Failure policy.** A line the parser cannot parse at all is reported as
 `? line N: could not parse` with the text, and the import continues. The
@@ -1327,8 +1376,8 @@ All are palette-visible with a `title` (§2.4) unless marked hidden.
 | `onboarding.dismiss_hints` | Command | Operator | `WRITES_FS` | Permanent |
 | `help.topics` | Query | Viewer | — | §4.2's generated tree |
 | `help.render` | Query | Viewer | — | `{ topic \| context }` → the help overlay's model |
-| `migrate.tmux.preview` | Query | Operator | `READS_FS` | Parse + map + report, writing nothing |
-| `migrate.tmux.apply` | Command | Admin | `WRITES_FS` | Requires the preview's hash |
+| `migrate.tmux.preview` | Query | Operator | `READS_FS` | Parse + map, writing nothing → `TmuxPreview`: the per-directive decision set, not a rendered report (§5.3) |
+| `migrate.tmux.apply` | Command | Admin | `WRITES_FS` | Requires the preview's hash **and** a decision for every `MappedReview` directive (§5.3) |
 | `migrate.zellij.preview` / `.apply` | " | " | " | §5.1, best-effort |
 | `keys.keymaps` | Query | Viewer | — | Existing ([16 §11](16-input-and-keymap.md#11-capabilities-introduced-here)); gains `unmapped` for §5.2 |
 | `term.profile` | Query | Viewer | — | Advertised `TERM`, entry resolution result, outer-terminal probe, disagreements (§7.4) |

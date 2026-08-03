@@ -18,6 +18,8 @@ application with more room.
 - [13 — Security](13-security.md) — auth, roles, credential scope
 - [15 — Workspace explorer](15-workspace-explorer.md) — file tree, diffs, the
   shared diff renderer
+- [20 — Recall and usage](20-recall-and-usage.md) — search semantics, ranking,
+  cross-instance fan-out
 - [Decision log](decisions.md) — in particular
   [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
   (no omt-side permission policy) and
@@ -664,6 +666,213 @@ marker with the terminal view offered, and never presents a partial transcript a
 a whole one — the same rule [20](20-recall-and-usage.md)'s `Coverage` applies to
 recall.
 
+### 4.5 Search
+
+All three surfaces of §4 are searchable, and they are searchable by **one**
+search. `session.search` ([05 §10.2](05-session-model.md#102-session)) is a
+`Viewer` capability over the session's logical lines — resumable, budgeted at
+5 000 lines per call, returning `Position`s that survive reflow
+([04 §8.1](04-terminal-core.md#81-search)). Search state is per client, not
+shared: it lives in the `PaneView` that
+[17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)
+already specifies as per-client state, so searching on the phone does not move
+the laptop's viewport, and searching never touches the writer token.
+
+**One search, three renderings — not three searches.** The query, the mode, the
+scope and the current match index live in one store per session. Switching view
+modes mid-search keeps all four and re-projects the same match set onto the new
+surface. This is the whole reason the model is `Position`-based: *"find it in
+blocks, then look at the actual screen"* is an ordinary move, and a search box
+that resets when you change surface teaches the user not to change surface.
+
+#### 4.5.1 Entering search, and taking `Cmd+F`
+
+- A magnifier control in the session header — the visible affordance, and the
+  route the parity test drives (§10.3).
+- `/` when no text input is focused, and `Ctrl+F` / `Cmd+F` always, both with
+  `preventDefault`.
+- **Taking the browser's find bar is deliberate and is the right call here.**
+  Native find searches the DOM. Terminal view is a WebGL canvas with no text in
+  the DOM at all; block view and transcript view are windowed (§4.2), so the
+  overwhelming majority of a long session is not in the DOM either. Browser find
+  would search the few hundred lines that happen to be mounted and confidently
+  report "1 of 2" over a 100 000-line scrollback. That is worse than not having
+  it. `Esc` closes omt's bar and the very next `Cmd+F` is the browser's again, so
+  the escape hatch is one keystroke and is stated in the bar's overflow menu.
+
+#### 4.5.2 The bar
+
+Docked at the **bottom**, above the virtual key bar, positioned off `--kb`
+(§8.2) so it rides the software keyboard. Every other product puts find at the
+top because that is where desktop put it; on a phone the input must be adjacent
+to the keyboard and the next/previous buttons must be in the thumb zone (§8.1),
+and the top of the screen is neither.
+
+```
+┌──────────────────────────────────────────────┐
+│ 🔍 migrat|                    3 / 128+  ∧  ∨ │
+│ [Aa] [.*]   [this session ▾]          ⌄ list │
+└──────────────────────────────────────────────┘
+```
+
+- The text field is ≥ 16 px so iOS does not auto-zoom (§8.3), and carries
+  `enterkeyhint="search"`; `Enter` is "next match", not "submit and dismiss".
+- `[Aa]` toggles case. Default is **smartcase**: insensitive until the query
+  contains an uppercase character, matching the TUI's `smartcase`
+  ([16 §6](16-input-and-keymap.md#6-modal-keymaps-vim-mode-and-emacs-mode)).
+- `[.*]` switches `Pattern::Literal` to `Pattern::Regex` (04 §8.1). An invalid
+  regex turns the chip amber and prints the compiler's message under the field;
+  the previous valid result set stays on screen rather than clearing, because a
+  half-typed regex is the normal state of typing a regex.
+- `∧` / `∨` are ≥ 44 px, right-aligned, adjacent — the two controls a thumb uses
+  most. Long-press auto-repeats at **120 ms** after a 400 ms delay (slower than
+  §4.3.1's key repeat, because each step scrolls the surface and 40 ms of that is
+  motion sickness). Wrapping past either end emits `navigator.vibrate(10)` and a
+  "wrapped to the top" line in the bar — never a silent wrap, which reads as a
+  broken next button.
+- `⌄ list` opens the results sheet (§4.5.4).
+
+**Keeping the current match visible above the keyboard.** `scrollIntoView`
+resolves against the layout viewport, which on iOS does not shrink for the
+software keyboard, so it will happily park a match underneath it. The client
+therefore computes the band itself: `band = visualViewport.height − barHeight`,
+and scrolls so the current match sits at **40 %** of the band from its top — high
+enough to show following context, low enough that the preceding lines that make
+a hit recognisable are still on screen. Re-run on every `visualViewport` resize,
+so dismissing the keyboard re-centres rather than leaving the match at the edge.
+
+#### 4.5.3 Per-surface rendering
+
+| Surface | Match rendering | What "go to match" does |
+|---|---|---|
+| **Terminal view** | All matches highlighted via xterm.js decorations (`registerMarker` + `registerDecoration`), the current one in the accent colour with the others muted. | Scrolls the grid to the match's `Position`. Because results are `Position`s, a resize or a reflow does not invalidate them and the client does not re-search. |
+| **Block view** | A match-count chip on each matching block's header. The owning block **auto-expands**, overriding §4.2's collapse rule, and stays expanded while search is active; it returns to its prior state when the bar closes. | Scrolls the list to the block and to the line within it. |
+| **Transcript view** | The matched span highlighted inside the entry (assistant message, tool input, tool result). | Scrolls the entry into the band. |
+
+**Non-matching content is never hidden.** Search highlights and navigates; it
+does not filter. Hiding is §4.2's per-block filter, and conflating the two is the
+confusion §4.5.6 exists to prevent.
+
+**Transcript search inherits transcript coverage.** A session below the
+Transcript-source tier has nothing to search in transcript view, and the bar says
+so with §4.4's reason rather than reporting zero matches — "no structured source"
+and "no matches" are different facts. Where a transcript has a known gap (§4.4),
+the gap marker renders in the result list as **`not searched`**, for the same
+reason: a transcript that starts mid-session must not answer a search as though
+it had looked at the whole thing.
+
+#### 4.5.4 Scope, and the moment the corpus changes
+
+The scope chip has three values, and the second is a different capability from
+the first:
+
+| Scope | Capability | Corpus |
+|---|---|---|
+| **This session** (default) | `session.search` | The live buffer — every logical line of this session's scrollback, exactly as rendered. |
+| **This workspace** | `search.query`, `scope: Workspace` ([20 §12.1](20-recall-and-usage.md#121-search)) | The instance's index: blocks, commands, agent messages, file changes — [20 §2](20-recall-and-usage.md#2-what-is-indexed-and-what-is-not) decides what is in it. |
+| **Everything** | `search.query` fanned out across every connected instance ([20 §7](20-recall-and-usage.md#7-cross-instance-search)) | Every instance's index. |
+
+**The chip states which corpus it is, not only which box it covers**, because
+crossing from the first row to the second crosses from a live buffer to a derived
+index with its own retention, redaction and exclusions. The chip therefore reads
+`this session · live scrollback` / `this workspace · indexed` / `everywhere ·
+indexed`. Users who are not told this will read "0 results in this workspace" as
+"it did not happen".
+
+- **Escalation is one tap and is offered, not hidden.** Zero or few matches in
+  the session scope renders a footer row: *"1 match here · search this workspace"*
+  — and after that, *"· search everywhere"*. Widening is the single most common
+  next action and it should not require finding a menu.
+- **Coverage is rendered verbatim.** The `Coverage` line from
+  [20 §2.5](20-recall-and-usage.md#25-honesty-about-coverage) sits under the
+  results, unedited, including its excluded-session count.
+- **Fan-out is 20 §7.2's, not a second implementation.** The client calls
+  `federatedSearch`, renders each instance's results as they land with a stable
+  key per hit so nothing jumps under a finger mid-tap, and shows 20 §7.2's
+  partial-answer banner (`3 of 4 instances answered · build-server: timed out ·
+  retry`) rather than a merged list that quietly omits a machine. Every hit
+  carries the same instance chip the session list uses (§3.3).
+- An instance that lacks `search.query` appears as `degraded`, per §3.4's
+  disabled-with-a-reason rule.
+
+#### 4.5.5 Results, incremental delivery, and what a tap does
+
+The results sheet is a bottom sheet with two detents — **half by default**, so
+the current match stays visible behind it — matching
+[15 §7.3](15-workspace-explorer.md#73-mobile-sheet)'s sheet behaviour rather than
+introducing a second sheet idiom. On desktop it is a right rail.
+
+- **Session-scope rows**: `line 4 812 · <snippet>`, one line on a phone and two
+  on desktop, with the matched range emphasised. Enough context to recognise a
+  hit is the requirement, and one line of a `StyledLine` around the match meets
+  it; the row keeps the line's original foreground colours, muted, because
+  recognising a hit in `cargo test` output is largely a colour task.
+- **Indexed-scope rows** use [20 §4.2](20-recall-and-usage.md#42-grouping)'s
+  grouping verbatim: grouped by session, best hit plus up to three more, then
+  `+N more in this session`. The group header is the session title, its instance
+  chip, its workspace and branch, and the relative time. Snippets come from
+  `Hit.snippet` and `Hit.match_ranges` and are **never re-derived client-side** —
+  the server's snippet is redacted by construction
+  ([20 §5](20-recall-and-usage.md#5-redaction-and-the-index)) and a client that
+  re-extracted context from anywhere else would leak what the index deliberately
+  did not return.
+- **Tapping a hit** goes to the anchor, in the surface currently selected:
+  block view scrolls to and expands the block, transcript view scrolls to the
+  entry, terminal view scrolls the grid. A hit in *another* session opens that
+  session first, at its default surface for its kind (§4), and lands on the
+  anchor there. A hit on a **disconnected** instance renders greyed with its
+  snippet intact and taps to "reconnect to `mini` to open this" — the §3.3 rule
+  that stale rows beat vanished rows applies to results too.
+- **Empty state** is `search.suggest`'s recent queries and nothing else. No tips,
+  no syntax cheatsheet the user did not ask for; the query mini-language
+  ([20 §12.1](20-recall-and-usage.md#121-search)) is behind a `?` in the overflow.
+
+**Incremental results, and the honest counter.** Neither corpus answers in one
+round trip, and the UI never pretends otherwise:
+
+- Input is debounced **120 ms**.
+- `session.search` is driven by its cursor: the client issues calls until either
+  **300 ms** has elapsed or the visible band plus one screen ahead is covered,
+  paints, and continues the cursor in `requestIdleCallback` slices. First paint
+  is therefore bounded by 300 ms regardless of scrollback length.
+- The counter reads `3 / 128+` while a cursor is unexhausted and drops the `+`
+  when it completes. A total the client does not have is never rounded, estimated
+  or animated up to; `total_estimate` from `SearchResults` is shown only for
+  indexed scope, and labelled `≈`.
+- A 2 px indeterminate line under the bar runs while any call is in flight, with
+  a **Stop** in its place after 3 s. Stopping aborts the fetches (`AbortSignal`)
+  and drops the cursor; results already rendered stay.
+- In federated scope the counter also carries progress across instances:
+  `128+ · 3 of 4 instances`.
+
+#### 4.5.6 Against §4.2's "Filter lines", and against 20's ranking
+
+Two things in this document look like search and are not, so the difference is
+made visible rather than left to be discovered:
+
+| | **Filter lines** (§4.2) | **Search** (§4.5) |
+|---|---|---|
+| Scope | one block's body | the session, the workspace, or everything |
+| Effect | **subtractive** — non-matching lines are removed | **additive** — matches are highlighted, nothing is hidden |
+| Navigation | none; you read what is left | `∧`/`∨`, a match counter, an anchor per hit |
+| Backing | client-side over the block's already-fetched `StyledLine`s | `session.search` / `search.query` |
+| Lifetime | dies with the card | persists across view modes and reconnects |
+| Where it lives | inside the card's action row, labelled `filter` | a docked bar with a match counter |
+
+They never share a control and turning one on never populates the other. A
+`filter` chip on a card while the search bar is open shows both states
+independently, because they answer different questions and merging them would
+make the block list lie about how much output exists.
+
+**Ordering differs by corpus, and the bar says which is in force.**
+`session.search` returns matches in **document order** — a live buffer has a
+cursor, not a relevance — and the bar reads `in order`. `search.query` returns
+[20 §4](20-recall-and-usage.md#4-ranking)'s ranked, grouped results and the bar
+reads `best matches`. Without that label, escalating scope silently reorders the
+list and looks like a bug. `search.explain` is reachable from a long-press on any
+ranked row (hover on desktop), so a surprising order is diagnosable rather than
+arguable — which is exactly what 20 §4.3 built it for.
+
 ---
 
 ## 5. Native rendering of agent interactions
@@ -1305,6 +1514,224 @@ The web composer implements it as a true completion popup, not a menu:
 
 The list refreshes on `Capabilities` events, so installing a skill on the laptop
 makes it appear on the phone without a reload.
+
+### 6.3 Attachments in the composer
+
+The composer is where §6.2's completion popup and §7's mic already live. This
+section adds its third input: files. It specifies **this surface only** — the
+controls, where a thumb reaches them, and what the user is shown before they
+send. The pipeline underneath is [09 §4.3](09-ssh-and-media.md#43-attachments--any-file-from-any-surface)'s
+and is not restated: the content taxonomy, the per-agent reference syntax, the
+staging → admit → transfer → commit path, chunking at 256 KiB, `resume_from`
+resumability, dedup by BLAKE3, quotas and TTLs are all owned there and there is
+exactly one of each.
+
+Three capabilities land here, and their `SurfaceHint`s (§2.2) are the routes the
+parity test drives:
+
+| Capability | Control | `surface` |
+|---|---|---|
+| `media.image.upload` | the attach sheet's **Photo library**, **Take photo** and **Files** rows; drag-and-drop; the share-target landing screen | `{ kind: "action", menu: "composer.attach" }` |
+| `media.image.paste` | the attach sheet's **Paste** row, and the composer's `paste` handler as its fast path | `{ kind: "action", menu: "composer.attach" }` |
+| `media.picker.open` | the attach sheet's **Workspace file** row | `{ kind: "action", menu: "composer.attach" }` |
+| `media.blob.begin` / `.commit` / `.abort` | — | `{ kind: "implicit", by: "media.image.upload" }` |
+
+`media.image.paste` is routed through a **visible sheet row** and not only
+through the paste event, because §8.4's rule is that no capability is reachable
+by gesture alone — a keyboard-less phone user must have a control, and the parity
+test cannot drive a `paste` event through the real UI.
+
+#### 6.3.1 The attach control
+
+A single `+` button on the **left of the text field**, in the bottom bar: mic on
+the right (§7), send at the bottom-right corner, attach at the bottom-left. All
+three are ≥ 44 px in the thumb zone (§8.1), and none of them moves when the
+keyboard opens because the whole bar is positioned off `--kb` (§8.2).
+
+Tapping `+` opens a sheet — not three inline icons — with five rows:
+
+```
+┌ attach ──────────────────────────────┐
+│ ⧉  Photo library                     │
+│ ⌾  Take a photo                      │
+│ ⛁  Files                             │
+│ ⌘  Paste from clipboard              │
+│ ⌂  Workspace file on `mini`          │
+└──────────────────────────────────────┘
+```
+
+**Why a sheet and not three buttons.** [09 §4.3.3](09-ssh-and-media.md#433-every-source-path-evaluated)
+requires *three distinct* `<input type="file">` elements on mobile, because
+`capture="environment"` is not a mode of the photo picker — it replaces it, and
+one button that sometimes skips the picker is a bad surprise. Three icons plus a
+mic plus a send button plus a slash affordance does not fit a 390 px composer,
+and on any given prompt at least two of them are the wrong one. The sheet costs
+one tap and gets to *name* the destinations, which is worth more than the tap.
+On desktop, where there is room, the same rows appear as a menu anchored to `+`
+and drag-and-drop makes the menu mostly unnecessary.
+
+The three inputs themselves are
+[09 §4.3.4](09-ssh-and-media.md#434-mobile-capture-specifics)'s verbatim
+(`accept="image/*"`, `accept="image/*" capture="environment"`, and an unfiltered
+`multiple`), and every row funnels into its single `ingest()`.
+
+**`Paste from clipboard`** calls `navigator.clipboard.read()`, which prompts for
+permission. It is shown only where `navigator.clipboard.read` exists, and it is
+explicitly the *fallback*: the `paste` event path below is always preferred
+because it needs no permission at all.
+
+**`Workspace file` is the row that inverts 09 §4.3.3's rationale, deliberately.**
+`media.picker.open` is justified there with "a TUI has no OS file dialog" — which
+is backwards on a phone, where the OS picker *is* the native answer and the three
+rows above already are it. What the OS picker cannot do is see the **instance's**
+disk: the phone's Files app has no view of `~/src/omt-term` on `mini`, and
+attaching a workspace file is the single most common non-image case. So on this
+surface `media.picker.open` means "browse the workspace on the instance", and it
+opens the explorer's mobile sheet
+([15 §7.3](15-workspace-explorer.md#73-mobile-sheet)) in its existing
+`Insert @` mode rather than a second file browser. That is the honest division of
+labour, and it is why both the OS rows and this row exist instead of one of them
+being redundant. Nothing is uploaded on this path — the file is already on the
+instance, so the tray entry is a reference and its insertion is the path.
+
+#### 6.3.2 Paste, drop, and share
+
+**Paste — the one place this surface beats the TUI outright.** A `paste`
+listener on the composer reads `ClipboardEvent.clipboardData.files` and
+`.items`. The browser hands over real `image/png` bytes with **no permission
+prompt**, because the paste gesture *is* the consent. A TUI cannot do this over
+SSH at all — it is the problem [09 §5](09-ssh-and-media.md#5-case-b-image-paste-over-ssh--the-core-mechanism)
+spends five tiers on — so a screenshot pasted into the web client is not the
+degraded path, it is the good one, and 09 §4.2 already names the web client as
+the universal fallback for exactly this reason.
+
+- Image items stage immediately.
+- **Text above 32 KiB** (09's `media.inline_max_bytes`) becomes a text
+  attachment rather than 400 KB of composer content, matching what Claude Code's
+  own `paste-cache` does. Because that is omt making a decision on the user's
+  behalf, it is reversible: the tray entry appears with an inline
+  **`keep as text`** chip for 10 seconds that puts the content back in the field.
+  A silent conversion with no undo is the version of this feature people hate.
+- Mobile keyboards deliver `paste` events with image data inconsistently, so the
+  handler is bound but not advertised (09 §4.3.3); the sheet row is what the UI
+  promises.
+
+**Drag and drop (desktop web).** `dragenter` on the session view, with
+`DataTransfer.types` containing `Files`, raises a full-view overlay reading
+*"Drop to attach to `claude`"* — full-view because a small drop target is a
+coordination test, and a drop that lands 20 px off and navigates the browser to
+`file:///…` loses the user's work. Directories arrive via `webkitGetAsEntry()`
+and are walked under 09 §4.3.9's caps (depth ≤ 6, ≤ 500 entries, symlinks not
+followed) with a visible count while walking, because a dropped `node_modules`
+must fail fast and say why. Dropping onto a **block card** instead offers 09
+§4.3.3's "attach to this agent turn": the hovered card raises and shows its own
+drop label, and the drop stages against that block's turn rather than the
+composer.
+
+**Web Share Target.** The manifest entry and the service-worker `POST`
+interception are [09 §4.3.4](09-ssh-and-media.md#434-mobile-capture-specifics)'s.
+What this document owns is the landing screen at `/#/share`:
+
+- It renders **before** the session list, from the bytes already in the
+  `share-inbox` cache, so there is nothing to fetch and it paints in one frame.
+- The file is already staged and preprocessed; the continuity guess
+  ([09 §4.3.4](09-ssh-and-media.md#434-mobile-capture-specifics), ranked by
+  [remote continuity §2.3](../design/remote-continuity.md#23-the-continuity-ranking))
+  appears as a header chip — `→ botim-eclipse on mini` — with a one-tap
+  **not this one** that falls back to the ranked session list.
+- Shared `text`/`title` seed the composer, and the composer is focused, so a
+  screenshot shared from a browser arrives with the page URL as context and the
+  cursor ready.
+- **The tip is only shown where registration succeeded.** Share Target is
+  Chromium-only and absent from iOS Safari; onboarding does not advertise it
+  there, and `navigator.share` presence is not treated as evidence — that is
+  share-*from*, not share-*to*.
+
+#### 6.3.3 What the user is shown before sending
+
+Preprocessing is 09 §4.3.5's, with its numbers: longest edge **1568 px**, JPEG
+**q = 0.82** (PNG kept for flat-colour or alpha sources), soft target
+**≤ 1.5 MB**, hard refusal above **32 MiB**, HEIC decoded via
+`createImageBitmap` on iOS 17+, orientation baked into the pixels, and all other
+metadata — **GPS explicitly** — stripped client-side and again on the instance.
+This surface adds three things:
+
+1. **It runs off the main thread** (`Worker` + `OffscreenCanvas`), and the tray
+   entry appears *before* the upload starts. A composer that looks empty for
+   three seconds after you pick a photo reads as broken.
+2. **The transforms are shown in plain words.** The entry's subtitle reads
+   `4032×3024 HEIC 11.4 MB → 1568×1176 JPEG 412 KB · location data removed`.
+   This is the only moment at which a user can learn that omt did this, and
+   "location data removed" is worth more to them than "EXIF stripped" — 09
+   §4.3.2's finding 4 is that no agent CLI in the covered set does this, so it is
+   also the only place in the chain where it happens.
+3. **The insertion is one tap away, not a column.** 09 §4.3.8 makes *"exactly
+   what will be inserted into the prompt"* an honesty requirement, and the
+   desktop list has a column for it. A 390 px phone does not. So the strip is
+   followed by a single **`what will be sent ⌄`** disclosure listing every
+   entry's `insertion` string in order, in monospace, with
+   [13 §8](13-security.md#8-secret-redaction)'s redaction already applied to
+   inlined content. It auto-expands the **first three times** the user ever
+   attaches anything, then collapses and remembers. A requirement that is
+   satisfied only by a control nobody finds is not satisfied.
+
+**The tray on mobile.** The model and the operations — reorder, remove, retry,
+preview, copy path, change disposition — are 09 §4.3.8's, unchanged. Its mobile
+shape:
+
+- A horizontally scrolling strip of **64 px** thumbnails above the text field and
+  above the key bar; each chip is ≥ 44 px tall with an `×` at its corner.
+- **Progress is a ring around the thumbnail**, not a bar. A 64 px progress bar
+  conveys about four states.
+- Tap opens a preview (`<dialog>` lightbox for images, first 200 lines for text,
+  page count and page 1 for PDFs, the entry listing for archives).
+- **Reorder is press-and-hold-then-drag with a 200 ms arming delay**, so a
+  horizontal scroll of the strip is never mistaken for a reorder. Order is
+  preserved into the prompt: "the first screenshot shows the error, the second
+  shows the fix" is meaningful and silently reordering it would be a lie.
+- Attachments cap at **8 per prompt** (09 §4.3.8), refused at the ninth with the
+  limit named.
+
+**Send is gated, with the reason on the button.** While any entry is
+`uploading`, `failed` or `waiting_network`, the send button is disabled and its
+label *is* the state — `uploading 62 %`, `1 attachment failed · retry` — rather
+than an unexplained grey. Sending a prompt that references a file which does not
+exist yet is worse than waiting, and a disabled control with no reason is the
+§3.4 failure this document rejects everywhere else. A staged attachment is part
+of the **draft**, not the outbox (§8.5): the outbox holds capability calls, and a
+half-finished transfer is resumed by 09 §4.3.6's `resume_from` on reconnect, not
+replayed.
+
+#### 6.3.4 When the agent takes nothing
+
+`AgentAdapter::attachment_reference()` returning `None` for a class
+([09 §4.3.7](09-ssh-and-media.md#437-what-the-agent-finally-receives)) is a
+normal state — Goose has no CLI attach path at all, and Codex accepts images only
+at launch. The rule is §3.4's: **disabled with a reason, never hidden.**
+
+- **The agent accepts nothing.** `+` renders disabled. Tapping it opens the same
+  sheet with every capture row inert and one line at the top: *"`goose` can't
+  take attachments in a running session."* Below it, the two things that are
+  actually true: **Save to the workspace instead** (`media.file.push`, which puts
+  the file where the agent's own read tool can reach it — a real answer, not a
+  consolation) and, where `attachment_at_launch_only` holds, **restart this
+  session with the file attached**. Either way the blob is stored, listed on the
+  session, and has a path the user can copy: it is never silently dropped.
+- **The agent accepts some classes and not this one.** The capture rows stay
+  live; the *staged entry* carries the warning, before send, in the tray — the
+  point at which the user can still do something about it.
+- **The session has no agent binding at all.** Attachments are scoped to an agent
+  turn, so `+` is disabled with *"this session has no agent — attach is for
+  prompts"*, and offers `media.file.push` as the useful thing a plain shell
+  session can do with a file. The control is present on every session for the
+  same reason every unavailable control is: a phone that hides controls the
+  laptop shows looks like a different product (§3.4).
+
+Files the agent produces travel the other way and are already specified in
+[09 §4.3.10](09-ssh-and-media.md#4310-the-reverse-direction--files-the-agent-produces):
+server-generated WebP thumbnails at 512 px, full resolution on tap, **Save** via
+the authenticated blob endpoint and **Share** via `navigator.share({ files })`.
+That is the same tray component in read mode; there is no second viewer.
 
 ---
 
