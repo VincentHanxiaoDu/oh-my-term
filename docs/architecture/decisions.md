@@ -579,3 +579,60 @@ a **position-independent** selection decides whether the flagship path is on by
 default at all: if the card is arrow-key-only, D3 disables it, and D9's headline
 claim is off by default in its headline case. This replaces the defer spike as
 the highest-priority experiment.
+
+---
+
+## D16 — Remote answering is per-card-type, and the preconditions are empirical
+
+**Decision.** Remote answering of a `pty`-mode agent card is offered **per card
+type**, according to what has been verified answerable position-independently.
+For Claude Code v2.1.x, verified live
+([`spike-card-answering.md`](../research/spike-card-answering.md)):
+
+| Card | Remote answering | Mechanism |
+|---|---|---|
+| `AskUserQuestion`, single-select | **Yes, fully** | one ASCII digit resolves the option at that absolute index and submits in the same keystroke |
+| Tool permission (Bash/Write/Edit/MCP) | **Allow yes; specific deny no** | option 1 is always `Yes`; the list is 2–4 options depending on state the hook payload cannot see, so `No`'s index is not derivable. `Esc` is the only position-independent negative |
+| `AskUserQuestion`, multiSelect | **No** | digits toggle, but submitting requires navigating to a Submit row |
+| Plan review (`ExitPlanMode`) | **No** | 2–5 conditional options; the last is a text input |
+
+**Reasoning.** The spike confirmed the mechanism is genuinely position-independent
+— `r.onChange?.(A.value)` resolves out of the **full** option array by absolute
+index, never reading `focusedValue`, proven by sending `↓ ↓ 1` and getting option
+1. So [D3](#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+is satisfied and [D9](#d9--positioning-what-omt-may-and-may-not-claim)'s headline
+claim is on by default.
+
+But it also showed that answerability is **not uniform across cards**, and that
+the constraints are empirical rather than derivable. Offering a blanket "answer
+anything remotely" would silently mis-answer three of the four card types.
+
+**Consequences — additional preconditions on [D13](#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s gated transaction.**
+
+1. **Never bracket the write.** Claude Code enables `ESC[?2004h`; a digit wrapped
+   in `ESC[200~ … ESC[201~` does **nothing** while a bare digit resolves. omt's
+   remote-input path bracket-wraps client text — correct for pasted prose — so
+   synthetic answers must bypass that path entirely. This is a silent failure
+   mode, not a loud one.
+2. **One key per write.** Coalesced bytes arriving in a single read are not
+   decoded as separate key events (`b"13"` toggled nothing; `b"1"` then `b"3"`
+   toggled both). Multi-byte answers are separate ordered writes, still inside
+   one token-held transaction.
+3. **Check the row numbers.** Numeric selection is disabled exactly when the
+   printed `1.` `2.` prefixes are suppressed — both are the same `hideIndexes`
+   flag. *"Is a number rendered on the row?"* is therefore a cheap, reliable
+   runtime precondition, and omt should use it.
+4. **`Esc` is the universal safe negative**; `y`/`n` do nothing on any of these
+   cards.
+
+**Also settled:** digits are not in Claude Code's keybinding registry, so a
+user's `keybindings.json` cannot rebind them away — the accelerator is stable
+against user configuration, though not against a version bump. Version
+fragility is handled by [D15](#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
+confirm-by-observation rule, which turns a changed keymap into a visible
+`Undelivered` rather than a silent wrong answer.
+
+**Where a card is not remotely answerable**, the surface shows it read-only with
+the reason and offers the terminal view — the honest degradation
+[06 §4](06-agent-layer.md) already specifies. omt never presents an
+unanswerable card as answerable.
