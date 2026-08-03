@@ -259,16 +259,43 @@ pub trait Responder: Send + Sync {
 | app-server approval response | Codex | Native |
 | **Synthesized keystrokes into the PTY** | anything else | Synthetic |
 
-The synthetic responder exists, but under strict rules, because another tool's
-experience shows how fragile it is (its `agent.prompt` types text and sends
-Enter 300 ms later to survive paste debouncing):
+The synthetic responder exists under a precise rule, stated in
+[D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger):
+**the bound is state dependence, not tool danger.**
 
+```rust
+pub enum StateDependence {
+    /// The answer is the same regardless of the agent's internal UI state:
+    /// typing `1`/`2`/`3`, `y`/`n`, free text, or a line-oriented CLI's stdin.
+    Independent,
+    /// Producing the answer requires knowing where a highlight bar currently
+    /// sits — i.e. state omt inferred from the screen.
+    Inferred,
+}
+```
+
+- `Independent` is allowed and enabled by default. Writing `y\n` to Aider is not
+  a hack; stdin is its documented input channel. A TUI that accepts `1`/`2`/`3`
+  is equally safe, because no inference step exists.
+- `Inferred` — counting arrow keys against a cursor position derived from the
+  screen — is **disabled by default**. A version bump, locale change or resize
+  invalidates the inference, omt selects the *wrong* option, and on a phone the
+  user cannot see that it went wrong. Enabling it is per-agent, explicit, and
+  labelled experimental everywhere it surfaces.
+- Adapters must discover whether a prompt offers a position-independent form and
+  prefer it. That discovery is a testable property of the adapter.
 - It is **never** used when a native responder is available.
-- It is **never** used for a `Permission` interaction whose declared effects
-  include anything destructive. Those must be answered natively or in person.
 - Every synthetic response is tagged `fidelity: synthetic` in the event stream
-  and shown as such in the UI, so a user always knows when omt is "typing".
+  and visibly attributed as omt-typed on every surface.
 - It requires the writer token, and it is serialized with human input.
+
+Note what this rule deliberately does *not* say: it does not exempt "dangerous"
+tools. Per [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics),
+omt does not classify an agent's operations by danger — that is the agent's own
+permission model's job, and duplicating it would create two mental models and
+false confidence. another tool's `agent.prompt` (type text, send Enter 300 ms later to
+survive paste debouncing) is the prior art here, and its fragility comes from
+exactly the inference step this rule forbids.
 
 ### 5.3 The deferral mechanism (and its risk)
 

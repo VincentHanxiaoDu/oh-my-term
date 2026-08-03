@@ -7,6 +7,7 @@ TUI, a public API, and a mobile-optimized web client.
 This document is the entry point. It states the problem, the shape of the
 solution, and the invariants every other document and every change must respect.
 
+- [Decision log](decisions.md) — binding decisions; overrides anything that contradicts it
 - [01 — Principles and invariants](01-principles.md)
 - [02 — Crate map](02-crate-map.md)
 - [03 — Capability catalog and surface parity](03-capability-catalog.md)
@@ -21,6 +22,7 @@ solution, and the invariants every other document and every change must respect.
 - [12 — Concurrency and collaboration](12-collaboration.md)
 - [13 — Security model](13-security.md)
 - [14 — Licensing and provenance](14-licensing.md)
+- [15 — Workspace explorer: files and version control](15-workspace-explorer.md)
 
 Background research that informed these decisions lives in
 [`docs/research/`](../research/): [another tool](../research/another tool.md),
