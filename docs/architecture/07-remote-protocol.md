@@ -215,7 +215,7 @@ pub trait Transport: Send + 'static {
 pub enum Frame {
     /// UTF-8 JSON control message (`ProtoMessage`).
     Text(Bytes),
-    /// Length-delimited binary payload with a 12-byte header (see §3.6).
+    /// Length-delimited binary payload with a 24-byte header (see §3.6).
     Binary(Bytes),
 }
 ```
@@ -320,7 +320,7 @@ flapping link does not reset into a hot loop.
 | Channel | Encoding | Why |
 |---|---|---|
 | control (handshake, auth, capability calls, events) | **JSON** text frames | debuggable with `websocat`, one schema source (`schemars`) shared with REST and the TS client, negligible volume |
-| terminal output | **binary** frames, raw bytes with a 12-byte header | this is the high-rate path; base64 in JSON costs 33 % bandwidth and a parse per frame |
+| terminal output | **binary** frames, raw bytes with a 24-byte header | this is the high-rate path; base64 in JSON costs 33 % bandwidth and a parse per frame |
 | audio (STT upload) | **binary** frames, Opus | obvious |
 | images / files | **binary** frames, chunked | ditto |
 
@@ -536,15 +536,16 @@ write is resumed by `ack`, not repeated (§3.6).
 
 ### 3.6 Binary payloads
 
-A binary frame is a 12-byte header followed by the payload:
+A binary frame is a 24-byte header followed by the payload:
 
 ```
- 0        1        2                4                            8                           12
- +--------+--------+----------------+----------------------------+---------------------------+
- | ver(1) | kind(1)|   stream(u16)  |        seq_or_off(u32)     |          ack(u32)         | payload…
- +--------+--------+----------------+----------------------------+---------------------------+
+ 0        1        2                4                8                          16                          24
+ +--------+--------+----------------+----------------+---------------------------+---------------------------+
+ | ver(1) | kind(1)|   stream(u16)  |  reserved(u32) |      seq_or_off(u64)      |          ack(u64)         | payload…
+ +--------+--------+----------------+----------------+---------------------------+---------------------------+
  kind: 1 = terminal output   2 = terminal input   3 = blob chunk
        4 = audio chunk       5 = terminal snapshot
+ all integers little-endian; `reserved` MUST be zero and is rejected otherwise
 ```
 
 `stream` is a small integer handed out by the server (for terminal streams, at
@@ -552,7 +553,54 @@ A binary frame is a 12-byte header followed by the payload:
 frames/s matters. `seq_or_off` is the per-stream sequence for terminal and audio
 and the byte offset for blob chunks.
 
-**`ack: u32` is reserved now, before the wire freezes.** On a `kind=1` terminal
+**`seq_or_off` is `u64`, matching `Seq` everywhere else — choice recorded.**
+An earlier draft carried it as `u32`, which silently truncated a value the rest
+of the system holds in 64 bits
+([04 §4.1](04-terminal-core.md#41-what-a-renderer-gets)'s `Snapshot.seq`,
+[§5.1](#51-sequence-spaces)'s per-session space,
+[glossary `Seq`](glossary.md)). Three options were considered — widen; keep
+`u32` as an offset within an explicit epoch; keep `u32` with a defined
+wrap-around window — and **widening wins on cost**. A `u32` sequence wraps after
+~4.3 × 10⁹ frames or bytes, and the failure that produces is the worst kind: a
+client resuming at `since_seq` after a wrap rejoins at a point the server also
+considers valid, so it believes it is caught up and is not, with no error on
+either side. The two `u32`-preserving options both buy 8 bytes by introducing a
+second sequence-space concept (an epoch, or a wrap window) into a protocol whose
+whole resume story rests on there being exactly three sequence spaces and
+nothing else — a permanent complexity cost against a one-time byte cost.
+
+The byte cost is negligible against this document's own targets: [§6.2](#62-coalescing-terminal-frames)
+coalesces terminal output on a 16 ms timer with a 32 KiB early-flush, so a
+saturated stream carries **one** header per up-to-32 KiB payload — 24 bytes
+against 32768 is 0.07 %. The worst case is uncoalesced input frames (`kind=2`,
+exempt from coalescing), where a 1-byte keystroke costs 24 bytes of header
+instead of 12; at human typing rates that is tens of bytes per second. Neither
+figure is visible against [§7](#7-latency-budget)'s budget.
+
+**`u64` does not wrap in any reachable regime** — at 10⁹ increments/s it lasts
+~580 years — so there is no wrap behaviour to define, and that is the point of
+the choice. A client that nonetheless observes `seq_or_off` **decrease** on a
+stream treats it as a server-side sequence reset, not a wrap: it discards its
+resume point and expects the `Resync{reason: "sequence_reset"}` that
+[§5.2](#52-replay-window)'s last row already defines for the "client from the
+future" case. There is no other legal way for a sequence to go backwards.
+`since_seq` ([§3.7](#37-subscriptions), [§5](#5-resume-and-reliability)) and the
+replay window are therefore unchanged: `since_seq` is a `u64` in the same space
+as the header field, comparisons are plain ordering with no modular arithmetic,
+and the replay window's bounds (`min(4 MiB, 4096 events)`) are far too small for
+the question to arise.
+
+**`ack` is `u64` for the same reason, and its space is *not* bounded.** It is
+[D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 7's client-input sequence, counted in **bytes consumed into the
+PTY** — and input is not only typing. A pasted file, a `blob` push replayed as
+input, or an agent driving a session pushes megabytes through that counter, so
+"a human can't type 4 GiB" is not an argument that holds. Since the whole
+purpose of `ack` is that the byte-stream class has *no* safe replay, an
+ambiguous ack is unrecoverable by construction, which is exactly the case not to
+economise on. Same rule as above: `ack` never wraps, and a decrease means reset.
+
+**`ack: u64` is reserved now, before the wire freezes.** On a `kind=1` terminal
 output frame it carries **the highest client input sequence the server has
 consumed** into the PTY. It has two independent rationales and both are recorded
 here so it cannot be value-engineered out as "a v2 feature":
@@ -573,8 +621,9 @@ here so it cannot be value-engineered out as "a v2 feature":
    all, and a reconnect after a dropped link either loses input or duplicates it.
 
 Zero is the "no information" value; a client that sees only zeros disables
-prediction and treats every reconnect tail as ambiguous. This costs 4 bytes per
-frame against a coalesced frame budget (§6.2) measured in kilobytes.
+prediction and treats every reconnect tail as ambiguous. This costs 8 bytes per
+frame against a coalesced frame budget ([§6.2](#62-coalescing-terminal-frames))
+measured in kilobytes.
 
 Blobs (images, file push/pull, snapshots) are negotiated in JSON and carried in
 binary:

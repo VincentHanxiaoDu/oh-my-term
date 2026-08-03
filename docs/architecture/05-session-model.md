@@ -746,8 +746,9 @@ Deliberately outside the token, because they are not PTY writes and serializing
 them would break the product ([12 §3.1](12-collaboration.md#31-what-it-governs)
 is authoritative):
 
-- `interaction.resolve` **only when the interaction's `deliverable` is
-  `Native`** — an ACP `session/request_permission` reply, an opencode-plugin
+- `interaction.resolve` **only when the interaction's
+  [`deliverable`](06-agent-layer.md#521-deliverable--a-field-of-interaction-computed-by-the-normalizer)
+  is `Native`** — an ACP `session/request_permission` reply, an opencode-plugin
   response, a Codex app-server call. Those do not touch the PTY.
   Where `deliverable` is `Synthetic`, the resolve is a PTY write and is a
   **gated transaction** that acquires the token, verifies input quiescence

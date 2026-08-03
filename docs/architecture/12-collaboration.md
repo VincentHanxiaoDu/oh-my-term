@@ -163,11 +163,11 @@ deleted that rationale: omt no longer parks the call and answers through the
 hook's response slot; the agent draws its own card and the answer is delivered
 to *that card*. So:
 
-| `Interaction.deliverable` | Channel | Token |
+| [`Interaction.deliverable`](06-agent-layer.md#521-deliverable--a-field-of-interaction-computed-by-the-normalizer) | Channel | Token |
 |---|---|---|
 | `Native` — ACP `session/request_permission`, the opencode plugin, the Codex app-server | the agent's own RPC | **not gated**; the flagship "answer from your phone while someone else is at the keyboard" case is preserved exactly here |
 | `Synthetic { requires_token }` — keystrokes at the agent's own TUI | the PTY | **gated**, as a transaction, below |
-| `None` | — | not answerable remotely at all; the surface says "needs you" |
+| `None { reason }` | — | not answerable remotely at all; the surface says "needs you" and shows the reason |
 
 A `Synthetic` resolve is not a token-holding *write*, it is a **gated
 transaction** per [D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write):

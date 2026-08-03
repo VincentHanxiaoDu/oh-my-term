@@ -234,8 +234,42 @@ pub struct Interaction {
     pub state: InteractionState,
     /// How an answer gets back to the agent. §5.2.
     pub responder: ResponderRef,
+    /// Whether omt can deliver an answer to *this* card at all, and over which
+    /// channel. Computed once by the normalizer from `responder` + `kind`;
+    /// see §5.2.1. Remote answerability renders from this and never from
+    /// `state == Open` (D13).
+    pub deliverable: Deliverable,
     /// Advisory: who is currently looking at this card. See 12 §4.4.
     pub viewers: Vec<ActorId>,
+}
+
+/// Whether an answer can be delivered, and over which channel. §5.2.1.
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Deliverable {
+    /// The responder has a real response channel (ACP, plugin, app-server).
+    /// Not gated by the writer token — 12 §3.1.
+    Native,
+    /// Keystrokes into the agent's own TUI. Delivery is D13's gated
+    /// transaction; `requires_token` is `true` for every synthetic delivery
+    /// and is carried explicitly so a client can render the gate without
+    /// knowing the rule.
+    Synthetic { requires_token: bool },
+    /// omt cannot answer this card. The surface shows it read-only with
+    /// `reason` and offers the terminal view (§4, D16).
+    None { reason: NotDeliverableReason },
+}
+
+#[serde(rename_all = "snake_case")]
+pub enum NotDeliverableReason {
+    /// Submitting requires cursor navigation — multiSelect, plan review.
+    NotPositionIndependent,
+    /// The option's index is not derivable from the payload — a *specific*
+    /// deny on a permission prompt (D16).
+    IndexNotDerivable,
+    /// The responder is `Inferred` and not enabled for this agent (D3).
+    InferredResponderDisabled,
+    /// No responder covers this kind for this agent.
+    NoResponder,
 }
 
 /// Semantics and transitions: 12 §4.1.
@@ -479,6 +513,68 @@ permission model's job, and duplicating it would create two mental models and
 false confidence. another tool's `agent.prompt` (type text, send Enter 300 ms later to
 survive paste debouncing) is the prior art here, and its fragility comes from
 exactly the inference step this rule forbids.
+
+#### 5.2.1 `deliverable` — a field of `Interaction`, computed by the normalizer
+
+> **Choice recorded here.** [D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)
+> writes the shape as `Open { deliverable: … }`. **This document places
+> `deliverable` on the `Interaction` struct instead, not inside the `Open`
+> variant**, and D13's spelling is to be read as shorthand for it. The reason is
+> that deliverability is a property of the *interaction and its responder*, not
+> of its openness: it stays meaningful in `Submitted` and `Undelivered`, where a
+> client must be able to say whether a retry is even possible or whether the
+> answer now needs a human at the keyboard. Putting it inside `Open` would
+> delete exactly the information the failure surface needs. It also keeps
+> `InteractionState`'s variants about *transitions* and nothing else, and it
+> matches how [12 §3.1](12-collaboration.md#31-what-it-governs) and
+> [05 §5.4](05-session-model.md#54-what-is-not-gated) already write it:
+> `Interaction.deliverable`.
+
+**It does not duplicate `ResponderRef` — it is derived from it.** The responder
+answers *"what channel exists for this agent and kind?"*; `deliverable` answers
+*"can that channel actually carry an answer to **this** card, and does the caller
+need the writer token?"* [D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)
+is why the second question is not the first: one Claude Code `pty` responder
+backs four card types with three different answers. So `deliverable` is
+**computed, never reported by a source**, from `(responder.fidelity,
+responder.state_dependence, kind, agent, mode)`:
+
+- `Native` fidelity → `Native`.
+- `Synthetic` + `Independent` + the kind passes the per-card-type table below →
+  `Synthetic { requires_token: true }`.
+- `Synthetic` + `Inferred` and not explicitly enabled → `None { InferredResponderDisabled }`.
+- no responder → `None { NoResponder }`.
+
+**When it is computed:** once, in the normalizer, at the point where a source's
+payload becomes an `Interaction` (§5.1) — before the ledger opens it and
+therefore before any surface can see it. It is not recomputed per subscriber,
+which is what makes every surface agree. It is recomputed only if the binding's
+session mode changes, which re-opens the interaction anyway.
+
+**Per-card-type mapping — Claude Code**, from D16's verified table. `native`
+mode is ACP throughout, so every row is `Native`.
+
+| `InteractionKind` | `pty` mode | `native` mode |
+|---|---|---|
+| `Choice`, all questions `multi_select: false` | `Synthetic { requires_token: true }` | `Native` |
+| `Choice`, any `multi_select: true` | `None { NotPositionIndependent }` | `Native` |
+| `Permission` — the `Allow` / `AllowAlways` options | `Synthetic { requires_token: true }` | `Native` |
+| `Permission` — a *specific* `Deny` / `DenyAlways` option | `None { IndexNotDerivable }` | `Native` |
+| `PlanReview` | `None { NotPositionIndependent }` | `Native` |
+| `Text` | `Synthetic { requires_token: true }` | `Native` |
+
+A `Permission` card is therefore **partly** deliverable in `pty` mode: the card
+is `Synthetic` and the surface offers allow, while `Esc` — D16's universal safe
+negative — is offered as the only negative. A specific deny is rendered
+read-only with its reason. This is the one kind where `deliverable` is not the
+whole story, and the per-option detail lives in `PermissionOption`, not in a
+second enum.
+
+The runtime preconditions ([12 §4.6](12-collaboration.md#46-preconditions-on-a-synthetic-delivery),
+including D16's *"is a number rendered on the row?"* check) are evaluated at
+**delivery** time, not here. A card can be `Synthetic` and still fail its
+transaction; that is `Undelivered { PreconditionFailed }`, and `deliverable` is
+what tells the client the retry is worth offering.
 
 ### 5.3 The deferral mechanism — demoted to an optional optimization
 
