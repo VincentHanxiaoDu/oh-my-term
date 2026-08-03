@@ -138,7 +138,7 @@ on a hotel/aeroplane connection.
 stack trace out of a remote box to a local Jira ticket takes four steps. Opening
 a remote file in his local editor means `scp` or `sshfs`.
 
-**Wants from omt.** `omt --remote prod-3` and everything works: clipboard both
+**Wants from omt.** `omt ssh prod-3` and everything works: clipboard both
 ways, `file:line` in a stack trace opens in his *local* editor
 ([18 §6](../architecture/18-semantic-open.md#6-the-omt-ssh-remote-flow)),
 screenshots paste to an agent running remotely
@@ -513,12 +513,12 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 
 ### J22 — Working over SSH with the thin client
 
-- **Steps.** `omt --remote prod-3` from the laptop.
+- **Steps.** `omt ssh prod-3` from the laptop.
 - **Shows.** A local omt TUI driving the remote instance over an SSH stdio
   transport (07 §2.4). Local clipboard, local editor, local screenshot paste.
 - **Success.** Feels local. `⟨leader⟩` handled locally; everything else
   forwarded (16 §7.1).
-- **Failure.** omt is not installed remotely. There must be a `omt --remote
+- **Failure.** omt is not installed remotely. There must be a `omt ssh
   --bootstrap` that offers to scp a static binary, or a precise error naming the
   install command. Unspecified.
 
@@ -527,7 +527,7 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Steps.** Screenshot on macOS → focus omt pane → `Cmd+V`.
 - **Shows.** `📎 screenshot-2026-08-03.png (412 KB) → /tmp/omt-blob/…` inserted
   into the agent prompt as a path.
-- **Success.** Tier 1 reverse socket (09 §5.2) when using `omt --remote`.
+- **Success.** Tier 1 reverse socket (09 §5.2) when using `omt ssh`.
 - **Failure.** Plain `ssh` in Ghostty → tier 4: QR code / `omt paste` with a
   named reason (D7). The failure message quality *is* the feature here.
 
@@ -548,7 +548,7 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Steps.** `⟨leader⟩ [` copy mode → `v` select → `y`. Or: focus a block and
   press `y` (block-level copy, no selection needed).
 - **Shows.** `copied 1.2 KB to local clipboard`.
-- **Success.** Works over `omt --remote` (09 §3.1) and in a foreign terminal via
+- **Success.** Works over `omt ssh` (09 §3.1) and in a foreign terminal via
   OSC 52 where supported, with a size-limit fallback (09 §3.3).
 - **Failure.** OSC 52 truncation at ~74 KB in some terminals, silently. Must be
   detected and reported.
@@ -1089,7 +1089,7 @@ next to the data.
 ## G10 — Accessibility of the TUI — **NO OWNER**
 
 **Need.** J49. 08 §9.1 handles the web client properly. The TUI, the CLI and the
-`omt --remote` thin client have no accessibility story at all, and a full-screen
+`omt ssh` thin client have no accessibility story at all, and a full-screen
 ratatui app with a live status bar is actively hostile to a screen reader.
 
 **In scope.** Partly. Making a TUI screen-reader-friendly is genuinely hard.
@@ -1365,7 +1365,7 @@ if not the terminal. Worth documenting because users will try it.
 |---|---|---|---|---|
 | R33 | Federation across instances; per-instance authority; unified list | M | J38 | 07 §1 |
 | R34 | Version-skew degradation with explicit "requires omt ≥ x on this instance" | M | J39 | 07 §1.5, 08 §3.4 |
-| R35 | `omt --remote <target>` thin client with local clipboard/editor/media | M | J22–J25 | 09, 16 §7, 18 §6 |
+| R35 | `omt ssh <target>` thin client with local clipboard/editor/media | M | J22–J25 | 09, 16 §7, 18 §6 |
 | R36 | Diagnosed media fallbacks naming the terminal and the reason (D7) | M | J23 | 09 §5.6 |
 | R37 | Remote-file open defaults to read-only with a loud indicator | M | J24 | 18 §6.5 |
 | R38 | Bootstrap path when omt is absent on the remote host | S | J22 | [22 §7](../architecture/22-operations.md#7-bootstrap-onto-a-host-with-no-omt-r38) (`remote.bootstrap`, `remote.probe`) |

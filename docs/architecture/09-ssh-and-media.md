@@ -12,7 +12,7 @@ are wishful. The short version, stated up front so nothing below reads as
 overselling:
 
 > **omt can make image paste over SSH work reliably when omt is on both ends
-> (`omt --remote`, or a local omt daemon with a forwarded socket). Through a
+> (`omt ssh`, or a local omt daemon with a forwarded socket). Through a
 > foreign terminal emulator, automatic clipboard-image capture is achievable
 > only on kitty today, semi-automatic on iTerm2 and WezTerm, and not at all on
 > the rest. For those, omt degrades to an explicit, one-tap-from-the-phone
@@ -463,14 +463,14 @@ One row per source: what is technically possible, and what omt does.
 | **`@`-completion in the composer** | Yes | Typing `@` in omt's composer completes workspace paths and stages the match as an attachment. Deliberately the same character the agents themselves use, so muscle memory transfers. |
 
 **Native TUI over SSH** — cross-reference only. The tier ladder in §5 decides how
-the *bytes* reach the instance (tier 0 `omt --remote`, tier 1 reverse socket,
+the *bytes* reach the instance (tier 0 `omt ssh`, tier 1 reverse socket,
 tier 2 OSC bridge, tier 3 terminal-native, tier 4 out-of-band). Once they arrive,
 everything in this section applies unchanged. Note that the drag-a-file case
 above is *free* over SSH when the file is on the remote and merely *hard* when it
 is local — which is exactly the §5 problem, and is why the composer's
 attach-this-path chip says which side of the connection the path resolved on.
 
-**`omt ssh` / `omt --remote` thin client** — the recommended case. omt owns both
+**`omt ssh` / `omt ssh` thin client** — the recommended case. omt owns both
 ends, reads the local clipboard natively, and streams over the existing control
 channel with no base64 and no pty (§6.1).
 
@@ -936,7 +936,7 @@ and every mechanism below is a way around it.
 ### 5.1 Tier overview
 
 ```
-Tier 0  omt --remote <target>        omt on both ends, own control channel        §6 of this doc / [07]
+Tier 0  omt ssh <target>        omt on both ends, own control channel        §6 of this doc / [07]
 Tier 1  reverse socket               local omt daemon reachable from remote        §5.2
 Tier 2  in-band OSC bridge           omt's own OSC channel + a local companion     §5.3
 Tier 3  terminal-native              kitty OSC 5522 / iTerm2 RequestUpload         §5.4
@@ -1167,7 +1167,7 @@ an image-shaped clipboard that omt cannot reach produces:
 |---|---|---|
 | omt local only (case a) | **Yes** | Direct OS clipboard. |
 | Web client (case c) | **Yes** | Native browser paste/drop/camera. |
-| `omt --remote box` | **Yes** | omt owns both ends; §6. |
+| `omt ssh box` | **Yes** | omt owns both ends; §6. |
 | `omt ssh box` (omt wraps ssh) | **Yes** | Tier 1 socket, or tier 2 OSC bridge. |
 | Foreign terminal + local omt daemon + `ssh -R` configured by hand | **Yes** | Tier 1. Requires user config. |
 | kitty + plain `ssh`, `clipboard_control` allows read | **Yes** | Tier 3; kitty may prompt per read. |
@@ -1176,19 +1176,19 @@ an image-shaped clipboard that omt cannot reach produces:
 | Ghostty / Alacritty / Terminal.app / Windows Terminal + plain `ssh` | **No** | Tier 4 (QR / `omt paste` / switch to `omt ssh`). |
 | Any of the above with tmux in between and `allow-passthrough off` | **No** | Even tier 3 breaks. omt detects and says so. |
 
-The product consequence: **`omt ssh` and `omt --remote` are the documented way
+The product consequence: **`omt ssh` and `omt ssh` are the documented way
 to get this feature**, and the first-run experience nudges toward them. Chasing
 universal foreign-terminal clipboard access is a losing engineering bet against
 software omt does not control.
 
 ---
 
-## 6. `omt --remote <ssh-target>` — the thin client
+## 6. `omt ssh <target>` — the thin client
 
 The easy case, and the one omt should push users toward.
 
 ```
-$ omt --remote box
+$ omt ssh box
 ```
 
 1. omt spawns `ssh box omt serve --stdio` (or `--stdio --exec` to start the

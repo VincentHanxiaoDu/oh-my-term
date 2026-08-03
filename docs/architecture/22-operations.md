@@ -1006,7 +1006,7 @@ local      binary installed; daemon restarts when 3 agents go idle
 ## 7. Bootstrap onto a host with no omt (R38)
 
 The full design is [vscode-remote §10.4–10.5](../research/vscode-remote.md#104-what-omt-should-do-differently)
-and the transport is [07 §2.4](07-remote-protocol.md#24-ssh-stdio-bridge--omt---remote-target);
+and the transport is [07 §2.4](07-remote-protocol.md#24-ssh-stdio-bridge--omt-ssh-target);
 this section is the operational specification.
 
 ### 7.1 One ssh connection

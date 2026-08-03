@@ -26,7 +26,7 @@ The whole document reduces to five commitments:
 >    behind a leader or in the command palette.
 > 3. **omt knows the inner program's keymap as data**, so it can refuse to
 >    shadow `Ctrl+O` in Claude Code and say so at config-load time.
-> 4. **When omt owns both ends (`omt ssh`, `omt --remote`, the web client) it
+> 4. **When omt owns both ends (`omt ssh`, `omt ssh`, the web client) it
 >    offers chords a foreign terminal could never deliver** — and says plainly
 >    which those are.
 > 5. **Vim mode and emacs mode govern omt's own surfaces and nothing else**, so
@@ -1871,7 +1871,7 @@ which is the reviewable artifact for the shipped data file.
 
 ## 7. `omt ssh` — local feels remote-native
 
-When the user runs `omt ssh <target>` or `omt --remote <target>`, omt is the
+When the user runs `omt ssh <target>` or `omt ssh <target>`, omt is the
 program on **both** ends ([09 §6](09-ssh-and-media.md)). It owns the keyboard
 end to end, and can therefore offer things a foreign terminal never could.
 

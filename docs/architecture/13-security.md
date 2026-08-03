@@ -767,7 +767,7 @@ home to?" is a query, not an audit of the config file.
   original, and `omt integration status` shows exactly what it added. A tool
   that silently owns your hook config is indistinguishable from malware.
 - **Reproducible builds and signed releases**: release artifacts are built in
-  CI, checksummed, and signed; `omt --remote` verifies the checksum of any
+  CI, checksummed, and signed; `omt ssh` verifies the checksum of any
   binary it installs on a remote host (another tool does not, and that is a real gap).
 - **Web bundle integrity**: the bundle is embedded in the binary, not fetched.
   The CSP forbids external script entirely (§6).

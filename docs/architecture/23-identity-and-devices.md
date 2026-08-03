@@ -457,7 +457,7 @@ Stated plainly, because each of these is a real configuration omt supports:
 | Reverse proxy with a real DNS name | **Yes** | Fine; consider Related Origin Requests to share the RP ID with the tailnet name |
 | Tailscale Funnel | Yes technically | But see [13 §10](13-security.md#10-checklist--publishing-an-instance-over-tailscale-funnel): do not use Funnel |
 | Safari tab on iOS (not installed) | Registration works; **persistence does not** — IndexedDB is evicted after 7 days unused, taking the device key with it | The install-to-home-screen walkthrough is part of pairing (§5.1) |
-| Headless: CI box, container, `omt --remote` | **No** browser at all | Token fallback, always |
+| Headless: CI box, container, `omt ssh` | **No** browser at all | Token fallback, always |
 
 ### 2.4 The token fallback, which must always exist
 

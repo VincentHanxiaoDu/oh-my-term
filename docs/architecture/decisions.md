@@ -150,7 +150,7 @@ here because it is a foundational, hard-to-reverse choice.
 ## D7 — Image paste over SSH is only promised where omt controls both ends
 
 **Decision.** Full-fidelity clipboard and image paste is a documented feature of
-`omt ssh` / `omt --remote` and of the web client. In a foreign terminal over a
+`omt ssh` / `omt ssh` and of the web client. In a foreign terminal over a
 plain `ssh`, omt attempts the paths that exist (realistically: kitty, with a
 non-default config flag) and otherwise falls back to a *diagnosed* out-of-band
 path — QR to the phone, or `omt paste --to <instance>:<session>` from the

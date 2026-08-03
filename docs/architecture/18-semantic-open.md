@@ -1098,7 +1098,7 @@ overrides, conflict diagnostics (`OMT-C4xx`) and the `omt doctor keys` flow are
 ## 6. The `omt ssh` remote flow
 
 The scenario: laptop runs `omt ssh box` (a thin `omt-tui` over the ssh-stdio
-transport, [09 §6](09-ssh-and-media.md#6-omt---remote-ssh-target--the-thin-client));
+transport, [09 §6](09-ssh-and-media.md#6-omt-ssh-target--the-thin-client));
 the session, the files and the agent are on `box`. The user hits `ctrl-b f`,
 types `sd`, and the target is `/srv/app/src/lexer.rs:88:17` — on `box`.
 

@@ -254,9 +254,9 @@ the daemon's uid is rejected before the handshake. Same-uid peers get the
 `omt-hook` uses this socket and nothing else; it never speaks WebSocket. Its two
 messages are `HookEvent` and `HookAck`, specified in §3.8.
 
-### 2.4 SSH stdio bridge — `omt --remote <target>`
+### 2.4 SSH stdio bridge — `omt ssh <target>`
 
-`omt --remote workbox` does **not** invent a network protocol. It runs:
+`omt ssh workbox` does **not** invent a network protocol. It runs:
 
 ```
 ssh -T <target> -- omt serve --stdio --proto 1
