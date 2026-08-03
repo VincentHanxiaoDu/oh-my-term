@@ -2041,7 +2041,7 @@ name, which is the web equivalent for every row without a more specific one.
 | `<leader> x` | `session.close` (confirm) | long-press ▸ Close | tmux parity; confirm because `effects` includes `DESTRUCTIVE`. |
 | `<leader> w` | `tui.open_session_picker` | session list | tmux parity. |
 | `<leader> \|` / `<leader> -` | `pane.split` v/h | split buttons (desktop) | Mnemonic glyphs beat tmux's `%`/`"`. |
-| `<leader> h j k l` / arrows | `pane.focus_direction` | tap a pane | Directional focus; arrows for non-vi users. |
+| `<leader> h j k l` / arrows | `pane.navigate` | tap a pane | Directional focus; arrows for non-vi users. The capability is `pane.navigate` ([17 §9.1](17-panes-and-layout.md#91-pane), [05 §10.3](05-session-model.md#103-pane)) — there is no `pane.focus_direction`, and binding a name that does not resolve fails [03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test. |
 | `<leader> z` | `pane.zoom` | expand button | tmux parity. |
 | `<leader> [` | `tui.enter_copy_mode` | scroll / select | tmux parity. |
 | `<leader> /` | `tui.search` | search field | Searches omt's scrollback, not the inner program's. |

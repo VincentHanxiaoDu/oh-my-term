@@ -1202,7 +1202,7 @@ windows:
       - title: api
         color: blue
         layout:
-          split: horizontal            # horizontal | vertical
+          split: columns               # columns | rows (canonical)
           ratio: [0.6, 0.4]
           panes:
             - cwd: ~/src/api
@@ -1213,7 +1213,7 @@ windows:
                 id: claude_code
                 args: ["--permission-mode", "plan"]
                 prompt: "Review the diff on this branch and list risks."
-            - split: vertical
+            - split: rows
               panes:
                 - cwd: ~/src/api
                   commands: ["cargo watch -x test"]
@@ -1238,6 +1238,17 @@ Semantics:
 - `layout` is either a leaf (`cwd`, plus optional `commands`, `agent`, `shell`,
   `focused`) or a branch (`split`, `ratio`, `panes`) — the recursion is the
   entire schema.
+- **`split` is `columns` | `rows`**, matching the `Axis` type
+  ([17 §1.2](17-panes-and-layout.md#12-types),
+  [17 §4.2](17-panes-and-layout.md#42-the-serialization-format)). `columns` puts
+  children side by side; `rows` stacks them. The older spellings `horizontal` and
+  `vertical` **are still accepted on read** — there is a corpus of hand-written
+  files and breaking them buys nothing — and map to `columns` and `rows`
+  respectively. Everything omt *writes*, including `omt launch save`, uses the
+  canonical spelling, and `config.validate` reports the legacy spellings as a
+  deprecation rather than an error. The rename exists because "horizontal split"
+  means opposite things in tmux and in most GUI terminals, so the old names
+  cannot be read without a footnote.
 - `agent:` is the omt-specific extension: it declares which adapter to bind, its
   argv, and an optional initial prompt delivered through the adapter's native
   channel, not synthesized keystrokes (P4).

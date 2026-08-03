@@ -30,8 +30,8 @@ Instance                 one omt daemon on one machine
  └─ Workspace            a project root (canonical path; usually a git repo/worktree)
      └─ Session          one logical terminal: a PTY + omt-term state + agent binding
          └─ (shown in)
-Pane                     a viewport onto a session, a leaf of a Layout tree
-Layout                   a BSP tree of panes, owned by a Workspace
+Pane                     a viewport onto a session, a leaf of a LayoutTree
+LayoutView               one arrangement of panes; a Workspace owns one or more
 Client                   an attached surface (TUI, phone, CLI) with presence
 ```
 
@@ -39,8 +39,13 @@ Two relationships deserve emphasis because they are where most multiplexers get
 it wrong:
 
 - **Pane → Session is many-to-one.** A session may be visible in several panes,
-  in several layouts, on several clients, simultaneously. A pane is presentation
-  only; closing a pane never kills a session.
+  in several layout views, on several clients, simultaneously. A pane is
+  presentation only; closing a pane never kills a session.
+- **Pane → LayoutView is one-to-one.** A pane belongs to exactly one view; two
+  views showing the same session hold two different `PaneId`s pointing at one
+  `SessionId` ([17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)).
+  This is why anything crossing client boundaries — presence, focus reporting,
+  deep links — is keyed on `(ViewId, SessionId)` and never on a bare `PaneId`.
 - **Session → Workspace is many-to-one and stable.** Multiple sessions in one
   directory is the *normal* case (agent + dev server + shell), not an edge case.
   A session's workspace is fixed at creation and does not follow `cd` — the
@@ -66,9 +71,13 @@ pub struct Workspace {
     pub root: CanonicalPath,          // identity — see §7
     pub name: String,                 // display; defaults to the directory basename
     pub git: Option<GitIdentity>,     // repo root, worktree, branch
-    pub layout: Layout,               // BSP tree of PaneIds
+    /// Named arrangements over this workspace's sessions. Shape and semantics
+    /// owned by [17 §3.3]; this crate stores them. Focus and zoom live *inside*
+    /// a view (`Layout::focus`, `Layout::zoom`), not on the workspace.
+    pub views: IndexMap<ViewId, LayoutView>,
+    /// The view a client is put in when it attaches and asks for nothing.
+    pub primary: ViewId,
     pub sessions: Vec<SessionId>,     // membership, ordered by creation
-    pub focus: Option<PaneId>,
     pub created_at: Timestamp,
 }
 
@@ -144,6 +153,7 @@ pub struct Pane {
 | `WorkspaceId` | derived: `blake3(canonical_root)[..16]` | as long as the path is open | daemon restart, rename |
 | `SessionId` | UUIDv7 | until closed *and* evicted from history | detach, reattach, daemon restart |
 | `PaneId` | UUIDv7 | until the pane is closed | client disconnect |
+| `ViewId` | UUIDv7 | `Primary`/`Named`: with the workspace. `Adaptive`: until its last client detaches | `Adaptive` views are never persisted |
 | `ClientId` | UUIDv7, minted at attach | one connection | nothing — a reconnect is a new client |
 
 `WorkspaceId` being **derived** rather than random is deliberate: two omt
@@ -196,50 +206,87 @@ no TUI, omt rendering the whole session from typed events — is opt-in.
 ## 2. Layout: the BSP tree
 
 A workspace's tiling arrangement is an **n-ary split tree** (historically, and in
-this heading, "BSP"); the deepening of everything below is
-[17 — Panes and layout](17-panes-and-layout.md).
+this heading, "BSP"). **[17 — Panes and layout](17-panes-and-layout.md) owns
+these types**; the sketch below is the shape this crate stores, and where the two
+disagree, 17 wins and this section is the bug.
+
+A tiling tree does not stand alone: it is one layer of a `Layout`, which a
+`LayoutView` owns, of which a workspace has one or more (§1.1,
+[17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)).
 
 ```rust
-pub enum Layout {
-    Leaf(PaneId),
-    Split {
-        id: SplitId,
-        dir: Direction,               // Horizontal (side by side) | Vertical (stacked)
-        /// Children with fractional weights summing to 1.0. N-ary, not binary —
-        /// see rationale below.
-        children: Vec<(f32, Layout)>,
-    },
-    /// Exactly one pane fills the workspace; the real tree is preserved.
-    Zoom { pane: PaneId, saved: Box<Layout> },
+/// The tiling layer. Geometry is never stored here.
+pub enum LayoutTree {
+    /// The view has no panes. Only ever the root.
     Empty,
+    Leaf(PaneId),
+    Split(Split),
+}
+
+pub struct Split {
+    pub id: SplitId,
+    /// Column-wise (children side by side) or row-wise (children stacked).
+    /// **Not** `Direction { Horizontal, Vertical }` — "horizontal split" is
+    /// ambiguous in every multiplexer's documentation
+    /// ([17 §1.2](17-panes-and-layout.md#12-types)).
+    pub axis: Axis,
+    /// Children with fractional weights summing to 1.0. N-ary, not binary —
+    /// see rationale below.
+    pub children: Vec<Child>,
+}
+
+pub enum Axis { Columns, Rows }
+
+/// The whole layout of one view: tiling plus the layers that never tile.
+pub struct Layout {
+    pub tiles: LayoutTree,
+    pub floats: Vec<FloatingPane>,
+    /// Non-destructive zoom, a flag rather than a tree swap. Per *view*.
+    pub zoom: Option<PaneId>,
+    pub stacks: HashMap<StackId, Stack>,
+    pub focus: Option<PaneId>,
+    pub last_focus: Option<PaneId>,
 }
 ```
+
+**Zoom is a flag beside the tree, not a variant in it.** An earlier draft had
+`Zoom { pane, saved: Box<Layout> }`, which is tmux's design and forces an
+unzoom-resize-rezoom on every container resize. A flag consulted by `compute`
+serializes trivially and — the reason that decides it — lets one client render
+zoomed while another renders the tiling from one tree
+([17 §1.3](17-panes-and-layout.md#13-the-whole-layout-of-a-workspace),
+[17 §5.1](17-panes-and-layout.md#51-zoom)).
 
 **Decision: an n-ary tree, not a strictly binary one.** A binary tree makes
 "three equal columns" representable only as nested splits, which then behave
 wrongly when the middle one is closed (the remaining two get 1/2 and 1/2 of an
 oddly-shaped region rather than 1/2 and 1/2 of the whole). The n-ary form makes
 even-split, balance, and close-and-redistribute all trivial and total. Splits
-with the same direction as their parent are automatically flattened into it,
+with the same axis as their parent are automatically flattened into it,
 which keeps the tree canonical: **no `Split` ever has a child `Split` of the same
-direction**, and that invariant is asserted after every operation.
+axis**, and that invariant is asserted after every operation.
 
 ### 2.1 Operations
 
+Every operation acts on one view's `Layout`. The full signatures, the
+normalization rules and the remainder rule live in
+[17 §1.4](17-panes-and-layout.md#14-normalization) and
+[17 §2](17-panes-and-layout.md#2-geometry-and-resize).
+
 ```rust
 impl Layout {
-    pub fn split(&mut self, at: PaneId, dir: Direction, new: PaneId, ratio: f32)
+    pub fn split(&mut self, at: PaneId, dir: Direction2D, new: PaneId, ratio: f32)
         -> Result<(), LayoutError>;
     pub fn close(&mut self, pane: PaneId) -> Result<Option<PaneId>, LayoutError>; // returns new focus
-    pub fn resize(&mut self, pane: PaneId, edge: Edge, delta: Fraction) -> Result<(), LayoutError>;
+    pub fn resize(&mut self, target: ResizeTarget, amount: ResizeAmount) -> Result<(), LayoutError>;
     pub fn swap(&mut self, a: PaneId, b: PaneId) -> Result<(), LayoutError>;
-    pub fn move_pane(&mut self, pane: PaneId, to: PaneId, dir: Direction) -> Result<(), LayoutError>;
-    pub fn zoom(&mut self, pane: PaneId) -> Result<(), LayoutError>;
-    pub fn unzoom(&mut self) -> Result<(), LayoutError>;
+    pub fn move_pane(&mut self, pane: PaneId, to: PaneId, dir: Direction2D) -> Result<(), LayoutError>;
+    /// Sets or clears `self.zoom`. The tree is untouched.
+    pub fn set_zoom(&mut self, pane: Option<PaneId>) -> Result<(), LayoutError>;
     pub fn navigate(&self, from: PaneId, dir: Direction2D) -> Option<PaneId>;
     pub fn apply_preset(&mut self, preset: LayoutPreset);   // Even | MainVertical | MainHorizontal | Tiled
-    /// Geometry for a given viewport, honouring minimums.
-    pub fn compute(&self, area: Rect, min: GridSize) -> Vec<(PaneId, Rect)>;
+    /// Geometry for a given viewport, honouring the renderer's constraints.
+    pub fn compute(&self, area: Rect, c: Constraints) -> Geometry;
 }
 ```
 
@@ -255,9 +302,11 @@ Rules that make the tree behave:
   This is how the same workspace is renderable on a laptop and a phone.
 - **`navigate`** uses geometric adjacency computed from the last `compute`, not
   tree order, so directional movement feels right in asymmetric layouts.
-- **Zoom is non-destructive** and per-workspace, not per-client. A second client
-  viewing the same workspace sees the zoom. (A client that wants a private view
-  opens its own workspace view — see §6.)
+- **Zoom is non-destructive and per *view*** ([17 §5.1](17-panes-and-layout.md#51-zoom)).
+  Two clients sharing the `Primary` view share its zoom; a phone in its own
+  `Adaptive` view — which is effectively always zoomed — does not force zoom on
+  anyone else. A deliberate "everyone look at this" is `layout.promote` after
+  zooming, or `pane.zoom { view: <primary> }` explicitly.
 
 ### 2.2 Sizing with multiple clients
 
@@ -306,8 +355,9 @@ the routing of input.
 pub struct FocusState {
     /// Instance-wide: which workspace the *local* TUI is showing.
     pub active_workspace: Option<WorkspaceId>,
-    /// Per workspace: which pane is focused.
-    pub focused_pane: HashMap<WorkspaceId, PaneId>,
+    /// Per *view*, not per workspace: two views of one workspace focus
+    /// independently. Stored as `Layout::focus`; this map is the index over it.
+    pub focused_pane: HashMap<ViewId, PaneId>,
     /// Per client: what that client is looking at (presence, §6).
     pub client_view: HashMap<ClientId, ClientView>,
 }
@@ -342,7 +392,17 @@ pub struct Client {
 
 pub struct ClientView {
     pub workspace: Option<WorkspaceId>,
-    pub panes: SmallVec<[PaneId; 4]>,     // what is on screen right now
+    /// The `LayoutView` this client is rendering, chosen by
+    /// [17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)'s
+    /// `choose_view`, or pinned explicitly by `layout.views.select`.
+    pub view: ViewId,
+    pub pinned_view: Option<ViewId>,
+    /// What is on screen right now. **`(ViewId, SessionId)`, not `PaneId`**: a
+    /// `PaneId` belongs to one view and is meaningless to a client in another,
+    /// so a bare `PaneId` cannot express "the phone is watching this" to a
+    /// laptop. The `SessionId` is the shared identity and is what every surface
+    /// actually highlights.
+    pub viewing: SmallVec<[(ViewId, SessionId); 4]>,
     /// Reported viewport. Authoritative only per 07 §4.3's `ViewportPolicy`.
     pub size: GridSize,
     pub mode: ViewMode,                   // Grid | Blocks
@@ -490,12 +550,21 @@ Deliberately outside the token, because they are not PTY writes and serializing
 them would break the product ([12 §3.1](12-collaboration.md#31-what-it-governs)
 is authoritative):
 
-- `interaction.resolve` — answering an agent's question goes back through the
-  agent's own channel, not the PTY, and is separately guaranteed to resolve
-  exactly once by the interaction ledger ([06](06-agent-layer.md),
-  [12 §4](12-collaboration.md#4-interaction-ownership)).
-- `agent.prompt` where the adapter has a structured submit path. Where the only
-  path is synthesized keystrokes, the token **is** required.
+- `interaction.resolve` **only when the interaction's `deliverable` is
+  `Native`** — an ACP `session/request_permission` reply, an opencode-plugin
+  response, a Codex app-server call. Those do not touch the PTY.
+  Where `deliverable` is `Synthetic`, the resolve is a PTY write and is a
+  **gated transaction** that acquires the token, verifies input quiescence and
+  re-verifies the interaction before writing
+  ([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write),
+  [12 §3.1](12-collaboration.md#31-what-it-governs)). The old blanket exemption
+  rested on "it goes back through the agent's own channel", which
+  [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+  deleted.
+- `agent.prompt` where the adapter has a structured submit path **in a `pty`
+  session**. Where the only path is synthesized keystrokes, the token **is**
+  required. In a `native` session `agent.prompt` is the *only* input path and is
+  always token-gated (§5.1); 12 §3.1 states this normatively.
 - Scroll, search, selection, block folding — per-client view state.
 
 `session.resize` **is** gated when it carries `request_authoritative: true`,
@@ -514,6 +583,11 @@ watching.
 surface show it. `omt-session` is where it *lives*: it is derived from
 `Instance::clients` and each client's `ClientView`, projected per session, and
 included in `session.list` / `workspace.list` output.
+
+`Presence::viewing` carries `(ViewId, SessionId)` pairs, mirroring
+`ClientView::viewing` (§4) — never bare `PaneId`s, which do not survive the
+crossing from one view to another
+([17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)).
 
 Emitted as `presence.changed` on attach, detach, view change, viewport change,
 liveness change and writer change. Presence is **not** persisted across daemon
@@ -579,7 +653,8 @@ is a different architecture; see the open questions.
 
 | Data | Mechanism | Rationale |
 |---|---|---|
-| Instance/workspace/session/pane tree, layout, focus | **Snapshot** on every structural change, debounced 500 ms | Small, changes rarely, must be exactly right |
+| Instance/workspace/session/pane tree, `Primary` and `Named` views (tiles, floats, stacks, zoom, focus) | **Snapshot** on every structural change, debounced 500 ms | Small, changes rarely, must be exactly right |
+| `Adaptive` views | **never persisted** | Derived from a client's viewport; recreated by `choose_view` on the next attach ([17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)) |
 | Session env, argv, cwd at spawn | Snapshot at creation, immutable | Needed to offer a faithful re-spawn |
 | Block metadata (command, exit, cwd, git, timing, attribution) | **Append-only log**, one record per block close | The valuable, permanent artifact; also feeds history (§9) |
 | Scrollback | **Chunk snapshot**, delta by chunk generation | Per [04 §2.4](04-terminal-core.md#24-scrollback-blocks-of-logical-lines) each chunk has a generation; only changed chunks are written. Written every `scrollback_flush` (default 10 s) and on clean shutdown |
@@ -721,10 +796,10 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `workspace.open` | O | `{ path, name? }` | `{ workspace, created: bool }` |
 | `workspace.close` | O | `{ workspace, close_sessions: bool }` | `{ closed_sessions: [SessionId] }` |
 | `workspace.rename` | O | `{ workspace, name }` | `WorkspaceInfo` |
-| `workspace.layout.get` | V | `{ workspace }` | `{ layout: LayoutTree, geometry: [(PaneId, Rect)] }` — **deprecated alias** for `layout.get` ([17 §9.2](17-panes-and-layout.md#92-layout)); kept two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
-| `workspace.layout.set` | O | `{ workspace, layout }` | `{ layout }` — **deprecated alias** for `layout.set` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
-| `workspace.layout.preset` | O | `{ workspace, preset }` | `{ layout }` — **deprecated alias** for `layout.preset` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
-| `workspace.focus` | O | `{ workspace, pane }` | `{ focused: PaneId }` |
+| `workspace.layout.get` | V | `{ workspace, view? }` | `{ layout: Layout, geometry: Geometry }` — **deprecated alias** for `layout.get` ([17 §9.2](17-panes-and-layout.md#92-layout)); kept two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
+| `workspace.layout.set` | O | `{ workspace, layout, view? }` | `{ layout }` — **deprecated alias** for `layout.set` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
+| `workspace.layout.preset` | O | `{ workspace, preset, view? }` | `{ layout }` — **deprecated alias** for `layout.preset` ([17 §9.2](17-panes-and-layout.md#92-layout)) |
+| `workspace.focus` | O | `{ workspace, pane, view? }` | `{ view: ViewId, focused: PaneId }` |
 | `workspace.git.status` | V | `{ workspace }` | `VcsSummary` — **deprecated alias** for `workspace.vcs.summary` ([15 §6](15-workspace-explorer.md#6-capabilities)); kept for two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
 | `workspace.worktree.list` | V | `{ workspace }` | `{ worktrees: [WorktreeInfo] }` |
 | `workspace.worktree.add` | O | `{ workspace, path, branch, create_branch }` | `{ workspace: WorkspaceId }` — effects: `WRITES_FS`, `SPAWNS_PROCESS` |
@@ -782,7 +857,17 @@ including their input and output shapes; this document does not restate them.
 The names this document relies on: `pane.list`, `pane.split`, `pane.close`,
 `pane.focus`, `pane.navigate`, `pane.move`, `pane.swap`, `pane.resize`,
 `pane.zoom`, `pane.set_session`, `pane.scroll`, `pane.select`, `layout.get`,
-`layout.set`, `layout.preset`.
+`layout.set`, `layout.preset`, `layout.views.*`, `layout.promote`.
+
+`pane.navigate` is the one name for directional focus movement. `pane.focus_direction`
+does not exist ([17 §9.1](17-panes-and-layout.md#91-pane)).
+
+**Every layout capability carries an optional `view: Option<ViewId>`**, defaulting
+to the caller's current view, because a `PaneId` alone does not say which
+arrangement it belongs to and an operation issued from a phone must not silently
+mutate the laptop's `Primary` view. Pushing a change across views is the explicit
+`layout.promote` / `layout.adopt` pair
+([17 §3.6](17-panes-and-layout.md#36-cross-view-operations)).
 
 ### 10.4 Events emitted
 
@@ -792,7 +877,8 @@ derived from state changes, never published by hand from handlers.
 | Event | When |
 |---|---|
 | `WorkspaceOpened` / `WorkspaceClosed` / `WorkspaceRenamed` | tree change |
-| `LayoutChanged` | any layout mutation, with the new tree and geometry |
+| `LayoutChanged { view, .. }` | any layout mutation, with the new tree and a geometry hint |
+| `ViewCreated` / `ViewClosed` / `ViewSelected` | [17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default) |
 | `SessionCreated` / `SessionExited` / `SessionClosed` / `SessionRenamed` | lifecycle |
 | `SessionStateChanged` | `Live` → `Exited` → `Orphaned` transitions |
 | `SessionResized` | negotiated size changed, with the reason |
@@ -815,9 +901,9 @@ Asserted in debug builds and checked by a `Instance::check_invariants()` that th
 property tests call after every operation:
 
 1. Every `PaneId` in a `Layout` exists in exactly one workspace's pane set, and
-   every pane is in exactly one layout.
+   every pane is in exactly one `LayoutView`.
 2. Every `Pane::session` names a live entry in `Instance::sessions`.
-3. No `Split` has a child `Split` of the same direction (canonical tree, §2).
+3. No `Split` has a child `Split` of the same axis (canonical tree, §2).
 4. Split child weights sum to 1.0 ± 1e-4, and every weight is > 0.
 5. At most one `WriterToken` holder per session, and its `epoch` never decreases.
 6. `Session::seq` is strictly monotonic and never decreases across restore.
@@ -833,6 +919,12 @@ property tests call after every operation:
     under `Smallest`; and the last authoritative size when no viewer remains.
 11. A `Native` session has no `PtyHandle`, no authoritative size, and emits no
     `SessionResized`. Its `mode` field and its `SessionSurface` variant agree.
+12. Every workspace has exactly one view of kind `Primary`, and
+    `Workspace::primary` names it. `layout.views.close` refuses it.
+13. `Layout::zoom`, when set, names a pane present in that same view's `tiles`,
+    `floats` or `stacks`. Zoom in one view never constrains another.
+14. Every `ClientView::view` names a live view of `ClientView::workspace`, and
+    that view's `clients` list contains the client — the two directions agree.
 
 ---
 
@@ -893,12 +985,13 @@ property tests call after every operation:
    queries default to scope `WorktreeGroup` rather than `Workspace`. Cheap to
    implement; needs a UX call.
 
-5. **OPEN QUESTION — per-client vs per-workspace zoom.** §2.1 makes zoom
-   workspace-level so collaborators see the same thing. On a phone, zoom is
-   effectively mandatory (one pane fits), which would force a laptop into zoom
-   too. Likely resolution: the phone uses a *client-local* view override rather
-   than the shared zoom, and shared zoom stays for deliberate "look at this"
-   moments. Needs the [08 — Web client](08-web-client.md) design to confirm.
+5. **CLOSED — per-client vs per-workspace zoom.** Resolved by
+   [17 §5.1](17-panes-and-layout.md#51-zoom) in the way this question
+   anticipated: zoom is **per `LayoutView`**, which is neither per-workspace nor
+   per-client. Two clients sharing the `Primary` view share its zoom; a phone in
+   its own `Adaptive` view is effectively always zoomed and forces nothing on
+   anyone. Deliberate "everyone look at this" is `layout.promote` after zooming.
+   §2.1 states the adopted rule.
 
 6. **OPEN QUESTION — history redaction defaults.** §9's redaction list is a
    guess and false negatives are a security problem while false positives are an

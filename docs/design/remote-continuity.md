@@ -10,8 +10,8 @@ event resume
 ([07 §5](../architecture/07-remote-protocol.md#5-resume-and-reliability)),
 per-client layout views
 ([17 §3.3](../architecture/17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default)),
-and push
-([07 §8](../architecture/07-remote-protocol.md#8-notifications-to-a-closed-tab)).
+and the reconnect/replay path
+([07 §5.2](../architecture/07-remote-protocol.md#52-replay-window)).
 
 What does not yet exist is the design that makes them **add up**. A user who
 picks up their phone should not experience "a remote view of my laptop". They
@@ -118,9 +118,11 @@ pub struct ActorContinuity {
     pub drafts: HashMap<DraftKey, Draft>,
     /// Which sessions this person has explicitly muted, and until when.
     pub mutes: HashMap<SessionId, MuteUntil>,
-    /// Notification routing preferences. §5.6.
-    pub notify: NotifyPrefs,
-    /// Sessions marked read after an interaction was resolved elsewhere.
+    // `notify: NotifyPrefs` removed by D12 — no notification backend ships,
+    // so there is nothing to route. Reserved in outline at §5.6.
+    /// Per-session read position. Under D12 this is load-bearing: it defines
+    /// the window of the attention log (§5.2) and clearing it is how the
+    /// "while you were away" band empties.
     pub read_marks: HashMap<SessionId, Seq>,
     /// Per-session view-mode preference *intent* — see §1.4 for why this is
     /// a hint and not a device setting.
@@ -274,13 +276,16 @@ interface RankInput {
   hasDraft: boolean;
   otherDeviceAttached: boolean;         // presence: another of MY devices
   otherDeviceWriting: boolean;          // that device holds the writer token
-  deepLinkTarget: boolean;              // this open came from a notification tap
   muted: boolean;
   reachable: boolean;
 }
 
 function score(c: RankInput): number {
-  if (c.deepLinkTarget) return Infinity;          // §5: a tap is an instruction
+  // NOTE: `deepLinkTarget: return Infinity` was removed. It short-circuited the
+  // whole ranking on "this open came from a notification tap" — and under
+  // D12 nothing taps, so the branch was unreachable. With no notification to
+  // defer to, the ranking below is the *only* thing deciding what the user sees
+  // first, which makes every weight in it load-bearing. See §5.
   if (!c.reachable) return -1;                    // still listed, never ranked first
   let s = 0;
   if (c.openInteractionAgeMs !== null) {
@@ -303,9 +308,11 @@ function score(c: RankInput): number {
 
 Design notes, each of which is a decision:
 
-- **A tapped notification wins unconditionally.** Anything else is the app
-  overruling an explicit instruction. This is why `deepLinkTarget` short-circuits
-  rather than adding weight.
+- **There is no "the user told us where to go" input any more.** Under
+  [D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+  the app is opened from the home screen, not from a tap on a specific question,
+  so the ranking below is the sole judgement of what to show first. It used to be
+  a tiebreak behind an explicit instruction; it is now the instruction.
 - **`openInteraction` outweighs everything else combined.** The product exists
   to shorten the time between "an agent blocked" and "a human answered".
 - **Age *increases* urgency, capped.** An interaction open for 4 minutes is more
@@ -407,10 +414,12 @@ stood up and walked away. Continuity that requires a pre-commitment is not
 continuity.
 
 The one exception that earns its keep is **"open this on…"** in the session
-overflow menu, which pushes a notification to the user's *other* device
-containing a deep link (§5.2). It is for the deliberate case ("I want to read
-this diff on the big screen"), it reuses the notification chain entirely, and it
-is not on the primary path.
+overflow menu. Under [D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+it cannot push anything, so it degrades honestly: it records a **surface intent**
+(§1.4) against the target device, and that device opens to the named session the
+next time it connects — plus a copyable link for the user to send themselves by
+whatever channel they already use. It is for the deliberate case ("I want to
+read this diff on the big screen"), and it is not on the primary path.
 
 ---
 
@@ -506,8 +515,9 @@ Rules that keep this from becoming a lock in disguise:
   social-app pattern; here it answers no question.
 - No typing indicator for *agent* output. An agent is always "typing"; the
   `AgentState` chip already says what it is doing.
-- No presence in the push notification payload. The payload is a pointer
-  ([07 §8.1](../architecture/07-remote-protocol.md#81-web-push-primary)).
+- No presence in any out-of-band payload. There is no notification channel at
+  all in v1 ([D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)),
+  and a future `Notifier` plugin is given a pointer, never presence.
 
 ---
 
@@ -641,101 +651,135 @@ Never nothing, and never a silent revert
 
 ---
 
-## 5. Notification → action, in one tap
+## 5. Open and replay — from cold start to the right screen
 
-### 5.1 The chain
+> **Rewritten for [D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead).**
+> This section previously specified a notification-tap chain: push → deep link →
+> service-worker pre-warm → a 535 ms cold-start budget to an answerable card.
+> **None of it has a producer.** No notification backend ships, so nothing ever
+> taps, `src=push` is never set, the SW has no `push` event to pre-warm on, and
+> the budget measured a segment that does not exist. What survives is everything
+> after the tap — and it now has to carry the whole journey.
 
-```
- agent blocks
-   └─ hook defers → InteractionLedger opens int_88            (06 §5.1)
-        └─ notification policy evaluates (§5.6)               [ADDITION: the policy]
-             └─ Web Push / ntfy pointer payload               (07 §8)
-                  └─ phone displays; if ≤3 options, they are notification actions
-                       └─ TAP
-                            └─ SW: navigate to deep link, or resolve inline
-                                 └─ PWA cold start (§5.4)
-                                      └─ warm resume: session_token + since_seq
-                                           └─ CARD, already rendered, focused
-                                                └─ answer → interaction.resolve
-                                                     └─ confirmation → §5.5
-```
-
-### 5.2 Deep-link format
+### 5.1 The chain, as it actually is
 
 ```
-https://<instance-host>/#/i/<instance-id>/<session-id>/<interaction-id>?src=push&n=<nonce>
+ agent blocks, and nothing buzzes                       (D12: this is the cost)
+   └─ InteractionLedger opens int_88                    (06 §5.1)
+        └─ ... time passes. Possibly the interaction goes terminal in the gap.
+             └─ USER OPENS THE APP                      ← the only trigger there is
+                  └─ app shell from SW precache
+                       └─ reconnect: hello{resume} → welcome
+                            └─ Resync per session       (07 §5.2)
+                                 └─ REFETCH, mandatory before ranking:
+                                      · interaction.list { since_read_mark,
+                                                           include_terminal }
+                                      · attention state per session
+                                 └─ rank (§2.3)
+                                      └─ PRESENT: what needs you, first
 ```
 
-- **Fragment-based**, matching the invite path
-  ([08 §3.2](../architecture/08-web-client.md#32-adding-an-instance)) — but note
-  that unlike an invite, this link carries **no credential**. It is a pointer.
-  Opening it on a device without a credential shows the normal add-instance flow,
-  not an error, and resumes the deep link after pairing.
-- `<instance-id>` is present so the client resolves the right connection even if
-  the host it was pushed from is now reachable at a different address (tailnet
-  rename, DERP change).
-- `n=<nonce>` is echoed to `continuity.notification.ack` (§10 **ADDITION**) so
-  the instance can suppress the same notification on the user's other devices and
-  record delivery-to-action latency.
-- Generalized routes, so "open this on my laptop" (§2.6) and future links share
-  one parser: `#/s/<instance>/<session>` (session), `#/w/<instance>/<workspace>`
-  (workspace), `#/i/…` (interaction).
+The user learns their agent needed them **when they next open a client**. That
+is the deal D12 makes, and this section is the design that makes it a good one
+rather than a resignation. Everything here is more important than it was under
+push, not less: it is now the *only* path.
 
-### 5.3 What the card must have before the user can answer
+### 5.2 The refetch is not optional
 
-The tap must land on something *answerable*, not on a card that then loads. The
-client fetches, in this order, and renders progressively:
+A `Resync` rebuilds what *is*. It does not surface what *happened*. An
+interaction that opened **and reached a terminal state** entirely inside the
+offline gap is in no snapshot and in no replayed event — the user opens the app
+to a calm, idle session and never learns their agent asked at 02:14 and gave up
+at 02:19.
 
-1. `interaction.get` — the question, the options, the tool name. **Blocking**:
-   without it there is no card. Small (< 4 KiB typically).
-2. The diff, when `kind.type === "permission"` and `diff != null`. Rendered
-   progressively — the action row is enabled as soon as (1) lands, because
-   forcing a user to wait for a 400-line diff to paint before they can deny is
-   worse than letting them decide on the command they can already read.
-3. `session.scrollback.get { last_lines: 40 }` — the tail of output preceding the
-   question, in a collapsed **"what led to this"** section. This is the single
-   most requested missing context when answering from a phone: the question alone
-   frequently is not enough.
+So before the ranking in §2.3 runs, the client fetches:
 
-Budget: (1) must render within **400 ms of app foreground**; (2) and (3) within
-1.5 s.
+1. **`interaction.list { since_read_mark: true, include_terminal: true }`** —
+   the durable attention log
+   ([20 §12.5](../architecture/20-recall-and-usage.md#125-attention-and-the-durable-attention-log)),
+   which is the only record of interactions that came and went while
+   disconnected. Entries carry a discriminated outcome, so *"the laptop answered
+   this"*, *"the agent gave up"* and *"your answer may not have reached it"* are
+   three different lines, never one grey "closed".
+2. **Attention state per session** — the live half.
+
+This is a protocol requirement, stated in
+[07 §5.2](../architecture/07-remote-protocol.md#52-replay-window), not a client
+preference. Ranking on live state alone silently drops exactly the events the
+user most needed to see.
+
+### 5.3 What the first screen shows
+
+Two bands, in this order, and the order is the whole design:
+
+- **Needs you now** — sessions with an open interaction, then `Blocked`
+  sessions omt cannot render a card for. These are actionable; §5.5's answer
+  flow applies unchanged.
+- **Happened while you were away** — the attention log's terminal entries, each
+  with what was asked, what became of it, and when. **Not dismissible by
+  scrolling past**: they clear when the read mark advances, i.e. when the user
+  actually looks at the session. An entry whose outcome is `Undelivered` offers
+  the terminal view; one that is `Abandoned` offers *"send this as a message
+  instead"* (§5.5's rule, which was always the right one and is now the common
+  one).
+
+Below both, the digest
+([20 §8.2](../architecture/20-recall-and-usage.md#82-the-digest)) when the user
+has been away ≥ 30 minutes, then the ranked session list. The digest's
+interaction counts — including expired, abandoned and undelivered — are required
+rendering for exactly this reason.
 
 ### 5.4 Cold-start latency budget
 
-Measured from notification tap to *answerable card*, phone on LTE, tailnet
-direct. This is the number the flagship scenario lives or dies on.
+Measured from **app foreground to the ranked first screen**, phone on LTE,
+tailnet direct. Under D12 this is the number the product lives or dies on: it
+replaces a notification tap, so it has to feel like one.
 
 | Segment | Budget (p50) | Notes |
 |---|---|---|
-| OS notification tap → PWA process start | 250 ms | Not ours. iOS standalone PWA cold start. |
-| App shell from SW precache | 80 ms | Cached; never network ([08 §8.6](../architecture/08-web-client.md#86-pwa-and-web-push)). |
-| Route parse + paint skeleton card | 30 ms | The skeleton is the *shape* of the card kind from the push payload, so it does not reflow when data lands. |
+| OS icon tap → PWA process start | 250 ms | Not ours. iOS standalone PWA cold start. |
+| App shell from SW precache | 80 ms | Cached; never network ([08 §8.6](../architecture/08-web-client.md#86-pwa--installable-with-no-push)). |
+| Paint skeleton: last-known session list from local state | 30 ms | Shown immediately, marked stale, never presented as current. |
 | TCP + TLS (1.3 resumption) | 60 ms | |
 | `hello{resume: session_token}` → `welcome` | 45 ms | Warm path. **Must not hit argon2id** — [connectivity §5](../research/connectivity.md#5-latency-budget) puts that at 100–300 ms of CPU alone. |
-| `interaction.get` | 45 ms | |
-| Card render | 25 ms | |
-| **Total** | **≈ 535 ms** | Target **< 800 ms p50, < 2 s p95**. |
+| `Resync` + snapshot for the top session | 80 ms | Only the session that will be presented first; the rest resync lazily. |
+| `interaction.list` + attention state | 60 ms | One round trip, issued **in parallel** with the resync above — it does not depend on it. |
+| Rank + render | 35 ms | |
+| **Total** | **≈ 640 ms** | Target **< 900 ms p50, < 2.5 s p95**. |
 
-Two mitigations for the p95:
+Three mitigations, replacing the SW pre-warm that no longer has a trigger:
 
-- **The service worker can pre-warm.** On `push` (before any tap), the SW opens
-  the WebSocket and fetches `interaction.get`, caching it in memory for 60 s. If
-  the user taps within that window, steps 4–6 are already done and the card is
-  instant. This is permitted because the SW is already awake to display the
-  notification, and it is bounded so it cannot become a background connection.
-- **A cold credential path is never on this route.** If the resume token expired,
-  the client shows the card skeleton with a *"reconnecting"* strip rather than an
-  auth screen, and only falls back to full auth if resume fails.
+- **Render the stale list instantly, correct it in place.** The last-known
+  ranked list is in local storage and paints before the socket opens, visibly
+  marked stale. Reordering when the truth arrives is acceptable; a spinner for
+  600 ms is not.
+- **Parallel, not sequential.** The attention refetch is independent of the
+  per-session resync and must not be serialized behind it. The previous chain's
+  serial dependency was affordable when a push payload had already delivered the
+  card; it is not affordable now.
+- **A cold credential path is never on this route.** If the resume token
+  expired, the client shows the stale list with a *"reconnecting"* strip rather
+  than an auth screen, and only falls back to full auth if resume fails.
 
 ### 5.5 Answer, confirmation, and what happens next
+
+Unchanged in substance — this is the part of the old §5 that was always right.
 
 - **`interaction.resolve` is never optimistic**
   ([12 §7.1](../architecture/12-collaboration.md#71-what-may-be-optimistic)). The
   chosen option shows a spinner in place; the card does not move until the server
   answers.
 - **On success**: the card animates to its resolved state, a haptic
-  `navigator.vibrate(15)` fires, and the notification is closed via the SW's
-  `tag`.
+  `navigator.vibrate(15)` fires.
+- **Success now means observed, not written.** Per
+  [06 §5.1](../architecture/06-agent-layer.md#51-lifecycle) the card passes
+  through `Submitted` before `Resolved`, and the UI must not claim victory at
+  `Submitted`. It shows *"sent — waiting for the agent"* until the confirming
+  observation arrives, and on `Undelivered` it shows *"your answer may not have
+  reached the agent — check the terminal"* with the response text preserved and
+  the terminal view one tap away. **No retry button**: an injection is
+  at-most-once, and the only actor permitted to re-answer is a human looking at
+  the screen.
 - **Then what?** The default is **stay, don't return**. The card resolves in
   place and the view remains on that session, scrolled to the agent's next
   output. Rationale: the most common next event is the agent producing something
@@ -754,70 +798,48 @@ Two mitigations for the p95:
   [12 §6 C10](../architecture/12-collaboration.md#c10--resolution-arrives-after-the-agent-already-moved-on)):
   *"Too late — the agent continued without an answer."* Never silently swallowed.
   The card offers **"send this as a message instead"**, which puts the intended
-  answer into the composer as a prompt. The user's decision is not wasted.
+  answer into the composer as a prompt. The user's decision is not wasted. Under
+  D12 this is no longer a rare race — it is the normal outcome of an overnight
+  gap — so it must be a first-class, unapologetic rendering rather than an error
+  path.
 
-### 5.6 Noise control
+### 5.6 Noise control — deferred, and why the design is kept
 
-Notifications are the mechanism by which this product becomes either
-indispensable or uninstalled. The policy is per-actor state (§1.2), evaluated on
-the instance.
+There are no notifications to control, so `NotifyPrefs` has no consumer in v1
+and **ships as nothing**. It is retained here in outline because
+[D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+keeps the `Notifier` extension point open on purpose — a future native app or a
+user's ntfy plugin needs exactly this policy, and rediscovering it is waste.
+
+Two of its rules **do** apply in v1, because they govern the attention *screen*
+rather than a notification:
+
+1. **`Actionable` is the default lens.** The first band is things the user can
+   act on; the "while you were away" band is separate and quieter. A turn ending
+   is not an obligation.
+2. **Never surface your own action.** Items attributed to the same identity are
+   never shown as needing attention. Being told about a thing you just did is the
+   fastest possible way to look broken.
+
+The remainder — quiet hours, coalescing windows, cross-device push dedup,
+presence suppression of a push — presupposes a push channel and is dormant:
 
 ```rust
-/// ADDITION.
+/// RESERVED. No consumer in v1 (D12). Retained for a future Notifier plugin
+/// or native app; not persisted, not exposed as config, not in the catalog.
 pub struct NotifyPrefs {
-    /// The default. See the table below.
-    pub level: NotifyLevel,
-    /// Per-session overrides, including mutes with an expiry.
+    pub level: NotifyLevel,                    // Actionable (default) | Involved | Everything | Muted
     pub sessions: HashMap<SessionId, NotifyLevel>,
-    pub quiet_hours: Option<QuietHours>,   // local tz, carried from the device
-    /// Suppress when another of my devices is Active on that session. Default true.
+    pub quiet_hours: Option<QuietHours>,
     pub suppress_when_present: bool,
-    /// Coalescing window per session. Default 30 s (07 §8.1).
     pub coalesce: Duration,
-}
-
-pub enum NotifyLevel {
-    /// Only interactions — things I can actually answer. THE DEFAULT.
-    Actionable,
-    /// Actionable, plus turn-end after N seconds, plus errors and deaths.
-    Involved { turn_end_after: Duration },
-    /// Everything the instance can emit. For debugging.
-    Everything,
-    Muted { until: Option<OffsetDateTime> },
-}
-
-pub struct QuietHours {
-    pub from: Time, pub to: Time, pub tz: String,
-    /// Interactions still break through by default; turn-ends never do.
-    pub allow_actionable: bool,
 }
 ```
 
-The rules that matter:
-
-1. **Default is `Actionable`: "only tell me about things I can actually
-   answer."** A turn ending is not an obligation. This is a deliberate reversal
-   of the tempting default (notify on everything, let the user turn it down) —
-   the tempting default trains people to disable notifications in week one, after
-   which the flagship scenario is dead.
-2. **Coalescing** is per session per 30 s with `tag` replacement, already
-   specified in [07 §8.1](../architecture/07-remote-protocol.md#81-web-push-primary).
-   This design adds: a coalesced replacement **never re-alerts** (no sound, no
-   vibration) — it updates the existing notification silently. A second question
-   in the same session should not buzz twice.
-3. **Presence suppression** (§3.1): if another of my devices is `Active` and
-   attached to that session, no push. If it is `Background` or `Idle`, push
-   normally — a laptop with the lid shut is not attention.
-4. **Cross-device dedup.** When one device acks (`continuity.notification.ack`,
-   §5.2), the instance pushes a silent `dismiss` pointer to that identity's other
-   subscriptions so the same question does not sit unread on three screens.
-5. **Quiet hours break for interactions by default**, because an agent blocked at
-   02:00 is still blocked at 08:00 and the user chose to run it. `allow_actionable:
-   false` is available for people who disagree, and is honest about the
-   consequence in its help text.
-6. **Never notify about your own action.** Actions attributed to the same
-   identity generate no push, ever. Getting a notification about a thing you just
-   did is the fastest possible way to look broken.
+Its most important rule is recorded for whoever builds that plugin: **default to
+`Actionable`**. The tempting default (notify on everything, let the user turn it
+down) trains people to disable notifications in week one, after which the
+feature is dead.
 
 ---
 
@@ -860,7 +882,7 @@ Everything here is already specified and this design only fixes the *sequence*:
 |---|---|---|
 | Per-instance credential (device-bound) | phone, IndexedDB, optionally encrypted with a device passphrase ([08 §3.1](../architecture/08-web-client.md#31-model)) | Never in a URL after first use; `history.replaceState` cleans it. |
 | Device keypair | phone, non-extractable `CryptoKey` | Revocation is per device. |
-| Push subscription | registered *to each instance* via `notification.push.subscribe` | N instances → N subscriptions. This is a real cost of federation and §6.3 hides it. |
+| ~~Push subscription~~ | — | **None.** No notification backend ships ([D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)), so federation costs no per-instance subscription. A future `Notifier` plugin would reintroduce the N-subscriptions problem, and §6.3's rule about hiding it still applies then. |
 | `ActorContinuity` (recents, drafts, prefs) | each instance | §1.3. |
 | Instance label, colour, order | phone (per-device) | Purely presentational. |
 
@@ -874,11 +896,15 @@ adding a feature or adding a chore.
    ([07 §1.6](../architecture/07-remote-protocol.md#16-the-unified-session-list)).
    Instance is a **subtitle and a filter chip**, never the primary grouping.
    Someone with one instance sees no instance chrome at all.
-2. **One notification stream.** The N push subscriptions are an implementation
-   detail; the user sees notifications from "omt", coalesced by session, with the
-   instance in the subtitle. The per-instance permission prompts are consolidated
-   into **one** OS-level prompt at first enable, and subsequent instances inherit
-   the answer (each still registers its own subscription, silently).
+2. **One attention screen, not N.** There are no notifications
+   ([D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)),
+   so what must be unified is the open-and-replay screen (§5.3): the client
+   fetches the attention log from every reachable instance in parallel and
+   presents **one** merged "needs you" band and **one** "while you were away"
+   band, with instance as a subtitle. An unreachable instance contributes a
+   single honest row — *"workstation: not reachable, last seen 2 h ago"* — never
+   a silent omission, because a missing instance and a quiet instance look
+   identical otherwise.
 3. **One settings surface with per-instance rows**, not a settings screen per
    instance.
 4. **Adding an instance never resets the view.** After pairing, the client
@@ -1116,7 +1142,7 @@ capability! {
     kind = Query, role = Role::Operator,
     input  = ContinuityGet { include_drafts: bool },
     output = ContinuityState { recents: Vec<Recent>, drafts: Vec<Draft>,
-                               notify: NotifyPrefs, read_marks: Vec<(SessionId, Seq)> },
+                               read_marks: Vec<(SessionId, Seq)> },
     effects = [],
 }
 
@@ -1142,23 +1168,21 @@ capability! {
 }
 
 capability! {
-    /// Notification preferences, mutes, quiet hours.
-    name = "continuity.notify.set", group = "continuity", verb = "notify-set",
+    /// Advance this actor's read mark for a session. Under D12 this is what
+    /// clears an entry from the "while you were away" band (§5.3), so it is a
+    /// primary capability rather than bookkeeping.
+    name = "continuity.read_mark.set", group = "continuity", verb = "read-mark-set",
     kind = Command, role = Role::Operator,
-    input  = NotifySet { prefs: NotifyPrefs },
-    output = NotifySetAck { seq: Seq },
+    input  = ReadMarkSet { session: SessionId, seq: Seq },
+    output = ReadMarkSetAck { seq: Seq },
     effects = [],
 }
 
-capability! {
-    /// A device acknowledges a delivered notification, so the instance can
-    /// dismiss it on this identity's other devices and record latency (§5.2).
-    name = "continuity.notification.ack", group = "continuity", verb = "notification-ack",
-    kind = Command, role = Role::Operator,
-    input  = NotificationAck { nonce: String, action: AckAction /* Opened|Dismissed|Answered */ },
-    output = NotificationAckAck {},
-    effects = [],
-}
+// REMOVED by D12: `continuity.notify.set` and `continuity.notification.ack`.
+// Neither has a producer without a notification backend — there are no
+// preferences to set and no delivery to acknowledge. `NotifyPrefs` is retained
+// as a reserved type only (§5.6); it is not persisted and not in the catalog.
+// A future `Notifier` plugin reintroduces both, and §5.6 records their design.
 
 capability! {
     /// Advisory card activity (§3.3). Ephemeral, TTL 8 s, never persisted.
@@ -1187,7 +1211,7 @@ list gains `continuity`).
 |---|---|---|---|
 | `continuity.draft_changed` | `continuity` | `{ key, version, updated_by, cleared: bool }` | The other device's composer updates or empties. Text is **not** in the event — the receiver fetches it, so a draft is not broadcast to every subscriber of the session. |
 | `continuity.recents_changed` | `continuity` | `{ recents: Vec<Recent> }` | Keeps a second device's home ranking fresh. Coalesced to at most one per 10 s. |
-| `continuity.notify_changed` | `continuity` | `{ prefs }` | A mute set on the phone applies on the laptop. |
+| `continuity.read_mark_changed` | `continuity` | `{ session, seq, by }` | Reading a session on the phone clears its "while you were away" entry on the laptop. Replaces `continuity.notify_changed`, which D12 removes along with `NotifyPrefs`. |
 | `interaction.activity` | `presence` | `InteractionActivity` | §3.3. |
 | `presence.identity_changed` | `presence` | `{ actor, identity }` | Lets a client classify `me` vs `other` (§3.1) without guessing from labels. |
 
@@ -1200,22 +1224,30 @@ list gains `continuity`).
   [12 §9 Q6](../architecture/12-collaboration.md#9-open-questions)
   (cross-instance presence) *within* an instance; the cross-instance federated
   identity question remains open.
-- `ActorContinuity`, `Draft`, `Recent`, `NotifyPrefs`, `InteractionActivity`
-  (§1.2, §2.4, §3.3, §5.6), persisted in `omt-store` except
-  `InteractionActivity`, which is memory-only.
+- `ActorContinuity`, `Draft`, `Recent`, `ReadMark`, `InteractionActivity`
+  (§1.2, §2.4, §3.3), persisted in `omt-store` except `InteractionActivity`,
+  which is memory-only. Each has a row in
+  [21 §1](../architecture/21-data-lifecycle.md#1-the-inventory) and a loss window
+  in [21 §6.2](../architecture/21-data-lifecycle.md#62-what-kill--9-loses) —
+  CI-enforced, so this list cannot drift out of the durability table.
+  `NotifyPrefs` is **not** persisted (§5.6, D12).
 - An **`ack: u32`** field in the terminal binary frame header
   ([07 §3.6](../architecture/07-remote-protocol.md#36-binary-payloads)) carrying
   the highest consumed client input sequence (§7.3). Required *before the wire
-  freezes*; the feature that uses it can ship later.
+  freezes*. **Now reserved in 07 §3.6**, with a second rationale recorded there
+  that is stronger than this one: it is the only safe resumption mechanism for
+  [D15](../architecture/decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
+  raw-byte-stream class, which must never be replayed. Predictive echo can ship
+  later; correct reconnect cannot.
 
 ### 10.4 Parity notes
 
 Every capability above is `Operator` and appears on all three surfaces, per
 [03 §5](../architecture/03-capability-catalog.md#5-the-parity-contract). The TUI
 bindings are not decorative: the TUI writes drafts (that is where handoff
-*starts*), calls `continuity.touch` on focus change, and renders
-`interaction.activity`. `continuity.notification.ack` is `Parity::Exempt` on the
-CLI with reason `"no notification surface"`.
+*starts*), calls `continuity.touch` on focus change, advances read marks, and
+renders `interaction.activity`. No capability here is `Parity::Exempt` — the
+one that was, `continuity.notification.ack`, no longer exists (D12).
 
 ---
 
@@ -1244,10 +1276,13 @@ CLI with reason `"no notification surface"`.
 4. **Ranking weights** (§2.3) are unvalidated. In particular the draft weight
    (250, ≈ 5 minutes of recency) and the `otherDeviceWriting` penalty (−400) are
    the two most likely to be wrong.
-5. **SW pre-warm on `push`** (§5.4) opens a WebSocket before any user action.
-   Battery cost is unmeasured, and iOS may kill the SW before the tap arrives,
-   making it dead code on the platform that needs it most. Needs a device test —
-   related to [08 §11 Q1](../architecture/08-web-client.md#11-open-questions).
+5. **Is the 640 ms open-to-ranked-screen budget (§5.4) achievable on iOS?**
+   The SW pre-warm that used to absorb the p95 is gone with push
+   ([D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)),
+   and this budget now carries the entire discovery journey. The stale-list-first
+   mitigation is unvalidated: it may read as "the app showed me the wrong thing
+   and then jumped". Needs a device test, and it is the highest-value measurement
+   in this document.
 6. **Does the soft-free window (15 s) fight the 90 s idle release?** Two timers
    governing the same token, with different owners (client heuristic vs. server
    policy) is a smell. **Recommended resolution, stated explicitly rather than

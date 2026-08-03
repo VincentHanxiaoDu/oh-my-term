@@ -73,7 +73,21 @@ against, not averages.
 | 16 | Daemon log | `state/omt/omt.log` (+ `.1`…`.4`) | line-oriented, redacted tracing output ([22 §4.2](22-operations.md#42-structured-logging)) | rotated at 32 MiB × 5 | 0600 | Redacted per [13 §8](13-security.md#8-secret-redaction) |
 | 17 | Crash records | `state/omt/crashes/<ts>/` | panic message, backtrace, quarantined input bytes | rare; capped at 20 records / 64 MiB | 0600 / dir 0700 | **Yes** — quarantined bytes are raw PTY input |
 | 18 | Quarantine | `state/omt/quarantine/<ts>-<what>` | corrupt store fragments, never deleted automatically ([05 §8.2](05-session-model.md#82-crash-semantics)) | rare | 0600 | **Yes** |
-| 19 | Ephemeral runtime | `$XDG_RUNTIME_DIR/omt/<instance>.sock`, `pid.txt`, `ssh-<hash>` control sockets | — | tiny | 0600 | Contains no data; the socket *is* full authority ([22 §2](22-operations.md#2-multi-user-machines)) |
+| 19 | **Native session transcript** | `state/omt/sessions/<sid>/native.jsonl.zst` | typed ACP event stream, one JSON object per line, zstd-framed | ~2–5 MB/day per active `native` session | 0600 | **Yes** — prompts, assistant text, tool inputs and results |
+| 20 | **omt-managed message queue** | `state/omt/store.db` (same file) | pending queued text per binding, with `created_at` / `valid_until` ([06 §8](06-agent-layer.md#8-ancillary-semantics)) | tiny | 0600 | **Yes** — free text the user typed |
+| 21 | **Per-actor continuity state** | `state/omt/store.db` (same file) | drafts, read marks, surface intent, last-seen positions ([`../design/remote-continuity.md` §1.3](../design/remote-continuity.md#13-where-per-actor-state-is-stored-and-why-on-the-instance)) | ~50 KB/day | 0600 | **Yes** — a draft is free text |
+| 22 | **Attention log** | `state/omt/store.db` (same file) | per `(identity, session)` index of interactions reaching a terminal state ([20 §12.5](20-recall-and-usage.md#125-attention-and-the-durable-attention-log)) | ~20 KB/day | 0600 | Pointers plus outcome; the response text lives in #8 |
+| 23 | Ephemeral runtime | `$XDG_RUNTIME_DIR/omt/<instance>.sock`, `pid.txt`, `ssh-<hash>` control sockets | — | tiny | 0600 | Contains no data; the socket *is* full authority ([22 §2](22-operations.md#2-multi-user-machines)) |
+
+**Row 19 exists because [05 §8.1](05-session-model.md#8-persistence-and-restore)
+mandates it.** A `native` session ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp))
+has no PTY and therefore no scrollback (row 2) and no grid (row 3): its typed
+event stream **is** its entire history, and if omt does not persist it, closing
+the app loses the conversation. It is distinct from row 7 — row 7 is the merged
+observation of a `pty` agent, row 19 is the authoritative record of a session
+that exists nowhere else. It is also distinct from row 9: row 9 is a pointer
+index into a file the *agent* owns, whereas the native transcript is omt's own
+data and `store.purge` does delete it.
 
 **Headline: about 25–40 MB/day compressed for a heavy user, dominated by
 scrollback and the search index; roughly 9 GB/year before retention, and about
@@ -177,8 +191,24 @@ PTY bytes
                              ├──► block metadata / history (#4, #6)
                              ├──► agent event log          (#7)
                              ├──► interaction ledger       (#8)
+                             ├──► omt-managed queue        (#20)
                              └──► search indexer           (#11) ── R56
+
+ACP events (`native` sessions — no PTY, no grid)
+   │
+   └──► event normalizer ──► Redactor ──► native transcript writer (#19)
+                                     └──► search indexer           (#11)
 ```
+
+**The native transcript passes through the same choke point.** A `native`
+session has no PTY, so it does not enter via the pipeline above — but it carries
+exactly the same content (prompts, tool inputs, tool results, file contents in
+diffs) and must not be a hole in the guarantee. The redactor is applied to the
+typed event *before* it is written to `native.jsonl.zst` and before it is
+indexed. There is no display-time exception here either: unlike `pty` mode there
+is no "the program printed it on the screen" case to respect, because omt owns
+the rendering — so for `native` sessions the redacted form is the *only* form,
+on screen and on disk alike.
 
 Two consequences follow and both are deliberate:
 
@@ -448,6 +478,10 @@ single age cutoff.
 | 7 | Agent event log | **14 days** | keep turn boundaries, tool names, file paths, exit statuses, usage; drop tool inputs/outputs bodies | **90 days** | 1 GiB/instance |
 | 8 | Interaction ledger | **30 days** | keep id, kind, tool name, decision, actor, latency; drop the full input | **1 year** | — |
 | 9 | Transcript index | on agent transcript deletion | — | 30 days | 500 MiB |
+| 19 | **Native session transcript** | **14 days** | keep turn boundaries, tool names, file paths, statuses and usage; drop message bodies and tool input/output bodies — the same compaction as #7, because it is the same content in the same shape | **90 days** | 1 GiB/instance |
+| 20 | **omt-managed message queue** | never | — | entries are removed on flush, on discard, or at `valid_until` + 7 days | 1 MiB/session |
+| 21 | **Continuity state** | never | — | drafts at 30 days untouched; read marks and surface intent with the session | — |
+| 22 | **Attention log** | never | — | follows the interaction ledger (**1 year**), so a terminal-state record never outlives the interaction it points at | — |
 | 10 | Blobs | — | — | 24 h / 7 d referenced ([09 §2](09-ssh-and-media.md#2-the-blob-store)) | 512 MiB |
 | 11 | Search index | follows its source | FTS5 rows for deleted docs are removed in the same transaction as the source row and the shadow table is `optimize`d on the full sweep; freed pages are reclaimed by `VACUUM` | with the source data | 25 % of `state/` |
 | 12 | Usage | **90 days** | rolled up to daily totals per session | never (it is tiny and it is the cost record) | — |
@@ -468,6 +502,8 @@ scrollback_max_bytes_per_session = "8MiB"
 blocks_delete_after      = "1y"
 agent_events_compact_after = "14d"
 agent_events_delete_after  = "90d"
+native_transcript_compact_after = "14d"
+native_transcript_delete_after  = "90d"
 interactions_compact_after = "30d"
 audit_delete_after       = "90d"     # capped at 1y; a shorter value is allowed
 
@@ -505,9 +541,12 @@ pub struct RetentionRule {
 
 `DataKind` is the inventory's `#` column, named rather than numbered
 (`Scrollback`, `BlockOutput`, `Blocks`, `History`, `AgentEvents`,
-`Interactions`, `TranscriptIndex`, `Blobs`, `SearchIndex`, `Usage`, `Audit`,
+`NativeTranscript`, `Interactions`, `TranscriptIndex`, `Blobs`, `SearchIndex`,
+`Usage`, `Audit`, `MessageQueue`, `ContinuityState`, `AttentionLog`,
 `DaemonLog`, `Crashes`, `Quarantine`), so the table above and the type are the
-same list and CI can assert it.
+same list and CI can assert it. That assertion and §6.2's loss-table check are
+the two directions of the same rule: every persisted kind has a retention policy
+*and* a stated loss window.
 
 **Retention is enforced by the sweeper, not by the writer.** Nothing checks the
 clock on the hot path. A record written today with a 30-day policy is deleted by
@@ -632,6 +671,10 @@ omt-export-<instance>-<scope>-<yyyymmddThhmmssZ>.omtz
 ├── history.jsonl
 ├── interactions.jsonl
 ├── agent-events/<sid>.jsonl
+├── native-transcripts/<sid>.jsonl  ← native sessions: the whole session (#19)
+├── message-queue.jsonl     ← pending omt-managed queue entries (#20)
+├── continuity.jsonl        ← drafts, read marks, surface intent (#21)
+├── attention.jsonl         ← the durable attention log (#22)
 ├── usage.jsonl
 ├── audit.jsonl             ← only with --include audit (Admin)
 ├── scrollback/<sid>/<seq>.txt   ← plain UTF-8, ANSI stripped
@@ -650,7 +693,8 @@ omt-export-<instance>-<scope>-<yyyymmddThhmmssZ>.omtz
   "instance": { "id": "3f2a91c4…", "hostname": "workstation" },
   "scope": { "kind": "workspace", "path": "/Users/ada/code/client-x" },
   "counts": { "workspaces": 1, "sessions": 88, "blocks": 5110,
-              "interactions": 214, "scrollback_bytes": 2041233408 },
+              "interactions": 214, "scrollback_bytes": 2041233408,
+              "native_sessions": 6, "native_transcript_bytes": 18220544 },
   "redaction": { "applied_at_write": true, "findings": 3122,
                  "classes": { "sk": 4, "env": 61, "entropy": 3057 } },
   "excluded": [
@@ -664,6 +708,12 @@ omt-export-<instance>-<scope>-<yyyymmddThhmmssZ>.omtz
 
 Rules:
 
+- **A `native` session exports its transcript, or it exports nothing.** There is
+  no scrollback for it (no PTY), so `scrollback/<sid>/` is absent and
+  `native-transcripts/<sid>.jsonl` is the entire content of the session. An
+  export that omitted it would silently drop whole conversations while reporting
+  success. `--fidelity text` renders it to a readable plain-text transcript
+  alongside the JSONL, since that is what a human or an LLM will actually read.
 - **Self-describing.** `MANIFEST.json` plus `README.txt` are enough to read the
   archive with `jq` and a text editor. Every JSONL record carries a `"type"`
   discriminator and a `"format_version"`.
@@ -703,13 +753,20 @@ This will PERMANENTLY DESTROY the following. There is no undo.
    1.9 GiB scrollback and block output   (across 88 session directories)
    612 MiB search index entries
     88 MiB agent event logs
+    22 MiB native session transcripts   (6 native sessions — this is their
+                                         only copy; nothing else holds it)
+       9 pending queued messages        (omt-managed queue, unflushed)
+      41 drafts and read marks          (continuity state, all actors)
+     214 attention-log entries
     31 MiB blobs (14 referenced by live sessions — they will be unlinked)
    2,104 audit entries   (retained: audit is NOT purged by default, see below)
        0 quarantined fragments
 
   Files and directories to be removed:
     ~/.local/state/omt/sessions/{88 directories}
-    rows in ~/.local/state/omt/store.db  (blocks, history, usage, doc + doc_fts)
+    ~/.local/state/omt/sessions/<sid>/native.jsonl.zst  (native sessions)
+    rows in ~/.local/state/omt/store.db  (blocks, history, usage, doc + doc_fts,
+                                          message queue, continuity, attention)
     rows in ~/.local/state/omt/interactions.db
 
   NOT removed (not omt's data):
@@ -910,7 +967,30 @@ target, and the containing directory is `fsync`ed. Never written in place.
 | Usage | ≤ 60 s | Rolled up; a lost minute is noise |
 | Audit | 0 for `Denied`/auth events, ≤ 1 s for the rest | §6.3 |
 | Credentials | 0 | Written rarely, always `fsync`ed |
+| **Drafts** | ≤ 2 s (the draft debounce) | LWW free text with a `version` CAS; the loser is visible, so a lost keystroke is recoverable by the user who typed it. Never silently replayed |
+| **omt-managed message queue** | **0** | §6.3 — a durable intent log, `fsync`ed on enqueue. It was memory-only in an earlier draft, which lost every non-Claude agent's queued text on `kill -9` without recording that it had. Required by [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism) consequence 8 |
+| **Continuity state** (read marks, surface intent, last-seen positions) | ≤ 5 s | Small and idempotent; a lost read mark re-shows something already seen, which is the safe direction |
+| **Notification acks** | ≤ 5 s | Same class as read marks. Note there is no notification *backend* ([D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)); this row covers the in-app acknowledgement that dismisses an attention item |
+| **Attention log** | **0** | Written in the same transaction as the interaction's terminal-state transition, which is already `fsync`ed. If it were lost, an interaction that opened and went terminal inside an offline gap would be invisible forever — which is the entire reason the log exists |
+| **Native session transcript** | ≤ 1 s | Same flush class as the agent event log. It is the *only* record of a `native` session, so it is the one place where a bounded loss window is a real loss of content rather than of re-derivable output |
 | Search index | 0 for anything committed with its source row (D-R1's whole point); ≤ 30 s for the batched remainder, and **always recoverable** — the index is derived data and is rebuilt from the blocks with `INSERT INTO doc_fts(doc_fts) VALUES('rebuild')` | |
+
+**This table is CI-enforced.** Every type persisted through `omt-store` must
+have a row here, and a test fails the build when one does not — the same trick
+[03 §5](03-capability-catalog.md#5-the-parity-test)'s parity test plays, and for
+the same reason. Persisted types carry a `#[derive(Persisted)]` (or are
+registered in `omt-store`'s type registry); the test enumerates the registry,
+parses the row keys out of this section, and asserts the two sets are equal in
+both directions — a missing row fails, and so does a row for a type that no
+longer exists.
+
+The requirement exists because this table drifted silently: the omt-managed
+message queue was added, never given a row, and shipped memory-only for that
+reason. A durability table that is maintained by hand is a table that is wrong
+by the second release. Four of the rows above
+([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 8) were added by exactly this audit; the check is what stops the
+next four from being found the same way.
 
 ### 6.3 fsync policy, and what it costs
 

@@ -50,8 +50,16 @@ capability! {
     role  = Role::Operator,
     input  = SendText { session: SessionId, text: String, submit: bool },
     output = SendTextAck { seq: Seq },
+    /// Human-facing name. Shown in the command palette and the CLI help.
+    title = "Send text",
+    aliases = ["type"],
+    // hidden = false is the default; `hidden = true` requires `hidden_reason`.
     /// Effects declared for auditing and for the mobile UI's confirmation rules.
+    /// This is the *maximum* set; see "conditional effects" below.
     effects = [Effects::WRITES_PTY],
+    /// D15: which delivery class this mutation belongs to, and therefore
+    /// whether dispatch may retry it.
+    intent = Intent::RawStream,
 }
 ```
 
@@ -64,8 +72,28 @@ Fields:
 | `kind` | `Command` or `Query`; queries are cacheable and safe to retry |
 | `role` | minimum role: `Viewer` < `Operator` < `Admin` |
 | `input`/`output` | `serde` + `schemars` types; the schema source of truth |
-| `effects` | declared side-effect bits; the closed set is `WRITES_PTY`, `SPAWNS_PROCESS`, `READS_FS`, `WRITES_FS`, `NETWORK`, `DESTRUCTIVE` |
+| `effects` | declared side-effect bits, the **maximum** over all inputs; the closed set is `WRITES_PTY`, `SPAWNS_PROCESS`, `READS_FS`, `WRITES_FS`, `NETWORK`, `DESTRUCTIVE` |
+| `refine_effects` | optional `fn(&Input) -> EffectBits`, narrowing `effects` for one call. See below |
+| `intent` | D15 delivery class; determines whether a retry is safe |
+| `title` | short human-facing name; **imperative, ≤ 40 chars** ("Send text", not "Session Send-Text"). Required unless `hidden` |
+| `aliases` | extra strings the command palette and CLI match on |
+| `hidden` | omit from the palette and from `--help`; still callable and still parity-tested. Requires `hidden_reason` |
+| `hidden_reason` | why it is hidden; enumerated in the generated docs so hiding is never silent |
 | `since` | version introduced; drives compatibility docs |
+
+**`title` is required for every non-`hidden` capability, not derived.** A derived
+title (title-casing `group` + `verb`) yields "Session Send-Text" and "Layout
+Apply Saved", which is what a command palette must never show — the palette is
+[19 — Onboarding](19-onboarding.md)'s primary discovery surface and its whole
+value is that entries read like things a person wants to do. Deriving it also
+makes the palette silently worse every time a `verb` is chosen for CLI ergonomics
+rather than for prose. The parity test (§5) enforces the requirement, so the cost
+of writing one is paid once, at declaration, by the person with the most context.
+`aliases` exist because users search for the word they know ("type", "paste",
+"maximize") rather than the word omt chose, and they are matched but not
+displayed. `hidden` removes a capability from the palette and from `--help`
+without removing it from the catalog, the API, or the parity test — it is a
+presentation flag, never an access control.
 
 `effects` describes what **omt** does when the capability runs. It matters for
 surfaces — the mobile client uses `DESTRUCTIVE` to require a confirm gesture —
@@ -75,6 +103,78 @@ and per [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission
 `effects` never describes an agent's tool call, only omt's own operation. The
 `Viewer`+`WRITES_FS`/`DESTRUCTIVE` consistency check is
 [13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog).
+
+### 2.1 Conditional effects
+
+Several capabilities' effects genuinely depend on their input.
+`pane.split { session: None }` spawns a process and `pane.split { session: Some }`
+does not; `layout.apply_saved` spawns only for the panes it must create;
+`pane.close { close_session: true }` is destructive and `close_session: false`
+is not. A purely static `effects` field forces a bad choice between two wrong
+answers: under-declare and the audit log is false, or always declare and a
+`DESTRUCTIVE` confirm gesture fires on the harmless nine calls out of ten, which
+teaches users to tap through confirmations — the failure that makes every
+confirmation in the product worthless.
+
+**Decision: `effects` becomes a declared maximum, narrowable per call by an
+optional pure `refine_effects`.**
+
+```rust
+capability! {
+    name = "pane.split",
+    /// The maximum. `pane.split` may spawn a process.
+    effects = [Effects::SPAWNS_PROCESS],
+    /// Evaluated on the validated input, before the handler runs.
+    /// MUST be pure, MUST NOT widen: `refine_effects(i) ⊆ effects`.
+    refine_effects = |i: &PaneSplit| {
+        if i.session.is_none() { Effects::SPAWNS_PROCESS } else { Effects::empty() }
+    },
+    intent = Intent::Cas,
+}
+```
+
+Rules:
+
+- **`refine_effects` may only remove bits, never add them.** Asserted in debug
+  builds and checked for every capability by a property test over generated
+  inputs, so the declared maximum stays a sound upper bound.
+- **Static consumers use `effects`.** The generated docs, the
+  `Viewer`+`DESTRUCTIVE` consistency check ([13 §4](13-security.md)) and
+  credential scoping all read the maximum, because they reason about a capability
+  without an input in hand. A capability that *can* be destructive is treated as
+  destructive for authorization; refinement is never an authorization bypass.
+- **Per-call consumers use the refined set.** The confirm gesture and **the audit
+  log** record what this call actually did. The audit-log consequence, stated
+  explicitly: an entry's `effects` is the refined set, and an investigator reading
+  "`pane.split`, effects: `{}`" learns that call spawned nothing. Both are
+  recorded when they differ (`effects` and `effects_declared`), so a reviewer can
+  always see that a narrowing happened rather than inferring it.
+- **The refinement runs before the handler**, on validated input, so a surface
+  can ask "would this call need a confirm?" without performing it. That query is
+  `instance.catalog`'s `dry_run_effects`.
+
+### 2.2 Intent class (D15)
+
+Every capability of `kind = Command` declares an `intent`, naming which of
+[D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
+five classes it belongs to. Dispatch reads it to decide whether a repeated
+`RequestId` may be served from the recent-results cache, replayed, or must be
+rejected — so retry safety is a declared property of each capability rather than
+a judgement call in each transport.
+
+| `Intent` | Mechanism | On a repeat |
+|---|---|---|
+| `Cas` | CAS on version-or-state, plus `(identity, intent_id)` | **return the original result** |
+| `Append { dedup }` | client `intent_id` + bounded server dedup cache | **return the original entry**, do not append |
+| `RawStream` | writer `epoch` + consumed-offset `ack` | **reject loudly**; never replayed |
+| `ExternallyConfirmed` | at-most-once write, confirmed by observation, `Undelivered` on timeout | **never retry**, by any actor except a human who can see the screen |
+| `Lww` | CAS on `version`, visible loser | return the current value |
+
+`Query` capabilities declare no `intent`; they are safe to retry by definition.
+A `Command` with no `intent` fails the build — the omission is exactly the defect
+D15 was written to fix, and defaulting it would reintroduce the defect silently.
+`intent` is orthogonal to `effects`: the first says how to deliver a mutation,
+the second says what the mutation does.
 
 ## 3. Dispatch
 
@@ -142,6 +242,17 @@ registry and asserts all four; a missing one fails CI with the capability name.
 | 2 | TUI binding | `omt-tui`'s action table | test asserts every non-`Admin` capability has an action, and every action names a real capability |
 | 3 | Web handler | `web/src/capabilities/registry.ts` | generated TS declares the union; a type-level exhaustiveness check fails the web build if a case is unhandled |
 | 4 | Docs entry | generated `docs/reference/capabilities.md` | regenerated and diffed in CI |
+| 5 | Palette entry | generated from `title`/`aliases`/`hidden` (§2) | test asserts every non-`hidden` capability has a `title`; `hidden` ones are still checked by artifacts 1–4 |
+
+Two mechanical checks worth naming, because both have already caught a real
+contradiction in these documents:
+
+- **Artifact 2 in both directions.** *Every action names a real capability* is
+  the half that catches drift: [16 §11](16-input-and-keymap.md) bound
+  `<leader> h j k l` to `pane.focus_direction`, which no capability declares, and
+  it would have failed on the first CI run.
+- **`refine_effects` is sound** (§2.1) and **every `Command` declares an
+  `intent`** (§2.2). Both are enumerated over the registry by the same test.
 
 Escape hatch, deliberately narrow: a capability may declare
 `parity = Parity::Exempt { reason }`. Exemptions are enumerated in the generated
@@ -169,7 +280,8 @@ This is the shape, not the exhaustive list; each change adds its own.
 | `instance` | `info`, `health`, `catalog`, `shutdown`, `peers.list`, `peers.add` |
 | `workspace` | `list`, `open`, `close`, `rename`, `vcs.*`, `files.*`, `worktree.*`, `history` |
 | `session` | `list`, `create`, `close`, `attach`, `detach`, `resize`, `send_text`, `send_keys`, `write_bytes`, `scrollback.get`, `search`, `blocks.list`, `blocks.get`, `blocks.rerun`, `writer.acquire`, `writer.release` |
-| `pane` | `layout.get`, `split`, `close`, `focus`, `move`, `zoom` |
+| `pane` | `split`, `close`, `focus`, `navigate`, `move`, `zoom`, `stack.*`, `float` |
+| `layout` | `get`, `set`, `preset`, `balance`, `views.*`, `promote`, `save`, `apply_saved`, `import_tmux` |
 | `agent` | `state`, `explain`, `bind`, `unbind`, `prompt`, `interrupt`, `queue.list`, `queue.enqueue`, `queue.remove`, `commands.list`, `commands.run` |
 | `interaction` | `list`, `get`, `resolve`, `cancel` |
 | `media` | `clipboard.read`, `clipboard.write`, `image.upload`, `image.paste`, `file.push`, `file.pull` |
@@ -188,13 +300,25 @@ The full consolidated list, with kinds, roles and effects, is the hand-written
 [`docs/reference/capabilities-draft.md`](../reference/capabilities-draft.md),
 which §5 artifact #4 replaces with generated output.
 
+`layout.*` is a group of its own rather than `pane.layout.*`, because these
+operations act on a **view** and not on a pane
+([17 §9.3](17-panes-and-layout.md#93-reconciliation-with-the-existing-catalog)).
+`pane.layout.get` appeared in an earlier draft of this table and is **superseded
+by `layout.get`**. It never shipped, so no alias is warranted — §7's
+two-minor-version alias rule applies to released names. `workspace.layout.get` /
+`.set` / `.preset` *did* appear in a released surface and are kept as deprecated
+aliases per §7 ([05 §10.1](05-session-model.md#101-workspace)).
+
 Two of these deserve emphasis:
 
 - **`interaction.resolve`** is the flagship path. It is how a phone answers an
   `AskUserQuestion` card. It is resolvable exactly once and idempotent by
-  `(interaction, actor, response)` — a retry from the same actor with the same
-  response returns the original `Resolution`; a different actor or a different
-  response gets `conflict`. Full semantics in
+  `(interaction_id, identity_or_device, intent_id)` — **not** by the actor, which
+  changes on every reconnect and would make a device's own retry read as a
+  stranger overriding it
+  ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+  consequence 6). A retry under the same key returns the original outcome; a
+  different identity gets `conflict` with a discriminating `detail.state`. Full semantics in
   [12 §4](12-collaboration.md#4-interaction-ownership). Its result is broadcast
   to every surface — including the TUI, which then shows the card as answered by
   whoever answered it.

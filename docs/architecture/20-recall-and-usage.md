@@ -131,6 +131,37 @@ completeness over output it did not index, and the UI says so (§2.5).
 | Usage / rate-limit events | yes | no | — | Numbers. §11. |
 | Raw PTY bytes, scrollback outside blocks | no | no | — | Reachable via [04 §8.1](04-terminal-core.md#8-search-selection-hyperlinks-semantic-click-targets) within-session search. Not a corpus. |
 
+### 2.3.1 `native` sessions
+
+[05 §1.3](05-session-model.md#1-the-object-model) defers to this document for
+how a `native` session ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp))
+is recalled, and the answer is: **the table above already covers it, and
+`DocKind` already has the right values.**
+
+A `native` session has no PTY, so it produces no blocks, no block output and no
+scrollback. What it produces is the same typed stream the `pty` agent rows
+describe — `UserMessage`, `AssistantText`, `ToolCall.input`, `ToolResult`,
+`FileChanged`, `Interaction` — indexed identically, from
+[21 §1](21-data-lifecycle.md#1-the-inventory) row 19 rather than from the merged
+observation log. `DocKind`'s `user_msg`, `assistant_msg`, `tool_call`,
+`file_change`, `interaction`, `session_meta` and `summary` all apply unchanged;
+only `block` (kind 0) never occurs. No new `DocKind` is needed and none should
+be added — a `native_msg` kind would fork every ranking rule for no gain.
+
+**`Coverage` must not report a native session as gappy for having no blocks.**
+§2.5's coverage line is computed per session against what that session *can*
+produce: for a `native` session the block and output-window terms are **not
+applicable** and are omitted, not reported as zero or as excluded. Rendering
+"0 of 41 892 blocks searched in this session" for a session that cannot have
+blocks is a false gap — it tells the user their search was incomplete when it
+was exhaustive. `Coverage` therefore carries `session_mode` and each surface
+renders the applicable terms only.
+
+The same rule applies in the other direction to `pty` agent sessions: those have
+blocks suppressed by [04 §6.4](04-terminal-core.md#64-the-fallback-heuristic--no-shell-integration)
+rather than absent by construction, and *that* is a real gap — it is reported,
+with the reason.
+
 ### 2.4 Default field set
 
 An unqualified query searches `command`, `user_msg`, `assistant_msg`, `path`,
@@ -809,9 +840,22 @@ pub struct DigestCounts {
     pub files_by_change: BTreeMap<Change, u32>,
     pub blocks: u32,
     pub blocks_failed: u32,
+    /// **Required, not optional.** Under
+    /// [D12](../architecture/decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+    /// the digest is one of only two places a user can learn that an agent
+    /// asked them something while they were away; the other is §12.5's
+    /// attention log. Every one of these counts must be rendered, including —
+    /// especially — the ones nobody was there to answer.
     pub interactions_opened: u32,
     pub interactions_answered_by: BTreeMap<ActorKind, u32>,
     pub interactions_timed_out: u32,
+    /// Reached a terminal state with no decision recorded (the agent gave up,
+    /// the card expired, the daemon restarted).
+    pub interactions_abandoned: u32,
+    /// A decision was recorded but omt never observed the agent take it
+    /// ([06 §5.1](06-agent-layer.md#51-lifecycle)). The most important count
+    /// in this struct and the one most likely to be quietly dropped from a UI.
+    pub interactions_undelivered: u32,
     pub compactions: u32,
     pub errors: u32,
     pub usage: Option<UsageTotals>,   // §11 — only if the agent reported it
@@ -929,8 +973,13 @@ with the agent's name and icon, and two thumb-sized actions: **Open session**
 and **Timeline**. Counts are tappable and each drills into the filtered
 timeline. A `Blocked` session's card carries the interaction card inline, so
 answering is one tap from the digest — which is the whole product in one
-gesture. Web Push notification text is the headline clause chain truncated to
-120 characters, never generated.
+gesture. Because there are no notifications
+([D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)),
+this screen is not a convenience — it is *the* discovery surface, and the
+`interactions_opened` / `_timed_out` / `_abandoned` / `_undelivered` counts must
+appear on it even when every one of them is unanswerable now. "Your agent asked
+at 02:14 and gave up at 02:19" is the single most valuable line the digest can
+print, and it is the line a counts-only-if-actionable filter would delete.
 
 **Desktop web.** The digest is a two-column panel: counts and sections left,
 timeline right, scroll-linked — clicking `6 of 41 commands failed` scrolls the
@@ -1417,11 +1466,80 @@ covers the "this device has no mark yet" case.
 | `usage.limits` | Query | V | `{ agent? }` | `{ limits: [RateLimitState] }` |
 | `usage.session` | Query | V | `{ session }` | `{ totals, by_model, context_window, last_event }` |
 
-### 12.5 `attention.*`
+### 12.5 `attention.*` and the durable attention log
+
+#### The problem it solves
+
+`attention.list` reports what needs the user **now**. Under
+[D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+that is not enough, because open-and-replay is the *only* discovery path and it
+discovers only live state plus a bounded replay window
+([07 §5.2](07-remote-protocol.md#52-replay-window): 4 MiB / 4096 events). An
+interaction that **opened and reached a terminal state entirely inside an
+offline gap** is therefore in no snapshot, in no replayed event, and in no
+attention signal. The user opens the app to an idle session and never learns
+that their agent asked at 02:14 and gave up at 02:19. With push, the phone would
+have buzzed; without it, the event simply does not exist for them.
+
+#### The log
+
+Per `(identity, session)`, omt keeps a **durable attention log**: every
+interaction that reached a terminal state **since that actor's read mark**,
+with its outcome. The read mark already exists (§12.3); this is a query plus a
+durable index over data the interaction ledger already writes
+([21 §1](21-data-lifecycle.md#1-the-inventory) row 22). It is not a new store
+and not new content.
+
+```
+interaction.list { scope, since_read_mark: bool, include_terminal: bool }
+  -> { entries: [InteractionSummary], truncated: bool }
+```
+
+```rust
+pub struct InteractionSummary {
+    pub id: InteractionId,
+    pub session: SessionId,
+    pub binding: BindingId,
+    pub kind_tag: &'static str,       // "choice" | "permission" | "plan_review" | "text"
+    pub prompt: String,               // already redacted, ≤ 4 KiB
+    pub opened_at: Timestamp,
+    pub terminal_at: Option<Timestamp>,
+    /// The discriminating outcome — resolved / undelivered / abandoned /
+    /// cancelled / timed out. A phone must be able to tell "someone else
+    /// answered" from "the agent gave up"
+    /// ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+    /// consequence 10), so this is a discriminated state, never a boolean.
+    pub outcome: InteractionOutcome,
+    pub resolved_by: Option<ActorId>,
+}
+```
+
+Rules:
+
+- **Keyed by identity, not by connection or device.** A phone and a laptop
+  belonging to the same person share a read mark and therefore see the same
+  backlog; a second identity has its own.
+- **Written in the same transaction as the terminal-state transition**, which is
+  already `fsync`ed ([21 §6.2](21-data-lifecycle.md#62-what-kill--9-loses)). An
+  attention-log entry can never be missing for an interaction that is terminal.
+- **Retention follows the interaction ledger** (1 year), so an entry never
+  outlives what it points at.
+- **Advancing the read mark clears it.** Viewing the session is the
+  acknowledgement; there is no separate dismiss-all, and nothing is cleared by
+  merely reconnecting.
+- **The client must fetch it after every `Resync`, before ranking its home
+  screen** — that is a protocol requirement, stated in
+  [07 §5.2](07-remote-protocol.md#52-replay-window), not a client nicety.
+- `truncated: true` when the backlog exceeds the response cap; the count is
+  still exact, because "you missed 3 questions" is useful even when only the
+  first 50 are listed.
+
+#### Capabilities
 
 | Capability | Kind | Role | Input | Output | Effects |
 |---|---|---|---|---|---|
 | `attention.list` | Query | V | `{ scope }` | `{ signals: [AttentionSignal] }` | — |
+| `interaction.list` | Query | V | `{ scope, since_read_mark?, include_terminal? }` | `{ entries: [InteractionSummary], truncated }` | — |
 | `attention.explain` | Query | V | `{ session }` | `{ baselines, reasons, thresholds, snoozes }` | — |
 | `attention.snooze` | Command | O | `{ session, reason?, until }` | `{ snoozed_until }` | `WRITES_FS` — snoozes are persisted with the binding (§10.4) |
 | `attention.clear` | Command | O | `{ session }` | `{ cleared: u32 }` | `WRITES_FS` |

@@ -215,7 +215,7 @@ pub trait Transport: Send + 'static {
 pub enum Frame {
     /// UTF-8 JSON control message (`ProtoMessage`).
     Text(Bytes),
-    /// Length-delimited binary payload with an 8-byte header (see §3.6).
+    /// Length-delimited binary payload with a 12-byte header (see §3.6).
     Binary(Bytes),
 }
 ```
@@ -319,7 +319,7 @@ flapping link does not reset into a hot loop.
 | Channel | Encoding | Why |
 |---|---|---|
 | control (handshake, auth, capability calls, events) | **JSON** text frames | debuggable with `websocat`, one schema source (`schemars`) shared with REST and the TS client, negligible volume |
-| terminal output | **binary** frames, raw bytes with an 8-byte header | this is the high-rate path; base64 in JSON costs 33 % bandwidth and a parse per frame |
+| terminal output | **binary** frames, raw bytes with a 12-byte header | this is the high-rate path; base64 in JSON costs 33 % bandwidth and a parse per frame |
 | audio (STT upload) | **binary** frames, Opus | obvious |
 | images / files | **binary** frames, chunked | ditto |
 
@@ -372,9 +372,9 @@ pub enum ProtoMessage {
 }
 ```
 
-Every request-bearing message carries `id: RequestId` (client-generated, unique
-per connection); every response echoes it. Unsolicited server messages carry no
-`id`.
+Every request-bearing message carries `id: RequestId`; every response echoes it.
+Unsolicited server messages carry no `id`. `RequestId` is **stable across
+connections** — see §3.5.
 
 ### 3.3 Handshake and capability negotiation
 
@@ -395,7 +395,7 @@ per connection); every response echoes it. Unsolicited server messages carry no
                 "platform": { "os": "linux", "arch": "aarch64" },
                 "catalog_hash": "b3:7c1e…" },
   "auth": { "required": true, "methods": ["bearer", "password", "invite", "tailnet", "device_grant"] },
-  "features": ["term.binary", "blob.chunked", "stt.opus", "push.webpush"],
+  "features": ["term.binary", "blob.chunked", "stt.opus", "term.ack"],
   "limits": { "max_control_frame": 1048576, "max_binary_frame": 8388608,
               "replay_window_bytes": 4194304, "replay_window_events": 4096 }
 }
@@ -496,15 +496,48 @@ Calls are concurrent and out-of-order by design; `Cancel` requests best-effort
 abortion and is honoured for queries and for commands that have not yet taken
 effect.
 
+#### `RequestId` is stable across connections, and dispatch caches results
+
+```rust
+pub struct RequestId { pub device: DeviceId, pub n: u64 }   // wire: "dev_9a:41827"
+```
+
+`n` is a **monotonic counter persisted client-side**, not a per-connection
+sequence. The earlier definition — *"client-generated, unique per connection"* —
+made `RequestId` useless for the one job it exists to do: a client whose socket
+dies mid-call reconnects with a fresh counter, so it can never ask "did `req_31`
+apply?" and can never learn whether its `interaction.resolve` took effect. It
+must then either re-send blind or give up, and neither is acceptable for a
+mutation. `DeviceId` supplies cross-connection uniqueness without coordination;
+the persisted counter supplies stable identity.
+
+`CapabilityRegistry::dispatch` therefore keeps a **bounded recent-results
+cache** keyed by `RequestId`: on a repeat it replays the stored result verbatim
+and does not execute the capability a second time. The cache is bounded by count
+and age (default 1024 entries / 10 minutes per device) and is memory-only — an
+eviction or a daemon restart turns a repeat into a normal call, which is why the
+mechanism only makes the *retry-safe* classes of
+[D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+work and is explicitly **not** relied on for the byte-stream or
+externally-confirmed classes. Those must never be replayed at all: an injected
+answer is at-most-once ([06 §5.1](06-agent-layer.md#51-lifecycle)), and a raw
+write is resumed by `ack`, not repeated (§3.6).
+
+> **Choice made here.** The cache is memory-only rather than persisted. A
+> persisted cache would have to be `fsync`ed on the critical path of every
+> mutation to be worth anything, and the classes that need durability across a
+> restart already get it from their own ledger CAS. Recorded so the tradeoff is
+> visible rather than assumed.
+
 ### 3.6 Binary payloads
 
-A binary frame is an 8-byte header followed by the payload:
+A binary frame is a 12-byte header followed by the payload:
 
 ```
- 0        1        2                4                            8
- +--------+--------+----------------+----------------------------+
- | ver(1) | kind(1)|   stream(u16)  |        seq_or_off(u32)      | payload…
- +--------+--------+----------------+----------------------------+
+ 0        1        2                4                            8                           12
+ +--------+--------+----------------+----------------------------+---------------------------+
+ | ver(1) | kind(1)|   stream(u16)  |        seq_or_off(u32)     |          ack(u32)         | payload…
+ +--------+--------+----------------+----------------------------+---------------------------+
  kind: 1 = terminal output   2 = terminal input   3 = blob chunk
        4 = audio chunk       5 = terminal snapshot
 ```
@@ -513,6 +546,30 @@ A binary frame is an 8-byte header followed by the payload:
 `TermAttach` time) — 2 bytes rather than a 16-byte UUID per frame, which at 60
 frames/s matters. `seq_or_off` is the per-stream sequence for terminal and audio
 and the byte offset for blob chunks.
+
+**`ack: u32` is reserved now, before the wire freezes.** On a `kind=1` terminal
+output frame it carries **the highest client input sequence the server has
+consumed** into the PTY. It has two independent rationales and both are recorded
+here so it cannot be value-engineered out as "a v2 feature":
+
+1. **Predictive echo.** [`remote-continuity §10.3`](../design/remote-continuity.md#103-model-additions)
+   already requires it: mosh-style local echo cannot confirm or revert a
+   prediction without knowing which of its own keystrokes the far end has
+   actually consumed.
+2. **Durability — the load-bearing one.** `session.write_bytes` is
+   [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
+   **raw byte stream** class, which **must never be replayed**: re-sending
+   keystrokes into whatever the terminal is doing now is arbitrary damage, not a
+   retry. A consumed-offset ack is therefore the *only* safe resumption
+   mechanism available to that class. On reconnect the client resumes from
+   `ack`, sends nothing that was already consumed, and reports the ambiguous tail
+   (written but unacknowledged) to the user rather than silently re-sending it.
+   Without `ack` in the header, the byte-stream class has no correct recovery at
+   all, and a reconnect after a dropped link either loses input or duplicates it.
+
+Zero is the "no information" value; a client that sees only zeros disables
+prediction and treats every reconnect tail as ambiguous. This costs 4 bytes per
+frame against a coalesced frame budget (§6.2) measured in kilobytes.
 
 Blobs (images, file push/pull, snapshots) are negotiated in JSON and carried in
 binary:
@@ -698,8 +755,11 @@ quietly.
 
 - **The mode is on the wire, before attach.** A session's `SessionMode`
   ([05 §1.5](05-session-model.md#1-the-object-model)) is carried in
-  `session.get`, in every row of the unified session list (§1.6), and in the
-  `Welcome`/attach reply. A client therefore knows whether a grid exists
+  `session.get`, in `session.list` (and therefore in every row of the unified
+  session list, §1.6), and in the `TermAttach` reply. It is **not** in
+  `Welcome`: `Welcome` is per-*connection* and carries no session data at all
+  (§3.3), so a document claiming otherwise gives clients a field that does not
+  exist. A client therefore knows whether a grid exists
   *before* it decides how to render the session, and never has to infer it from
   the absence of bytes.
 - **No terminal surface exists.** For a `native` session there are no terminal
@@ -783,6 +843,26 @@ ignored field.
 The client **must** treat `Resync` as "discard local state for this session and
 rebuild". It is a normal, expected message, not an error — a phone that slept
 for an hour will always get one.
+
+**Rebuilding is not just the snapshot.** Discarding and re-reading live state
+recovers what *is*, not what *happened* — and under
+[D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+open-and-replay is the only discovery path there is. An interaction that opened
+**and reached a terminal state** entirely inside the gap is in no snapshot and
+in no replayed event, so a client that stops at the snapshot presents an idle
+session and the user never learns their agent asked and gave up. Therefore,
+after any `Resync`, before it ranks its home screen, the client **must** refetch:
+
+1. `interaction.list { since_read_mark: true, include_terminal: true }` — the
+   durable attention log ([20 §12.5](20-recall-and-usage.md#125-attention-and-the-durable-attention-log)),
+   which is the only source for interactions that came and went while
+   disconnected;
+2. the current attention state for every session (`attention.get` / the
+   session-list attention fields, §1.6).
+
+Only then does [`remote-continuity §2.3`](../design/remote-continuity.md#23-the-continuity-ranking)'s
+ranking run. Ranking on live state alone silently drops exactly the events the
+user most needed to see.
 
 **Canonical name, binding.** The message is `Resync`, tagged `"t": "resync"` on
 the wire (§3.2). It is *not* `resync_required`; any document or catalog entry
@@ -949,69 +1029,92 @@ Optimizations that matter, in order of impact:
 
 ---
 
-## 8. Notifications to a closed tab
+## 8. Notifications to a closed tab — none in v1
 
-The flagship scenario — an agent blocks on a question while the user's phone is
-in their pocket — requires push, because no tab is open and no socket exists.
+**omt ships no notification backend.** When a client is not connected, it is not
+notified. This section exists to record the decision, to keep the extension
+point specified, and to state the property that falls out of it.
 
-### 8.1 Web Push (primary)
+### 8.1 The decision
 
-Standard VAPID Web Push, supported by iOS Safari for installed PWAs (16.4+) and
-by every desktop browser.
+[D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+removes push from v1 outright — not "off by default", not "opt-in": **zero
+backends ship**. A browser with its tab closed cannot be reached except through
+the browser vendor's relay (FCM for Chrome/Android, `web.push.apple.com` for
+Safari/iOS). That means the daemon opening an outbound connection to a third
+party, and it leaks the metadata *"this machine needs its owner, now"* even
+though the Web Push payload is encrypted end to end. For a tool whose stated
+position is no cloud, no telemetry and no required egress
+([00 §8](00-overview.md#8-what-omt-is-not)), that is a contradiction as a
+default and a maintenance burden as an option. The self-hosted alternative users
+would actually be pointed at — `ntfy` on a tailnet — adds an app and a
+deployment step to onboarding.
 
-- The client subscribes via the service worker and posts the subscription to
-  `notification.push.subscribe` (a normal capability, so it is auth'd and
-  audited; the same name is used in [08 §8.6](08-web-client.md#86-pwa-and-web-push)). The daemon stores endpoint + keys **per device** (`DeviceId`,
-  [23 §1.1](23-identity-and-devices.md#11-four-types)), not per credential —
-  a tailnet-authenticated device holds no long-lived credential at all
-  ([23 §10.1](23-identity-and-devices.md#101-how-it-composes)) and must still be
-  able to receive and to lose notifications. Revoking the device drops its
-  subscription, whatever method that device authenticates with.
-- The daemon signs and POSTs directly to the browser vendor's push service
-  (`fcm.googleapis.com`, `web.push.apple.com`). **This is the only outbound
-  network connection omt ever makes**, it is off by default, and enabling it is
-  an explicit, documented consent step ([13 §9](13-security.md)).
-- **Payloads are encrypted end-to-end** by the Web Push spec (aes128gcm with the
-  client's keys), so the vendor's push service sees ciphertext. Even so, the
-  payload is deliberately minimal: an **addressable pointer** (instance,
-  session, interaction id) plus a **short, non-secret title and body derived
-  from the session and the interaction kind** — the agent name, the workspace,
-  and what class of thing is being asked. It never carries the question text,
-  the agent's output, a tool's arguments, or any scrollback:
+**The property this buys: omt makes no outbound network connections at all.**
+Plain, checkable, and no longer caveated. The daemon accepts connections; it
+never initiates one.
 
-```json
-{ "v": 1, "instance": "3f2a…", "session": "s_4b2f",
-  "kind": "interaction", "interaction": "int_88",
-  "title": "claude · api-gateway", "body": "Needs a decision" }
+**The capability given up, stated plainly:** the "agent blocks, the phone buzzes
+in your pocket" journey is not in v1. Users learn that an agent needs them when
+they next open a client. This must be said in the README and in onboarding, not
+discovered.
+
+### 8.2 What replaces it: open-and-replay
+
+Discovery is entirely **open → reconnect → replay → rank**. §5.2 specifies the
+mechanics and makes the two mandatory refetches after a `Resync` — the durable
+attention log and current attention state — a protocol requirement rather than a
+client nicety, because without them an interaction that opened and went terminal
+inside an offline gap is invisible forever. The user experience is designed in
+[`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen).
+
+Because this is now the *only* discovery path, its quality is not a convenience:
+cold-start latency, the continuity ranking, and complete recovery of what was
+missed are primary features.
+
+### 8.3 The reserved extension point
+
+Nothing in the design may assume notifications never exist
+([P2](01-principles.md#p2--pluggable-extension-without-modification)). The
+`Notifier` trait and its call sites are **specified and reserved**, with zero
+implementations in tree:
+
+```rust
+#[async_trait]
+pub trait Notifier: Send + Sync {
+    fn id(&self) -> &str;
+    /// An addressable pointer plus a short, non-secret title and body derived
+    /// from the session and the interaction kind. Never the question text,
+    /// the agent's output, tool arguments, or scrollback.
+    async fn notify(&self, n: &NotificationPointer) -> Result<(), NotifyError>;
+}
+
+pub struct NotificationPointer {
+    pub instance: InstanceId,
+    pub session: SessionId,
+    pub kind: NotificationKind,          // interaction | turn_ended | error | session_died
+    pub interaction: Option<InteractionId>,
+    pub title: String,                   // "claude · api-gateway"
+    pub body: String,                    // "Needs a decision"
+}
 ```
 
-The service worker fetches the actual question over the authenticated WebSocket
-when the notification is tapped or when it can do so silently. Consequence, and
-it is the security-relevant one: a notification delivered to a **revoked** device
-can never be expanded, so it shows a generic title and nothing more.
+Call sites fire on the same triggers a backend would have wanted (interaction
+opened, agent turn ended after > N seconds, agent error, session died, writer
+takeover requested), and with no backend registered they are no-ops. Two future
+consumers are anticipated and neither is core's to build:
 
-- Triggers, all configurable per device: interaction opened, agent turn ended
-  after > N seconds, agent error, session died, writer takeover requested.
-- Coalescing: at most one notification per session per 30 s, replaced in place
-  by `tag: "<instance>:<session>"`, so a chatty agent does not produce a
-  notification tray avalanche.
+- a **native iOS/Android app**, which has a first-party push channel that does
+  not route through a browser vendor;
+- a **user or third-party plugin** ([11 — Plugins](11-plugins.md)) — ntfy,
+  Telegram, Bark, a webhook — shipped without touching core. A plugin that makes
+  an outbound connection is the *user's* choice and is disclosed as such; it does
+  not change what omt itself does.
 
-### 8.2 The Tailscale-friendly self-hosted path
-
-Web Push requires reaching a vendor endpoint on the public internet, which some
-users will refuse. Two alternatives ship:
-
-- **`ntfy` / Gotify webhook sink.** The daemon POSTs the same pointer payload to
-  a user-configured URL, which may be a tailnet-internal `ntfy` instance. The
-  user's phone runs the `ntfy` app, already connected to their tailnet. Zero
-  public egress. This is the recommended fully-private configuration.
-- **Foreground-persistent PWA.** When the PWA is installed and the tailnet is
-  up, the client keeps its WebSocket open in the background as long as the OS
-  allows, and uses the Notifications API locally. Reliable on Android, best
-  effort on iOS — which is exactly why it is not the primary path.
-
-Rejected: an omt-operated push relay. It would be a hosted service, and
-[00 §8](00-overview.md#8-what-omt-is-not) says there isn't one.
+`notification.push.subscribe` is **not** a v1 capability and does not appear in
+the catalog. The coalescing rule a future backend will need (at most one per
+session per 30 s, replaced in place by `tag: "<instance>:<session>"`) is recorded
+here so it is not rediscovered.
 
 ---
 
@@ -1032,12 +1135,13 @@ Rejected: an omt-operated push relay. It would be a hosted service, and
    Several agent TUIs degrade badly under ~80 cols. Do we clamp the authoritative
    size to a per-agent minimum reported by the adapter? Coordinate with
    [06 — Agent layer](06-agent-layer.md).
-5. **iOS PWA push reliability** for the flagship scenario has not been measured.
-   If it is bad, the `ntfy` path may need to become the *default* recommendation
-   rather than the private-mode alternative. **This is the single owner of the
-   "should `ntfy` be the default?" question**;
-   [13 §11 Q7](13-security.md#11-open-questions) defers to it and contributes the
-   metadata-exposure argument.
+5. ~~**iOS PWA push reliability.**~~ **Retired.** [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+   ships no notification backend, so the experiment has nothing to measure and
+   the "should `ntfy` be the default?" question has no v1 subject.
+   [13 §11 Q7](13-security.md#11-open-questions) deferred to this entry and
+   should be closed with it. What replaces it as a measurable risk is
+   **cold-start-to-useful-screen latency** for open-and-replay (§8.2), which is
+   owned by [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen).
 6. **Blob chunk size** (currently unspecified; likely 256 KiB) interacts with
    backpressure — a large image upload from a phone must not starve the
    interaction path. Probably needs its own queue class alongside lossy/lossless.

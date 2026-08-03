@@ -103,6 +103,31 @@ owns those files.
   hands off to the real editor.
 - **Not automatic.** No target is ever activated without an explicit user
   action. See [§8](#8-security).
+- **Not available in `native` sessions in v1.** A `native` session
+  ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)) has no
+  PTY, no grid and therefore no `Position`. This document's entire model is
+  `Match { span: Range<Position> }` over `omt-term` coordinates — every part of
+  it, from anchoring across reflow (§2.5) to hint-label placement (§5.2) to
+  mouse hit-testing (§5.1), is expressed in grid coordinates. **Semantic open
+  is out of scope for `native` sessions in v1, and the UI offers no hints, no
+  click targets and no `open.*` actions there.**
+
+  **This is a real loss and it is stated rather than hidden**: a native agent's
+  transcript is full of `src/lib.rs:42`, and those will not be clickable.
+
+  **Why it is deferred rather than solved now.** The fix is to generalise the
+  anchor from a grid span to a `ContentRef` that a transcript offset can also
+  satisfy — sketched in §2.6 — and that is an `omt-types` change touching
+  `Match`, `MatchId`, anchoring, and every handler signature. Doing it
+  speculatively, before a native transcript renderer exists to validate it
+  against, would freeze a second coordinate system on a guess about what a
+  transcript offset looks like. Doing it later is an additive enum variant
+  behind one type, which is exactly the shape of change that is cheap.
+
+  **Recorded as the known future edit**, not as an open question: §2.6 carries
+  the target shape, and the `omt-types` contracts change must land `Match` and
+  `Target` with a *documented intent* to gain a `ContentRef` anchor — so the
+  change is planned rather than rediscovered.
 
 ---
 
@@ -278,6 +303,36 @@ pub enum Target {
     Custom { rule: RuleId, slots: BTreeMap<String, String> },
 }
 ```
+
+#### The `ContentRef` generalisation — recorded, not built
+
+`Match::span` is a `Range<Position>`, which only a grid can produce. The
+recorded future shape replaces it with:
+
+```rust
+pub enum ContentRef {
+    /// A span in a terminal grid — the only variant in v1.
+    Grid { span: Range<Position>, block: Option<BlockId> },
+    /// A byte range within one entry of a rendered transcript. The variant a
+    /// `native` session (and, later, the `pty` transcript view of
+    /// [08 §4.4](08-web-client.md#44-transcript-view)) would use.
+    Transcript { entry: EventSeq, offset: Range<u32> },
+}
+```
+
+Everything downstream of recognition — resolution (§3), the handler registry
+(§4), the `open.*` capabilities (§9) — already operates on `Target` and
+`ResolutionContext` rather than on positions, and is unaffected. What *is*
+affected is anchoring (§2.5), hint placement (§5.2), mouse hit-testing (§5.1)
+and `SelectionMode::Semantic`, all of which would need a transcript-shaped
+implementation alongside the grid one.
+
+**This is an `omt-types` decision and it must land in the contracts change
+either way** — either `Match` freezes with `span: Range<Position>` and a
+documented intent to gain this variant, or it lands with `ContentRef` from the
+start and only `Grid` is constructed in v1. This document takes the first
+option; whoever owns the contracts change makes the final call, and the second
+option is defensible if the enum is cheap to introduce now.
 
 ### 2.7 The default rule table
 

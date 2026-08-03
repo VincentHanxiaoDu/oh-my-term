@@ -53,7 +53,9 @@ This confirms doc 05's choice, for three reasons that the research made concrete
 
 **Rejected: binary.** The only argument for it is that "BSP" is the familiar
 word. [05 §1](05-session-model.md#1-the-object-model) already says "BSP tree"
-while defining an n-ary type; §12 records this as a wording contradiction to fix.
+while defining an n-ary type. Doc 05 §2 now says "an n-ary split tree
+(historically, and in this heading, 'BSP')"; the heading itself is kept because
+four links in this document target it and link stability outweighs the word.
 
 ### 1.2 Types
 
@@ -96,8 +98,8 @@ pub const WEIGHT_EPSILON: f32 = 1e-4;
 pub const MIN_WEIGHT: f32 = 1e-3;
 ```
 
-`Axis` deliberately does **not** reuse doc 05's `Direction { Horizontal,
-Vertical }`. "Horizontal split" is ambiguous in every multiplexer's
+`Axis` deliberately replaces the earlier `Direction { Horizontal,
+Vertical }`, which doc 05 §2 has since adopted. "Horizontal split" is ambiguous in every multiplexer's
 documentation — tmux's `split-window -h` produces a *vertical* divider. `Columns`
 and `Rows` describe the arrangement of the children and cannot be misread. A
 `Direction2D { Left, Right, Up, Down }` remains, for navigation and for
@@ -573,7 +575,9 @@ views of the same workspace, so "focus the pane on the left" means different
 things to each. That is correct — it is *their* left — but it means presence
 ([05 §6](05-session-model.md#6-presence)) must report `viewing: (ViewId,
 SessionId)` and not merely `PaneId`, or the laptop cannot render "the phone is
-watching this session". §12 records this as a required change to `Presence`.
+watching this session". [05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing)
+and [12 §2](12-collaboration.md#2-presence-is-first-class-state) have adopted the
+`(ViewId, SessionId)` shape accordingly.
 
 ### 3.4 The PTY size question, which per-client layout does not solve
 
@@ -800,8 +804,9 @@ pub struct PaneSpec {
 Notes:
 
 - **`split` is `columns`/`rows`, not `horizontal`/`vertical`**, for the reason in
-  §1.2. Doc 10 §9.1's example uses `horizontal`/`vertical`; §12 records that both
-  spellings must be accepted, with `columns`/`rows` canonical on write.
+  §1.2. Doc 10 §9.1's launch-config example has been changed to `columns`/`rows`;
+  both spellings are accepted on read, with `columns`/`rows` canonical on write
+  ([10 §9.1](10-configuration.md#91-launch-configurations)).
 - **`Preset` in the file** is what gives a saved layout responsiveness for free:
   `{ preset: tiled, panes: [...] }` is meaningful at any size and any pane count,
   where a fixed `ratio` list is not.
@@ -1078,9 +1083,11 @@ decides).
 | `pane.focus_cycle { reverse }` | Placement order, wrapping. |
 | `pane.focus_edge { dir }` | Outermost pane in a direction. |
 
-Doc 16 §11 binds `<leader> h j k l` and arrows to what it calls
-`pane.focus_direction`; §12 records the name mismatch with doc 05's
-`pane.navigate`.
+`pane.navigate` is the single name for this operation, agreeing with
+[05 §10.3](05-session-model.md#103-pane). `pane.focus_direction` was a stray name
+in [16 §11](16-input-and-keymap.md) and has been corrected there — it would have
+failed [03 §5](03-capability-catalog.md#5-the-parity-contract)'s parity test,
+which asserts that every bound action names a registered capability.
 
 ---
 
@@ -1093,7 +1100,7 @@ requires that a phone can *do* everything. The two are reconciled by separating
 
 ### 7.1 What a phone actually renders
 
-Per [08 §4](08-web-client.md#4-two-view-modes), a phone defaults to **block
+Per [08 §4](08-web-client.md#4-view-modes), a phone defaults to **block
 view** below 600 CSS px, and block view needs no grid at all. So the layout
 question on a phone is not "how do I draw four panes" but "how do I let the user
 move between four sessions".
@@ -1236,6 +1243,15 @@ Every input below carries an optional `view: Option<ViewId>` defaulting to the
 caller's current view, and every layout mutation emits `LayoutChanged { view,
 layout, geometry_hint }`.
 
+Effects marked "refined away when …" use
+[03 §2.1](03-capability-catalog.md#21-conditional-effects)'s `refine_effects`:
+the bit is the declared maximum and authorization treats it as always present,
+while the confirm gesture and the audit entry see what the call actually did.
+Every `Command` here declares `intent = Intent::Cas`
+([03 §2.2](03-capability-catalog.md#22-intent-class-d15)) — layout mutations are
+compare-and-swap on the view's state, so a retry under the same `intent_id` is
+safe and returns the original result.
+
 ```rust
 capability! {
     /// Split a pane, creating a session in the new pane when none is given.
@@ -1252,7 +1268,14 @@ capability! {
         view: Option<ViewId>,
     },
     output = PaneSplitAck { pane: PaneId, session: SessionId, layout: LayoutTree },
-    effects = [Effects::SPAWNS_PROCESS],   // only when `session` is None
+    /// The declared maximum.
+    effects = [Effects::SPAWNS_PROCESS],
+    /// Narrowed per call: splitting to show an *existing* session spawns nothing.
+    /// [03 §2.1](03-capability-catalog.md#21-conditional-effects).
+    refine_effects = |i: &PaneSplit| {
+        if i.session.is_none() { Effects::SPAWNS_PROCESS } else { Effects::empty() }
+    },
+    intent = Intent::Cas,
 }
 ```
 
@@ -1261,8 +1284,8 @@ capability! {
 | Capability | Role | Input | Output | Effects |
 |---|---|---|---|---|
 | `pane.list` | V | `{ workspace, view? }` | `{ panes: [PaneInfo] }` | |
-| `pane.split` | O | above | above | `SPAWNS_PROCESS` |
-| `pane.close` | O | `{ pane, close_session: bool }` | `{ focus: Option<PaneId> }` | `DESTRUCTIVE` when `close_session` |
+| `pane.split` | O | above | above | `SPAWNS_PROCESS`, refined away when `session` is given |
+| `pane.close` | O | `{ pane, close_session: bool }` | `{ focus: Option<PaneId> }` | `DESTRUCTIVE`, refined away when `close_session` is false |
 | `pane.focus` | O | `{ pane }` | `{ focused: PaneId }` | |
 | `pane.navigate` | O | `{ from, dir, wrap: bool }` | `{ focused: Option<PaneId> }` | |
 | `pane.focus_last` | O | `{ view? }` | `{ focused: Option<PaneId> }` | |
@@ -1303,7 +1326,7 @@ capability! {
 | `layout.adopt` | O | `{ from: ViewId }` | `{ layout }` | |
 | `layout.rearm` | O | `{ view? }` | `Ack` | re-enable responsive swapping (§4.2) |
 | `layout.save` | O | `{ name, view?, scope: User \| Project }` | `{ path }` | `WRITES_FS` |
-| `layout.apply_saved` | O | `{ name, view? }` | `{ layout }` | `SPAWNS_PROCESS` |
+| `layout.apply_saved` | O | `{ name, view? }` | `{ layout }` | `SPAWNS_PROCESS`, refined away when every pane in the saved layout maps onto a live session |
 | `layout.list_saved` | V | `{}` | `{ layouts: [SavedLayoutInfo] }` | |
 | `layout.import_tmux` | O | `{ string, view? }` | `{ layout, warnings }` | |
 
@@ -1322,12 +1345,14 @@ It rejects `native` sessions (§3.7).
 
 [05 §10.3](05-session-model.md#103-pane) and
 [03 §6](03-capability-catalog.md#6-capability-groups-initial-surface) already
-sketch this surface. Differences, all listed in §12:
+sketch this surface. The differences below are settled; those two documents have
+been edited to match:
 
-- Doc 03 lists `pane.layout.get`; this document puts layout operations in a
+- Doc 03 listed `pane.layout.get`; this document puts layout operations in a
   `layout.*` group, because they act on a *view*, not a pane, and because the
-  CLI reads better (`omt layout preset tiled`). `pane.layout.get` should be
-  dropped in favour of `layout.get`.
+  CLI reads better (`omt layout preset tiled`). `pane.layout.get` has been
+  dropped in favour of `layout.get`, with no alias — it never shipped, and doc 03
+  §7's two-minor-version alias rule covers released names.
 - Doc 05 lists `workspace.layout.get` / `.set` / `.preset`. Same objection:
   those become `layout.*` with a `workspace` in the input. Aliases are kept for
   two minor versions per doc 03 §7.
@@ -1478,81 +1503,39 @@ a virtual clock:
 
 ## 12. Open questions and contradictions with existing docs
 
-### 12.1 Contradictions requiring a decision by the doc owners
+### 12.1 Contradictions with other documents — all resolved
 
-**C1 — Sizing vocabulary in doc 05.** The substantive default is settled: doc 05
-§2.2 already delegates the negotiation to
-[07 §4.3](07-remote-protocol.md#43-the-resize-problem) with `SizeOwner::Writer`
-as the default, which is what §3.4 above calls `SizePolicy::Driver`. What
-remains is vocabulary: doc 05's **invariant 10** and **open question 2** still
-describe sizing in the old "minimum over participants" framing and must adopt
-`SizePolicy` / `Participation` terms so the two documents read as one model.
-Doc 07's `SizeOwner` should likewise gain the `Driver` naming for consistency.
+Every contradiction this document once listed here has been **decided and the
+other document edited to match**; the list is deliberately not retained, because
+a to-do list of open contradictions invites a second round of divergence. The
+adopted model, in one place:
 
-**C1b — `writer.acquire { keep_size }` and the 20 % takeover warning need
-ratifying in [12 §3.3](12-collaboration.md#33-lifecycle).** §3.4 consequence 1
-describes both, but they are *acquisition* semantics, and by doc 05's own
-ownership rule (05 §5) doc 12 owns those. Doc 12 must declare the `keep_size`
-flag on `writer.acquire`, its `SizePolicy::Pinned` transition, and the 20 %
-change threshold that triggers the warning — or state a different number, which
-this document then follows.
+- The layout types of §1.2 and §1.3 are canonical: `LayoutTree` / `Split` /
+  `Axis { Columns, Rows }`, and `Layout::zoom: Option<PaneId>` beside the tree
+  rather than a `Zoom` variant inside it. Doc 05 §2 now defines these.
+- A workspace owns `views: IndexMap<ViewId, LayoutView>` plus a `primary`
+  (§3.3), not a single `layout` — doc 05 §1.1 now says so, and focus and zoom
+  live inside a view.
+- Presence and `ClientView` are keyed on `(ViewId, SessionId)`
+  ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing),
+  [12 §2](12-collaboration.md#2-presence-is-first-class-state)), never a bare
+  `PaneId`.
+- Zoom is per view (§5.1); [05 §13](05-session-model.md#13-open-questions) Q5 is
+  closed accordingly.
+- `layout.*` and `pane.navigate` are the winning capability names (§9.3);
+  `pane.layout.get` and `pane.focus_direction` do not exist, and
+  `workspace.layout.*` survives only as a deprecated alias.
+- Launch-config YAML writes `columns`/`rows` and keeps reading
+  `horizontal`/`vertical` ([10 §9.1](10-configuration.md#91-launch-configurations)).
+- `pane.split`'s conditional `SPAWNS_PROCESS` is handled by
+  [03 §2](03-capability-catalog.md#2-declaring-a-capability)'s conditional-effects
+  rule.
 
-**C2 — Zoom scope: doc 05 §2.1 vs doc 05 §13 Q5.** Doc 05 §2.1 states *"Zoom is
-non-destructive and per-workspace, not per-client"* and then §13 open question 5
-proposes the opposite. §5.1 above decides **per view**, which is neither exactly
-— it is per *arrangement*, so two clients sharing the primary view share the
-zoom, and a phone in its own view does not force it on anyone. Doc 05 §2.1 needs
-the sentence changed and §13 Q5 can be closed.
-
-**C3 — "BSP tree" wording. Resolved, deliberately partially.** Doc 05 §1 and §2
-called the layout a BSP tree while defining an n-ary
-`children: Vec<(f32, Layout)>`. BSP means binary, so doc 05 §2's opening
-sentence now says "an n-ary split tree (historically 'BSP')". The **heading
-itself is retained** — four links in this document target
-`05-session-model.md#2-layout-the-bsp-tree`, and link stability is worth more
-than the word. Doc 05 §1's object-model diagram also says
-`Layout: a BSP tree of panes, owned by a Workspace` — with §3's per-view model
-that becomes "one or more `LayoutView`s, owned by a Workspace".
-
-**C4 — Capability naming and grouping.** Three inconsistent names exist for the
-same operations:
-- doc 05 §10.1 `workspace.layout.get/set/preset`;
-- doc 03 §6 `pane.layout.get`;
-- this document `layout.get/set/preset`.
-Similarly, doc 05 §10.3 has `pane.navigate` while
-[doc 16 §11](16-input-and-keymap.md) binds `pane.focus_direction`. One name each
-must win before any of these ship; §9 proposes `layout.*` and `pane.navigate`.
-
-**C5 — `Presence.viewing` is `PaneId`-shaped.** Doc 05 §6 has
-`viewing: SmallVec<[PaneId; 4]>`. With per-view layouts a `PaneId` is meaningless
-to a client in a different view, so a laptop cannot render "the phone is watching
-this". It must become `viewing: SmallVec<[(ViewId, SessionId); 4]>` — the
-`SessionId` is the shared identity and is what the UI actually wants to
-highlight. Same change to `ClientView::panes` in doc 05 §4.
-
-**C6 — Doc 05's `Layout` enum has a `Zoom` variant.** `Zoom { pane, saved:
-Box<Layout> }` makes zoom a tree transformation (tmux's design) with the costs
-described in §1.3 and §5.1. This document makes it `Option<PaneId>` beside the
-tree. The variant should be removed.
-
-**C7 — Split direction vocabulary.** Doc 05 uses `Direction { Horizontal,
-Vertical }` with a comment clarifying which is which; doc 10 §9.1's launch-config
-YAML uses `split: horizontal | vertical`. §1.2 argues for `Axis { Columns,
-Rows }`. The type should change; the YAML must keep accepting the old spellings
-(there is a corpus) with `columns`/`rows` canonical on write.
-
-**C8 — `pane.split` effects.** Doc 05 §10.3 declares no effects for
-`pane.split`, but it spawns a process when `session` is omitted. It must declare
-`SPAWNS_PROCESS`, conditionally, or the mobile confirm rules and the audit log
-are wrong. Doc 03's `effects` model has no notion of a conditional effect —
-either it gains one, or `pane.split` always declares it.
-
-**C9 — Doc 15's TUI panel mechanism.** Doc 15 §7.1 describes the explorer panel
-as a side panel that "does not exist until toggled". §5.2 above proposes it be a
-`FloatKind::Overlay` float, so there is one overlay system rather than two. Doc
-15's owner should confirm; if the panel must reflow the tiling (pushing panes
-aside rather than overlaying them), that is a different feature and needs its own
-type.
+Two items were *not* contradictions but requests to another owner, and remain
+live: doc 12 must ratify `writer.acquire { keep_size }` and the 20 % takeover
+warning threshold (§3.4 consequence 1), and doc 15's owner must confirm that the
+explorer panel is a `FloatKind::Overlay` float (§5.2) rather than a second
+overlay system.
 
 ### 12.2 Open questions
 

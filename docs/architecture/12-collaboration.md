@@ -83,14 +83,26 @@ pub struct Presence {
 }
 
 pub struct ViewFocus {
+    /// The shared identity, and what every surface actually highlights.
     pub session: SessionId,
-    pub pane: Option<PaneId>,
+    /// Which *arrangement* the actor is looking at this session in.
+    pub view: ViewId,
     /// The surface being used, because it changes what the actor can see.
-    pub surface: Surface,            // Terminal | Blocks | InteractionCard | Dashboard
+    pub surface: Surface,            // Terminal | Blocks | Transcript | InteractionCard | Dashboard
     /// Reported viewport; drives the size policy in 07 §4.3.
     pub viewport: Option<TermSize>,
 }
 ```
+
+**`ViewFocus` is keyed on `(ViewId, SessionId)`, not on `PaneId`.** With
+per-view layouts ([17 §3.3](17-panes-and-layout.md#33-decision-per-client-layout-views-one-shared-default))
+a pane belongs to exactly one view, so a `PaneId` from the phone's `Adaptive`
+view names nothing the laptop can render — presence would be structurally
+unable to say "the phone is watching this". The `SessionId` crosses views
+intact; the `ViewId` is carried so a client can tell "watching the same
+arrangement I am" from "watching the same session in their own arrangement",
+which are different social facts. [05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing)'s
+`ClientView::viewing` carries the same pairs.
 
 Rules:
 
@@ -126,21 +138,56 @@ reads the mark, never presence.
 
 ### 3.1 What it governs
 
-The writer token gates exactly one thing: **byte-level input to a session's
-PTY**. Concretely, the capabilities carrying `Effects::WRITES_PTY` —
-`session.send_text`, `session.send_keys`, `session.write_bytes`, and
-`session.resize` when it requests authoritative sizing.
+The writer token gates **every path that puts input into a session, whatever it
+is dressed as**. The rule is not "is this capability named `write`" but "do the
+bytes or the message end up in the one input channel the human is also using".
+
+In a `pty` session that channel is the PTY, so the token gates the capabilities
+carrying `Effects::WRITES_PTY` — `session.send_text`, `session.send_keys`,
+`session.write_bytes`, and `session.resize` when it requests authoritative
+sizing — **and every synthetic delivery**, below.
+
+In a `native` session ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp))
+there is no PTY at all, and `agent.prompt` is the **only** input path. The token
+gates `agent.prompt` there, exactly as it gates `session.send_text` in a `pty`
+session — same rule, different channel. This is the normative statement that
+[05 §5.1](05-session-model.md#51-the-rule) defers to. Nothing about `native`
+mode weakens arbitration: two devices prompting one agent interleave two
+conversations into one, which is the same failure as two people typing into one
+shell, minus the visual evidence.
+
+**`interaction.resolve` is gated by its delivery mechanism, not exempt.** An
+earlier draft exempted it wholesale on the rationale that *"it goes back through
+the agent's own channel"*. [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+deleted that rationale: omt no longer parks the call and answers through the
+hook's response slot; the agent draws its own card and the answer is delivered
+to *that card*. So:
+
+| `Interaction.deliverable` | Channel | Token |
+|---|---|---|
+| `Native` — ACP `session/request_permission`, the opencode plugin, the Codex app-server | the agent's own RPC | **not gated**; the flagship "answer from your phone while someone else is at the keyboard" case is preserved exactly here |
+| `Synthetic { requires_token }` — keystrokes at the agent's own TUI | the PTY | **gated**, as a transaction, below |
+| `None` | — | not answerable remotely at all; the surface says "needs you" |
+
+A `Synthetic` resolve is not a token-holding *write*, it is a **gated
+transaction** per [D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write):
+acquire the token, verify input quiescence (no human bytes for a quiet period),
+re-verify against the freshest source that the agent is still in the same
+interaction, write the answer as one unit, release. Any check failing fails the
+resolve with `conflict` or `precondition_failed`, visibly, on the surface that
+attempted it; a partial write is never permitted. **The local TUI's passthrough
+bytes into a session with an open interaction pass through this same
+serialization point** — it is the only place the two writers can be ordered,
+because the human at the keyboard is not a capability caller and the ledger
+cannot see them. Delivery is confirmed by observation, never assumed: see §4.5.
 
 It deliberately does **not** gate:
 
-- `interaction.resolve` — answering a question card is not PTY input; it goes
-  back through the agent's own channel (P4), and gating it behind a token would
-  break the flagship "answer from your phone while someone else is at the
-  keyboard" case. Its own single-resolution rule is §4.
-- `agent.prompt` where the adapter has a structured submit path (ACP, stream-json
-  stdin). Prompts are queued and serialized by the agent layer, not by the token.
-  Where the *only* available path is synthesized keystrokes, the token **is**
-  required, because that path is PTY input wearing a hat.
+- `agent.prompt` in a `pty` session where the adapter has a structured submit
+  path (ACP, stream-json stdin). Prompts are queued and serialized by the agent
+  layer, not by the token. Where the *only* available path is synthesized
+  keystrokes, the token **is** required, because that path is PTY input wearing
+  a hat. (In a `native` session `agent.prompt` is always gated — see above.)
 - reads of any kind, scrollback, search, layout, config.
 
 ### 3.2 State
@@ -278,12 +325,44 @@ impl InteractionLedger {
 }
 ```
 
-`interaction.resolve` is **idempotent by `(interaction_id, actor, response)`**:
-if the same actor resolves the same interaction with the same response twice
-(a retry after a flaky network), the second call returns the original
-`Resolution` with `ok: true`. A *different* response, or a different actor, gets
-`conflict`. This distinction matters because retry-on-timeout is normal on
-mobile and must not produce a spurious conflict banner.
+`interaction.resolve` is **idempotent by
+`(interaction_id, identity_or_device, intent_id)`** — a client-minted
+`intent_id`, persisted client-side, plus the stable identity behind the actor
+([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 6). A retry under the same key returns the original outcome with
+`ok: true`; a different identity gets `conflict`.
+
+The key was previously `(interaction_id, actor, response)` and **broke on
+exactly the retry it was written for**: `ActorId` is minted per connection, so a
+phone whose socket dropped mid-call reconnects as a *different actor* and its own
+retry reads as a stranger overriding it — a spurious conflict banner in the one
+case (flaky mobile network) where retry is normal. Keying on the device or
+identity survives the reconnect; keying on `intent_id` rather than on `response`
+means a retry is recognised as the same *intent* even where the response is not
+byte-identical (D9's argument editing can rewrite it).
+
+**Idempotency does not imply the write is replayable.** For a `Synthetic`
+delivery the retry-safe answer is *"return what happened to the original
+intent"*, never *"inject again"*: an injection is D15's externally-confirmed
+class and is never retried by anything but a human who can see the screen (§4.5).
+
+**`LedgerError` maps onto three distinguishable protocol errors, not one.**
+[07](07-remote-protocol.md)'s error enum is closed, so the discrimination is
+carried in `detail.state` rather than in new codes
+([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 10):
+
+| `LedgerError` | Code | `detail.state` | Rendering |
+|---|---|---|---|
+| `AlreadyResolved { by, at }` | `conflict` | `"resolved"` | "Answered by iPhone (Vincent) 0.2 s earlier." Someone else decided. |
+| `Cancelled { reason }` | `conflict` | `"cancelled"` | "This question was withdrawn" / "timed out — the agent used its own default." A decision was taken away. |
+| `Abandoned { detail }` | `conflict` | `"abandoned"` | "Too late — the agent continued without an answer." Nobody decided anything. |
+
+Collapsing these onto a bare `conflict` — which the design did — leaves a phone
+unable to tell "someone else answered" from "the agent gave up", and those call
+for opposite next actions: trust the outcome, versus go look at the terminal.
+`detail` additionally carries `by` and `at` for `resolved`, and `reason` for
+`cancelled`.
 
 ### 4.2 The race, concretely
 
@@ -312,9 +391,19 @@ Resolution:
 5. Only the winning response reaches the agent, via the single hook response
    that `omt-hook` is blocking on.
 
-The one thing that makes this safe is that `omt-hook` holds exactly one
-in-flight response slot per interaction and the daemon writes to it once. Even
-a bug in the ledger cannot produce two hook decisions.
+The one thing that made this safe was that `omt-hook` holds exactly one in-flight
+response slot per interaction and the daemon writes to it once — even a bug in
+the ledger could not produce two hook decisions.
+
+> **That property no longer holds for the `Synthetic` path, and this walkthrough
+> is now the `Native`-delivery case only.**
+> [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+> moved delivery from the hook's response slot to the agent's own card, and a PTY
+> has no single-slot property: it accepts arbitrarily many writers and offers no
+> compare-and-swap. The ledger still serializes omt's resolvers against each
+> other; it **cannot** serialize omt against the human at the keyboard, who is
+> not a capability caller. §4.5 is that case, and §3.1's gated transaction is
+> what replaces the lost property.
 
 ### 4.3 Timeouts
 
@@ -340,6 +429,66 @@ advisory — it does not lock anything — and it drives a small "laptop TUI is
 looking at this" hint. Optimizing further (a soft lock, a claim) was rejected:
 the interaction is *already* exactly-once, and a claim mechanism would add a
 failure mode (a claimed-and-then-disconnected card) to solve a cosmetic problem.
+
+### 4.5 The local keyboard racing an injected answer
+
+This is the case [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+created and the most dangerous one in this document. It is **not** §4.2, and
+§4.2's mitigation does not cover it.
+
+```
+t=0    Agent raises AskUserQuestion. The agent's *own CLI* draws its *own* card,
+       locally, in the pane. omt mirrors it to the phone.
+t=1    Phone taps "SQLite". The ledger CAS succeeds; delivery is synthetic —
+       omt must type at the agent's card.
+t=2    The local user, looking at that same card, presses "2" then Enter.
+```
+
+Without serialization the two streams interleave into `12\r\r` and the agent
+reads option "12". **Neither side observes a conflict**: the ledger records
+resolved-by-phone, the agent did something else, and the audit log is false.
+Silent divergence with a false record is worse than any visible failure.
+
+**Why §4.2's rule is insufficient here.** C2's "immediately replace the
+interactive card, then swallow the next Enter for 500 ms" protects only cards
+**omt draws**. Under D11 the card in the pane is the *agent's*, drawn by the
+agent's own renderer into the PTY. omt does not own it, cannot replace it, and
+cannot swallow a keypress it never sees as a keypress — the local TUI's job in
+`pty` mode is to pass bytes through. A swallow window is also the wrong shape: it
+is a fixed-duration guess, and the hazard here is not a stale keypress arriving
+late but two live writers overlapping.
+
+**The resolution** is §3.1's gated transaction, whose preconditions are exactly
+the ones this race violates
+([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)):
+
+1. The injection acquires the **writer token**, and the local TUI's passthrough
+   bytes into a session with an open interaction go through the same
+   serialization point. That is the only place a human and a resolver can be
+   ordered against each other.
+2. **Input quiescence** is verified — no human bytes for a quiet period — so the
+   `t=2` user who is mid-keystroke blocks the injection rather than colliding
+   with it.
+3. The interaction is **re-verified against the freshest source** as still open
+   and still the same, so a local answer that landed first is detected before
+   anything is typed.
+4. The answer is written as **one unit**, then the token is released.
+
+Any precondition failing fails the resolve with `conflict` or
+`precondition_failed` on the surface that attempted it — the phone says "couldn't
+answer: someone is typing at the terminal", which is true, actionable, and much
+better than a silent wrong selection.
+
+**Delivery is confirmed by observation, never assumed.** Writing the bytes moves
+the interaction to `Submitted { by, response, at }`, not to `Resolved`.
+`Resolved` requires omt to *observe the agent record the answer* — a
+`PostToolUse` hook, a transcript entry, a tool result — inside a bounded window;
+otherwise it becomes `Undelivered { reason, response }`, the response text is
+preserved, and every surface says *"your answer may not have reached the agent —
+check the terminal"* (D15 consequence 1). And an injection is **never retried**:
+not on reconnect, not on daemon restart, not by any actor except a human who can
+see the screen. A crash between the CAS and the injection goes to `Undelivered`,
+which is why `Resolving` must carry the response (D15 consequence 2).
 
 ---
 
@@ -377,6 +526,15 @@ Every event carries `caused_by: Option<RequestId>`. This is what lets a client
 match its optimistic update to the authoritative event (§6) without guessing,
 and what lets the audit log tie an event back to a call.
 
+`RequestId` must be **stable across reconnects** — `(DeviceId, monotonic u64)`
+persisted client-side, with a bounded recent-results cache in dispatch that
+replays the stored result on a repeat
+([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 5, owned by [07](07-remote-protocol.md)). A `RequestId` unique only
+per *connection* leaves a client whose socket died mid-call permanently unable to
+learn whether the call applied, which is the same defect §4.1's old idempotency
+key had, in the transport rather than in the ledger.
+
 ---
 
 ## 6. Conflict cases and their resolutions
@@ -406,6 +564,12 @@ must:
 That second rule is unglamorous and it is the difference between "collaboration
 works" and "my phone answered a question and then my terminal ran something".
 
+**Scope: this is the omt-drawn-card case only** — a `native` session, or a
+mirrored card the phone answers through a `Native` channel while the TUI shows
+omt's own rendering. When the card in the pane is the *agent's own*, omt cannot
+replace it and cannot swallow the keypress; that is §4.5, and it needs §3.1's
+gated transaction rather than a swallow window.
+
 ### C3 — A client resizes while another is attached
 
 Governed by [07 §4.3](07-remote-protocol.md#43-the-resize-problem). Only the
@@ -425,8 +589,22 @@ Split by capability kind:
 - **Exactly-once commands** (`interaction.resolve`, `blocks.rerun`,
   `session.close`): serialized by the owning state mutex; the loser gets
   `conflict` with detail naming the winner.
-- **Additive commands** (`agent.queue.enqueue`): both apply; ordering is the
-  mutex admission order and both actors see both entries with their authors.
+- **Append-with-dedup-key commands** (`agent.queue.enqueue`): two *distinct*
+  intents both apply, in mutex admission order, and both actors see both entries
+  with their authors. But a **repeat of the same intent is a no-op returning the
+  original entry**, not a second one. This corrects an earlier "Additive — both
+  apply" classification, which contradicted
+  [08 §8.5](08-web-client.md)'s idempotent-by-id treatment;
+  [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+  resolves it in favour of **idempotent**, because "both apply" makes every
+  reconnect retry double-enqueue the user's text, and the user cannot tell their
+  own retry from a genuine second thought. The input therefore carries a
+  client-minted `intent_id`, deduped against a bounded server-side cache, and a
+  `BindingId` naming the agent the text is *for* — without it a replayed enqueue
+  against a session whose agent has since exited lands in the shell prompt and is
+  executed as a command. It additionally requires `AgentState::Working` and
+  carries a `valid_until`, after which it needs re-confirmation rather than
+  silent replay (D15 consequence 3).
 - **Last-write-wins commands** (`config.set`, `session.rename`): a
   compare-and-set on a version field. Clients send the version they read; a
   mismatch returns `precondition_failed` with the current value, and the web
@@ -450,10 +628,18 @@ input".
 
 ### C7 — An agent emits an interaction while nobody is attached
 
-Normal. The interaction sits `Open` in the ledger, the daemon fires a push
-notification ([07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab)),
-and the first client to attach receives it in its `since_seq` replay or its
-snapshot. This is the whole point of the product.
+Normal. The interaction sits `Open` in the ledger and the first client to attach
+receives it in its `since_seq` replay or its snapshot. **Nobody is notified while
+disconnected** — [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+ships no push backend in v1; open-and-replay is the path. This is the whole point
+of the product, and it is why the durable **attention log** matters: an
+interaction that opened *and went terminal* entirely inside an offline gap is
+live in no snapshot and may fall outside the replay window, so without it the
+user opens the app to an idle session and never learns their agent asked and gave
+up. It is queried as `interaction.list { since_read_mark, include_terminal }` and
+rendered first on reconnect
+([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 9).
 
 ### C8 — Two agents in two sessions want the same worktree
 
@@ -470,10 +656,25 @@ input must acquire the token and will lose to a human's `force` takeover.
 
 ### C10 — Resolution arrives after the agent already moved on
 
-The hook response slot is gone (the agent timed out and proceeded). The ledger
-returns `Abandoned`; the client shows "too late — the agent continued without an
-answer", and the audit log records the attempted response. This is *not*
-silently swallowed: the user must know their tap did nothing.
+The agent timed out and proceeded, or exited. The ledger returns `Abandoned`;
+the client shows "too late — the agent continued without an answer", carried as
+`conflict` with `detail.state = "abandoned"` so it is distinguishable from
+"someone else answered" (§4.1). The audit log records the attempted response.
+This is *not* silently swallowed: the user must know their tap did nothing.
+
+Note the ordering requirement this implies: for a `Synthetic` delivery the
+staleness check must happen **before** any bytes are written, because after the
+agent has moved on a late injection lands in whatever it is doing *now*. That is
+§3.1's re-verification step, and where an agent offers no observable signal that
+a card was resolved, the card must **expire** rather than linger
+([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)).
+
+### C11 — The local human's keyboard races an injected answer
+
+The most dangerous case in the document, and the one D11 created. Fully worked in
+§4.5: the resolution is §3.1's gated transaction — token, quiescence,
+re-verification, atomic write — and the failure mode it prevents is a silent
+wrong selection with a false audit record, not a visible conflict.
 
 ---
 
@@ -491,9 +692,9 @@ below is what separates the two.
 | terminal keystroke echo | **yes**, bounded | see [07 §7](07-remote-protocol.md#7-latency-budget); only when not in alt-screen and bracketed-paste is off |
 | pane focus, tab switch, scroll | **yes** | purely local view state |
 | collapsing/expanding a block | **yes** | local view state |
-| enqueueing a prompt | **yes**, shown greyed with a spinner | additive, conflict-free (C4) |
+| enqueueing a prompt | **yes**, shown greyed with a spinner | append-with-dedup-key: the `intent_id` makes the retry safe, so the optimistic entry is either confirmed or replaced by the server's copy, never duplicated (C4) |
 | writer acquire on a `Free` token | **yes**, input bar enables immediately | high hit rate; failure is recoverable and visible |
-| **`interaction.resolve`** | **NO** | exactly-once, consequential, and the failure mode is "you think you denied something you approved" |
+| **`interaction.resolve`** | **NO** | exactly-once, consequential, and the failure mode is "you think you denied something you approved". Doubly so on the `Synthetic` path, where the UI must not show `Resolved` before omt has *observed* the agent record the answer — the honest intermediate rendering is `Submitted` ("sent — waiting for the agent to confirm"), which is a real state, not an optimistic one (§4.5) |
 | **anything with `Effects::DESTRUCTIVE`** | **NO** | catalog-driven, mechanical; note this is about omt's *own* capabilities, never a judgement about an agent's tools ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)) |
 | `config.set` | **NO** | CAS semantics; showing the new value before it lands invites lost updates |
 | writer takeover (`force`) | **NO** | it has a 5 s grace window; there is nothing to be optimistic about |
@@ -561,17 +762,36 @@ What is recorded:
 - every capability call whose declaration carries any `effects` bit,
 - every auth event (success, failure, credential issued, revoked, invite used),
 - every writer acquire / takeover / forced takeover / release, with the epoch,
-- every interaction open and resolution, **including the response**, the actor,
-  and whether it was human, policy, or timeout,
+- every interaction open, submission and terminal state, with the actor and
+  whether it was human or timeout — **and the response, recorded carefully**:
+  - the **selection** (which option, approve/deny) verbatim: it is small, it is
+    bounded, and it is the decision a "who approved that?" investigation is
+    looking for;
+  - any **edited tool input** ([D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)
+    consequence 3 added argument editing before approval) as a **`blake3` hash
+    plus a redacted diff against the agent's original input** — never verbatim.
+    An `updated_input` is unbounded (a whole file body, a patch) and is exactly
+    the field a user pastes a token or a connection string into. The hash proves
+    *which* input was approved, the diff shows *what the human changed*, and
+    together they answer the forensic question without turning the audit log into
+    a secret store. Redaction is [13 §8](13-security.md)'s, the same rules as
+    `detail`;
+  - a `Submitted` entry and its later `Resolved` / `Undelivered` outcome are
+    **separate records**. The audit log must never assert delivery omt only
+    attempted ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+    consequence 1) — an `Undelivered` interaction whose log said "resolved" is
+    the false record D13 exists to prevent,
 - every configuration change (key, old value hash, new value hash),
 - every plugin install/enable/call.
 
 What is **not** recorded: PTY input bytes and PTY output. Keystroke logging
 every session would make the audit log the most dangerous file on the machine.
 The audit records *that* actor X wrote N bytes to session S at time T, not what
-those bytes were. Interaction responses are recorded because they are decisions,
-they are small, and they are exactly what a "who approved that?" investigation
-needs.
+those bytes were. Interaction *selections* are recorded because they are
+decisions, they are small, and they are exactly what a "who approved that?"
+investigation needs; edited tool arguments are recorded as a hash and a redacted
+diff for the reason given above — the same reasoning applied to a field that is
+neither small nor bounded.
 
 Storage: `omt-store`, its own append-only log, rotated by size, retained 90 days
 by default, with `0600` permissions. Exposed as `audit.query` (Admin role only)

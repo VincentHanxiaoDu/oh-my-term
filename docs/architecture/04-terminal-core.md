@@ -936,6 +936,32 @@ not have.
 The upgrade path is explicit: when a session has no integration, the block list
 UI shows a one-tap "enable shell integration" affordance (§7).
 
+**The segmenter must never open a block it cannot close.** Rule 3's first close
+condition is *unreachable* whenever the foreground process never returns to the
+shell. A long-lived agent CLI is exactly that case: the foreground process group
+is the agent for the entire session, so the quiet-plus-returned test never
+becomes true; and because there is no shell in the loop, no real OSC 133 `A`
+ever arrives either, so the second condition never fires. Both close conditions
+being unreachable, a naive segmenter would produce one unbounded, never-closing
+`Background` block whose contents are a cursor-addressed redraw stream flattened
+to lines. Note also that Claude Code is *not* an alt-screen program — its Ink
+renderer draws inline on the primary screen — so §6.3's alt-screen suspension
+rule does not save us here.
+
+Therefore, per [D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work):
+
+- **Block segmentation is suppressed for a session that has an agent binding and
+  has never observed an OSC 133 sequence.** The segmenter does not open a
+  `Background` block at all in that state; it reports `segmentation:
+  suppressed { reason: agent_session_no_osc133 }` so every surface can say why
+  the block list is empty rather than showing an empty list.
+- Suppression is lifted the moment a real OSC 133 mark arrives (the agent exited
+  and an integrated shell is drawing a prompt again), and §6.4 rule 4's
+  retroactive repair applies from that point forward.
+- The mobile surface for such a session is the **transcript view**, not the
+  block view — see [06 §7.3](06-agent-layer.md) for what each coverage tier can
+  supply and [08 §4](08-web-client.md) for the view itself.
+
 ### 6.5 Interface facts borrowed from another terminal
 
 For the record, and to make the clean-room boundary explicit
@@ -1107,6 +1133,12 @@ Word boundaries use a configurable character class
 (`word_chars`, default `[A-Za-z0-9_./-]` plus letters/digits by Unicode
 category) so that `--flag=value` and `src/main.rs` select sensibly.
 
+`SelectionMode::Semantic` is **not** `word_chars` widened. Per
+[18 §5.4](18-semantic-open.md#54-selection-versus-click) it snaps to the span of
+the `Match` under the anchor — so a semantic selection over `src/lib.rs:42`
+takes the whole target including the line suffix, and falls back to `Word` when
+no match covers the position.
+
 ### 8.3 Hyperlinks and detection
 
 Two sources, in priority order:
@@ -1124,10 +1156,20 @@ pub enum Target {
     /// A path, optionally with line and column. `file:line:col`, `file(line,col)`,
     /// `file", line N` (Python/Ruby tracebacks), `at file:line:col` (JS stacks).
     Path { raw: String, line: Option<u32>, col: Option<u32> },
-    /// User-defined regex rules with attached actions (§8.4).
-    Custom { rule: RuleId, captures: SmallVec<[Range<u16>; 4]> },
+    /// A git object reference — SHA, tag or branch name.
+    GitRef { raw: String },
+    /// An issue or PR reference (`#123`, `ORG/REPO#123`, `PROJ-456`).
+    Issue { raw: String, repo: Option<String> },
+    /// User-defined regex rules with attached actions (§8.4). Captures are
+    /// **named slots** (`{path}`, `{line}`, …), not positional ranges, so a
+    /// rule's action template can refer to them stably.
+    Custom { rule: RuleId, slots: SmallVec<[(Slot, Range<u16>); 4]> },
 }
 ```
+
+`GitRef`, `Issue` and the named-slot form of `Custom` are required by
+[18 §2.3](18-semantic-open.md#23-match-kinds); `omt-term` produces them, and
+`omt-open` resolves and acts on them.
 
 Detection is **budgeted and lazy**: it runs on lines entering the viewport, with
 a per-frame cap, and results are cached on the line keyed by `Generation`.

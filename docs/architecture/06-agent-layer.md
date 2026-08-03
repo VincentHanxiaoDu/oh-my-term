@@ -241,10 +241,31 @@ pub struct Interaction {
 /// Semantics and transitions: 12 §4.1.
 pub enum InteractionState {
     Open,
-    Resolving { by: Actor, at: Timestamp },
+    /// CAS won; the answer is committed as a decision but not yet written.
+    /// **Carries the response** — see the note below; without it a crash
+    /// between CAS and delivery cannot report what was lost.
+    Resolving { by: Actor, at: Timestamp, response: InteractionResponse },
+    /// The bytes have been written to the delivery channel. Not yet proof
+    /// the agent received them.
+    Submitted { by: Actor, at: Timestamp, response: InteractionResponse },
+    /// omt **observed the agent record the answer**. The only success state.
     Resolved  { by: Actor, at: Timestamp, response: InteractionResponse },
+    /// Written, but no confirming observation arrived inside the window.
+    /// The response text is preserved so the user can see what was lost.
+    Undelivered { by: Actor, at: Timestamp, response: InteractionResponse,
+                  reason: UndeliveredReason },
     Cancelled { by: Actor, reason: CancelReason, at: Timestamp },
     Abandoned { at: Timestamp, detail: String },
+}
+
+pub enum UndeliveredReason {
+    /// No confirming observation inside the bounded window.
+    NotConfirmed,
+    /// The daemon restarted with a decision recorded but unwritten, or
+    /// written and unconfirmed. Never retried — see below.
+    DaemonRestart,
+    /// The gated PTY transaction (D13) failed its preconditions.
+    PreconditionFailed,
 }
 
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -328,11 +349,18 @@ agent emits ──► source normalizes ──► ledger opens Interaction ─�
                  TUI card                  web card (phone)          API client
                      └──────────── interaction.resolve ─────────────┘
                                             │
-                            ledger CAS: Open → Resolving → Resolved
+                          ledger CAS: Open → Resolving{response}
                                             │
                                     responder injects
                                             │
-                                  agent proceeds; broadcast
+                                      → Submitted
+                                            │
+                     ┌──────────────────────┴──────────────────────┐
+        omt observes the agent record it            window elapses with no
+        (PostToolUse / transcript entry /              confirming observation
+         tool result) within the window                        │
+                     ▼                                          ▼
+                 → Resolved                              → Undelivered
 ```
 
 **Exactly-once resolution** is enforced by a compare-and-swap on
@@ -341,6 +369,31 @@ agent emits ──► source normalizes ──► ledger opens Interaction ─�
 re-renders the card as answered-by-someone-else. This is the concrete answer to
 "the phone and the TUI both answer at once" (see
 [12 — Collaboration](12-collaboration.md)).
+
+**Delivery is confirmed by observation, never asserted.** Per
+[D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+consequence 1, an answer delivered by synthetic input belongs to the
+*externally-confirmed intent* class: the sink is a UI omt does not own, so a
+successful write proves nothing. `Submitted` records that the bytes went out;
+only an observation that the agent recorded the answer — a `PostToolUse` hook, a
+transcript entry, a tool result — promotes it to `Resolved`. If the bounded
+confirmation window (default 10 s, per-adapter) elapses first, the interaction
+goes to `Undelivered { reason: NotConfirmed, response }` and every surface says
+*"your answer may not have reached the agent — check the terminal"*, showing the
+preserved response text. A `Native` responder's own transport-level reply is
+itself the confirming observation, so native paths move `Submitted → Resolved`
+immediately.
+
+**An injection is at-most-once and is never retried.** Not on reconnect, not on
+daemon restart, not by a reconnecting client repeating its `intent_id`, not by
+any automated actor at all. The only actor permitted to re-answer is a **human
+who can see the screen**. The reason is D15's: a duplicate keystroke into a UI is
+not a duplicate row that dedup can absorb, it is a keystroke landing *somewhere
+else entirely* — whatever the agent is doing now. `Undelivered` is therefore a
+terminal state that the system never tries to repair on its own; it is a report
+to a human, and the offered action is "open the terminal view", never "retry".
+(`interaction.resolve`'s idempotency key still replays the *stored result* of an
+already-applied call — that is a read of the ledger, not a second write.)
 
 ### 5.2 Responders — how the answer gets back
 
@@ -360,13 +413,34 @@ pub trait Responder: Send + Sync {
 }
 ```
 
-| Mechanism | Agents | Fidelity |
+[D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+removed deferral, and with it the hook response slot as a delivery channel. The
+agent's own CLI draws its own card locally; omt mirrors it and delivers a remote
+answer **through that card**. This changes the table materially — Claude Code no
+longer has a native responder for `Choice`:
+
+| Mechanism | Agents / kinds | Fidelity |
 |---|---|---|
-| Hook decision on a deferred `PreToolUse` | Claude Code (and Codex/Cursor/Gemini for permissions) | Native |
-| ACP `session/request_permission` response | opencode, Gemini, Goose, Qwen | Native |
+| ACP `session/request_permission` response | opencode, Gemini, Goose, Qwen; all `native` sessions ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)) | Native |
+| ACP `elicitation/create` response | ACP agents offering it — `Choice` in `native` mode | Native |
 | opencode plugin `permission.ask` reply | opencode | Native |
 | app-server approval response | Codex | Native |
-| **Synthesized keystrokes into the PTY** | anything else | Synthetic |
+| **Synthesized keystrokes into the agent's own card** | Claude Code `Choice` and `Permission` in `pty` mode; anything else | Synthetic |
+
+**Claude Code's `Choice` now falls to the synthetic responder** in `pty` mode,
+gated by [D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+(is the answer position-independent?) and by
+[D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)
+(token, quiescence, re-verification, atomic write). Whether that responder is
+`Independent` — and therefore on by default — depends on whether the
+`AskUserQuestion` card accepts typing a number or letter, or requires counting
+arrow keys. **That spike is in flight**; its record is
+[`../research/spike-card-answering.md`](../research/spike-card-answering.md)
+(pending — it may not exist yet). If the card is arrow-key-only the responder is
+`Inferred`, D3 disables it by default, and the remote surface shows the card as
+observed-but-not-answerable with the terminal view one tap away. The same
+Claude Code session in `native` mode has a native responder and no such gate,
+which is the honest reason `native` exists.
 
 The synthetic responder exists under a precise rule, stated in
 [D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger):
@@ -406,9 +480,19 @@ false confidence. another tool's `agent.prompt` (type text, send Enter 300 ms la
 survive paste debouncing) is the prior art here, and its fragility comes from
 exactly the inference step this rule forbids.
 
-### 5.3 The deferral mechanism (and its risk)
+### 5.3 The deferral mechanism — demoted to an optional optimization
 
-The highest-value path is Claude Code's `PreToolUse` hook returning
+> **Superseded by [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it).**
+> omt does **not** park the tool call. Parking means the CLI never draws its own
+> card, which destroys the local user's native experience — the thing omt exists
+> to preserve. The `PreToolUse` hook is still the *observation* channel: it fires
+> before the card is drawn and carries `tool_input` verbatim, which is everything
+> needed to mirror the interaction remotely. What it is no longer is the
+> *delivery* channel. The paragraphs below are retained because the mechanism
+> remains a legitimate future optimization for a user who explicitly opts into
+> it, and because point 3's fail-open rule is unconditional.
+
+The mechanism itself is Claude Code's `PreToolUse` hook returning
 
 ```json
 {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "defer"}}
@@ -418,22 +502,17 @@ for `tool_name == "AskUserQuestion"`. The hook payload contains `tool_input`
 verbatim — the exact `questions` array — and deferring parks the call so a
 remote client can answer it.
 
-**This is an unverified assumption and it gates the flagship feature.** Two
-things are unknown: whether `defer` parks the call long enough for a human
-round-trip, and what its timeout is.
-[D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim) promotes this
-spike to **the single highest-priority risk in the project** — not one risk among
-many — precisely because deferral is the only *differentiated* part of this
-feature: without it the card remains, but it is a worse copy of something a free
-product already ships. Therefore:
+Whether `defer` parks the call long enough for a human round-trip is still
+unverified — but under D11 nothing depends on the answer. The
+`spike-defer-semantics` change is **demoted**; the highest-priority experiment is
+now the card-answering spike named in §5.2. Therefore:
 
-1. A spike change (`spike-defer-semantics`) runs first and measures it. Nothing
-   else depends on the answer until it lands.
-2. The design has a fallback that does not require deferral at all, and it is
-   built regardless: `omt-hook` reports the interaction *without* deferring, the
-   card renders remotely as **answerable**, and the answer is delivered by the
-   synthetic responder driving the agent's own card. Worse fidelity, same
-   feature, no unverified dependency.
+1. `omt-hook` reports the interaction *without* deferring. This is the shipped
+   path, not a fallback: the card renders remotely, and the answer is delivered
+   by the synthetic responder driving the agent's own card, under D3 and D13.
+2. Deferral, if it ever ships, is per-agent opt-in for a user who prefers a
+   parked call to a live local card, and it is labelled as taking the local
+   native card away.
 3. `omt-hook` blocks only up to a configured budget (default 250 ms beyond the
    agent's own tolerance) and always fails open. An agent must never hang
    because omt is slow or dead. This is non-negotiable: the hook's default
@@ -621,18 +700,34 @@ implementation covers opencode, Gemini CLI, Goose and Qwen Code at once, which
 is the best coverage-per-unit-work available. An adapter trait shaped only by
 Claude Code is the failure this ordering exists to prevent.
 
-| Agent | Binding | State | Interactions | Queue | Commands |
-|---|---|---|---|---|---|
-| Claude Code | env marker | hooks (30 events) | **Choice + Permission, native** | native (`queue-operation`) | `system/init` + disk |
-| Codex | env marker | hooks + app-server | Permission, native | — | app-server |
-| opencode | env/argv | plugin + REST/SSE + ACP | Permission, native | uncertain | ACP `available_commands_update` |
-| Gemini CLI | argv | hooks + ACP | Permission, native | — | ACP |
-| Qwen Code | argv | inherits Gemini | Permission, native | — | ACP |
-| Cursor | env marker | hooks | Permission, native | — | disk |
-| Goose | argv | ACP | Permission, native | — | ACP |
-| Amp | argv | stream-json | Permission, degraded | — | — |
-| Aider | argv | transcript + heuristics | Text, synthetic | — | static list |
-| Crush | argv | heuristics | none | — | — |
+| Agent | Binding | State | Interactions | Queue | Commands | Mobile surface |
+|---|---|---|---|---|---|---|
+| Claude Code | env marker | hooks (30 events) | **Choice + Permission**, synthetic delivery (§5.2) | native (`queue-operation`) | `system/init` + disk | **transcript** + cards |
+| Codex | env marker | hooks + app-server | Permission, native | — | app-server | **transcript** + cards |
+| opencode | env/argv | plugin + REST/SSE + ACP | Permission, native | uncertain | ACP `available_commands_update` | **transcript** + cards |
+| Gemini CLI | argv | hooks + ACP | Permission, native | — | ACP | **transcript** + cards |
+| Qwen Code | argv | inherits Gemini | Permission, native | — | ACP | **transcript** + cards |
+| Cursor | env marker | hooks | Permission, native | — | disk | **transcript** + cards |
+| Goose | argv | ACP | Permission, native | — | ACP | **transcript** + cards |
+| Amp | argv | stream-json | Permission, degraded | — | — | **grid only** — status, no transcript |
+| Aider | argv | transcript + heuristics | Text, synthetic | — | static list | **grid only** — status, no transcript |
+| Crush | argv | heuristics | none | — | — | **grid only** — status, no transcript |
+
+**The "mobile surface" column, and the floor stated honestly.** Required by
+[D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work).
+No agent session gets the **block view** — [04 §6.4](04-terminal-core.md#64-the-fallback-heuristic--no-shell-integration)
+suppresses segmentation for a session with an agent binding and no OSC 133,
+because neither close condition can ever fire while the agent holds the
+foreground. What replaces it is the **transcript view** ([08 §4](08-web-client.md#4-view-modes)),
+built from the merged event stream, and it is available only where the binding
+reaches **tier ≥ Transcript source** (§3–§4).
+
+Below that line the answer is *nothing*: a heuristic-tier agent
+([D5](decisions.md#d5--initial-agent-coverage) track 4 — Aider, Amp, Crush in TUI
+mode) gets **neither blocks nor a transcript**. On a phone that session is
+`busy | idle | needs you` plus a letterboxed 200-column grid, and the UI says so
+rather than leaving the user to discover it. Aider's `Text` interactions still
+render as cards; what is missing is the scrollable history.
 
 The table above describes `pty` mode. Of these agents, **opencode, Gemini CLI and
 Cursor ship an ACP mode**, as do the first-party **Claude** and **Codex** ACP
@@ -648,8 +743,9 @@ differentiator: remote question cards are commoditized
 ([D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)), and a
 shipping competitor already has them with i18n and argument editing. The
 differentiated claim is narrower — **answering such a card from a phone while the
-user's real interactive TUI is on screen**, which is a consequence of the
-hook-defer path (§5.3) and which nobody else does. Every other agent degrades to
+user's real interactive TUI is on screen, with both sides in sync**, which is a
+consequence of [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)'s
+mirror-don't-intercept shape and which nobody else does. Every other agent degrades to
 `Permission` and `Text`, which are universal via ACP.
 
 ---
@@ -662,6 +758,35 @@ hook-defer path (§5.3) and which nobody else does. Every other agent degrades t
   that is mid-turn — which is exactly what one wants to do from a phone. No
   other CLI exposes this cleanly; the model degrades to a local omt-side queue
   that is flushed when the agent goes idle, clearly labelled as omt-managed.
+
+  Four requirements from
+  [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism):
+
+  1. **`agent.queue.enqueue` carries a `BindingId` and requires
+     `AgentState::Working`.** The session id alone is not a sufficient target:
+     a replayed or delayed enqueue against a session whose agent has since
+     exited types the text **into the shell prompt, where it is executed as a
+     command**. The call fails `precondition_failed` if the named binding is not
+     the session's current binding, or if the binding is not `Working`. D3 does
+     not protect here — it governs answers, and "submitting typed text to a
+     prompt box" is on its allowed list; the failure is target identity, not
+     state inference.
+  2. **The omt-managed fallback queue needs a durable intent log.** It is
+     memory-only in the current design, so every non-Claude agent's queued text
+     dies unrecorded on `kill -9`. It is persisted through `omt-store` with its
+     own row in [21 §6.2](21-data-lifecycle.md#62-what-kill--9-loses), and each
+     entry carries `created_at` and `valid_until`; an entry past `valid_until`
+     is presented for re-confirmation rather than silently flushed.
+  3. **`queue-operation` is an enqueue receipt, and must be read as delivery
+     confirmation, not as mirror data.** After an injected enqueue, omt waits a
+     bounded window for a matching `queue-operation enqueue` line in the
+     transcript. On a match the entry renders `Queued`; on timeout it renders
+     `Failed { not_confirmed }` with the text preserved, and — as with
+     interactions — it is **never retried automatically**.
+  4. **`queue: unknown` is a distinct rendering.** When the transcript reader is
+     stale, disabled or has never seen a `queue-operation` line for a binding
+     that should have one, surfaces show `unknown`, never an empty queue. An
+     empty queue is a claim; a broken reader must not be able to make it.
 - **Slash commands.** Surfaced through `agent.commands.list` from the agent's
   own resolution (never from omt guessing), giving the web client a real
   completion popup with descriptions and argument hints.
@@ -688,20 +813,37 @@ hook-defer path (§5.3) and which nobody else does. Every other agent degrades t
 
 | Failure | Behaviour |
 |---|---|
-| omt daemon dies while an interaction is deferred | `omt-hook` times out and fails open; the agent shows its own card; on restart omt reconciles and marks the interaction `Cancelled { daemon_restart }` |
+| omt daemon dies while an interaction is open | `omt-hook` times out and fails open; the agent shows its own card. On restart omt reconciles: an interaction with **no decision recorded** (`Open`) becomes `Abandoned { daemon_restart }`; one with a decision recorded (`Resolving` or `Submitted`) becomes `Undelivered { reason: DaemonRestart, response }`, preserving the text. **Never `Cancelled`, and never retried.** See below. |
 | Hook installed but socket unreachable | hook exits 0 in <5 ms; state falls back to transcript/heuristics; `agent.explain` reports the degradation |
 | Two sources disagree | higher tier wins; the disagreement is recorded and visible in `agent.explain` |
 | Agent version changes its transcript schema | transcript reader is versioned and validates; on parse failure it disables itself for that binding and reports, rather than emitting garbage |
 | User runs an agent inside tmux inside omt | binding is `Unknown`; documented as unsupported for observation; the terminal still works |
 | Agent spawns subagents | separate threads under one binding; state is the aggregate (any subagent blocked ⇒ session needs you) |
+| Injected answer written, no confirming observation | `Undelivered { reason: NotConfirmed, response }` after the bounded window; surfaced as *"your answer may not have reached the agent — check the terminal"* with the terminal view offered. Never auto-retried (§5.1) |
 | **`native` session: the ACP transport closes** | not `Orphaned`-by-PTY-death — there is no PTY (§2.1). The binding ends, open interactions are `Abandoned`, and the session is shown as disconnected with the **agent's own resume** as the recovery path (ACP `session/load` against the agent's session id), never a synthetic replay by omt |
+
+**Why a daemon restart is not `Cancelled`.** The earlier design marked these
+`Cancelled { daemon_restart }`, which was wrong three times over.
+[12 §4.1](12-collaboration.md#41-the-state-machine) defines `Cancelled` as a
+decision *by an actor* — and here no actor decided anything; the daemon fell
+over. It also discards a decision the user was told had been accepted, reporting
+"cancelled" for an answer that may well have reached the agent. And it could not
+have done better anyway, because `Resolving` did not carry the response, so there
+was nothing left to report. `Resolving` and `Submitted` now carry it (§5), so
+the honest states are available: `Abandoned` where nobody decided, `Undelivered`
+where somebody did.
 
 ---
 
 ## 10. Open questions
 
-1. `permissionDecision: "defer"` — does it park long enough, and with what
-   timeout? Gates the highest-fidelity path. Spike first. *(fallback designed)*
+1. **Does Claude Code's `AskUserQuestion` card accept a position-independent
+   selection** (typing a number or letter), or does it require counting arrow
+   keys? This is the highest-priority experiment
+   ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)):
+   its answer decides whether the flagship remote-answer path is on by default.
+   Tracked in `../research/spike-card-answering.md` (pending). The `defer` spike
+   it replaced is demoted to an optional optimization (§5.3).
 2. Do Codex/Cursor/Gemini hook payloads match the Claude-Code shape closely
    enough for one normalizer? Verify with a logging hook.
 3. Does hook-emitted OSC actually reach omt's PTY for non-Claude agents, or is

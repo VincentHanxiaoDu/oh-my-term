@@ -50,7 +50,8 @@ library. Vanilla CSS with custom properties. Vitest + Playwright for tests.**
   specific enough (§8) that adopting a kit means overriding it everywhere.
 - *Canvas-rendered custom terminal* — xterm.js already solved it.
 - *Service-worker-based offline session cache* — the SW exists for
-  installability and push (§8.6), not for pretending we have state we do not.
+  installability and app-shell precache (§8.6), not for pretending we have state
+  we do not. It carries no push handler ([D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)).
 
 ### 1.1 Package layout
 
@@ -357,14 +358,39 @@ Rules:
 
 ---
 
-## 4. Two view modes
+## 4. View modes
 
-Every session can be viewed two ways, toggled by a persistent segmented control
-in the header. The choice is per-session and remembered per device.
-**Block view is the default on viewports narrower than 600 CSS px; terminal view
-is the default above it.**
+Every session can be viewed several ways, toggled by a persistent segmented
+control in the header. The choice is per-session and remembered per device.
+Each is a complete surface; none is a preview of another.
 
-Both are complete surfaces. Neither is a preview of the other.
+A `pty` session has **three** surfaces, not two, per
+[D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work):
+
+| Surface | For | Source | §|
+|---|---|---|---|
+| **Block view** | ordinary shell work | OSC 133 segmentation ([04 §6](04-terminal-core.md#6-the-block-model)) | §4.2 |
+| **Transcript view** | agent sessions | the merged agent event stream ([06](06-agent-layer.md)), available whenever the binding has a tier ≥ Transcript source | §4.4 |
+| **Terminal view** | always available | the grid | §4.3 |
+
+**The default selection rule on mobile is by session kind, not by viewport
+alone.** On viewports narrower than 600 CSS px:
+
+- a session with **no agent binding** → **block view**;
+- a session with an **agent binding at tier ≥ Transcript source** → **transcript
+  view**;
+- a session with an agent binding **below** that tier → **terminal view**, with
+  the segmented control showing block and transcript as unavailable and saying
+  why (see §4.4);
+- **terminal view is always exactly one tap away** from any of the above.
+
+Above 600 CSS px terminal view remains the default, unchanged.
+
+The old rule — "block view on mobile" — was wrong for the primary use case. An
+agent session produces no OSC 133 at all, so [04 §6.4](04-terminal-core.md#64-the-fallback-heuristic--no-shell-integration)
+now *suppresses* segmentation for it rather than emitting one unbounded block of
+flattened redraw output. Block view for an agent session is therefore not a
+worse option, it is **not an option**, and the control renders it disabled.
 
 **Except in `native` mode.** A `native` session
 ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp),
@@ -377,7 +403,7 @@ experience are strictly better than anything derived from observing a TUI — an
 the honest cost is stated next to it, on the same screen: the user is not running
 their own CLI.
 
-### 4.1 Why both
+### 4.1 Why several
 
 A phone is roughly 40 columns at a readable font size. Almost every useful
 terminal output — a test run, a `git status`, an agent's tool output — is
@@ -392,9 +418,19 @@ via OSC 133. A list of collapsible cards is a *native mobile shape*. You scroll
 it with a thumb, you expand what you care about, and you never pan horizontally
 because each block body is its own scroll container.
 
-Terminal view exists because block view cannot represent an alt-screen TUI
-(vim, `htop`, the agent's own interactive card UI), and because sometimes the
+Terminal view exists because neither structured view can represent an alt-screen
+TUI (vim, `htop`, the agent's own interactive card UI), and because sometimes the
 answer really is "I need to see the actual screen".
+
+Transcript view exists because the block model's escape does **not** generalise
+to agent sessions, and cannot be made to. There is no shell in the loop, so no
+OSC 133 arrives and there are no command boundaries to segment on — and Claude
+Code compounds it by drawing inline via Ink rather than on the alt screen, so
+even the alt-screen suspension rule does not fire. What is available instead is
+better than blocks anyway: the tier 3/4/5 sources carry full assistant messages,
+tool calls and tool results as typed events. That is a *more* structured input
+than a byte grid, and it was already being rendered — just only for `native`
+sessions.
 
 ### 4.2 Block view
 
@@ -571,6 +607,51 @@ and the client surfaces it rather than silently reflowing.
 `session.resize` carries `{ cols, rows, pixel_width, pixel_height }`; the pixel
 dimensions matter for inline images
 ([09 §7.2](09-ssh-and-media.md#72-inline-display-in-the-tui)).
+
+### 4.4 Transcript view
+
+The third surface for a `pty` session, required by
+[D14](decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work).
+It is a scrollable list of the agent's turn history — user prompts, assistant
+messages, tool calls with their inputs and results, file changes, errors —
+rendered from the **merged agent event stream** ([06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting)),
+never from the grid. Interaction cards (§5) appear inline in it, in place.
+
+**Reuse the `native` renderer; do not design a second one.** The transcript
+component built for `native` sessions ([06 §2.1](06-agent-layer.md#21-session-modes))
+already consumes exactly this event shape, because the tiered `pty` sources
+normalize into the same `AgentEvent` stream that ACP produces. The component
+therefore takes a stream of `AgentEvent` and is agnostic to which mode produced
+it; `pty` and `native` differ in *coverage* and in a provenance chip, not in
+rendering. A second implementation would drift, and a phone would show two
+different pictures of the same conversation.
+
+**Availability is a function of the binding's tier**, and is reported, not
+guessed:
+
+- **tier ≥ Transcript source** → transcript view available, and it is the mobile
+  default for that session.
+- **below that tier** (heuristic-only agents — Aider, Amp, Crush in TUI mode;
+  [06 §7.3](06-agent-layer.md#73-coverage-matrix-initial)'s "mobile surface"
+  column) → the control shows transcript **disabled** with a plain reason:
+  *"omt can see that this agent is busy or waiting, but not what it said — no
+  structured source."* The session falls back to terminal view plus the
+  busy/idle/needs-you state chip. This is the honest floor and it is shown, not
+  discovered.
+
+**Provenance is visible.** Every entry carries the tier that produced it, and
+`agent.explain` is reachable from the view, so a user who sees a gap can find out
+why it is there rather than assuming the agent said nothing. Entries derived from
+a lower-confidence source are marked as such, exactly as heuristic blocks are in
+block view (§4.2).
+
+**Completeness is bounded and says so.** A transcript reader that starts
+mid-session, or one disabled by a schema-version mismatch
+([06 §9](06-agent-layer.md#9-failure-modes-and-their-handling)), yields a
+transcript with a known-missing head or tail. The view renders an explicit gap
+marker with the terminal view offered, and never presents a partial transcript as
+a whole one — the same rule [20](20-recall-and-usage.md)'s `Coverage` applies to
+recall.
 
 ---
 
@@ -1101,12 +1182,52 @@ drive them and break discoverability for real users.
 - A single connection-state banner, per instance, at the top: `connecting…`,
   `reconnecting in 4s (attempt 3)`, `offline`. Exponential backoff with jitter,
   capped at 30 s, reset on any successful frame.
-- **Optimistic actions queue.** A capability call made while disconnected is
-  queued if it is idempotent-by-id (`interaction.resolve`,
-  `agent.queue.enqueue`) and rejected immediately otherwise
-  (`session.write_bytes` — typing into a dead socket must fail loudly). The
-  queue is shown as a pill: "2 actions pending". On reconnect they are replayed;
-  a `conflict` from `interaction.resolve` renders as "already answered by X".
+- **The durable outbox.** A capability call made while disconnected is queued if
+  its intent class permits a retry
+  ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism):
+  `interaction.resolve`, `agent.queue.enqueue`, `config.set`, drafts) and
+  rejected immediately otherwise (`session.write_bytes` — the raw-byte-stream
+  class is never replayed; typing into a dead socket must fail loudly).
+
+  This is the owner of requirement **R19**, which was previously unassigned. The
+  outbox is **backed by IndexedDB, not by memory** — a phone's tab is evicted by
+  the OS without warning, and an in-memory queue silently loses the user's
+  answer while showing them that it was accepted. Each entry stores:
+
+  ```ts
+  interface OutboxEntry {
+    intent_id: string;        // stable; survives reconnect and reload
+    request_id: string;       // `${deviceId}:${n}`, per 07 §3.5
+    capability: string;
+    input: unknown;
+    created_at: number;
+    valid_until: number;      // default created_at + 15 min
+    binding?: BindingId;      // required for agent-targeted calls — see below
+  }
+  ```
+
+  - **`binding` is mandatory for anything targeting a running agent.**
+    `agent.queue.enqueue` without it can land in a shell prompt and be executed
+    as a command if the agent exited during the offline gap
+    ([06 §8](06-agent-layer.md#8-ancillary-semantics)). The server enforces it;
+    the client must not construct such an entry at all.
+  - **Age is visible and discarding is manual.** The pending pill shows count
+    *and* age ("2 actions pending · oldest 6 min"), expands to a list, and every
+    entry has a discard control. A user must never be unable to see or cancel
+    something the app will do on their behalf.
+  - **Expiry requires re-confirmation, never silent replay.** On reconnect, an
+    entry past `valid_until` is **not** sent. It is presented as *"queued 40
+    minutes ago — send now?"* with its full text, and expires from the outbox on
+    dismissal. Replaying a stale mutation into a session that has moved on is the
+    failure mode this rule exists to prevent.
+  - On reconnect, live entries are replayed in order; a `conflict` from
+    `interaction.resolve` renders as "already answered by X", and the stable
+    `request_id` means a repeat of an already-applied call returns the original
+    result rather than executing twice (07 §3.5).
+  - **The outbox never retries an injection's delivery.** `interaction.resolve`
+    is retry-safe as a *capability call* (it is CAS'd), but if the ledger reports
+    `Undelivered` the client shows that state and offers the terminal view — it
+    does not re-queue ([06 §5.1](06-agent-layer.md#51-lifecycle)).
 - On reconnect the client resumes with `since_seq` per session; on `Resync` it
   fetches a snapshot and rebuilds. The user sees a brief
   skeleton, never a wrong state.
@@ -1116,42 +1237,34 @@ drive them and break discoverability for real users.
   long agent run does not require tapping the
   screen.
 
-### 8.6 PWA and Web Push
+### 8.6 PWA — installable, with no push
 
 - **Installable**: web app manifest with maskable icons, `display:
   "standalone"`, `theme_color` synced to the active theme.
 - The **service worker caches the app shell only** (precache the Vite build
   manifest, network-first for `index.html`). It never caches API responses or
-  event data — stale session state is worse than no session state.
-- **Web Push** is the reason the phone is useful: an agent blocks at 11pm and
-  the tab is closed.
-  - Subscription: `pushManager.subscribe({ userVisibleOnly: true,
-    applicationServerKey })` where the VAPID public key comes from
-    `instance.info`. The subscription is registered per instance via the
-    `notification.push.subscribe` capability
-    ([07 §8.1](07-remote-protocol.md#81-web-push-primary)).
-  - **The instance is the push sender.** It signs VAPID JWTs itself and POSTs to
-    the endpoint in the subscription (`fcm.googleapis.com`,
-    `*.push.apple.com`, …). This is the one outbound network call omt makes, it
-    happens only after the user subscribes, and it is disabled by default —
-    consistent with [P8](01-principles.md#p8--security-by-default-no-ambient-trust).
-    The payload is encrypted (RFC 8291) so the push service sees only ciphertext.
-  - Payload contents: interaction id, session, workspace name, agent, kind, and
-    the first question's text. Nothing else — a push payload is the least
-    trusted place omt's data goes.
-  - Notification actions: for a single-question ≤3-option choice, the option
-    labels become notification action buttons, so an answer is one tap from the
-    lock screen. The service worker's `notificationclick` handler calls
-    `interaction.resolve` directly. Note that the push *payload* is a pointer
-    only — id, session, workspace, agent, kind, and the first question's text —
-    and the option labels come from that same payload; anything richer is
-    fetched over the authenticated WebSocket ([07 §8.1](07-remote-protocol.md#81-web-push-primary)).
-  - Deduplication: `tag: interaction.id`, and the SW closes a notification when
-    it sees an `InteractionResolved` for the same id (delivered on the next
-    push, or on app focus).
-  - iOS requires the PWA to be added to the home screen before push works. The
-    UI detects `standalone === false` on iOS and shows the install instructions
-    inline when the user enables notifications, rather than silently failing.
+  event data — stale session state is worse than no session state. The one
+  exception is the durable outbox (§8.5), which is user intent rather than
+  server state and lives in IndexedDB.
+- **No Web Push.** [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
+  ships no notification backend, so there is no `pushManager.subscribe`, no
+  VAPID key in `instance.info`, no `notification.push.subscribe` capability, no
+  `push` or `notificationclick` handler in the service worker, and no
+  lock-screen answer path. The reason is in [07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1):
+  reaching a closed browser tab requires the browser vendor's relay, which means
+  omt making an outbound connection and leaking *"this machine needs its owner,
+  now"*.
+- **What the user is told.** Onboarding says it plainly: *omt does not notify
+  you when the app is closed. Open it and it will show you what needs you
+  first.* Not a footnote — a stated limitation, because the alternative is a
+  user who believes they will be alerted and is not.
+- **What replaces it is the open path.** Cold start → reconnect → `Resync` →
+  refetch the attention log and attention state (07 §5.2) → rank → present. That
+  sequence is designed in [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen)
+  and it is the client's most important flow, not a fallback.
+- The service worker is still worth having for the app-shell precache alone: it
+  is what makes the cold start fast enough for that flow to feel like a
+  notification tap used to.
 
 ---
 
@@ -1295,17 +1408,21 @@ the server's grid for a set of fixtures.
 
 ## 11. OPEN QUESTIONS
 
-1. **Notification action buttons on iOS.** Web Push on iOS Safari supports
-   notifications from installed PWAs, but support for *action buttons* in the
-   notification is not something we have verified on-device. If unsupported, the
-   lock-screen one-tap answer degrades to "tap to open the card", which is
-   acceptable but materially worse. Needs a device test before we design around it.
-2. **`interaction.resolve` latency budget.** The whole design assumes a deferred
-   `PreToolUse` parks long enough for a human on LTE to read and answer. The
-   timeout is undocumented
+1. ~~**Notification action buttons on iOS.**~~ **Retired** by
+   [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead):
+   there is no push and therefore no lock-screen answer path to degrade. What
+   replaces it as the measurable question is **cold-start to a useful screen**
+   (§8.6, [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen)).
+2. **How long does an agent's own card stay answerable?** Under
+   [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+   the call is not parked — the agent's CLI is showing its own live card, and the
+   remote answer is delivered into it. So the budget is not "how long does
+   `defer` hold", it is "how long before the card times out or the agent moves
+   on", which differs per agent and is undocumented
    ([agent-clis §12.5 Q1](../research/agent-clis.md#125-open-questions-to-resolve-before-implementation)).
-   If it is short (< 30 s), the web client needs a "keep alive" strategy or the
-   feature is limited to the fast path.
+   Where it is short, the card must **expire** on every surface rather than
+   linger — a late remote answer lands in whatever the agent is doing now
+   ([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)).
 3. **`caller` enum on `AskUserQuestion`.** Only `{"type":"direct"}` is observed.
    Subagent callers presumably use another value; the card should attribute the
    asking subagent when it does, and today it cannot.
