@@ -8,10 +8,22 @@ It is the specification behind
 [P8](01-principles.md#p8--security-by-default-no-ambient-trust) and the
 security-facing half of `omt-auth` and `omt-server`.
 
-Related: [03 — Capability catalog](03-capability-catalog.md) ·
+Related: [Decision log](decisions.md) ·
+[03 — Capability catalog](03-capability-catalog.md) ·
 [07 — Remote protocol](07-remote-protocol.md) ·
 [12 — Collaboration](12-collaboration.md) ·
 [14 — Licensing and provenance](14-licensing.md)
+
+> **Scope note, binding.** Per
+> [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
+> this document specifies **who may connect and with what authority**. It does
+> **not** add a second permission gate over an agent CLI's own tool-permission
+> model: omt has no danger classifier, no allow-list of approvable tools, and no
+> auto-approve. Per
+> [D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) an authenticated
+> client is equivalent to the TUI; roles and scopes exist so the owner can
+> **share** a narrowed view with someone else, never to degrade the owner's own
+> devices.
 
 ---
 
@@ -39,9 +51,9 @@ Related: [03 — Capability catalog](03-capability-catalog.md) ·
    the transports where binding applies.
 4. **A hostile web page in the user's browser.** Origin and CSRF controls
    (§6) prevent a page at `evil.example` from driving the local daemon.
-5. **A low-privilege collaborator.** Roles and per-credential policy bound what
-   a shared credential can do, including *which kinds of agent decisions it may
-   make*.
+5. **A low-privilege collaborator.** Roles and credential *scope* bound what a
+   shared credential can do and which workspaces it can see. This is a sharing
+   control, not a second permission model over the agent (D1).
 6. **Accidental exposure.** Loopback by default; the daemon refuses to bind
    publicly without an auth backend; the Funnel checklist (§10) is a gate, not a
    suggestion.
@@ -63,8 +75,13 @@ Stated plainly, because a threat model that claims everything protects nothing.
 4. **A malicious plugin you installed.** Out-of-process plugins are isolated
    from omt's memory, not from your account. Installation is the trust decision.
    See [11 — Plugin system](11-plugins.md).
-5. **The agent's own model behaviour.** omt does not evaluate whether a tool
-   call is safe; it surfaces it and records your decision.
+5. **The agent's own model behaviour, and the agent's own permission model.**
+   omt does not evaluate whether a tool call is safe, does not classify tool
+   calls by danger, and does not add or suppress an approval step the agent CLI
+   would not have shown. It surfaces the agent's question exactly as the agent
+   posed it and records your decision (D1). If you ran the agent with
+   `--dangerously-skip-permissions`, omt honours that; it does not reintroduce a
+   gate the CLI was told to drop.
 6. **Traffic analysis.** Frame sizes leak coarse activity to an on-path
    observer.
 7. **A compromised browser or a device with a hostile keyboard.** A credential
@@ -155,7 +172,7 @@ pub struct Grant {
     pub credential: CredentialId,
     pub principal: PrincipalId,          // a human or a device
     pub role: Role,
-    pub policy: CredentialPolicy,        // §7
+    pub scope: CredentialScope,          // §4.1
     pub expires_at: Option<OffsetDateTime>,
     pub device_bound: Option<DevicePubKey>,
 }
@@ -177,8 +194,8 @@ pub struct Invite {
     pub instance: InstanceId,
     pub jti: InviteId,                // single-use marker, stored until expiry
     pub role: Role,
-    pub policy: CredentialPolicy,
-    pub scope: InviteScope,           // AllSessions | Workspaces(Vec<WorkspaceId>) | Sessions(Vec<SessionId>)
+    pub scope: CredentialScope,       // §4.1; `visibility` is an InviteScope:
+                                      // AllSessions | Workspaces(Vec<WorkspaceId>) | Sessions(Vec<SessionId>)
     pub issued_at: OffsetDateTime,
     pub expires_at: OffsetDateTime,   // default 24 h, max 7 d
     pub max_uses: u8,                 // default 1
@@ -243,8 +260,7 @@ role = "admin"
 
 [[auth.tailnet.grants]]
 tag  = "tag:ci"
-role = "viewer"
-policy = { interaction_kinds = [] }   # may resolve nothing
+role = "viewer"                       # Viewer cannot resolve interactions at all
 ```
 
 Two guardrails: tailnet identity is only *offered* for connections whose peer
@@ -258,14 +274,25 @@ source.
 ## 4. Roles and their mapping onto the catalog
 
 ```rust
-pub enum Role { Viewer, Operator, Admin }   // ordered
+pub enum Role { Viewer, Operator, Admin }   // ordered; defined in `omt-types`
 ```
+
+Roles answer *who you shared this instance with*. The owner's own devices are
+`Operator` or `Admin` and are therefore equivalent to sitting at the TUI
+([D2](decisions.md#d2--remote-is-exactly-equivalent-to-local)). `Viewer` exists
+so `omt invite --role viewer` can mint a link for a colleague to watch.
 
 | Role | Can | Cannot |
 |---|---|---|
-| **Viewer** | read session list, terminal output, scrollback, blocks, agent state, presence, open interactions | write to a PTY, resolve interactions, change config, create/close sessions |
-| **Operator** | everything Viewer can, plus PTY input, writer token, resolve interactions (subject to policy §7), create/close sessions, run agent commands, enqueue prompts | change instance config, manage credentials, install plugins, shut the instance down |
+| **Viewer** | read session list, terminal output, scrollback, blocks, files and diffs, agent state, presence, open interactions | write to a PTY, resolve interactions, change config, create/close sessions |
+| **Operator** | everything Viewer can, plus PTY input, writer token, resolve **any** interaction the agent posed, create/close sessions, run agent commands, enqueue prompts | change instance config, manage credentials, install plugins, shut the instance down |
 | **Admin** | everything | — |
+
+There is no sub-`Viewer` role and no role tier between them. A credential that
+needs a narrower surface than `Viewer` — the `omt ssh` clipboard bridge in
+[09 §5.2](09-ssh-and-media.md#52-tier-1--the-reverse-socket-the-recommended-answer),
+for instance — is a `Viewer` credential with an explicit **capability scope**
+(§4.1), not a new role.
 
 The mapping is mechanical, which is what makes it trustworthy:
 
@@ -282,10 +309,31 @@ The mapping is mechanical, which is what makes it trustworthy:
   **CI failure**. The two declarations must be consistent, and the test enforces
   it across the whole catalog.
 
-Scoped credentials narrow further: a credential with
-`scope = Workspaces([w1])` sees only `w1`'s sessions in every query, and calls
-targeting anything else return `not_found` (not `unauthorized` — an unauthorized
-answer confirms existence).
+### 4.1 Credential scope
+
+Scoping is the only narrowing mechanism besides the role. It is deliberately
+coarse, mechanical, and expressed over things omt owns — never over an agent's
+tools.
+
+```rust
+pub struct CredentialScope {
+    /// Which workspaces/sessions this credential can see at all.
+    pub visibility: InviteScope,           // AllSessions | Workspaces(..) | Sessions(..)
+    /// Optional allow-list of capability names or `group.*` globs. `None` = the
+    /// full surface for the credential's role.
+    pub capabilities: Option<BTreeSet<CapabilityPattern>>,
+}
+```
+
+- A credential with `visibility = Workspaces([w1])` sees only `w1`'s sessions in
+  every query, and calls targeting anything else return `not_found` (not
+  `unauthorized` — an unauthorized answer confirms existence).
+- `capabilities` is how a purpose-built credential is minted: the reverse-socket
+  media token is `Viewer` + `capabilities = {media.clipboard.*, media.blob.*}`.
+- Scope is enforced in dispatch alongside the role, so no surface can bypass it.
+- Scope **never** varies by which device the owner is using. A narrowed
+  credential is something the owner deliberately minted, usually for someone
+  else.
 
 ---
 
@@ -377,7 +425,7 @@ browser is simultaneously running hostile pages.
   legitimate use here.
 - **Service worker scope** is the app root, and the push subscription is bound
   to a device credential, so a revoked device stops receiving notifications
-  (§7 of [07](07-remote-protocol.md#8-notifications-to-a-closed-tab)).
+  ([07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab)).
 
 ---
 
@@ -393,97 +441,69 @@ user, by design. Controls:
   visible to anyone at the machine, and always attributable.
 - Every acquisition, takeover and forced takeover is audited with the actor,
   device and peer address.
-- A credential may be minted with `deny_pty_write: true` while still being an
-  `Operator` for interactions — the "let my phone answer questions but never
-  type" configuration, which is a very reasonable default for a phone and is
-  what `omt invite --phone` produces.
 - Idle release (90 s) bounds how long a forgotten device holds input rights.
 
-### 7.2 Remotely approving an agent permission prompt
+A credential that should never type can be minted `Viewer`, or `Operator` with a
+capability scope excluding `session.send_*`/`session.write_bytes` (§4.1). That is
+a **sharing** configuration. It is *not* the default for the owner's own phone:
+`omt invite --phone` mints a full `Operator` credential, because a phone the
+owner holds is the same authority as the laptop keyboard
+([D2](decisions.md#d2--remote-is-exactly-equivalent-to-local)). Offering a
+degraded default here would recreate exactly the second-class mobile experience
+the product exists to remove.
 
-**This is the highest-consequence capability in the product.** A tap on a phone
-can approve `rm -rf`, a `curl | sh`, a force-push, or a write to `~/.ssh`. It is
-also the single feature the product exists for, so the answer is not to remove
-it but to bound it precisely.
+### 7.2 Remotely resolving an agent interaction
 
-```rust
-pub struct CredentialPolicy {
-    /// Which interaction kinds this credential may resolve at all.
-    /// Empty = may resolve none (read-only for decisions).
-    pub interaction_kinds: BTreeSet<InteractionKindTag>,   // Choice | Text | Permission | PlanReview
+**This is the highest-consequence capability in the product**, and it is the
+single feature the product exists for. A tap on a phone can approve the same
+thing pressing `y` at the keyboard would approve.
 
-    /// Refuse to *approve* a Permission interaction whose underlying tool call
-    /// is classified destructive. Denying is always allowed.
-    pub deny_destructive_approval: bool,
+**omt adds no gate here.** Per
+[D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics):
 
-    /// Optional allow-list of tool names this credential may approve.
-    /// `None` = any tool (subject to the flag above).
-    pub approvable_tools: Option<BTreeSet<String>>,
+1. **omt mirrors the agent's own permission gate exactly.** If the CLI asked,
+   omt surfaces the question on every surface with the agent's own options,
+   verbatim, including `allow_always` / `deny_always` when the agent offered
+   them. If the CLI did not ask, omt does not invent a prompt.
+2. **There is no destructive classifier, no `deny_destructive_approval`, no
+   `approvable_tools` allow-list, and no auto-approve.** Those would be a second
+   permission model with its own configuration, its own bugs, and — worst — a
+   false sense that omt is protecting the user in cases it cannot see. Danger
+   classification belongs to the agent CLI, which has the tool schema, the
+   project settings and the user's own `permissionMode`.
+3. **What omt *does* show is the agent's own posture, read-only.** The session
+   card names the agent's active permission mode (`default`,
+   `acceptEdits`, `bypassPermissions`, `--dangerously-skip-permissions`) on
+   every surface, so a user can see that a session will not ask before it stops
+   asking. Observing is P4; overriding would not be.
 
-    /// Require an explicit second confirmation gesture for these classes.
-    pub confirm_twice: BTreeSet<DestructiveClass>,
+The controls that remain are all about *presentation fidelity and attribution*,
+and they apply identically on the TUI, the web client and the CLI:
 
-    /// Never applies to interactions in these workspaces.
-    pub workspace_scope: InviteScope,
+- **Full command text, never truncated, in the approval UI.** A permission card
+  that elides the middle of a command is an attack surface. Long commands
+  scroll; they do not ellipsize. See
+  [08 §5.3](08-web-client.md#53-permission--approval-cards--kindtype--permission).
+- **A deliberate gesture on touch.** The web client's Allow control is a
+  press-and-hold rather than a bare tap, because a mistap on a phone is a real
+  input-model hazard. This is an ergonomic property of the touch surface, not a
+  policy: it does not depend on what the tool does, it is applied uniformly to
+  every permission card, and it never changes which options are offered or
+  their order.
+- **Exactly-once resolution**, by exactly one actor, broadcast everywhere
+  ([12 §4](12-collaboration.md#4-interaction-ownership)).
+- **Everything is audited**: interaction id, tool, the full tool input (redacted
+  per §8), the decision, the actor, the device, the peer address, and the
+  latency from open to resolution. Attribution is the control, and it is enough,
+  because the authority being exercised is authority the user already has.
+- **Nothing is auto-resolved by omt.** The only non-human resolution is
+  `Cancelled { Timeout }` when the agent's own deadline expires
+  ([12 §4.3](12-collaboration.md#43-timeouts)), which is the agent's default
+  behaviour, not an omt decision.
 
-    pub deny_pty_write: bool,
-}
-```
-
-**The destructive classifier.** A `Permission` interaction carries the tool name
-and its input ([`agent-clis` §12.2](../research/agent-clis.md)). The agent layer
-classifies it before it is offered remotely:
-
-| Class | Examples |
-|---|---|
-| `FileDelete` | `rm`, `Bash` with `rm -rf`, `Write` to a path outside the workspace |
-| `HistoryRewrite` | `git push --force`, `git reset --hard`, `git clean -fdx` |
-| `CredentialAccess` | any path under `~/.ssh`, `~/.aws`, `~/.config/gh`, `*.pem`, `.env` |
-| `NetworkExec` | `curl`/`wget` piped to a shell, `npm install` of an unpinned package |
-| `Privilege` | `sudo`, `doas`, `chmod +s` |
-| `Unclassified` | everything the classifier does not recognise |
-
-Design rules, stated as invariants:
-
-1. **The classifier is conservative and its failure mode is `Unclassified`, not
-   `safe`.** `deny_destructive_approval` treats `Unclassified` as destructive
-   when `strict_unclassified = true` (the default for phone credentials).
-2. **Denying is never restricted.** Any credential that can see an interaction
-   may deny it. Policy only ever constrains *approval*. A locked-down credential
-   must still be able to stop a runaway agent — that is a safety feature, not a
-   privilege.
-3. **"Always allow" is never remotely grantable.** `AllowAlways` /
-   `DenyAlways`-style suggestions change future behaviour, not just this call. A
-   remote credential may answer `Allow` or `Deny` for *this* invocation only;
-   persistent rules require `Admin` and are, by configuration default, local-only.
-4. **Second confirmation is a distinct gesture.** For `confirm_twice` classes the
-   web client requires a hold-to-confirm (600 ms) on a differently-coloured
-   control, with the command text shown in full and unwrapped. Not a second tap
-   in the same place — that is defeated by the muscle memory it is meant to
-   interrupt.
-5. **Full command text, never truncated, in the approval UI.** A permission card
-   that elides the middle of a command is an attack surface. Long commands
-   scroll; they do not ellipsize.
-6. **Everything is audited**: interaction id, tool, classified class, the full
-   input (redacted per §8), the decision, the actor, the device, the peer
-   address, and the latency from open to resolution.
-7. **Policy is enforced server-side.** The client receives `policy` at auth
-   (07 §3.4) to render the right affordances, but a client that ignores it and
-   sends a resolution anyway gets `unauthorized`, and the attempt is audited.
-
-The default policy for a credential minted by `omt invite --phone`:
-
-```toml
-interaction_kinds        = ["choice", "text", "permission"]
-deny_destructive_approval = true
-strict_unclassified       = true
-confirm_twice             = ["file_delete", "history_rewrite", "network_exec"]
-deny_pty_write            = true
-```
-
-That is: answer questions freely, approve ordinary tool calls, never approve
-anything destructive or unrecognised from a phone, and never type into a shell.
-A user who wants more must say so explicitly, per device.
+`Viewer` credentials cannot resolve interactions at all (§4) — that is the
+sharing boundary, and it is the whole of the interaction-authorization model.
+There is no `CredentialPolicy` type.
 
 ---
 
@@ -587,8 +607,9 @@ items 1–5 are satisfied, printing the failing item.
 Then, recommended and not enforced:
 
 6. Mint per-device credentials; never share one token across devices.
-7. Set `deny_destructive_approval = true` and `deny_pty_write = true` for every
-   credential that does not need them (§7).
+7. Mint every credential you hand to someone else at the narrowest role and
+   workspace scope that still does its job (§4.1). Your own devices stay
+   `Operator`/`Admin` (D2).
 8. Set invite TTLs to hours, not days, and revoke used invites.
 9. Review `audit.query` after the first day of exposure; it is the only way to
    notice a credential being used from somewhere unexpected.
@@ -603,12 +624,17 @@ Then, recommended and not enforced:
 
 ## 11. OPEN QUESTIONS
 
-1. **The destructive classifier (§7.2) is the weakest link.** It must parse
-   shell command lines to classify `Bash` tool calls, and shell is adversarial to
-   parse (`$(…)`, aliases, `eval`, obfuscated paths). Is a conservative
-   deny-by-default on anything containing command substitution acceptable
-   usability? Needs a corpus and real use. Coordinate with
-   [06 — Agent layer](06-agent-layer.md).
+1. **Surfacing the agent's own permission posture (§7.2 rule 3) needs a
+   normalized shape.** Each CLI names its modes differently
+   (`permissionMode`, `--dangerously-skip-permissions`, ACP's
+   `session/set_mode`, Codex's approval policy). omt must read and display them
+   without normalizing away meaning, and must not imply omt is enforcing them.
+   Coordinate with [06 — Agent layer](06-agent-layer.md).
+   *(Recorded alternative, rejected by D1: an omt-side destructive classifier
+   that parses `Bash` command lines and refuses remote approval of matches. It
+   was rejected because it measures consequence rather than failure mode, is
+   defeated by `$(…)`/`eval`/aliases, and creates false confidence. Not to be
+   reintroduced without amending D1.)*
 2. **Device binding on the web** requires non-extractable WebCrypto keys in
    IndexedDB. Survivability across iOS Safari storage eviction is unmeasured; if
    eviction is common, binding degrades to "re-auth occasionally", which changes
@@ -634,8 +660,11 @@ Then, recommended and not enforced:
    (07 §8.1) tells the push vendor that a session on a named instance needs
    attention, and when. The `ntfy`-on-tailnet path avoids it entirely; should
    that be the *default* rather than the alternative?
-8. **Interaction policy for plugins.** A plugin acting as an actor with an
+8. **Interaction resolution by plugins.** A plugin acting as an actor with an
    `Operator` role could resolve interactions programmatically. That is a
-   legitimate automation feature and an obvious abuse path. It probably needs
-   its own policy class rather than reusing `CredentialPolicy`. Coordinate with
-   [11 — Plugin system](11-plugins.md).
+   legitimate automation feature and an obvious abuse path. D1 forbids omt
+   classifying the *decision*; the open question is whether a plugin should need
+   a distinct consent scope (`resolve_interactions`) beyond
+   `capabilities = ["interaction.resolve"]`, and whether plugin-resolved cards
+   must be visibly attributed to the plugin on every surface (leaning: yes to
+   both). Coordinate with [11 — Plugin system](11-plugins.md).

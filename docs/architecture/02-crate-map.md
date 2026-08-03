@@ -11,7 +11,7 @@ L5  surfaces        omt-tui · omt-server · omt-plugin-host
 L4  orchestration   omt-daemon
 L3  domain          omt-session · omt-agent · omt-config · omt-store
 L2  subsystems      omt-term · omt-pty · omt-agent-adapters · omt-transport
-                    omt-auth · omt-stt · omt-media
+                    omt-auth · omt-stt · omt-media · omt-workspace-fs
 L1  contracts       omt-catalog · omt-proto · omt-events
 L0  foundation      omt-types · omt-util
 ```
@@ -102,8 +102,17 @@ whisper.cpp. Audio in, interim + final transcripts out.
 
 ### `omt-media`
 Clipboard and image bridging: OSC 52, the local↔remote file/image relay used
-for pasting images into an SSH'd session, thumbnailing, temp-file lifecycle and
-quotas. See [09 — SSH and media](09-ssh-and-media.md).
+for pasting images into an SSH'd session, the content-addressed blob store,
+thumbnailing, blob lifecycle and quotas. See
+[09 — SSH and media](09-ssh-and-media.md).
+
+### `omt-workspace-fs`
+The workspace file tree and version-control state: `FileTreeProvider` and
+`VcsProvider` traits, the `GitCli` provider, ignore matching, bounded reads,
+fuzzy filename search, structured diffs, and the ref-counted file watcher behind
+a `WatchDriver` seam. Handed a root path and a `GitIdentity`; owns no part of
+the session tree. Read-only — it ships zero write capabilities. See
+[15 — Workspace explorer](15-workspace-explorer.md).
 
 ---
 
@@ -186,6 +195,8 @@ agent.
 3. L2 crates do not depend on each other, with two allowed exceptions:
    `omt-agent-adapters → omt-pty` (process inspection) and
    `omt-media → omt-term` (OSC 52 emission). Anything else is a design error.
+   `omt-workspace-fs` takes no exception: it depends only on `omt-types`,
+   `omt-util` and `omt-events`.
 4. Only L4+ may use `anyhow`; L0–L3 use crate-local `thiserror` types.
 5. Only L4+ may spawn tasks or own a runtime; L0–L2 are runtime-agnostic
    (async traits where needed, no `tokio::spawn`).
@@ -210,6 +221,7 @@ a clear blast radius:
 | TUI | `omt-tui` | daemon |
 | Web client | `web/` | proto, catalog |
 | Media/SSH | `omt-media` | terminal |
+| Workspace explorer | `omt-workspace-fs` | contracts |
 | STT | `omt-stt` | contracts |
 | Plugins | `omt-plugin-host` | catalog, daemon |
 

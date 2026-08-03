@@ -153,9 +153,14 @@ The client merges per-instance session lists into one view sorted by
 *attention*, not by instance:
 
 1. sessions with an open `Interaction` (blocked agent — needs a human),
-2. sessions in `needs_attention`,
-3. `busy`,
-4. `idle`, most recently active first.
+2. sessions in `AgentState::Blocked` with no interaction id (omt can see the
+   block but cannot render it),
+3. `Working`,
+4. `Idle`, most recently active first.
+
+`AgentState` variant names are owned by
+[06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting); there is no
+separate `busy`/`needs_attention` vocabulary.
 
 Instance is a subtitle and a filter, not the primary grouping. This is a
 deliberate product decision: the user's question is "what needs me?", and the
@@ -417,18 +422,24 @@ reconnects and across sessions:
 { "t": "auth_ok", "id": "req_1",
   "actor": { "id": "act_12", "label": "iPhone (Vincent)", "kind": "remote" },
   "role": "operator",
-  "policy": { "interaction_kinds": ["choice", "text", "permission"],
-              "deny_destructive_autoapprove": true },
+  "scope": { "visibility": { "kind": "all_sessions" }, "capabilities": null },
   "session_token": "omt_s_5tR…",
   "expires_at": "2026-08-04T09:11:00Z" }
 ```
 
 `session_token` is a short-lived resume token (default 12 h) so a reconnect can
 skip the credential round-trip; it is bound to the device key and to the
-credential, and is invalidated when the credential is revoked. `policy` is the
-per-credential interaction policy from [13 §7](13-security.md) — the client uses
-it to render affordances it is allowed to use, and the server enforces it
-regardless.
+credential, and is invalidated when the credential is revoked. `scope` is the
+`CredentialScope` from [13 §4.1](13-security.md#41-credential-scope) — the
+client uses it to grey out affordances it is not allowed to use, and the server
+enforces it in dispatch regardless.
+
+There is no per-credential *interaction policy*: an `Operator` may resolve any
+interaction the agent posed, and a `Viewer` may resolve none. omt adds no gate
+over the agent's own permission semantics
+([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)),
+and an authenticated remote client is equivalent to the local TUI
+([D2](decisions.md#d2--remote-is-exactly-equivalent-to-local)).
 
 ### 3.5 Capability call / result
 
@@ -439,9 +450,10 @@ no capability knowledge; it forwards `(name, input_json)` to
 ```json
 { "t": "call", "id": "req_31", "name": "interaction.resolve",
   "input": {
-    "session": "s_4b2f",
-    "interaction_id": "int_88",
-    "response": { "kind": "choices", "choices": [["Use Postgres"]] }
+    "interaction": "int_88",
+    "response": { "type": "choices",
+                  "answers": [ { "labels": ["Use Postgres"],
+                                 "other": null, "comment": null } ] }
   },
   "deadline_ms": 10000 }
 ```
@@ -503,25 +515,27 @@ and digest, and rejects on mismatch. Quotas and temp-file lifecycle are
 
 ```json
 { "t": "subscribe", "id": "req_5", "sub": "sub_1",
-  "filter": { "sessions": ["s_4b2f", "s_9de1"], "kinds": ["agent", "interaction", "presence"] },
-  "since_seq": { "s_4b2f": 91380, "s_9de1": 4021 },
+  "filter": { "sessions": ["s_4b2f", "s_9de1"], "workspaces": ["w_9f3c"],
+              "kinds": ["agent", "interaction", "presence"] },
+  "since_seq": { "s_4b2f": 91380, "s_9de1": 4021, "w_9f3c": 41208 },
   "policy": { "on_lag": "resync", "max_buffered_events": 2048 } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_1", "session": "s_4b2f", "seq": 91381,
   "ts": "2026-08-03T18:21:59.882Z", "source": "hook",
-  "payload": { "kind": "interaction",
+  "payload": { "type": "interaction",
                "id": "int_88",
                "interaction": {
-                 "kind": "choice",
+                 "type": "choice",
                  "questions": [{ "question": "Which database should I use?",
                                  "header": "Database",
                                  "multi_select": false,
+                                 "allow_free_text": true,
                                  "options": [{ "label": "Postgres", "description": "…" },
                                              { "label": "SQLite",   "description": "…" }] }]
                },
-               "timeout_ms": 600000 } }
+               "timeout_at": "2026-08-03T18:31:59.882Z" } }
 ```
 
 Filters are coarse on purpose (session set × event-kind set). Fine-grained
@@ -530,7 +544,14 @@ server-side filtering is a footgun: it makes resume semantics ambiguous, because
 filter. Coarse filters keep that mapping obvious.
 
 `kinds` mirrors the top-level grouping of `omt-events`: `terminal`, `agent`,
-`interaction`, `session_tree`, `presence`, `config`, `plugin`, `audit`.
+`interaction`, `session_tree`, `presence`, `config`, `plugin`, `audit`,
+`workspace_fs` ([15 §4.6](15-workspace-explorer.md#46-file-watching)).
+
+`workspaces` is the workspace-scoped analogue of `sessions`: workspace-scoped
+events carry `workspace` instead of `session` in the envelope and have their own
+`Seq` space, so `since_seq` is keyed uniformly by whichever id the event carries.
+Subscribing to `workspace_fs` does **not** by itself create a watcher — that is
+`workspace.files.watch`'s job (15 §6).
 
 ---
 
@@ -709,11 +730,15 @@ always a resync. The client is told explicitly:
   "restart": { "since_last_seen": true, "reason": "process_restart" } }
 ```
 
-PTYs themselves do not survive a daemon restart unless the daemon re-parents
-them (it does, via a small supervisor process that owns the PTY fds — see
-[05 — Session model](05-session-model.md)). Where re-parenting is impossible the
-session is marked `dead` with its scrollback intact, and the agent-native resume
-path (`claude --resume <uuid>`, `codex resume`) is offered as a one-tap action.
+**PTYs themselves do not survive a daemon restart in v1.** Per
+[05 §8](05-session-model.md#8-persistence-and-restore), restored sessions come
+back as `SessionState::Orphaned`: content is readable, searchable and copyable,
+writes return `precondition_failed`, and the UI offers **"restart"** — re-spawn
+the same argv in the same cwd with the same injected env, keeping the old
+scrollback above a separator. For an agent session the agent-native resume path
+(`claude --resume <uuid>`, `codex resume`) is offered as the one-tap action.
+Re-parenting PTYs to a supervisor process so they survive an upgrade is
+[05 §13.1](05-session-model.md#13-open-questions), deferred.
 
 ### 5.4 Mobile specifics
 
@@ -833,7 +858,7 @@ Optimizations that matter, in order of impact:
    reverts. This is the single largest perceived win on a relayed link, and it
    is safe precisely because it is bounded to the case where the remote program
    is known to be a line-oriented shell. See
-   [12 §6](12-collaboration.md) for the optimistic-UI rules.
+   [12 §7](12-collaboration.md#7-optimistic-ui) for the optimistic-UI rules.
 4. **Prefer direct WireGuard over DERP**: the client surfaces relay status,
    because a relayed tailnet path roughly doubles the budget and users can
    usually fix it.
@@ -856,7 +881,7 @@ by every desktop browser.
 
 - The client subscribes via the service worker and posts the subscription to
   `notification.push.subscribe` (a normal capability, so it is auth'd and
-  audited). The daemon stores endpoint + keys per device credential.
+  audited; the same name is used in [08 §8.6](08-web-client.md#86-pwa-and-web-push)). The daemon stores endpoint + keys per device credential.
 - The daemon signs and POSTs directly to the browser vendor's push service
   (`fcm.googleapis.com`, `web.push.apple.com`). **This is the only outbound
   network connection omt ever makes**, it is off by default, and enabling it is

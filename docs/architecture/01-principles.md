@@ -95,8 +95,19 @@ Two rules fall out of this:
   different goal; they are not sufficient for remote rendering.)
 - **Answers go back the way they came.** An answer to a deferred `PreToolUse`
   is returned as a hook decision; an ACP permission is answered over ACP.
-  Synthesizing keystrokes into a PTY is the last resort, is always labelled as
-  such in the event stream, and is never used for anything destructive.
+  Synthesizing keystrokes into a PTY is the last resort and is always labelled
+  as such in the event stream and on every surface. Its bound is **state
+  dependence, not tool danger**
+  ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)):
+  position-independent answers (`y`/`n`, `1`/`2`/`3`, free text, a line-oriented
+  CLI's stdin) are allowed and on by default; answers requiring omt to count
+  arrow keys against a cursor position it inferred from the screen are off by
+  default.
+- **omt adds no permission policy of its own.** It mirrors the agent CLI's own
+  gate exactly — never adding an approval step the CLI would not have shown, and
+  never suppressing one it would
+  ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
+  There is no omt-side allow-list, deny-list, danger classifier or auto-approve.
 
 ---
 
@@ -156,8 +167,12 @@ exists in the file and not in the TUI is a bug.
 
 - The daemon binds to loopback unless explicitly configured otherwise, and
   refuses to bind to a public interface without an auth backend configured.
-- All remote capabilities are permissioned per credential, with read-only,
-  operator, and admin roles; a shared invite link can be minted read-only.
+- Access control answers **who may connect**, not **what they may do once
+  connected**: an authenticated client is equivalent to the local TUI
+  ([D2](decisions.md#d2--remote-is-exactly-equivalent-to-local)). The
+  `Viewer`/`Operator`/`Admin` roles and credential scopes exist so the owner can
+  *share* a narrowed view — a read-only invite link for a colleague — never to
+  degrade the owner's own phone.
 - Nothing leaves the machine unless the user configured it to. No telemetry.
 - Secrets (tokens, API keys) live outside the main config file, with strict
   file permissions, and are redacted in every log and every event.

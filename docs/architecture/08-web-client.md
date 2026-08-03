@@ -14,7 +14,15 @@ application with more room.
 - [03 — Capability catalog](03-capability-catalog.md) — the generated contract
 - [07 — Remote protocol](07-remote-protocol.md) — transport, auth, resume
 - [09 — SSH and media](09-ssh-and-media.md) — image upload / paste path
-- [12 — Collaboration](12-collaboration.md) — writer token, presence
+- [12 — Collaboration](12-collaboration.md) — writer token, presence, optimistic UI
+- [13 — Security](13-security.md) — auth, roles, credential scope
+- [15 — Workspace explorer](15-workspace-explorer.md) — file tree, diffs, the
+  shared diff renderer
+- [Decision log](decisions.md) — in particular
+  [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
+  (no omt-side permission policy) and
+  [D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) (remote is
+  equivalent to local)
 
 ---
 
@@ -105,7 +113,7 @@ export interface CapabilityIO {
     output: { resolved_by: Actor; seq: Seq };
     role: "operator";
     kind: "command";
-    effects: readonly [];
+    effects: readonly [];              // resolving is not itself a side effect on omt
     since: "1.0";
   };
   /* … one entry per capability … */
@@ -119,29 +127,41 @@ export const PARITY_EXEMPT = ["instance.shutdown", "debug.dump_grid"] as const;
 export type ExemptName = (typeof PARITY_EXEMPT)[number];
 ```
 
-Events are emitted as a discriminated union keyed on `payload.type`, mirroring
-`Payload` from [agent-clis §12.2](../research/agent-clis.md):
+Events are emitted as a discriminated union keyed on `payload.type`, generated
+from `omt-events` (the envelope is [02](02-crate-map.md#omt-events)'s `Event`,
+the interaction types are [06 §5](06-agent-layer.md#5-interactions--the-flagship-path)'s).
+Field names are the serde names — `snake_case`, no camelCase renaming, so the
+JSON in a devtools panel matches the Rust type and the docs.
 
 ```ts
 // generated/events.ts (excerpt)
-export interface EventEnvelope<P = AgentPayload | TermPayload | TreePayload> {
-  instance: InstanceId; session: SessionId | null;
-  seq: Seq; ts: string; source: "hook" | "protocol" | "transcript" | "pty" | "process";
+export type EventSourceTag =
+  | "hook" | "protocol" | "transcript" | "marker" | "process" | "pty"
+  | "workspace_fs" | "system";
+
+export interface EventEnvelope<P = AgentPayload | TermPayload | TreePayload | WorkspaceFsPayload> {
+  instance: InstanceId;
+  session: SessionId | null;
+  workspace: WorkspaceId | null;      // set for workspace-scoped events (15 §4.6)
+  seq: Seq; ts: string;
+  source: EventSourceTag;
+  caused_by: RequestId | null;        // 12 §5.3
   payload: P;
 }
 
 export type InteractionKind =
   | { type: "choice"; questions: ChoiceQuestion[] }
   | { type: "permission"; tool: string; input: unknown;
-      suggestions: PermissionOption[]; diff: string | null; command: string | null }
-  | { type: "text"; placeholder: string | null; multiline: boolean }
+      options: PermissionOption[]; diff: FileDiff | null; command: string | null }
+  | { type: "text"; prompt: string; placeholder: string | null; multiline: boolean }
   | { type: "plan_review"; plan: string };
 
 export interface ChoiceQuestion {
   question: string;
-  header: string;          // ~12 char tab label
-  multiSelect: boolean;
+  header: string;              // ~12 char tab label
+  multi_select: boolean;
   options: { label: string; description: string }[];
+  allow_free_text: boolean;
 }
 ```
 
@@ -259,8 +279,8 @@ Three methods, matching the three built-in `AuthBackend`s
 
 | Method | Flow | Mobile affordance |
 |---|---|---|
-| **Signed invite link** | `https://host/inv#v1.<b64payload>.<sig>`; fragment never leaves the browser until the client POSTs it to `/v1/auth/redeem`, receiving a scoped token. | The primary path. On desktop omt prints a QR; the phone camera opens the link. "Add instance" also has an in-app QR scanner (`BarcodeDetector`, falling back to a WASM decoder). |
-| **Bearer token** | Paste a token minted by `omt instance token mint --role operator`. | A single monospace field with paste-detect and a scan button. |
+| **Signed invite link** | `https://<host>:<port>/#/join?i=<token>` ([13 §3.2](13-security.md#32-invite-links-the-primary-onboarding-path)); the token lives in the **fragment**, so it never reaches the server in a request line or an access log. The client exchanges it with a `join.exchange` message over the WebSocket ([07 §1.3](07-remote-protocol.md#13-adding-an-instance)), receiving a device-bound credential. | The primary path. On desktop omt prints a QR; the phone camera opens the link. "Add instance" also has an in-app QR scanner (`BarcodeDetector`, falling back to a WASM decoder). |
+| **Bearer token** | Paste a token minted by `omt token create --role operator` ([13 §3.3](13-security.md#33-bearer-tokens)). | A single monospace field with paste-detect and a scan button. |
 | **User + password** | argon2id verified server-side; the response is a token with the same shape as the other two, so nothing downstream knows the difference. | Standard form; `autocomplete="username"` / `"current-password"` so password managers work. |
 
 Tailnet-identity instances need no credential at all: the client attempts an
@@ -290,7 +310,9 @@ interface UnifiedSession {
 ```
 
 Sort key, in order: (1) open interactions descending, (2) `agent.state ===
-"needs_attention"`, (3) `busy`, (4) recency. This is the same ordering the
+`"blocked"`, (3) `"working"`, (4) recency. `AgentState` variant names are
+owned by [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting).
+This is the same ordering the
 dashboard uses (§6) — the home screen *is* the dashboard, filtered to sessions.
 
 Sessions on a disconnected instance stay in the list, greyed, with their last
@@ -362,21 +384,31 @@ block events on the subscription.
 ```ts
 interface BlockSummary {
   id: BlockId; index: number;
-  command: string;                 // may be "" for background output
-  state: "before_execution" | "executing" | "done" | "done_no_execution" | "background" | "static";
-  exitCode: number | null;
-  failed: boolean;                 // NOT exitCode !== 0 — excludes 130/141, see below
-  startedAt: string | null; completedAt: string | null;
-  cwd: string | null; gitBranch: string | null;
-  outputBytes: number; outputLines: number;
+  command: string | null;          // null for background output
+  // BlockState, owned by 04 §6.3. Serde names of the Rust enum.
+  state: "at_prompt" | "submitted" | "running" | "finished"
+       | "no_execution" | "background" | "truncated";
+  // BlockOrigin, owned by 04 §6.2. "heuristic" means no shell integration:
+  // the UI must render it as unstructured output and must not claim an exit code.
+  origin: "osc133" | "heuristic" | "injected";
+  exit: { code: number } | { signal: number } | null;
+  failed: boolean;                 // NOT exit.code !== 0 — excludes 130/141, see below
+  started_at: string | null; finished_at: string | null;
+  cwd: string | null; git_branch: string | null;
+  output_bytes: number; output_lines: number;
   truncated: boolean;              // body must be fetched with blocks.get
-  agent: { kind: AgentKind; turnId: string | null } | null;  // attribution
+  // Attribution, owned by 04 §6.2.
+  attribution:
+    | { type: "human"; client: ClientId | null }
+    | { type: "agent"; kind: AgentKind; run_id: string | null }
+    | { type: "unknown" };
 }
 ```
 
-`failed` is computed server-side and deliberately excludes exit 130 (Ctrl-C)
-and 141 (SIGPIPE), matching another terminal's `has_block_failed`. Painting a Ctrl-C'd
-block red is a papercut we are not reproducing.
+`failed` is computed server-side by `Block::failed()`
+([04 §6.2](04-terminal-core.md#62-what-a-block-owns)) and deliberately excludes
+exit 130 (Ctrl-C) and 141 (SIGPIPE). Painting a Ctrl-C'd block red is a papercut
+we are not reproducing.
 
 **Card anatomy** (top to bottom):
 
@@ -389,10 +421,12 @@ block red is a papercut we are not reproducing.
    main · 2.4s · 14:03`. Suppressing repeats keeps the list scannable.
 3. **Body** — collapsed by default when `outputLines > 12` or the block
    succeeded and is older than the current turn; expanded when the block failed
-   or is running. The body is an xterm.js-free renderer: ANSI SGR is converted
-   to spans by a small `ansi-to-dom` pass over the server-side cell data (we
-   receive styled cells, not raw bytes, so there is no second VT parser in the
-   browser). Long lines get `overflow-x: auto` inside the card.
+   or is running. The body is an xterm.js-free renderer over `StyledLine`
+   (`{ text, spans: [{ start, len, fg, bg, flags, link? }] }`) — the structured
+   encoding from [04 §4.4(b)](04-terminal-core.md#44-the-web-mapping-xtermjs),
+   also returned by `session.scrollback.get`. No raw bytes, so there is no
+   second VT parser in the browser. Long lines get `overflow-x: auto` inside the
+   card.
 4. **Action row** (revealed on tap-and-hold, or always on desktop hover) —
    **Copy** (output / command / both), **Re-run** (`session.blocks.rerun`),
    **Share** (§4.2.1), **Bookmark**, **Filter lines** (a regex box that filters
@@ -467,35 +501,48 @@ keyboard:
 Pinch changes **font size**, not CSS transform scale — scaling a WebGL glyph
 atlas produces mush. `FitAddon` then recomputes `(cols, rows)`.
 
-This is where the client and the session must agree, and the rule from
-[07](07-remote-protocol.md) is: **the session has one authoritative
-`(cols, rows)`; clients declare a preferred viewport and one of three policies.**
+Viewport negotiation is specified once, in
+[07 §4.3](07-remote-protocol.md#43-the-resize-problem), and this document does
+not restate it: **the session has one authoritative `(cols, rows)`, owned by
+`SizeOwner::Writer` by default, `Pinned` when a user pins it, or `Smallest` when
+opted in.** Every client reports its viewport on `TermAttach`/`TermResize`;
+`request_authoritative: true` is the explicit ask and is refused with
+`precondition_failed` unless the client holds the writer token.
+
+What is *this* document's business is how a non-authoritative client renders:
 
 ```ts
-type ViewportPolicy =
-  | { mode: "follow" }                       // render the session size, letterbox/scale to fit
-  | { mode: "drive"; cols: number; rows: number }  // request a resize (writer only)
-  | { mode: "fit_width"; minCols: number };  // request cols = clamp(myCols, minCols, …), keep rows
+// Client-side rendering mode. Derived from the server's ViewportPolicy —
+// not a fourth negotiation scheme.
+type RenderMode =
+  | { mode: "follow" }        // render the authoritative grid, scaled to fit width,
+                              // letterboxed vertically (07 §4.3)
+  | { mode: "drive" };        // this client holds the writer token and its viewport
+                              // is authoritative
 ```
 
 Defaults:
 
 - **Phone, terminal view, not the writer** → `follow`. The session stays at
-  whatever the laptop set; the phone renders it scaled down, and pinch-zoom pans
-  a viewport over the full grid rather than resizing the remote. This is the
-  right default because resizing a session from a phone is how you make a
-  colleague's vim redraw into confetti.
-- **Phone, terminal view, writer, and no other attached client** → `fit_width`
-  with `minCols: 60`. If you are alone, the session should fit your screen.
-- **Desktop** → `drive`.
+  whatever the laptop set; the phone renders it scaled to fit, and pinch-zoom
+  changes font size / pans rather than resizing the remote. Resizing a session
+  from a phone is how you make a colleague's vim redraw into confetti.
+- **Phone, terminal view, writer** → `drive`, but the client first shows the
+  07 §4.3 warning when taking the token would change the size by more than 20 %,
+  and offers "take input without resizing", which acquires the token with
+  `keep_size: true`.
+- **Desktop, writer** → `drive`.
 
-The policy is visible in the UI (a small `↔ 120×34 · following` chip) and
-switchable. When a `drive`/`fit_width` request would shrink a session another
-client is viewing, the instance emits a `resize_contended` event and the client
-shows *"Resizing will reflow `laptop`'s view — resize anyway?"*.
+The mode is visible in the UI (a small `↔ 120×34 · following` chip) and the
+`Pinned`/`Smallest` owners are settable from the same control. When a resize
+lands for a reason this client did not initiate, the server says why —
+`terminal.resized { cols, rows, cause, actor }`
+([12 §6 C3](12-collaboration.md#c3--a-client-resizes-while-another-is-attached)) —
+and the client surfaces it rather than silently reflowing.
 
-`session.resize` carries `{ cols, rows, pixelWidth, pixelHeight }`; the pixel
-dimensions matter for inline images ([09 §5](09-ssh-and-media.md)).
+`session.resize` carries `{ cols, rows, pixel_width, pixel_height }`; the pixel
+dimensions matter for inline images
+([09 §7.2](09-ssh-and-media.md#72-inline-display-in-the-tui)).
 
 ---
 
@@ -513,7 +560,7 @@ agent emits           omt normalizes            web renders          web resolve
 ────────────────────────────────────────────────────────────────────────────────
 PreToolUse{           Event{payload:            <InteractionCard>    interaction.resolve
  AskUserQuestion}  →   Interaction{id, kind, →   picks a component →  {interaction, response}
- → hook defers         prompt, timeout_ms}}      by kind.type              │
+ → hook defers         timeout_at, ...}}         by kind.type              │
                                                                           ▼
 hook returns      ←   InteractionResolved   ←  broadcast to ALL surfaces (TUI too)
 {permissionDecision,   {id, response, by}
@@ -522,15 +569,22 @@ hook returns      ←   InteractionResolved   ←  broadcast to ALL surfaces (TU
 
 Invariants the UI must respect:
 
-- **Resolve-once.** `interaction.resolve` is idempotent by `interaction`, and
-  the second caller gets `conflict`. The card therefore renders three states:
+- **Resolve-once.** `interaction.resolve` is idempotent by
+  `(interaction, actor, response)` — a retry from this client with the same
+  answer is safe, which matters on mobile — and a *different* actor or answer
+  gets `conflict` ([12 §4.1](12-collaboration.md#41-the-invariant)).
+  A losing resolution must be surfaced, never silently corrected. The card therefore renders three states:
   open, **resolving** (optimistic, controls disabled, spinner on the chosen
   option), and **resolved by X**. A card resolved from the laptop while you were
   reading it animates to "answered by `laptop`" — it does not vanish.
-- **Timeouts are real.** `timeout_ms` (when the agent gives one) drives a thin
+- **Timeouts are real.** `timeout_at` (when the agent gives one) drives a thin
   progress bar on the card's top edge. At <10 s remaining the card vibrates once
-  (`navigator.vibrate(30)`) and the bar turns amber. On expiry the card shows
-  "timed out — the agent chose its default", because we cannot un-time-out it.
+  (`navigator.vibrate(30)`) and the bar turns amber. On expiry the ledger records
+  `Cancelled { Timeout }` by `Actor::System`
+  ([12 §4.3](12-collaboration.md#43-timeouts)) and the card shows "timed out —
+  the agent continued with its own default", because we cannot un-time-out it.
+  This is the **only** non-human resolution in the system; omt never
+  auto-answers ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
 - **Never synthesize.** If the interaction's `source` is `pty`, it is not an
   interaction and the card is not rendered.
   [P4](01-principles.md#p4--native-semantics-observe-never-re-implement).
@@ -659,49 +713,61 @@ hook) renders identically. No agent branching in the view layer.
 { type: "permission";
   tool: string;                      // "Bash" | "Edit" | "mcp__foo__bar" | …
   input: unknown;                    // the verbatim tool_input
-  suggestions: PermissionOption[];   // "allow" | "allow_always" | "deny" | "deny_always" | "edit"
-  diff: string | null;               // unified diff for edit-shaped tools
+  options: PermissionOption[];       // the agent's own option list, verbatim
+  diff: FileDiff | null;             // structured diff for edit-shaped tools
   command: string | null }           // the shell command for exec-shaped tools
 ```
+
+Shape owned by [06 §5](06-agent-layer.md#5-interactions--the-flagship-path);
+`FileDiff` by [15 §3.2](15-workspace-explorer.md#32-vcs-model).
 
 **Component: `<PermissionCard>`** — the anatomy varies by which of `diff` /
 `command` is present, but the action row is uniform.
 
 - **Command preview** (`command != null`): the command in a monospace block with
-  shell-aware syntax highlighting, and a **risk strip** above it derived from
-  the daemon's static classification (writes outside workspace, network egress,
-  `sudo`, destructive verbs). The strip is informational and always shows its
-  reason; we do not silently reorder or disable buttons based on it.
-  Long commands wrap rather than scroll — you must be able to read the whole
-  thing before allowing it.
-- **Diff preview** (`diff != null`): a proper unified-diff renderer, not a
-  `<pre>`. Per-file collapsible sections, syntax-highlighted with
-  `shiki`'s WASM build (bundled, no CDN), added/removed line gutters, and a
-  **split/inline toggle that defaults to inline on narrow viewports**. Large
-  diffs render the first 200 lines with "show all"; the full text is always
-  available via Copy.
-- **Generic tool input** (neither): pretty-printed JSON with keys the daemon
-  marks sensitive redacted to `••••`.
-- **Actions** are rendered from `suggestions`, in a fixed order regardless of
-  the order the agent sent them (`Deny` / `Deny always` on the left, `Allow` /
-  `Allow always` on the right), because reordered destructive buttons cause
-  mistaps. `allow_always` carries a subtitle naming the scope it will persist
-  to (`"for Bash(git *) in this project"`).
-- **`edit`** opens the tool input in a schema-aware editor and resolves with
-  `updated_input`, which maps onto `PreToolUse`'s `updatedInput`.
+  shell-aware syntax highlighting. Long commands wrap rather than scroll — you
+  must be able to read the whole thing before allowing it, and it is never
+  ellipsized.
+  There is deliberately **no risk strip and no danger badge.** omt does not
+  classify an agent's tool calls
+  ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics));
+  the agent CLI owns that judgement and has already decided to ask. A strip that
+  says "looks safe" on something omt failed to recognise is worse than no strip
+  at all.
+- **Diff preview** (`diff != null`): rendered by the **same** diff component the
+  explorer uses ([15 §7.4](15-workspace-explorer.md#74-reading-a-diff-on-a-phone)) —
+  structured hunks, line-number gutter, server-computed intra-line ranges,
+  hunk collapsing, unified-only on narrow viewports with a desktop split
+  toggle. One renderer, one palette, one mobile behaviour. Where the diff was
+  reconstructed by omt rather than supplied by the agent it is marked
+  `source: "computed"` (15 §8.5).
+- **Generic tool input** (neither): pretty-printed JSON, redacted per
+  [13 §8](13-security.md#8-secret-redaction).
+- **Actions** are rendered from `options`, **in the order the agent sent them,
+  with the agent's own labels** — including `allow_always` / `deny_always` when
+  the agent offered them. omt does not add, remove, reorder or relabel options
+  (D1), and does not withhold `allow_always` from a remote client (D2): a phone
+  the owner holds is the laptop keyboard. Where the agent's option carries a
+  persistence scope, that scope is shown as a subtitle
+  (`"for Bash(git *) in this project"`) so the user knows what they are
+  granting.
+- **`edit`**, when the agent offers it, opens the tool input in a schema-aware
+  editor and resolves with `updated_input`, which maps onto `PreToolUse`'s
+  `updatedInput`.
 
 ```ts
-// InteractionResponse for permission:
+// InteractionResponse for permission (shape owned by 06 §5.0):
 { type: "permission";
-  decision: "allow" | "allow_always" | "deny" | "deny_always";
+  decision: "allow" | "allow_always" | "deny" | "deny_always" | "edit";
   updated_input?: unknown;
   reason?: string }               // shown to the agent; required for deny_always
 ```
 
 Every permission resolution requires a **deliberate** gesture on mobile: the
-Allow button is a press-and-hold (350 ms) with a filling ring when
-`effects` includes `destructive`, a plain tap otherwise. This is the one place
-we accept extra friction.
+Allow control is a press-and-hold (350 ms) with a filling ring, a plain tap on
+desktop. This is a property of the touch input model applied uniformly to every
+permission card — it does not depend on what the tool does and it never changes
+which options are offered. It is the one place we accept extra friction.
 
 ### 5.4 Plan review — `kind.type === "plan_review"`
 
@@ -763,14 +829,16 @@ The dashboard answers one question: **what needs me right now, anywhere?**
 
 Rows are `UnifiedSession` (§3.3) grouped into three sections:
 
-1. **Needs you** — any session with an open `Interaction`, or
-   `agent.state === "needs_attention"`. Rows here render a compact preview of
+1. **Needs you** — any session with an open `Interaction`, or an agent in
+   `AgentState::Blocked`. (A `blocked` agent with no interaction id is a
+   "needs you" omt can see but not render — 06 §4 — and the row says so.) Or
+   `agent.state === "blocked"`. Rows here render a compact preview of
    the interaction (the first question's `header` chips, or the permission's
    tool name) and a **primary action inline** — for a single-question,
    single-select choice with ≤3 options, the options render as buttons directly
    in the row. Answering a question from the list without opening the session is
    the entire point.
-2. **Working** — `busy` sessions, with the current tool call, elapsed time, and
+2. **Working** — `working` sessions, with the current tool call, elapsed time, and
    a token/cost readout from the `Usage` payload.
 3. **Idle** — everything else, most recent first.
 
@@ -988,7 +1056,8 @@ drive them and break discoverability for real users.
   skeleton, never a wrong state.
 - `navigator.onLine` is used only as a hint to shorten backoff, never as truth.
 - A wake lock (`navigator.wakeLock`) is held while a session is `busy` **and**
-  the user opted in, so watching a long agent run does not require tapping the
+  the user opted in (`busy` here meaning `AgentState::Working`), so watching a
+  long agent run does not require tapping the
   screen.
 
 ### 8.6 PWA and Web Push
@@ -1002,8 +1071,9 @@ drive them and break discoverability for real users.
   the tab is closed.
   - Subscription: `pushManager.subscribe({ userVisibleOnly: true,
     applicationServerKey })` where the VAPID public key comes from
-    `instance.info`. The subscription is registered per instance via a
-    `notify.subscribe` capability.
+    `instance.info`. The subscription is registered per instance via the
+    `notification.push.subscribe` capability
+    ([07 §8.1](07-remote-protocol.md#81-web-push-primary)).
   - **The instance is the push sender.** It signs VAPID JWTs itself and POSTs to
     the endpoint in the subscription (`fcm.googleapis.com`,
     `*.push.apple.com`, …). This is the one outbound network call omt makes, it
@@ -1016,7 +1086,10 @@ drive them and break discoverability for real users.
   - Notification actions: for a single-question ≤3-option choice, the option
     labels become notification action buttons, so an answer is one tap from the
     lock screen. The service worker's `notificationclick` handler calls
-    `interaction.resolve` directly.
+    `interaction.resolve` directly. Note that the push *payload* is a pointer
+    only — id, session, workspace, agent, kind, and the first question's text —
+    and the option labels come from that same payload; anything richer is
+    fetched over the authenticated WebSocket ([07 §8.1](07-remote-protocol.md#81-web-push-primary)).
   - Deduplication: `tag: interaction.id`, and the SW closes a notification when
     it sees an `InteractionResolved` for the same id (delivered on the next
     push, or on app focus).
@@ -1037,7 +1110,7 @@ drive them and break discoverability for real users.
   reader hears the same information the sighted user sees, which is exactly the
   information the terminal card *cannot* convey.
 - New interactions announce via a polite live region; a session going to
-  `needs_attention` announces via an assertive one.
+  `blocked` announces via an assertive one.
 - The terminal view uses xterm.js's screen-reader mode when a screen reader is
   detected, and always exposes "read last block" as an explicit action, because
   a live VT grid is hostile to assistive tech.

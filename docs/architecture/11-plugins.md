@@ -130,7 +130,7 @@ state_labels = { working = "thinking", blocked = "confirm" }
 [[contributes.event_sources]]
 id = "aider-history"
 agent = "aider"
-tier = 5                                   # transcript tailing; may emit structured content
+tier = 3                                   # Transcript; may emit structured content
 kind = "file-tail"
 path = "{workspace}/.aider.chat.history.md"
 
@@ -263,7 +263,7 @@ via `events.resume`.
 |---|---|---|
 | **New capabilities** | `[[contributes.capabilities]]` + JSON Schemas | registered in the catalog under the plugin's group; calls are proxied to the plugin as `req`; they appear in the CLI, the HTTP routes, the TS client and the docs like any other, tagged `provider = "plugin:<id>"` |
 | **Agent adapters** | `[[contributes.agent_adapters]]` | a data-declared adapter: detection fingerprints, resume argv, state labels, hook installer spec. No Rust required for the common case |
-| **Event sources** | `[[contributes.event_sources]]` | `file-tail`, `process-poll`, `http-sse`, or `push` (the plugin emits events itself). Tier is declared and **clamped**: a plugin may not claim tier ≤ 4 unless its source kind is a real structured one (P4) |
+| **Event sources** | `[[contributes.event_sources]]` | `file-tail`, `process-poll`, `http-sse`, or `push` (the plugin emits events itself). Tier is the `Tier` enum from [06 §3](06-agent-layer.md#3-source-model) — higher is more authoritative — and is declared but **clamped**: a plugin may not claim tier ≥ 3 (`Transcript`/`Hook`/`Protocol`, the tiers permitted to emit structured content) unless its source kind is a real structured one (P4). A `process-poll` source claiming tier 5 is clamped to 1 |
 | **UI affordances** | `[[contributes.ui]]` | `session_action` (a button/menu entry bound to a capability), `dashboard_panel` (a list rendered from a query capability), `settings_page` (generated from `config_schema`). Declarative only — no plugin-supplied rendering code, no HTML, no JS injected into the web client |
 | **STT providers** | `[[contributes.stt_providers]]` | audio frames streamed to the plugin, transcripts back |
 | **Themes** | `[[contributes.themes]]` | plain theme files ([10 §8.1](10-configuration.md)) merged into the theme list |
@@ -517,7 +517,7 @@ topic  = "ada-omt"
 token  = { secret = "plugins.dev.example.ntfy.token" }
 
 [[notifications.rules]]
-when  = "agent.needs_attention"
+when  = "agent.blocked"
 sinks = ["ntfy"]
 title = "{agent} is blocked in {workspace}"
 priority = "high"
@@ -619,7 +619,7 @@ dev.example.ntfy  running  healthy  pid 48123  rss 31MiB  0 drops  topic=ada-omt
 
 Then, when Claude Code parks an `AskUserQuestion` in the `api` workspace: the
 agent layer opens an `Interaction`, the notification router matches the
-`agent.needs_attention` rule, calls `notification.deliver` on the ntfy plugin,
+`agent.blocked` rule, calls `notification.deliver` on the ntfy plugin,
 and the phone gets a push whose tap target is the web client's card for that
 interaction. The plugin itself could not have answered that question — it is a
 `Viewer`. The human answers it, `interaction.resolve` runs as *them*, and the
@@ -662,6 +662,6 @@ the common case, code when the format is genuinely bespoke.
   execution from a clone), but should a *user* be able to enable a plugin only
   for certain workspaces?
 - **OPEN QUESTION — event tier clamping for `push` sources.** A plugin declaring
-  a `push` event source asserts its own tier. We clamp claims of tier ≤ 4 to
+  a `push` event source asserts its own tier. We clamp claims of tier ≥ 3 to
   sources we can verify, but a plugin that genuinely speaks a native agent
-  protocol *should* be allowed tier 4. What evidence does the host accept?
+  protocol *should* be allowed tier 5. What evidence does the host accept?

@@ -333,9 +333,11 @@ Three independent caps, all enforced on append:
 
 ```rust
 pub struct ScrollbackLimits {
-    pub max_lines: u32,        // default 10_000
-    pub max_bytes: usize,      // default 64 MiB per session
-    pub max_image_bytes: usize // default 64 MiB per session
+    pub max_lines: u32,             // default 10_000
+    pub max_bytes: usize,           // default 64 MiB per session
+    /// Total resident image payload for this session. Distinct from
+    /// `TermConfig::max_image_bytes` (§1.4), which caps a *single* image.
+    pub max_image_bytes_total: usize, // default 64 MiB per session
 }
 ```
 
@@ -605,14 +607,21 @@ its own emulation. `omt-term` stays authoritative for blocks, search and
 scrollback; xterm.js is a pixel renderer. This is the lowest-latency path and
 requires no serialization of grid state.
 
-Two things make this correct rather than a hack:
-- On attach or resync, the daemon sends a **replay prologue**: a serialized
-  redraw of the current viewport (SGR + cursor positioning) generated from the
-  snapshot, followed by live bytes from `seq`. This is the standard `tmux
-  attach` trick and avoids "attach shows a blank screen until output arrives".
-- Resize is authoritative on the daemon. The client sends `session.resize`; the
-  daemon reflows, and pushes a fresh replay prologue with a new `epoch`. The
-  client calls `term.reset()` on epoch change.
+Two things make this correct rather than a hack, both specified on the wire by
+[07 §4.2](07-remote-protocol.md#42-the-decision-c-hybrid-byte-stream-primary),
+which owns the remote terminal-streaming format:
+- On attach or resync, the daemon first sends a **snapshot** — the authoritative
+  grid, run-length encoded as `grid_v1` — and then live bytes from that
+  snapshot's `seq`. This avoids "attach shows a blank screen until output
+  arrives". `omt-term`'s contribution is the state; the encoding is `omt-proto`'s.
+  For the local TUI and for debugging, `Snapshot::to_ansi(&mut impl Write)` emits
+  the equivalent SGR + cursor-positioning redraw; it is a pure, testable function
+  of the snapshot and is not the remote path.
+- Resize is authoritative on the daemon, and *which* client owns the
+  authoritative size is [07 §4.3](07-remote-protocol.md#43-the-resize-problem)'s
+  `ViewportPolicy`, not this crate's business. When the daemon reflows it emits a
+  new `epoch`; the client calls `term.reset()` and takes a fresh snapshot on
+  epoch change.
 
 **(b) Structured mode** — used for the block list, the mobile default. The client
 receives `BlockUpdate` events carrying, per block, the styled text as
@@ -1288,13 +1297,13 @@ is either an omt bug or a documented, listed difference.
    client re-requesting the original at its own scale. Needs a decision before
    graphics work starts, and it affects [09 — SSH and media](09-ssh-and-media.md).
 
-2. **OPEN QUESTION — who owns the byte ring for web replay.** §4.4's byte-stream
-   mode needs a resumable ring of raw PTY bytes keyed by `seq`. `omt-term` is a
-   pure state machine and should not hold it; `omt-session` is the natural owner,
-   but then the "replay prologue" generator (snapshot → SGR redraw) must live
-   somewhere. Proposal: `omt-term` exposes `Snapshot::to_ansi(&mut impl Write)`
-   (pure, testable) and `omt-session` owns the ring. Confirm with
-   [07 — Remote protocol](07-remote-protocol.md).
+2. **Resolved — who owns the byte ring for web replay.** `omt-session` owns the
+   resumable ring of raw PTY bytes keyed by `seq`; `omt-term` stays a pure state
+   machine and exposes `Snapshot::to_ansi(&mut impl Write)` for the local/debug
+   redraw. The remote path uses `grid_v1` from
+   [07 §4.2](07-remote-protocol.md#42-the-decision-c-hybrid-byte-stream-primary),
+   whose concrete encoding remains open —
+   [07 §9.1](07-remote-protocol.md#9-open-questions) owns that question.
 
 3. **OPEN QUESTION — Kitty keyboard protocol vs. agent CLIs.** Several agent CLIs
    negotiate the protocol themselves. When omt is the outer terminal *and* the
@@ -1313,9 +1322,10 @@ is either an omt bug or a documented, listed difference.
 5. **OPEN QUESTION — block attribution source of truth.** §6.2 has `omt-term`
    accept an `Attribution` from above. If two sources disagree (the agent layer
    says "agent" from a hook, the writer token says "human client X"), who wins?
-   Proposed rule: hook-sourced attribution outranks writer-token attribution,
-   and the loser is retained as `Attribution::contested`. Needs agreement with
-   [06 — Agent layer](06-agent-layer.md) and [12 — Collaboration](12-collaboration.md).
+   Proposed rule: hook/protocol-sourced attribution outranks writer-token
+   attribution, and the loser is retained as `Attribution::contested`. Tracked
+   as [06 §10.9](06-agent-layer.md#10-open-questions), which owns it, because the
+   decision is the agent layer's; `omt-term` only stores the result.
 
 6. **OPEN QUESTION — heuristic idle threshold.** §6.4's 300 ms is a guess. It
    should be measured against real sessions (a slow `npm install` with long

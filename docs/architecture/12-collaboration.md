@@ -7,7 +7,8 @@ happens when they collide.
 It is the runtime half of principle
 [P6](01-principles.md#p6--collaboration-is-a-runtime-feature-not-just-a-workflow).
 
-Related: [03 — Capability catalog](03-capability-catalog.md) ·
+Related: [Decision log](decisions.md) ·
+[03 — Capability catalog](03-capability-catalog.md) ·
 [05 — Session model](05-session-model.md) ·
 [06 — Agent layer](06-agent-layer.md) ·
 [07 — Remote protocol](07-remote-protocol.md) ·
@@ -220,27 +221,27 @@ inconsistent — it can approve something the user meant to deny.
 **An `Interaction` transitions from `Open` to a terminal state exactly once, by
 exactly one actor, and the resolution is broadcast to every subscriber.**
 
-```rust
-pub struct Interaction {
-    pub id: InteractionId,
-    pub session: SessionId,
-    pub kind: InteractionKind,       // Choice | Permission | Text | PlanReview
-    pub opened_at: OffsetDateTime,
-    pub timeout_at: Option<OffsetDateTime>,
-    pub state: InteractionState,
-    /// Advisory: who is currently looking at this card, for the UI.
-    pub viewers: Vec<ActorId>,
-}
+`Interaction` and `InteractionState` are defined once, in
+[06 §5](06-agent-layer.md#5-interactions--the-flagship-path), which owns the
+type. This document owns their *concurrency semantics*. The state machine, for
+reference:
 
+```rust
 pub enum InteractionState {
     Open,
+    /// A resolution is in flight: the CAS won, the responder has not yet
+    /// confirmed delivery to the agent.
+    Resolving { by: Actor, at: OffsetDateTime },
     Resolved { by: Actor, response: InteractionResponse, at: OffsetDateTime },
     Cancelled { by: Actor, reason: CancelReason, at: OffsetDateTime },
-    /// The agent went away (crashed, or the user hit Esc in the TUI) before
-    /// anyone answered. Terminal, and distinct from Cancelled.
+    /// The agent went away (crashed, timed out and proceeded, or the user hit
+    /// Esc in the TUI) before anyone answered. Terminal, distinct from
+    /// Cancelled, because nobody decided anything.
     Abandoned { at: OffsetDateTime, detail: String },
 }
 ```
+
+`Interaction::viewers: Vec<ActorId>` is advisory presence on a card (§4.4).
 
 The ledger lives in `omt-agent` and is guarded by a single mutex per session.
 Resolution is a compare-and-swap on `state`:
@@ -257,8 +258,9 @@ impl InteractionLedger {
     ) -> Result<Resolution, LedgerError> {
         let mut e = self.entry(id)?;
         match &e.state {
-            InteractionState::Open => { /* CAS: set Resolved, emit event, return Ok */ }
-            InteractionState::Resolved { by, at, .. } =>
+            InteractionState::Open => { /* CAS: set Resolving, dispatch to the
+                                          Responder, then Resolved; emit events */ }
+            InteractionState::Resolving { by, at } | InteractionState::Resolved { by, at, .. } =>
                 Err(LedgerError::AlreadyResolved { by: by.clone(), at: *at }),
             InteractionState::Cancelled { .. } => Err(LedgerError::Cancelled),
             InteractionState::Abandoned { .. } => Err(LedgerError::Abandoned),
@@ -305,16 +307,22 @@ The one thing that makes this safe is that `omt-hook` holds exactly one
 in-flight response slot per interaction and the daemon writes to it once. Even
 a bug in the ledger cannot produce two hook decisions.
 
-### 4.3 Timeouts and policy resolution
+### 4.3 Timeouts
 
 `Interaction::timeout_at` comes from the agent (Claude Code's defer window, ACP
-timeouts). On expiry, `Actor::System` resolves it as `Cancelled { reason:
-Timeout }`, which is what the agent's own default behaviour would be. Policy
-auto-resolution (a configured "always allow reads in this workspace" rule)
-resolves as `Actor::System` with `reason: Policy { rule_id }` and is audited
-identically to a human decision — see [13 §7](13-security.md), which also
-specifies which interaction kinds a remote credential is allowed to resolve at
-all.
+timeouts). On expiry, `Actor::System` resolves it as
+`Cancelled { reason: Timeout }`, which lets the agent fall back to *its own*
+default behaviour.
+
+**That is the only non-human resolution in the system.** There is no omt-side
+policy auto-resolution — no "always allow reads in this workspace" rule, no
+allow-list, no auto-approve — per
+[D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics).
+Persistent rules of that shape belong to the agent CLI's own permission
+configuration, which omt surfaces read-only and never overrides. Correspondingly
+there is no per-credential interaction policy: `Operator` may resolve any
+interaction the agent posed, `Viewer` may resolve none
+([13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog)).
 
 ### 4.4 Advisory viewer presence on a card
 
@@ -477,7 +485,7 @@ below is what separates the two.
 | enqueueing a prompt | **yes**, shown greyed with a spinner | additive, conflict-free (C4) |
 | writer acquire on a `Free` token | **yes**, input bar enables immediately | high hit rate; failure is recoverable and visible |
 | **`interaction.resolve`** | **NO** | exactly-once, consequential, and the failure mode is "you think you denied something you approved" |
-| **anything with `Effects::DESTRUCTIVE`** | **NO** | catalog-driven, mechanical |
+| **anything with `Effects::DESTRUCTIVE`** | **NO** | catalog-driven, mechanical; note this is about omt's *own* capabilities, never a judgement about an agent's tools ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)) |
 | `config.set` | **NO** | CAS semantics; showing the new value before it lands invites lost updates |
 | writer takeover (`force`) | **NO** | it has a 5 s grace window; there is nothing to be optimistic about |
 

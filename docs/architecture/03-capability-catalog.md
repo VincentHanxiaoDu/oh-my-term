@@ -64,11 +64,17 @@ Fields:
 | `kind` | `Command` or `Query`; queries are cacheable and safe to retry |
 | `role` | minimum role: `Viewer` < `Operator` < `Admin` |
 | `input`/`output` | `serde` + `schemars` types; the schema source of truth |
-| `effects` | declared side-effect bits (writes PTY, spawns process, touches FS, network, destructive) |
+| `effects` | declared side-effect bits; the closed set is `WRITES_PTY`, `SPAWNS_PROCESS`, `READS_FS`, `WRITES_FS`, `NETWORK`, `DESTRUCTIVE` |
 | `since` | version introduced; drives compatibility docs |
 
-`effects` matters for surfaces: the mobile client uses `DESTRUCTIVE` to require
-a confirm gesture, and the audit log records effects per call.
+`effects` describes what **omt** does when the capability runs. It matters for
+surfaces — the mobile client uses `DESTRUCTIVE` to require a confirm gesture —
+and for the audit log, which records effects per call. It is deliberately *not*
+a permission input: authorization is the `role` compare plus credential scope,
+and per [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
+`effects` never describes an agent's tool call, only omt's own operation. The
+`Viewer`+`WRITES_FS`/`DESTRUCTIVE` consistency check is
+[13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog).
 
 ## 3. Dispatch
 
@@ -110,7 +116,12 @@ Capabilities are request/response. Live state flows through the event bus
 
 Invariants:
 
-- Every event has `(session_id, seq)` with `seq` monotonic per session.
+- Every event has `(session_id, seq)` with `seq` monotonic per session, in the
+  envelope defined by [`omt-events`](02-crate-map.md#omt-events). Terminal byte
+  frames share that sequence space
+  ([07 §5.1](07-remote-protocol.md#51-sequence-spaces)); workspace-scoped events
+  carry `workspace` instead of `session` and use the workspace's own space
+  ([15 §4.6](15-workspace-explorer.md#46-file-watching)).
 - A client may resume with `since_seq`; the instance replays from its log or
   responds `resync_required` with a snapshot.
 - The TUI subscribes to the same bus with the same envelope. There is no
@@ -154,24 +165,38 @@ This is the shape, not the exhaustive list; each change adds its own.
 
 | Group | Representative capabilities |
 |---|---|
-| `instance` | `info`, `health`, `shutdown`, `peers.list`, `peers.add` |
-| `workspace` | `list`, `open`, `close`, `rename`, `git.status`, `worktree.*` |
+| `instance` | `info`, `health`, `catalog`, `shutdown`, `peers.list`, `peers.add` |
+| `workspace` | `list`, `open`, `close`, `rename`, `vcs.*`, `files.*`, `worktree.*`, `history` |
 | `session` | `list`, `create`, `close`, `attach`, `detach`, `resize`, `send_text`, `send_keys`, `write_bytes`, `scrollback.get`, `search`, `blocks.list`, `blocks.get`, `blocks.rerun`, `writer.acquire`, `writer.release` |
 | `pane` | `layout.get`, `split`, `close`, `focus`, `move`, `zoom` |
 | `agent` | `state`, `explain`, `bind`, `unbind`, `prompt`, `interrupt`, `queue.list`, `queue.enqueue`, `queue.remove`, `commands.list`, `commands.run` |
 | `interaction` | `list`, `get`, `resolve`, `cancel` |
 | `media` | `clipboard.read`, `clipboard.write`, `image.upload`, `image.paste`, `file.push`, `file.pull` |
 | `stt` | `session.start`, `session.stop`, `providers.list` |
-| `config` | `get`, `schema`, `set`, `validate`, `reload`, `sources` |
-| `plugin` | `list`, `install`, `enable`, `disable`, `call` |
+| `media` (cont.) | `blob.begin`, `blob.commit`, `transfer.progress` |
+| `config` | `get`, `schema`, `set`, `unset`, `validate`, `reload`, `sources`, `default`, `export`, `import`, `pending`, `project.trust` |
+| `theme` / `keys` | `theme.list/get/import`, `keys.list/conflicts` |
+| `workflow` / `launch` | `list`, `get`, `run`, `save`, `delete` |
+| `plugin` | `list`, `info`, `install`, `uninstall`, `enable`, `disable`, `upgrade`, `health`, `logs`, `call`, `permissions.get/set` |
+| `notification` | `push.subscribe`, `push.unsubscribe`, `test` |
+| `presence` | `list` |
+| `audit` | `query` (Admin) |
 | `events` | `subscribe`, `resume` |
+
+The full consolidated list, with kinds, roles and effects, is the hand-written
+[`docs/reference/capabilities-draft.md`](../reference/capabilities-draft.md),
+which §5 artifact #4 replaces with generated output.
 
 Two of these deserve emphasis:
 
 - **`interaction.resolve`** is the flagship path. It is how a phone answers an
-  `AskUserQuestion` card. It is idempotent by `interaction_id`, resolvable
-  exactly once, and its result is broadcast to every surface — including the
-  TUI, which then shows the card as answered by whoever answered it.
+  `AskUserQuestion` card. It is resolvable exactly once and idempotent by
+  `(interaction, actor, response)` — a retry from the same actor with the same
+  response returns the original `Resolution`; a different actor or a different
+  response gets `conflict`. Full semantics in
+  [12 §4](12-collaboration.md#4-interaction-ownership). Its result is broadcast
+  to every surface — including the TUI, which then shows the card as answered by
+  whoever answered it.
 - **`agent.commands.list` / `agent.commands.run`** give the web client native
   slash-command semantics: the catalog exposes the agent's own resolved command
   list (from `system/init`, ACP `available_commands_update`, or disk

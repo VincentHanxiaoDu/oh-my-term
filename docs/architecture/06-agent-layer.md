@@ -133,6 +133,13 @@ One state machine per binding consumes all sources.
 
 **Observable state.**
 
+`AgentState` lives in `omt-types` and is the **only** vocabulary for agent
+activity on any surface. Wire names are the `snake_case` variant names —
+`starting`, `idle`, `working`, `blocked`, `exited`, `unknown`. There is no
+separate `busy` or `needs_attention` state: `working` is busy, and "needs you"
+is `blocked`. (`Activity` in §6 is an internal *input* type of the heuristic
+source, never an observable state.)
+
 ```rust
 pub enum AgentState {
     Starting,
@@ -167,6 +174,15 @@ Without it, a mis-detection is unfalsifiable and every bug report is useless.
 An `Interaction` is a request from an agent for a human decision, promoted to a
 first-class, addressable, resolvable object.
 
+> **Ownership.** This document defines `Interaction`, `InteractionKind`,
+> `InteractionResponse` and their fields — it is the single source of truth for
+> the *shape*. [12 §4](12-collaboration.md#4-interaction-ownership) defines the
+> *concurrency semantics* (who may resolve, exactly-once, conflict handling,
+> timeouts) and wins on those. `web/src/generated/events.ts`
+> ([08 §2.1](08-web-client.md#21-what-codegen-emits)) is generated from these
+> types; the JSON on the wire uses the serde names below, `type` as the enum
+> tag, and `snake_case` throughout.
+
 ```rust
 pub struct Interaction {
     pub id: InteractionId,
@@ -174,28 +190,41 @@ pub struct Interaction {
     pub binding: BindingId,
     pub kind: InteractionKind,
     pub opened_at: Timestamp,
-    /// Deadline after which omt must answer or release, if the mechanism has one.
-    pub expires_at: Option<Timestamp>,
+    /// Deadline after which the agent proceeds on its own, if the mechanism has
+    /// one. Named `timeout_at` on the wire and in 12 §4.
+    pub timeout_at: Option<Timestamp>,
     pub state: InteractionState,
-    /// How an answer gets back to the agent.
+    /// How an answer gets back to the agent. §5.2.
     pub responder: ResponderRef,
+    /// Advisory: who is currently looking at this card. See 12 §4.4.
+    pub viewers: Vec<ActorId>,
 }
 
+/// Semantics and transitions: 12 §4.1.
 pub enum InteractionState {
     Open,
     Resolving { by: Actor, at: Timestamp },
     Resolved  { by: Actor, at: Timestamp, response: InteractionResponse },
-    Cancelled { reason: CancelReason },   // agent withdrew, timed out, or session died
+    Cancelled { by: Actor, reason: CancelReason, at: Timestamp },
+    Abandoned { at: Timestamp, detail: String },
 }
 
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum InteractionKind {
     /// Claude Code AskUserQuestion; ACP/MCP elicitation with a choice schema.
     Choice { questions: Vec<ChoiceQuestion> },
     Permission {
         tool: String,
+        /// The verbatim tool input, unmodified.
         input: serde_json::Value,
+        /// The shell command, for exec-shaped tools.
         command: Option<String>,
-        diff: Option<UnifiedDiff>,
+        /// Structured diff for edit-shaped tools. `FileDiff` is defined in
+        /// [15 §3.2](15-workspace-explorer.md#32-vcs-model) so one renderer
+        /// serves both the explorer and this card (15 §8.5).
+        diff: Option<FileDiff>,
+        /// The agent's own option list, verbatim and in the agent's order.
+        /// omt neither adds, removes, nor reorders entries (D1).
         options: Vec<PermissionOption>,
     },
     PlanReview { plan: String },
@@ -212,10 +241,44 @@ pub struct ChoiceQuestion {
     /// native clients do.
     pub allow_free_text: bool,
 }
+
+/// One of the agent's own suggestions, passed through unchanged.
+pub struct PermissionOption { pub id: String, pub label: String, pub kind: PermissionOptionKind }
+pub enum PermissionOptionKind { Allow, AllowAlways, Deny, DenyAlways, Edit }
 ```
 
 `Choice` maps 1:1 onto the verified `AskUserQuestion` schema, so there is no
 lossy translation on the flagship case.
+
+### 5.0 `InteractionResponse`
+
+One response type, tagged by `type`, index-aligned to the request. Rendering it
+into the exact prose or JSON the agent expects is the **daemon's** job, not any
+surface's ([08 §5.2.2](08-web-client.md#522-other--free-text)), so the formatting
+has one implementation and one fixture.
+
+```rust
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum InteractionResponse {
+    /// One `ChoiceAnswer` per question, index-aligned with `questions`.
+    Choices { answers: Vec<ChoiceAnswer> },
+    Permission { decision: PermissionOptionKind,
+                 updated_input: Option<serde_json::Value>,
+                 reason: Option<String> },
+    Text { value: String },
+    PlanReview { decision: PlanDecision, reason: Option<String> },
+}
+
+pub struct ChoiceAnswer {
+    /// Selected option labels. Length 1 unless `multi_select`.
+    pub labels: Vec<String>,
+    /// Free text entered via the synthetic "Other…" row. Mutually exclusive
+    /// with a non-empty `labels`.
+    pub other: Option<String>,
+    /// Extra context attached to a chosen option — Claude Code's `n` key.
+    pub comment: Option<String>,
+}
+```
 
 ### 5.1 Lifecycle
 
@@ -247,6 +310,10 @@ re-renders the card as answered-by-someone-else. This is the concrete answer to
 #[async_trait]
 pub trait Responder: Send + Sync {
     fn fidelity(&self) -> Fidelity;   // Native | Synthetic
+    /// Only meaningful for `Synthetic`; `Native` responders return
+    /// `Independent`. Required by D3: it is the axis that decides whether a
+    /// responder is enabled by default.
+    fn state_dependence(&self) -> StateDependence;
     async fn respond(&self, i: &Interaction, r: &InteractionResponse) -> Result<(), RespondError>;
 }
 ```
@@ -376,8 +443,26 @@ pub trait AgentAdapter: Send + Sync {
 
     /// Resolved slash commands for remote completion.
     fn commands(&self, b: &AgentBinding) -> BoxFuture<Result<Vec<SlashCommand>, AdapterError>>;
+
+    /// This agent's native file-reference syntax for a workspace-relative path
+    /// (Claude Code and opencode: `@crates/omt-term/src/lib.rs`). `None` means
+    /// the agent has none, and the surface offers "insert path" instead of
+    /// "insert mention". Used by
+    /// [15 §8.2](15-workspace-explorer.md#82-inserting-a-path-or-file-into-an-agent-prompt).
+    fn path_mention(&self, rel: &RelPath) -> Option<String> { None }
+
+    /// How this agent wants to be handed an image that already exists on disk.
+    /// See [09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent) for
+    /// the per-agent table and the `ImageReference` enum.
+    fn image_reference(&self, path: &Path, meta: &BlobMeta) -> ImageReference;
 }
 ```
+
+Both `path_mention` and `image_reference` are agent-native knowledge, so they
+live on the adapter rather than in a central table keyed by `AgentKind`
+([P4](01-principles.md#p4--native-semantics-observe-never-re-implement)).
+`path_mention` is defaulted, so adding it does not break third-party adapters
+([P2](01-principles.md#p2--pluggable-extension-without-modification)).
 
 ### 7.1 Integration installer
 
@@ -407,6 +492,15 @@ last resort, by `(cwd, start-time)` proximity against transcript files —
 explicitly marked low-confidence in `agent.explain`.
 
 ### 7.3 Coverage matrix (initial)
+
+Build order is fixed by
+[D5](decisions.md#d5--initial-agent-coverage): **Claude Code (full depth) →
+the generic ACP adapter → Codex → the heuristic floor.** The ACP adapter is
+built *early*, not last, precisely so that `AgentAdapter`, `EventSource` and
+`Responder` are validated against a second shape before they are frozen — one
+implementation covers opencode, Gemini CLI, Goose and Qwen Code at once, which
+is the best coverage-per-unit-work available. An adapter trait shaped only by
+Claude Code is the failure this ordering exists to prevent.
 
 | Agent | Binding | State | Interactions | Queue | Commands |
 |---|---|---|---|---|---|
@@ -438,6 +532,15 @@ universal via ACP.
 - **Slash commands.** Surfaced through `agent.commands.list` from the agent's
   own resolution (never from omt guessing), giving the web client a real
   completion popup with descriptions and argument hints.
+- **File changes.** Tool calls that touch files are normalized into
+  `AgentEvent::FileChanged { path, change, tool, turn_id }`, where `change` is
+  `Created | Modified | Deleted | Renamed { from }`. Every tier-3/4/5 source
+  already carries the information (hook `PostToolUse` for `Edit`/`Write`/
+  `MultiEdit`, ACP `tool_call_update` with a file location, transcript tool
+  results), so this is normalization, not new observation. It is *attribution*,
+  not truth about the filesystem — git status is the truth. Consumed by
+  [15 §8.3](15-workspace-explorer.md#83-files-the-agent-changed-this-session),
+  which keys the set by `BindingId` and clears it on binding end (§2).
 - **Usage, rate limits, compaction, subagents.** Normalized into `AgentEvent`
   payloads and rendered as session metadata. Subagent threads are a tree via
   `thread.parent`, unifying Claude Code's `isSidechain`, Codex's subagent thread
@@ -469,10 +572,25 @@ universal via ACP.
    enough for one normalizer? Verify with a logging hook.
 3. Does hook-emitted OSC actually reach omt's PTY for non-Claude agents, or is
    hook stdout swallowed?
-4. opencode `session_input` table — is it the type-ahead queue? Would extend the
+4. **Surfacing each agent's own permission posture.** [13 §7.2](13-security.md#72-remotely-resolving-an-agent-interaction)
+   requires omt to display the agent's active permission mode read-only on every
+   surface. Each CLI names it differently (`permissionMode`,
+   `--dangerously-skip-permissions`, ACP `session/set_mode`, Codex's approval
+   policy). What is the normalized shape, and can it be read reliably for each?
+5. opencode `session_input` table — is it the type-ahead queue? Would extend the
    queue feature beyond Claude Code.
-5. Codex `app-server`: are approvals first-class methods there? If so it is a
+6. Codex `app-server`: are approvals first-class methods there? If so it is a
    better responder than hooks for Codex.
-6. Goose/Crush session DB schemas, for transcript-tier support.
-7. Whether Amp's `--stream-json` is byte-compatible with Claude Code's, or only
+7. Goose/Crush session DB schemas, for transcript-tier support.
+8. Whether Amp's `--stream-json` is byte-compatible with Claude Code's, or only
    structurally similar.
+9. **Block attribution when two sources disagree** — carried over from
+   [04 §11.5](04-terminal-core.md#11-open-questions). Proposed rule:
+   hook/protocol-sourced attribution outranks writer-token attribution, and the
+   loser is retained as `Attribution::contested`. Needs agreement across 04, 06
+   and [12](12-collaboration.md).
+10. **Writer-token pre-emption by an agent** — carried over from
+    [05 §13.3](05-session-model.md#13-open-questions). When a hook-channel
+    resolution completes and the agent's next action is a PTY write while a
+    human holds the token: queue behind the human (current lean, with a visible
+    indicator) or pre-empt?

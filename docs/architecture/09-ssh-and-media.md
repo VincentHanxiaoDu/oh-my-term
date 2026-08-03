@@ -88,7 +88,9 @@ session, and re-transferring 2 MB over a pty at 9600-equivalent throughput is
 the difference between usable and not. §5.3's protocol therefore *offers the
 hash first* and skips the body when the receiver already has it.
 
-**Quota** (`media.quota` in config, per-instance defaults):
+**Quota.** These are the canonical `[media]` configuration keys; this document
+owns them and [10 §7.9](10-configuration.md#79-media) tabulates them.
+Per-instance defaults:
 
 | Knob | Default | Behavior on breach |
 |---|---|---|
@@ -192,7 +194,7 @@ capability! { name = "media.clipboard.write", group = "media", verb = "clipboard
               kind = Command, role = Role::Operator,
               input  = ClipboardWrite { text: String, target: ClipboardTarget /* Auto|Osc52|Local|Blob */ },
               output = ClipboardWriteAck { method: ClipboardMethod, truncated: bool, blob: Option<BlobId> },
-              effects = [Effects::TOUCHES_FS] }
+              effects = [Effects::WRITES_FS] }
 
 capability! { name = "media.clipboard.read", group = "media", verb = "clipboard-read",
               kind = Query, role = Role::Operator,
@@ -322,9 +324,12 @@ to `~/Downloads` and can reveal it in the file manager).
 not be a hole. Rules:
 
 - The local instance requires a credential on the forwarded socket exactly as it
-  would on TCP: `omt ssh` mints a **scoped, expiring token** (role `Media`, a
-  role below `Viewer` that permits only `media.clipboard.*` and `media.blob.*`)
-  and passes it via `OMT_LOCAL_TOKEN` in the remote environment.
+  would on TCP: `omt ssh` mints a **scoped, expiring token** — role `Viewer` with
+  `CredentialScope::capabilities = {media.clipboard.*, media.blob.*}`
+  ([13 §4.1](13-security.md#41-credential-scope)) — and passes it via
+  `OMT_LOCAL_TOKEN` in the remote environment. There is no `Media` role: the role
+  ladder is exactly `Viewer < Operator < Admin`, and narrowing is done with
+  scope.
 - The token is bound to the ssh session's lifetime and revoked on exit.
 - The socket is `0600` and lives in the remote user's runtime dir. Anyone who
   can read it is already the remote user, but the token scope means even then
@@ -678,13 +683,13 @@ capability! { name = "media.file.push", group = "media", verb = "file-push",
               kind = Command, role = Role::Operator,
               input  = FilePush { blob: BlobId, dest: PathBuf, overwrite: bool, mode: Option<u32> },
               output = FilePushAck { path: PathBuf, bytes: u64 },
-              effects = [Effects::TOUCHES_FS] }
+              effects = [Effects::WRITES_FS] }
 
 capability! { name = "media.file.pull", group = "media", verb = "file-pull",
               kind = Command, role = Role::Operator,
               input  = FilePull { path: PathBuf, max_bytes: Option<u64> },
               output = FilePullAck { blob: BlobMeta },
-              effects = [] }
+              effects = [Effects::READS_FS] }
 ```
 
 - **`push`** writes a blob to a path *on the instance*, resolved against the
@@ -772,9 +777,10 @@ Blob ids are content hashes, so they are unguessable, but that is defense in
 depth, not the access control.
 
 **The reverse socket** is the sharpest edge: it is a channel from a remote
-machine into the user's laptop. It is opt-in per host, scoped to a `Media` role,
+machine into the user's laptop. It is opt-in per host, carried by a `Viewer`
+credential whose capability scope is `media.clipboard.*` + `media.blob.*`,
 token-bound to the ssh session, prompted on first clipboard read per host, and
-logged. See [13 — Security](13-security.md) for the role definition.
+logged. See [13 §4.1](13-security.md#41-credential-scope).
 
 **Audit.** Every blob ingress and egress emits an event with origin, size,
 sniffed type, session, and actor. "Which machine read my clipboard, when" must

@@ -259,9 +259,9 @@ The web client's own record of the instances it knows lives on the device:
 ```jsonc
 // browser localStorage: omt.instances
 [
-  { "id": "01J...A", "label": "laptop",  "url": "wss://laptop.tail1234.ts.net:7681",
+  { "id": "01J...A", "label": "laptop",  "url": "wss://laptop.tail1234.ts.net:7878",
     "device_overrides": { "appearance.theme": "gruvbox-light", "appearance.font.size": 13 } },
-  { "id": "01J...B", "label": "gpu-box", "url": "wss://gpu-box.tail1234.ts.net:7681",
+  { "id": "01J...B", "label": "gpu-box", "url": "wss://gpu-box.tail1234.ts.net:7878",
     "device_overrides": { "appearance.font.size": 13 } }
 ]
 ```
@@ -275,11 +275,11 @@ as the `Instance` layer source when running locally:
 label = "laptop"
 
 [instance."01J...A".overrides]           # applied as layer 3 when this instance runs here
-"server.bind" = "127.0.0.1:7681"
+"server.bind" = "127.0.0.1:7878"
 
 [instance."01J...B"]
 label = "gpu-box"
-url = "wss://gpu-box.tail1234.ts.net:7681"
+url = "wss://gpu-box.tail1234.ts.net:7878"
 ```
 
 Note the asymmetry, which is intentional: `overrides` under an instance id are
@@ -492,7 +492,7 @@ error[OMT-C120]: expected a boolean for `agents.claude_code.auto_install_hooks`
 error[OMT-C205]: `server.bind` is not a loopback address but no auth backend is configured
   ┌─ ~/.config/omt/config.toml:44:8
   │
-44 │ bind = "0.0.0.0:7681"
+44 │ bind = "0.0.0.0:7878"
   │        ^^^^^^^^^^^^^^ binds to all interfaces
   │
   ┌─ ~/.config/omt/config.toml:47:1
@@ -573,7 +573,7 @@ applied through `toml_edit` at the reported span.
 | `OMT-C206` | `server.auth.backends` containing `"password"` requires at least one user in `secrets.toml` |
 | `OMT-C210` | `appearance.theme` must resolve in `themes/` or the built-in set |
 | `OMT-C220` | `agents.<id>.command` must exist on `PATH` (warning, not error — it may exist only on the host) |
-| `OMT-C230` | `media.max_image_bytes` ≤ `media.max_upload_bytes` |
+| `OMT-C230` | `media.osc_bridge.max_bytes` ≤ `media.quota.max_blob_bytes` ≤ `media.quota.max_total_bytes` |
 | `OMT-C240` | every `plugins.enabled` id has an installed, manifest-valid plugin |
 | `OMT-C250` | `telemetry.enabled` may only be `false` (see §7.11) |
 | `OMT-C402` | keybinding conflicts: duplicate trigger, chord/prefix shadowing, unknown capability |
@@ -712,7 +712,7 @@ rather than hiding them (which would violate §4.2's rule).
 | `auto_install` | bool | `true` |
 | `shells` | array<enum `bash\|zsh\|fish\|nu\|pwsh`> | auto-detected |
 | `osc133` | enum `emit\|consume\|both` | `"both"` |
-| `inject_env` | bool | `true` (adds `OMT_SESSION_ID`, `OMT_INSTANCE_ID`, `OMT_SOCK`) |
+| `inject_env` | bool | `true` (adds `OMT_INSTANCE`, `OMT_SESSION`, `OMT_SOCK`, and `OMT_SHELL_INTEGRATION` — see [04 §7.3](04-terminal-core.md#73-propagation-into-subshells-and-over-ssh) and [06 §7.2](06-agent-layer.md#72-correlation)) |
 | `propagate_over_ssh` | bool | `false` (see [09](09-ssh-and-media.md)) |
 | `command_metadata` | bool | `true` (pwd, git branch, exit code per block) |
 
@@ -764,7 +764,7 @@ lesson from [research/another tool.md §8](../research/another tool.md).
 ```toml
 [server]
 enabled = false                     # off until the user opts in
-bind = "127.0.0.1:7681"             # non-loopback requires auth (OMT-C205)
+bind = "127.0.0.1:7878"             # non-loopback requires auth (OMT-C205)
 advertise_url = ""                  # used when minting invite links
 max_clients = 32
 idle_client_timeout = "10m"
@@ -772,6 +772,8 @@ idle_client_timeout = "10m"
 [server.auth]
 backends = []                       # "invite" | "bearer" | "password" | "tailnet"
 default_role = "operator"           # viewer | operator | admin
+                                    # Roles are a *sharing* control (D2): the
+                                    # owner's own devices are operator/admin.
 invite_ttl = "24h"
 invite_default_role = "viewer"
 
@@ -795,8 +797,10 @@ funnel = false                      # never enabled implicitly; public exposure 
 `omt.<tailnet>.ts.net`, gets a MagicDNS name and a WireGuard-encrypted transport,
 and `trust_tailnet_identity` maps the verified peer to a role without any token.
 `funnel = true` puts the instance on the public internet and is therefore gated
-by an extra confirmation and a mandatory second auth backend
-(`OMT-C207`). See [07](07-remote-protocol.md) and [13](13-security.md).
+by an extra confirmation and a mandatory second auth backend (`OMT-C207`), plus
+the startup checklist in [13 §10](13-security.md#10-checklist--publishing-an-instance-over-tailscale-funnel),
+which `omt serve` enforces rather than merely documents. See
+[07](07-remote-protocol.md) and [13](13-security.md).
 
 ### 7.7 `[notifications]`
 
@@ -808,7 +812,7 @@ quiet_hours = { from = "23:00", to = "08:00" }
 min_interval = "5s"                 # per-session rate limit
 
 [[notifications.rules]]
-when = "agent.needs_attention"      # event selector
+when = "agent.blocked"              # event selector; matches AgentState::Blocked
 sessions = "*"                      # or a glob over workspace/session names
 sinks = ["desktop", "web-push"]
 title = "{agent} needs you in {workspace}"
@@ -851,19 +855,32 @@ key is absent is listed as `unavailable` rather than erroring at load.
 
 ### 7.9 `[media]`
 
-| Key | Type | Default |
-|---|---|---|
-| `images.enabled` | bool | `true` |
-| `images.protocol` | enum `auto\|kitty\|sixel\|iterm2\|none` | `"auto"` |
-| `images.max_bytes` | bytes | `"10MiB"` |
-| `images.max_pixels` | u64 | `40_000_000` |
-| `images.thumbnail_max_px` | u32 | `2048` |
-| `upload.max_bytes` | bytes | `"64MiB"` |
-| `upload.tmp_dir` | path | `$XDG_RUNTIME_DIR/omt` |
-| `upload.ttl` | duration | `"1h"` |
-| `clipboard.osc52_read` | bool | `false` (reading the user's clipboard from the PTY is off by default) |
-| `clipboard.osc52_write` | bool | `true` |
-| `clipboard.max_bytes` | bytes | `"1MiB"` |
+Owned by [09 — SSH and media](09-ssh-and-media.md); the defaults there are
+authoritative and this table mirrors them.
+
+| Key | Type | Default | Owning section |
+|---|---|---|---|
+| `quota.max_blob_bytes` | bytes | `"32MiB"` | [09 §2](09-ssh-and-media.md#2-the-blob-store) |
+| `quota.max_total_bytes` | bytes | `"512MiB"` | 09 §2 |
+| `quota.max_blobs_per_session` | u32 | `200` | 09 §2 |
+| `quota.ttl` | duration | `"24h"` | 09 §2 |
+| `quota.ttl_referenced` | duration | `"7d"` | 09 §2 |
+| `blob_dir` | path | `$XDG_RUNTIME_DIR/omt/<instance>/blobs` | 09 §2 |
+| `images.enabled` | bool | `true` | 09 §7.2 |
+| `images.protocol` | enum `auto\|kitty\|sixel\|iterm2\|none` | `"auto"` | 09 §7.2 |
+| `images.max_rows` | u16 | `20` | 09 §7.2 |
+| `images.thumbnail_max_px` | u32 | `512` | 09 §7.3 |
+| `clipboard.osc52_write` | bool | `true` | 09 §3.1 |
+| `clipboard.osc52_max_bytes` | bytes | `"64KiB"` | 09 §3.1 |
+| `clipboard.osc52_read` | bool | `false` (reading the user's clipboard from a foreign terminal is off by default) | 09 §3.2 |
+| `osc_bridge.max_bytes` | bytes | `"8MiB"` | 09 §5.3.1 |
+| `reverse_socket.hosts` | array\<string\> | `[]` (opt-in per host) | 09 §5.2 |
+
+Note the distinct per-*image* cap in the terminal core:
+`TermConfig::max_image_bytes` (32 MiB) bounds one inline image in the parser, and
+`ScrollbackLimits::max_image_bytes_total` (64 MiB) bounds a session's resident
+image payload — see [04 §1.4](04-terminal-core.md#14-where-vte-is-not-enough) and
+[04 §2.5](04-terminal-core.md#25-bounding-memory).
 
 ### 7.10 `[plugins]`
 

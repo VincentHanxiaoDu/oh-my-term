@@ -23,6 +23,7 @@ solution, and the invariants every other document and every change must respect.
 - [13 — Security model](13-security.md)
 - [14 — Licensing and provenance](14-licensing.md)
 - [15 — Workspace explorer: files and version control](15-workspace-explorer.md)
+- [Glossary](glossary.md) — the canonical name for every shared type and concept
 
 Background research that informed these decisions lives in
 [`docs/research/`](../research/): [another tool](../research/another tool.md),
@@ -130,20 +131,27 @@ Six independent sources, one merged state machine per session. Sources are
 ranked by confidence; a higher-confidence source wins inside a staleness
 window, and lower ones only fill gaps.
 
+Tier numbers are the `Tier` enum in
+[06 §3](06-agent-layer.md#3-source-model) — **higher is more authoritative**,
+and a lower tier may never contradict a live higher one.
+
 | Tier | Source | What it gives | Coverage |
 |---|---|---|---|
-| 0 | omt spawned it | intent, argv, injected env | when omt starts the agent |
-| 1 | process + env inspection | which agent, native session id | all |
-| 2 | omt-injected env + OSC backchannel | correlation, out-of-band signals | all |
-| 3 | agent-native hooks | precise lifecycle, tool calls, **deferred approvals** | Claude Code, Codex, Gemini, Qwen, Cursor, opencode |
-| 4 | agent-native protocol (ACP / app-server / REST+SSE) | full structured stream | opencode, Gemini, Goose, Qwen, Codex, Amp |
-| 5 | transcript tailing | retroactive truth, works with no cooperation | Claude Code, Codex, opencode, Gemini, Aider |
-| 6 | PTY heuristics | `busy \| idle \| needs_attention` only | all, fallback |
+| 5 `Protocol` | agent-native protocol (ACP / app-server / REST+SSE) | full structured stream | opencode, Gemini, Goose, Qwen, Codex, Amp |
+| 4 `Hook` | agent-native hooks | precise lifecycle, tool calls, **deferred approvals** | Claude Code, Codex, Gemini, Qwen, Cursor, opencode |
+| 3 `Transcript` | transcript tailing | retroactive truth, works with no cooperation | Claude Code, Codex, opencode, Gemini, Aider |
+| 2 `Marker` | omt-injected env + OSC backchannel | correlation, out-of-band signals | all |
+| 1 `Process` | process + environ inspection | which agent, native session id | all |
+| 0 `Heuristic` | PTY heuristics | `Busy \| Idle \| NeedsAttention` only | all, fallback |
 
-Tier 6 is deliberately capped: heuristics may never produce structured content.
+Being the process that spawned the agent is not a tier — it is a property of the
+binding that makes tiers 1 and 2 exact (known argv, injected correlation ids)
+rather than inferred.
+
+Tier 0 is deliberately capped: heuristics may never produce structured content.
 Anything omt renders as a card must come from tier 3, 4 or 5, so that a locale
 change or a version bump degrades attentiveness, never correctness. This is the
-main departure from another tool, whose entire state model is tier 6.
+main departure from another tool, whose entire state model is tier 0.
 
 The flagship mechanism is Claude Code's `PreToolUse` hook returning
 `permissionDecision: "defer"` on `AskUserQuestion`: it parks the tool call,

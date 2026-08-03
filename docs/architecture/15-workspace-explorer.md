@@ -647,12 +647,15 @@ There is no `stage`, `unstage`, `discard`, `apply` or `commit` (§1.1).
 resume and schema generation apply unchanged:
 
 ```json
-{ "type": "call", "id": "r7", "name": "events.subscribe",
-  "input": { "topics": [{ "kind": "workspace_fs", "workspace": "w_9f3c2a1b" }],
-             "since_seq": 41208 } }
+{ "t": "subscribe", "id": "r7", "sub": "sub_3",
+  "filter": { "workspaces": ["w_9f3c2a1b"], "kinds": ["workspace_fs"] },
+  "since_seq": { "w_9f3c2a1b": 41208 } }
 ```
 
-`files.watch` and the subscription are deliberately separate: the subscription
+The frame shape is [07 §3.7](07-remote-protocol.md#37-subscriptions)'s — a
+`Subscribe` message with a coarse `(sessions × workspaces × kinds)` filter, not a
+bespoke topic type. `files.watch` and the subscription are deliberately separate:
+the subscription
 says "deliver me events on this topic", the watch says "make the events exist".
 A client that subscribes without watching receives `VcsHeadChanged` only (from
 the cheap ref watch the session layer already carries) and is told
@@ -661,12 +664,12 @@ the cheap ref watch the session layer already carries) and is told
 ### 6.1 Wire examples
 
 ```json
-{ "type": "call", "id": "r1", "name": "workspace.files.list",
+{ "t": "call", "id": "r1", "name": "workspace.files.list",
   "input": { "workspace": "w_9f3c2a1b", "path": "crates/omt-term/src",
              "include_vcs": true, "include_ignored": true } }
 ```
 ```json
-{ "type": "result", "id": "r1", "ok": true, "output": {
+{ "t": "result", "id": "r1", "ok": true, "output": {
   "not_modified": false,
   "listing": { "dir": "crates/omt-term/src", "etag": "d1:8a41c0e2",
     "truncated": false, "total_seen": 6, "nodes": [
@@ -684,7 +687,7 @@ the cheap ref watch the session layer already carries) and is told
         "agent_touched": true } ] } } }
 ```
 ```json
-{ "type": "result", "id": "r2", "ok": true, "output": {
+{ "t": "result", "id": "r2", "ok": true, "output": {
   "rel": "crates/omt-term/src/lib.rs", "base": { "type": "head" }, "truncated": false,
   "state": { "index": "unmodified", "worktree": "modified", "conflicted": false,
              "untracked": false, "ignored": false, "lines": { "added": 2, "removed": 1 } },
@@ -700,7 +703,7 @@ the cheap ref watch the session layer already carries) and is told
       ] } ] } } }
 ```
 ```json
-{ "type": "event", "instance": "i_5c1e", "workspace": "w_9f3c2a1b", "seq": 41211,
+{ "t": "event", "sub": "sub_3", "session": null, "workspace": "w_9f3c2a1b", "seq": 41211,
   "ts": "2026-08-03T09:14:02.418Z", "source": "workspace_fs",
   "payload": { "type": "vcs_status_changed",
     "summary": { "kind": "git", "head": { "type": "branch", "name": "feat/reflow" },
@@ -715,7 +718,7 @@ the cheap ref watch the session layer already carries) and is told
 A confinement failure — note the code, not a 500 (§9.1):
 
 ```json
-{ "type": "result", "id": "r3", "ok": false,
+{ "t": "result", "id": "r3", "ok": false,
   "error": { "code": "not_found", "message": "No such path in this workspace.",
              "detail": { "path": "../../etc/passwd" } } }
 ```
@@ -868,12 +871,9 @@ files" is one action from the changed-files list — the actual phone gesture fo
 The explorer consumes `AgentEvent::FileChanged { path, change, tool, turn_id }`
 and maintains a per-*binding* set of touched paths.
 
-> **Honest note:** [06](06-agent-layer.md) describes tool-call normalization but
-> does not currently declare a `FileChanged` payload. This design requires one;
-> adding it is a coordination item (§13.6). Every tier-3/4/5 source already
-> carries enough (hook `PostToolUse` for Edit/Write/MultiEdit, ACP
-> `tool_call_update` with a file location, transcript tool results), so it is a
-> normalization task, not new observation.
+`AgentEvent::FileChanged { path, change, tool, turn_id }` is declared in
+[06 §8](06-agent-layer.md#8-ancillary-semantics), which owns the payload;
+`change` is `Created | Modified | Deleted | Renamed { from }`.
 
 The set is keyed by `BindingId` and **cleared when the binding ends**, matching
 the `clear_retained()` discipline in [06 §2](06-agent-layer.md#2-the-two-axis-model)
@@ -897,7 +897,10 @@ is `SPAWNS_PROCESS` and `Operator`, the web client's generic effects wrapper
 produces a confirm sheet naming the program. From a phone this is "open that
 file on my laptop" — genuinely useful and genuinely a process spawn, so the
 confirmation is correct rather than friction. Disabled when `editor` is unset;
-hidden (not failing) for a credential with `deny_process_spawn`.
+greyed out with a reason for a credential whose scope
+([13 §4.1](13-security.md#41-credential-scope)) excludes
+`workspace.files.reveal`, per the degradation rule in
+[08 §3.4](08-web-client.md#34-graceful-degradation-across-catalog-versions).
 
 ### 8.5 Diffs inside permission cards
 
@@ -1000,13 +1003,21 @@ defaulting to `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `id_rsa*`,
 | | `Viewer` | `Operator` | `Admin` |
 |---|---|---|---|
 | See the node, badged 🔒 | yes | yes | yes |
-| `files.read` its content | refused (`forbidden_sensitive`) | refused unless `allow_sensitive_read` | allowed |
-| `vcs.diff` its content | `DiffBody::Redacted` | same | allowed |
+| `files.read` its content | refused (`forbidden_sensitive`) | allowed | allowed |
+| `vcs.diff` its content | `DiffBody::Redacted` | allowed | allowed |
 | Line stats (`+n −m`) | yes | yes | yes |
 
-Listing without content is the right trade: hiding it makes the tree lie,
-showing it makes a stolen phone a credential leak. `allow_sensitive_read` is
-per-credential, off by default, and off in particular for `omt invite --phone`.
+Listing without content is the right trade for a *shared* credential: hiding it
+makes the tree lie, showing it makes a shared read-only link a credential leak.
+
+The gate is on `Viewer` only, and that is deliberate. `Viewer` is the sharing
+role ([13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog)); the
+owner's own devices are `Operator`, and per
+[D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) an `Operator` on a
+phone is equivalent to sitting at the TUI, which can `cat .env` without
+ceremony. Refusing the owner's phone would be a capability that works locally
+and not remotely, which D2 forbids. An owner who wants a stricter phone mints a
+narrower credential deliberately (`13 §4.1`); it is not the default.
 
 Separately, the redactor from [13 §8](13-security.md#8-secret-redaction) runs
 over **diff and file content** on the way out, catching high-entropy secrets in
@@ -1136,11 +1147,11 @@ precedent for using `ignore` directly in §4.4 instead of `git check-ignore`.
 1. **Does `stage`/`unstage` ever earn its way in?** §1.1 says no for v1. The
    strongest counter-case is the phone review flow: read the agent's diff, stage
    the good files, tell the agent to commit. If revisited, the shape is
-   `workspace.vcs.stage` at `Operator` with `WRITES_FS`, a `CredentialPolicy`
-   opt-in mirroring `deny_destructive_approval`
-   ([13 §7.2](13-security.md#72-remotely-approving-an-agent-permission-prompt)),
-   and a refusal when the path has a partially-staged state `git add` would
-   destroy. `discard` and `commit` stay out regardless. Needs v1 usage data.
+   `workspace.vcs.stage` at `Operator` with `WRITES_FS`, reachable to any
+   `Operator` credential (there is no per-credential approval policy — see
+   [13 §7.2](13-security.md#72-remotely-resolving-an-agent-interaction)), and a
+   refusal when the path has a partially-staged state `git add` would destroy.
+   `discard` and `commit` stay out regardless. Needs v1 usage data.
 
 2. **Repository-wide content search.** Out of scope (§1), but the obvious next
    request, and it interacts with these caps and the watcher. another terminal does it
@@ -1171,20 +1182,18 @@ precedent for using `ignore` directly in §4.4 instead of `git check-ignore`.
    line in a diff is confusing). Needs a call with the security-model owner:
    always on, non-`Admin` only, or name-pattern gating alone.
 
-6. **`AgentEvent::FileChanged` does not yet exist in [06](06-agent-layer.md).**
-   §8.3 depends on it. It is normalization over payloads all tier-3/4/5 sources
-   already carry, but it is a contract change in `omt-events` and needs the
-   agent-layer owner. Until it lands, `agent_touched` is always `false` and the
-   mobile "Agent" group does not appear — a clean degradation, but a visibly
-   missing feature.
+6. **Resolved — `AgentEvent::FileChanged`** is now declared in
+   [06 §8](06-agent-layer.md#8-ancillary-semantics). Until adapters emit it,
+   `agent_touched` is always `false` and the mobile "Agent" group does not
+   appear — a clean degradation.
 
-7. **`AgentAdapter::path_mention`** (§8.2) adds a method to a trait in
-   [06 §7](06-agent-layer.md#7-adapters), which is the kind of change
-   [P2](01-principles.md#p2--pluggable-extension-without-modification) warns
-   about. A *defaulted* method is compatible, but it is worth asking whether
-   mention syntax belongs on the adapter or in a small `MentionStyle` table
-   keyed by `AgentKind`. Leaning: the adapter, since it is agent-native
-   knowledge — needs the doc-06 owner's agreement.
+7. **Resolved — `AgentAdapter::path_mention`** is now a *defaulted* method on the
+   trait in [06 §7](06-agent-layer.md#7-adapters), which keeps it compatible per
+   [P2](01-principles.md#p2--pluggable-extension-without-modification). The
+   rejected alternative was a central `MentionStyle` table keyed by `AgentKind`;
+   the adapter won because mention syntax is agent-native knowledge (P4) and a
+   plugin-contributed adapter must be able to supply it without editing
+   `omt-core`.
 
 8. **What is the default diff base on the mobile changed-files screen?**
    `Worktree` (uncommitted only) or `MergeBase(default_branch)` (the whole

@@ -209,19 +209,26 @@ Rules that make the tree behave:
 A session's PTY has exactly one size. When N clients view the same workspace at
 different terminal sizes, we must choose one.
 
-**Decision: the PTY size is the minimum over attached, non-lazy viewers**, per
-pane, recomputed on every attach/detach/resize, with a 250 ms debounce.
+**The negotiation rule is specified once, in
+[07 §4.3](07-remote-protocol.md#43-the-resize-problem), which owns it:** each
+session has one authoritative `(cols, rows)` with a `ViewportPolicy` whose
+`SizeOwner` is `Writer` (default), `Pinned { by }`, or `Smallest` (opt-in). This
+crate stores the policy on the session, applies the resulting size to the PTY,
+and reports every client's viewport for presence.
 
-- A client may attach as a **lazy viewer** (`SessionAttach::size_policy =
-  Observer`), which excludes it from the minimum. The mobile web client attaches
-  as an observer by default and renders the block list (which does not need grid
-  fidelity), so a phone never shrinks a laptop's terminal. Switching a phone into
-  "full terminal" mode makes it a sizing participant, and the UI says so.
-- Clients whose viewport is larger than the negotiated size render the unused
-  area as inactive margin rather than stretching.
-- Resizes are debounced and coalesced; a drag-resize produces one `resize` call
-  to `omt-term`, not sixty. See [04 §3](04-terminal-core.md#3-reflow-on-resize)
-  for what a resize costs.
+What follows from that here:
+
+- Every client reports its viewport; a non-authoritative client's report updates
+  presence and nothing else. Clients whose viewport differs from the
+  authoritative size render scaled-to-fit-width and letterboxed, never cropped.
+- `SizeOwner::Smallest` is the "nobody is cropped" pairing mode, and is the only
+  mode in which any attached client's viewport change can resize the PTY.
+- Resizes are debounced and coalesced (250 ms); a drag-resize produces one
+  `resize` call to `omt-term`, not sixty. See
+  [04 §3](04-terminal-core.md#3-reflow-on-resize) for what a resize costs.
+- A client in block view receives no PTY bytes and is never a sizing
+  participant, so a phone reading the block list cannot shrink a laptop's
+  terminal.
 
 ---
 
@@ -259,7 +266,10 @@ pub struct FocusState {
 pub struct Client {
     pub id: ClientId,
     pub kind: ClientKind,             // LocalTui | Web { user_agent } | Cli | Plugin
-    pub role: Role,                   // from omt-auth; Viewer < Operator < Admin
+    /// The `Actor` this client acts as — id, kind, label, role, credential.
+    /// Defined once in [12 §1](12-collaboration.md#1-actors).
+    pub actor: Actor,
+    pub role: Role,                   // mirror of `actor.role`; Viewer < Operator < Admin
     pub caps: ClientCapabilities,     // can render images? mouse? kitty keyboard?
     pub view: ClientView,
     pub attached_at: Timestamp,
@@ -269,8 +279,8 @@ pub struct Client {
 pub struct ClientView {
     pub workspace: Option<WorkspaceId>,
     pub panes: SmallVec<[PaneId; 4]>,     // what is on screen right now
+    /// Reported viewport. Authoritative only per 07 §4.3's `ViewportPolicy`.
     pub size: GridSize,
-    pub size_policy: SizePolicy,          // Participant | Observer
     pub mode: ViewMode,                   // Grid | Blocks
 }
 ```
@@ -278,8 +288,10 @@ pub struct ClientView {
 **Attach** is `session.attach { session, since_seq, mode }`. The instance replies
 with a snapshot appropriate to `mode`:
 
-- `ViewMode::Grid` → a serialized redraw of the current viewport plus a stream
-  cursor (see [04 §4.4](04-terminal-core.md#44-the-web-mapping-xtermjs)).
+- `ViewMode::Grid` → a grid snapshot plus a stream cursor (see
+  [04 §4.4](04-terminal-core.md#44-the-web-mapping-xtermjs) for the model and
+  [07 §4.2](07-remote-protocol.md#42-the-decision-c-hybrid-byte-stream-primary)
+  for the wire encoding).
 - `ViewMode::Blocks` → the last N blocks with their metadata and styled text.
 
 If `since_seq` is supplied and still within the retained event window, the
@@ -291,9 +303,9 @@ If the seq is too old, the reply is `resync_required` plus a fresh snapshot.
 (`session.detach`/`instance.detach`). Detaching:
 
 - removes the client from `viewers` and from the size negotiation;
-- releases any writer token it held **immediately** if the detach was explicit,
-  or after `writer_disconnect_grace` (default 5 s) if the transport just dropped,
-  so a brief network blip does not hand the terminal to someone else;
+- releases any writer token it held immediately, on explicit detach *and* on
+  transport close — the holder is provably gone
+  ([12 §3.3](12-collaboration.md#33-lifecycle));
 - leaves the session running. Always. A session is never killed by a client
   going away.
 
@@ -312,6 +324,14 @@ same live output.
 This is the concrete answer to [P6](01-principles.md#p6--collaboration-is-a-runtime-feature-not-just-a-workflow)'s
 input-arbitration requirement.
 
+> **Ownership.** This section describes the writer token as part of a session's
+> **data model** — where it lives in the tree, what it persists, how it
+> interacts with attach/detach. **[12 §3](12-collaboration.md#3-the-writer-token)
+> defines its semantics** — who may acquire it, what takeover means, the
+> timeouts, the epoch check, and how every conflict resolves. Where the two
+> disagree, 12 wins and this section is the bug. The numbers below are quoted
+> from 12, not set here.
+
 ### 5.1 The rule
 
 > **At most one actor may write to a session's PTY at any moment. Holding the
@@ -324,92 +344,90 @@ failure is invisible until something destructive runs.
 
 ### 5.2 Model
 
+The type is `WriterToken`, defined in
+[12 §3.2](12-collaboration.md#32-state). `Session::writer` holds one:
+
 ```rust
 pub struct WriterState {
-    pub holder: Option<Writer>,
-    pub queue: VecDeque<PendingClaim>,     // bounded, default 4
+    /// `None` == Free. See 12 §3.3 for the state machine.
+    pub token: Option<WriterToken>,     // { holder, acquired_at, last_input_at,
+                                        //   epoch, keep_size, takeover }
     pub policy: WriterPolicy,
 }
 
-pub struct Writer {
-    pub actor: Actor,                  // Client(ClientId) | Agent(AgentRunId) | Local
-    pub acquired_at: Timestamp,
-    /// Auto-release deadline; refreshed on every write.
-    pub idle_deadline: Timestamp,
-    /// Hard deadline regardless of activity; None for the local TUI by default.
-    pub hard_deadline: Option<Timestamp>,
-    pub reason: Option<String>,        // "answering a permission prompt", shown in UI
-}
-
 pub struct WriterPolicy {
-    pub idle_timeout: Duration,         // default 60 s
-    pub max_hold: Option<Duration>,     // default None (unlimited) for Operator+
-    pub takeover: TakeoverPolicy,
+    pub idle_timeout: Duration,         // 90 s — 12 §3.3
+    pub takeover_grace: Duration,       // 5 s  — 12 §3.3
     pub auto_acquire: bool,             // default true for a single attached client
 }
-
-pub enum TakeoverPolicy {
-    /// A takeover request notifies the holder and completes after `grace`
-    /// unless the holder declines. Default.
-    Negotiated { grace: Duration },     // default 5 s
-    /// Admin role may seize immediately.
-    Forced,
-    /// No takeover; the holder must release.
-    Never,
-}
 ```
+
+`epoch` is the load-bearing field for this crate: every PTY write carries the
+epoch the client believed it held, and `omt-session` rejects writes with a stale
+epoch. Without it, input in flight when a token changed hands lands in someone
+else's editing session.
 
 ### 5.3 Operations
 
+Semantics are [12 §3.3](12-collaboration.md#33-lifecycle)'s; the handlers are
+here.
+
 ```
-session.writer.acquire   { session, reason?, wait: bool }
-                         -> Acquired { token, until } | Queued { position } | Denied { holder }
-session.writer.release   { session }                    -> Released
-session.writer.takeover  { session, reason }            -> Pending { decides_at } | Taken | Denied
-session.writer.respond   { session, request_id, allow } -> Ack        // holder answers a takeover
-session.writer.status    { session }                    -> WriterStatus
+session.writer.acquire   { session, reason?, force: bool }
+                         -> Acquired { epoch, holder } | Conflict { holder, takeover? }
+session.writer.release   { session }                  -> Released
+session.writer.keep      { session }                  -> Kept   // holder cancels a takeover
+session.writer.status    { session }                  -> WriterStatus
 ```
 
-Semantics:
+Takeover is `acquire { force: true }`, not a separate capability: it opens a
+`PendingTakeover` with a 5 s grace window that the holder may cancel once with
+`writer.keep`. There is no queue of pending claims and no `TakeoverPolicy` enum —
+a takeover storm resolves to the most recent requester (12 §6 C5).
+
+Consequences for the data model:
 
 - **`auto_acquire`.** When exactly one client is attached with `Operator`+ and
-  nobody holds the token, the first write implicitly acquires it. Single-user
+  the token is `Free`, the first write implicitly acquires it. Single-user
   operation therefore never sees the mechanism at all — the token only becomes
   visible when there is contention, which is the correct ergonomic trade.
 - **Writes are checked, not queued.** `session.send_text` / `send_keys` /
   `write_bytes` from a non-holder returns `precondition_failed` with the current
   holder in the structured error detail, so the client can offer "request
-  takeover". Buffering a non-holder's keystrokes and replaying them later would
-  be worse than refusing.
-- **Idle release.** The token auto-releases after `idle_timeout` of no writes.
-  This is what keeps a forgotten phone from blocking the laptop.
-- **Takeover.** `Negotiated` sends `WriterTakeoverRequested` to the holder and
-  to all viewers, starts a `grace` timer, and resolves as `Taken` (grace expired
-  or holder allowed) or `Denied` (holder declined). The holder declining
-  restarts nothing — the requester may retry. Admins may use `Forced`, and a
-  forced takeover is recorded in the audit log with the actor and reason
-  ([13](13-security.md)).
+  takeover". A stale epoch returns
+  `precondition_failed { expected_epoch, actual_epoch }`. Buffering a
+  non-holder's keystrokes and replaying them later would be worse than refusing.
+- **Idle release** after 90 s of no writes (`Actor::System`), and **immediate
+  release on transport close** — the holder is provably gone. All tokens release
+  on daemon restart.
 - **Agents hold the token too.** When the agent layer injects text as a last
-  resort (see [P4](01-principles.md#p4--native-semantics-observe-never-re-implement)),
-  it acquires the token as `Actor::Agent`, so a human sees "claude is typing"
+  resort ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)),
+  it acquires the token as `ActorKind::Agent`, so a human sees "claude is typing"
   rather than mysterious characters, and can take over.
 - **Observers always see the state.** `WriterStatus` is part of every session
   snapshot and every change is an event, so the TUI can render "driven by:
-  phone (Ada) · 42 s" in the pane border and a phone can render the same.
-- **Read is never gated.** Scrollback, blocks, search and events are available to
-  every viewer regardless of the token. The token gates *writes to the PTY*, and
-  nothing else.
+  phone (Ada) · 42 s" in the pane border and a phone can render the same. The
+  per-surface indication requirements are
+  [12 §3.4](12-collaboration.md#34-visual-indication-is-mandatory-on-every-surface).
+- **Read is never gated.** Scrollback, blocks, search, files, diffs and events
+  are available to every viewer regardless of the token.
 
 ### 5.4 What is not gated
 
 Deliberately outside the token, because they are not PTY writes and serializing
-them would break the product:
+them would break the product ([12 §3.1](12-collaboration.md#31-what-it-governs)
+is authoritative):
 
 - `interaction.resolve` — answering an agent's question goes back through the
-  hook channel, not the PTY, and is separately guaranteed to resolve exactly
-  once by the interaction ledger ([06](06-agent-layer.md)).
-- `session.resize` — negotiated by §2.2, not owned by a writer.
+  agent's own channel, not the PTY, and is separately guaranteed to resolve
+  exactly once by the interaction ledger ([06](06-agent-layer.md),
+  [12 §4](12-collaboration.md#4-interaction-ownership)).
+- `agent.prompt` where the adapter has a structured submit path. Where the only
+  path is synthesized keystrokes, the token **is** required.
 - Scroll, search, selection, block folding — per-client view state.
+
+`session.resize` **is** gated when it carries `request_authoritative: true`,
+because that is a PTY-affecting write; a plain viewport report is not.
 
 ---
 
@@ -418,22 +436,16 @@ them would break the product:
 Presence is state, not a side channel, so that a laptop can see a phone is
 watching.
 
-```rust
-pub struct Presence {
-    pub client: ClientId,
-    pub kind: ClientKind,
-    pub label: String,               // "Ada's iPhone", from auth identity
-    pub role: Role,
-    pub viewing: SmallVec<[PaneId; 4]>,
-    pub is_writer: bool,
-    pub last_input_at: Option<Timestamp>,
-}
-```
+**The `Presence` type and its rules are defined once, in
+[12 §2](12-collaboration.md#2-presence-is-first-class-state)** — including
+`ViewFocus`, the derived `Liveness`, the debounce, and the requirement that every
+surface show it. `omt-session` is where it *lives*: it is derived from
+`Instance::clients` and each client's `ClientView`, projected per session, and
+included in `session.list` / `workspace.list` output.
 
-Emitted as `PresenceChanged` on attach, detach, view change and writer change,
-and included in `session.list` / `workspace.list` output. The TUI renders it in
-the pane border; the web client renders it as avatars. Rate-limited to one
-event per client per 500 ms so a scrolling phone does not flood the bus.
+Emitted as `presence.changed` on attach, detach, view change, viewport change,
+liveness change and writer change. Presence is **not** persisted across daemon
+restart; clients repopulate it by reconnecting.
 
 ---
 
@@ -636,9 +648,9 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `workspace.layout.set` | O | `{ workspace, layout }` | `{ layout }` |
 | `workspace.layout.preset` | O | `{ workspace, preset }` | `{ layout }` |
 | `workspace.focus` | O | `{ workspace, pane }` | `{ focused: PaneId }` |
-| `workspace.git.status` | V | `{ workspace }` | `GitIdentity + { dirty, ahead, behind }` |
+| `workspace.git.status` | V | `{ workspace }` | `VcsSummary` — **deprecated alias** for `workspace.vcs.summary` ([15 §6](15-workspace-explorer.md#6-capabilities)); kept for two minor versions per [03 §7](03-capability-catalog.md#7-versioning) |
 | `workspace.worktree.list` | V | `{ workspace }` | `{ worktrees: [WorktreeInfo] }` |
-| `workspace.worktree.add` | O | `{ workspace, path, branch, create_branch }` | `{ workspace: WorkspaceId }` — effects: `TOUCHES_FS`, `SPAWNS_PROCESS` |
+| `workspace.worktree.add` | O | `{ workspace, path, branch, create_branch }` | `{ workspace: WorkspaceId }` — effects: `WRITES_FS`, `SPAWNS_PROCESS` |
 | `workspace.history` | V | `HistoryQuery` (scope forced to this workspace) | `{ entries, next_cursor }` |
 
 ### 10.2 `session.*`
@@ -653,7 +665,7 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `session.rename` | O | `{ session, title }` | `SessionInfo` |
 | `session.attach` | V | `{ session, mode, since_seq?, size, size_policy }` | `Attached { snapshot, seq } \| ResyncRequired { snapshot, seq }` |
 | `session.detach` | V | `{ session }` | `Ack` |
-| `session.resize` | O | `{ session, cols, rows }` | `{ negotiated: GridSize }` |
+| `session.resize` | O | `{ session, cols, rows, pixel_width?, pixel_height?, request_authoritative }` | `{ authoritative: GridSize, owner: SizeOwner }` — per [07 §4.3](07-remote-protocol.md#43-the-resize-problem); requires the writer token only when `request_authoritative` |
 | `session.send_text` | O | `{ session, text, submit }` | `{ seq }` — effects: `WRITES_PTY`; requires writer token |
 | `session.send_keys` | O | `{ session, keys: [KeySpec] }` | `{ seq }` — effects: `WRITES_PTY`; requires writer token |
 | `session.write_bytes` | O | `{ session, bytes }` | `{ seq }` — effects: `WRITES_PTY`; requires writer token |
@@ -661,21 +673,25 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `session.scrollback.get` | V | `{ session, from: Position?, lines, mode }` | `{ lines: [StyledLine], from, to }` |
 | `session.search` | V | `{ session, query, cursor? }` | `{ matches, cursor, exhausted }` |
 | `session.target_at` | V | `{ session, position }` | `Option<Target>` |
-| `session.target_resolve` | V | `{ session, position }` | `ResolvedTarget` — effects: `TOUCHES_FS` |
+| `session.target_resolve` | V | `{ session, position }` | `ResolvedTarget` (carries `explorer: Option<ExplorerRef>`, [15 §8.1](15-workspace-explorer.md#81-fileline-from-terminal-output)) — effects: `READS_FS` |
 | `session.blocks.list` | V | `{ session, before?, limit, filter? }` | `{ blocks: [BlockInfo], next_cursor }` |
 | `session.blocks.get` | V | `{ session, block, include_output, max_lines }` | `{ block, output: [StyledLine], truncated }` |
 | `session.blocks.rerun` | O | `{ session, block, target_session? }` | `{ seq }` — effects: `WRITES_PTY`, `DESTRUCTIVE` |
 | `session.blocks.fold` | V | `{ session, block, folded }` | `Ack` |
-| `session.writer.acquire` | O | `{ session, reason?, wait }` | `Acquired \| Queued \| Denied` |
+| `session.writer.acquire` | O | `{ session, reason?, force, keep_size }` | `Acquired { epoch } \| Conflict { holder }` |
 | `session.writer.release` | O | `{ session }` | `Ack` |
-| `session.writer.takeover` | O | `{ session, reason }` | `Pending \| Taken \| Denied` |
-| `session.writer.respond` | O | `{ session, request_id, allow }` | `Ack` |
+| `session.writer.keep` | O | `{ session }` | `Ack` — holder cancels a pending takeover |
 | `session.writer.status` | V | `{ session }` | `WriterStatus` |
 | `session.history` | V | `HistoryQuery` | `{ entries, next_cursor }` |
 
 `session.blocks.rerun` is marked `DESTRUCTIVE` deliberately: re-running an
-arbitrary previous command from a phone with one tap must require a confirm
-gesture, per [03 §2](03-capability-catalog.md#2-declaring-a-capability).
+arbitrary previous command with one tap must require a confirm gesture, per
+[03 §2](03-capability-catalog.md#2-declaring-a-capability). Note that this is a
+property of **omt's own** capability, applied identically on the TUI, the CLI and
+the phone — not a remote-only gate
+([D2](decisions.md#d2--remote-is-exactly-equivalent-to-local)) and not a
+judgement about the agent's tools
+([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
 
 ### 10.3 `pane.*`
 
@@ -709,8 +725,8 @@ derived from state changes, never published by hand from handlers.
 | `TerminalDamage` | *not an event* — damage is polled, see [04 §9.3](04-terminal-core.md#93-batching-and-coalescing) |
 | `BlockOpened` / `BlockClosed` / `BlockUpdated` | from `omt-term`'s block tracker |
 | `CwdChanged` / `TitleChanged` / `Bell` | from `omt-term` host actions |
-| `WriterChanged` / `WriterTakeoverRequested` / `WriterTakeoverResolved` | §5 |
-| `PresenceChanged` | §6 |
+| `WriterChanged` / `WriterTakeoverRequested` / `WriterTakeoverResolved` | §5, semantics in [12 §3](12-collaboration.md#3-the-writer-token) |
+| `presence.changed` | §6, shape in [12 §2](12-collaboration.md#2-presence-is-first-class-state) |
 | `HistoryAppended` | §9 |
 | `FocusChanged` | §3 |
 
@@ -729,13 +745,15 @@ property tests call after every operation:
 2. Every `Pane::session` names a live entry in `Instance::sessions`.
 3. No `Split` has a child `Split` of the same direction (canonical tree, §2).
 4. Split child weights sum to 1.0 ± 1e-4, and every weight is > 0.
-5. At most one `Writer` per session; every queued claim names an attached client.
+5. At most one `WriterToken` holder per session, and its `epoch` never decreases.
 6. `Session::seq` is strictly monotonic and never decreases across restore.
 7. A session in `Exited` or `Orphaned` has no writer and refuses PTY writes.
 8. `Workspace::sessions` and `Session::workspace` agree in both directions.
 9. Every `ClientId` in `Session::viewers` exists in `Instance::clients`.
-10. The negotiated PTY size equals the minimum over participant viewers of the
-    panes showing that session, or the last negotiated size when there are none.
+10. The authoritative PTY size equals what `ViewportPolicy` resolves to
+    ([07 §4.3](07-remote-protocol.md#43-the-resize-problem)): the writer's
+    viewport, the pinned size, or the minimum over attached viewports under
+    `Smallest`; and the last authoritative size when no viewer remains.
 
 ---
 
@@ -785,7 +803,8 @@ property tests call after every operation:
    deferred `PreToolUse` resolves, the agent may then write to the PTY as its own
    next action. Do we queue that behind the human's token, or does an
    agent-initiated write pre-empt? Lean: queue, with a visible indicator.
-   Needs agreement with [06](06-agent-layer.md) and [12](12-collaboration.md).
+   Tracked jointly as [06 §10.10](06-agent-layer.md#10-open-questions) and
+   [12 §9.5](12-collaboration.md#9-open-questions).
 
 4. **OPEN QUESTION — history scope for worktrees.** §7 makes each worktree its
    own workspace, but users almost certainly want history shared across worktrees
