@@ -994,6 +994,10 @@ muscle memory transfers.
 not. omt appends a synthetic `Other…` row to every question. Choosing it opens a
 single-line (or multiline, if the question is long) input.
 
+The `Other…` row and §5.2.1's comment button are **answering affordances**, so
+§5.1.3 removes both along with the options when `deliverable.type === "none"`.
+Neither is an escape hatch around the gate.
+
 **How it is delivered back matters.** `omt-agent` renders the resolution into
 the exact prose form Claude Code expects — `"<question>"="<label>"` pairs joined
 with `, `, per the verified `tool_result` shape — and appends comments and
@@ -1062,10 +1066,43 @@ Shape owned by [06 §5](06-agent-layer.md#5-interactions--the-flagship-path);
   persistence scope, that scope is shown as a subtitle
   (`"for Bash(git *) in this project"`) so the user knows what they are
   granting.
+- **In `pty` mode the permission card is *partly* answerable, and the split is
+  per option.** This is the one kind where `deliverable` alone is not the whole
+  story (06 §5.2.1). D16 verified that option 1 on a Claude Code permission
+  prompt is **always** `Yes`, so allow is position-independent — but the list is
+  2–4 options long depending on prior grants that the hook payload does not
+  carry, so the index of a *specific* `No` is not derivable. Guessing it is how
+  you deny a write by allowing it. So, when
+  `deliverable.type === "synthetic"`:
+  - options whose `kind` is `allow` or `allow_always` render as **actions**, with
+    the press-and-hold gesture below;
+  - options whose `kind` is `deny` or `deny_always` render **inert**, in place,
+    in the agent's order — the user still sees exactly what the agent offered —
+    each carrying the `index_not_derivable` reason from §5.1.3's table on a
+    shared "why?" disclosure, not one per row;
+  - the footer gains a single **`Cancel this request`** action, which sends
+    `Esc` — D16's **universal safe negative**, the one keystroke that is
+    position-independent on every card. It travels through the same D13 gated
+    transaction as an allow, never through §4.3's input path. It is labelled for
+    what it does (it
+    withdraws the request; it does not record a reasoned denial) and is styled as
+    a secondary destructive action, never as the agent's own `No`. `y` and `n` do
+    nothing on these cards and are not bound;
+  - `Open terminal view` sits next to it, because a *reasoned* deny — the one
+    that carries `reason` to the agent and the only one `deny_always` can be — is
+    a keyboard action.
+
+  When `deliverable.type === "native"` every option is an action and the footer
+  has no `Esc` row; ACP carries a real denial.
 - **Edit before approving.** The card gains an edit affordance whenever the
   responder reports `supports_edit` — a property of the channel, not of the
   agent's option list ([06 §5.4](06-agent-layer.md#54-editing-an-argument-before-approving)),
-  so omt is not adding an option the agent did not offer. Tapping it switches the
+  so omt is not adding an option the agent did not offer. A `Synthetic` responder
+  does not report it: submitting an edited argument means typing a payload into
+  the agent's own card, which is text entry, not an indexed keystroke. The
+  affordance is therefore absent in `pty` mode rather than disabled, and the
+  client tests `supports_edit` — it does not infer the answer from
+  `deliverable`. Tapping it switches the
   input pane from read-only pretty-printed JSON to an editor: schema-aware
   (typed fields, enums, required keys) where the channel supplied the tool's own
   input schema, a plain JSON editor otherwise, with the same
@@ -1104,7 +1141,29 @@ The agent's plan arrives as Markdown. Rendered with a strict Markdown pipeline
 - actions: **Approve**, **Approve and switch mode** (a dropdown of the agent's
   `permission_modes` from the `Capabilities` event — `acceptEdits`, `auto`, …),
   **Request changes** (opens a text sheet; resolves as
-  `{ type: "text", value }` semantics carried in `reason`), **Reject**.
+  `{ type: "text", value }` semantics carried in `reason`), **Reject** —
+  **rendered only when `deliverable.type === "native"`.**
+
+**In `pty` mode a plan is read-only here.** The normalizer sets
+`deliverable = None { NotPositionIndependent }` for every `PlanReview` on a
+`pty` binding (06 §5.2.1, from D16's table), so the card renders per §5.1.3: the
+full Markdown plan, the step checklist, live status updates — everything except
+the action row, which is replaced by the reason and `Open terminal view`.
+
+The reason is worth being concrete about, because a plan is the card a user most
+wants to approve from a phone and the disappointment should be explained rather
+than absorbed. `ExitPlanMode` presents **2–5 options, conditional on state the
+hook payload does not carry**, and the last of them is a **text input** rather
+than a selectable row. So neither of the two things omt would need is true: the
+index of `Approve` is not fixed, and the card cannot be dismissed into a
+decision by a single keystroke. Reading the plan on the phone and approving it at
+the keyboard is the honest split, and it is still most of the value — the plan is
+the long thing to read, and approval is one keypress.
+
+This is the strongest case for the ACP adapter's raised priority
+([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)):
+in `native` mode every action above is available, because ACP carries a real
+response channel and no keystroke is involved.
 
 ### 5.5 Free-text elicitation — `kind.type === "text"`
 
@@ -1126,13 +1185,14 @@ a voice button (§7), and `⌘/Ctrl+Enter` to submit. Draft text is persisted pe
 export interface InteractionCardProps {
   /** The generated `Interaction` type verbatim — 06 §5 owns the shape:
    *  { id, session, binding, kind, opened_at, timeout_at, state, responder,
-   *    viewers }. Note **`binding`, not `agent`**: the card is bound to an
+   *    deliverable, viewers }. Note **`binding`, not `agent`**: the card is bound to an
    *  `AgentBinding`, and the agent kind and label are read from it. There is no
    *  `agent` field, and no `OpenInteraction` type — the card renders every
    *  state in §5.1.1, not only the open one. */
   interaction: Interaction;
   variant: "inline" | "sheet" | "list";      // block view / focused / dashboard
-  /** Called only while `interaction.state.type === "open"`. The client mints the
+  /** Called only while `interaction.state.type === "open"` **and**
+   *  `interaction.deliverable.type !== "none"` (§5.1.2). The client mints the
    *  `intent_id` (§5.1) and the outbox owns it (§8.5). */
   onResolve(response: InteractionResponse): void;
 }
@@ -1148,6 +1208,17 @@ export function InteractionCard(props: InteractionCardProps) {
   );
 }
 ```
+
+**`kind.type` is the only thing this switch may test.** Answerability is not in
+it: each card renders its body unconditionally and asks a shared
+`useAnswerable(interaction)` for its footer, which returns the controls, the
+token gate, or §5.1.3's read-only footer from `deliverable` alone. Putting the
+D16 table in the view layer — a `kind.type === "plan_review"` test, or a
+`multi_select` test — is the specific mistake §5.1.2 exists to prevent: the table
+is empirical and per agent version, it lives in the normalizer, and a second copy
+in TypeScript would drift from it silently. §10.1 asserts this: every card
+component is rendered against all three `Deliverable` shapes, and the `none` case
+asserts **no** element with a click handler inside the card body.
 
 `<UnknownInteraction>` is not dead code: a newer instance may send a kind this
 client does not know. It renders `prompt` verbatim plus a "answer in the
@@ -1175,9 +1246,13 @@ Rows are `UnifiedSession` (§3.3) grouped into three sections:
    `agent.state === "blocked"`. Rows here render a compact preview of
    the interaction (the first question's `header` chips, or the permission's
    tool name) and a **primary action inline** — for a single-question,
-   single-select choice with ≤3 options, the options render as buttons directly
-   in the row. Answering a question from the list without opening the session is
-   the entire point.
+   single-select choice with ≤3 options **whose `deliverable.type !== "none"`**,
+   the options render as buttons directly in the row. Answering a question from
+   the list without opening the session is the entire point. Where `deliverable`
+   is `none` the row still appears — it *does* need you, and hiding it would be
+   the worst possible reading of §5.1.3 — but its inline action is
+   `Open terminal view` and its subtitle is the reason (§5.1.3), so the dashboard
+   never offers an answer the card itself would refuse.
 2. **Working** — `working` sessions, with the current tool call, elapsed time, and
    a token/cost readout from the `Usage` payload.
 3. **Idle** — everything else, most recent first.
@@ -1543,8 +1618,20 @@ Vitest + `@solidjs/testing-library`, no browser.
 - **Fixture-driven interaction cards.** The verbatim `AskUserQuestion` JSON from
   [agent-clis §1.3.1](../research/agent-clis.md#131-askuserquestion--the-structured-interaction-case)
   is a checked-in fixture. Tests assert: three header chips render, the wizard
-  advances on single-select, `multi_select` requires explicit Next, "Other…"
-  produces `{ other: "…" }`, and the comment path produces `{ comment: "…" }`.
+  advances on single-select, `multi_select` on a `native` binding requires
+  explicit Next, "Other…" produces `{ other: "…" }`, and the comment path
+  produces `{ comment: "…" }`.
+- **The `deliverable` matrix, for every card kind.** Each of `<ChoiceCard>`,
+  `<PermissionCard>`, `<PlanCard>` and `<TextCard>` is rendered against all three
+  `Deliverable` shapes (§5.1.2). For `{ type: "none" }` the test asserts the
+  question, options and descriptions are all **present** in the DOM (D11's
+  mirroring survives), that the reason copy for that `NotDeliverableReason` is
+  rendered, that `Open terminal view` is the only action — and that **no element
+  inside the card body carries a click handler**, which is the assertion that
+  catches a disabled-but-tappable regression. For `<PermissionCard>` the matrix
+  additionally covers the per-option split of §5.3: allow rows active, deny rows
+  inert, one `Esc` footer action. A parallel Rust test asserts the normalizer
+  produces exactly these shapes from D16's table, so the two ends cannot drift.
 - **Resolution shape tests** compare the produced `InteractionResponse` against
   a JSON fixture shared with the Rust side, so both ends test the same bytes.
 - **Reducer tests** for the event stream: out-of-order `seq` is rejected, gaps

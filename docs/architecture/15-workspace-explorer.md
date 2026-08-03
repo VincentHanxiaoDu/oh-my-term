@@ -1018,11 +1018,25 @@ fn confine(root: &CanonicalPath, rel: &RelPath) -> Result<PathBuf, WorkspaceFsEr
    (`NodeKind::Symlink`), its target followed only when inside the root;
    `SymlinkTarget::Outside` renders as an explained dead end rather than being
    silently omitted.
-5. On Windows, additionally reject reparse points resolving outside the root and
-   normalize case per the volume before comparing.
-
 Steps 2–3 mirror the two-step check verified in opencode's core (lexical
 containment then a post-`realpath` test); 1 and 4 are ours.
+
+**Steps 1–4 are the whole check on every v1 platform.** macOS and Linux are the
+targets, and Windows is supported through WSL2, which *is* Linux — the guest sees
+a Linux filesystem through Linux syscalls, so `openat`/`O_NOFOLLOW` and
+`realpath` are the right primitives there and no additional step is needed
+([D10](decisions.md#d10--platform-targets-macos-and-linux-windows-via-wsl2)).
+
+A **native**-Windows backend would need a fifth step — reparse points resolving
+outside the root are NTFS's version of the symlink escape, and comparison must be
+case-normalized per volume, since `confine()`'s prefix assertions are
+byte-comparisons that a case-insensitive volume defeats. That step is **reserved,
+not promised**: native Windows is not a v1 target, and the seam for it is the
+same `WatchDriver`/path-backend boundary §4.6 names. Recording it here means the
+requirement is not rediscovered later; it is not a claim that the path is
+implemented. (Step 1's rejection of ADS, `\\?\` and device names is unconditional
+and stays — it is input validation against a hostile client, not a platform
+behaviour, and a Windows-shaped path is never legitimate over the wire.)
 
 **Failures return `not_found`, never `unauthorized` and never a 500.** Per
 [13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog) an

@@ -192,18 +192,64 @@ it fails in the same benign way — an offline instance contributes nothing.
 device cannot honour it:
 
 ```rust
-pub enum SurfaceIntent { Auto, Blocks, Terminal }
+**There are three explicit surfaces, not two**, per
+[D14](../architecture/decisions.md#d14--agent-sessions-get-a-transcript-surface-blocks-are-for-shell-work):
+a `pty` session has block, transcript and terminal views, and transcript is the
+**mobile default for an agent session**. An earlier `SurfaceIntent` had no
+`Transcript` variant, so a user could not express the preference at all and
+`resolve_surface` could never return the default D14 mandates.
+
+```rust
+pub enum SurfaceIntent { Auto, Blocks, Transcript, Terminal }
+
+/// What the session offers, which `Auto` needs and an explicit intent may miss.
+/// Both fields come from the session's `AgentBinding` (06 §3); a shell session
+/// has none.
+struct SurfaceAvailability {
+    /// The binding's source tier is >= Transcript, so the merged agent event
+    /// stream can back a transcript view (D14).
+    transcript: bool,
+    /// OSC 133 segmentation is running — false for an agent session, which
+    /// produces no command boundaries at all (04 §6.4).
+    blocks: bool,
+}
 
 /// Resolution order, evaluated on the client at attach time.
-fn resolve_surface(intent: SurfaceIntent, viewport_px: u32) -> Surface {
+fn resolve_surface(
+    intent: SurfaceIntent,
+    avail: SurfaceAvailability,
+    viewport_px: u32,
+) -> Surface {
     match intent {
-        SurfaceIntent::Terminal if viewport_px < 600 => Surface::Terminal, // honoured, letterboxed
-        SurfaceIntent::Blocks   => Surface::Blocks,
+        // Terminal is always available and always honoured — letterboxed on a
+        // phone, never overridden.
         SurfaceIntent::Terminal => Surface::Terminal,
-        SurfaceIntent::Auto     => if viewport_px < 600 { Surface::Blocks } else { Surface::Terminal },
+
+        // An explicit structured intent is honoured when the session can back
+        // it, and falls back to terminal when it cannot. It never silently
+        // becomes the *other* structured surface: the two are not substitutes.
+        SurfaceIntent::Blocks     if avail.blocks     => Surface::Blocks,
+        SurfaceIntent::Transcript if avail.transcript => Surface::Transcript,
+        SurfaceIntent::Blocks | SurfaceIntent::Transcript => Surface::Terminal,
+
+        // Auto is by session kind first, viewport second — D14's rule.
+        SurfaceIntent::Auto if viewport_px >= 600 => Surface::Terminal,
+        SurfaceIntent::Auto if avail.transcript   => Surface::Transcript, // agent session
+        SurfaceIntent::Auto if avail.blocks       => Surface::Blocks,     // shell session
+        SurfaceIntent::Auto                       => Surface::Terminal,
     }
 }
 ```
+
+Two things the shape encodes. First, **`Auto` on a narrow viewport is decided by
+what the session *is*, not by the viewport alone** — an agent session gets the
+transcript, a shell gets blocks, and anything that can back neither gets the
+grid. Second, **a fallback goes to terminal, never sideways.** Block view for an
+agent session is not a worse option, it is *not an option* — there is no shell in
+the loop and no OSC 133 ever arrives — so quietly substituting it would show one
+unbounded card of flattened redraw output. The segmented control renders the
+unavailable surface disabled with the reason
+([08 §4](../architecture/08-web-client.md#4-view-modes)).
 
 Note that `Terminal` on a phone is *honoured*, not overridden — per
 [D2](../architecture/decisions.md#d2--remote-is-exactly-equivalent-to-local) the
@@ -1203,15 +1249,34 @@ Plus one modification to an existing capability:
 
 ### 10.2 Events
 
-All on the existing `presence` and a new `continuity` event kind
-([07 §3.7](../architecture/07-remote-protocol.md#37-subscriptions)'s `kinds`
-list gains `continuity`).
+**All four continuity events are `kind: presence`.** An earlier draft asked for a
+new `continuity` kind; [07 §3.7.1](../architecture/07-remote-protocol.md#371-the-kinds-and-the-payload-each-carries)
+has since closed `EventKind` at ten, and `presence` is the right home rather than
+merely the available one — every event below reports **what an actor or one of
+its devices is doing or has seen**, which is what `presence` already is. Its
+existing members make the same shape: `interaction.activity` is "who is looking
+at this card", `presence.identity_changed` is "which human is behind this
+connection". A draft, a recents ranking and a read mark are the same class of
+per-actor soft state, and they carry no work product — the payloads below are
+pointers, never content.
+
+> **Choice made here.** Routing under `presence` requires **no** change to a
+> closed set; a `continuity` kind requires an eleventh variant, an entry in
+> `filter.kinds`, and a decision about which `Seq` space it counts in. Between a
+> zero-line change and a change to a set another document has just declared
+> closed, the zero-line change wins, and it is not a squeeze: the events are
+> presence by nature. The visible cost is that a client cannot subscribe to
+> continuity without also receiving `interaction.activity` — acceptable, since
+> any client that wants one wants the other, and both are already coalesced.
+> Event **names** keep the `continuity.` prefix: the wire discriminant is
+> `payload.type`, and `kind` is only the subscription group (07 §3.7.1), so the
+> grouping does not rename anything.
 
 | Event | Kind | Payload | Purpose |
 |---|---|---|---|
-| `continuity.draft_changed` | `continuity` | `{ key, version, updated_by, cleared: bool }` | The other device's composer updates or empties. Text is **not** in the event — the receiver fetches it, so a draft is not broadcast to every subscriber of the session. |
-| `continuity.recents_changed` | `continuity` | `{ recents: Vec<Recent> }` | Keeps a second device's home ranking fresh. Coalesced to at most one per 10 s. |
-| `continuity.read_mark_changed` | `continuity` | `{ session, seq, by }` | Reading a session on the phone clears its "while you were away" entry on the laptop. Replaces `continuity.notify_changed`, which D12 removes along with `NotifyPrefs`. |
+| `continuity.draft_changed` | `presence` | `{ key, version, updated_by, cleared: bool }` | The other device's composer updates or empties. Text is **not** in the event — the receiver fetches it, so a draft is not broadcast to every subscriber of the session. |
+| `continuity.recents_changed` | `presence` | `{ recents: Vec<Recent> }` | Keeps a second device's home ranking fresh. Coalesced to at most one per 10 s. |
+| `continuity.read_mark_changed` | `presence` | `{ session, seq, by }` | Reading a session on the phone clears its "while you were away" entry on the laptop. Replaces `continuity.notify_changed`, which D12 removes along with `NotifyPrefs`. |
 | `interaction.activity` | `presence` | `InteractionActivity` | §3.3. |
 | `presence.identity_changed` | `presence` | `{ actor, identity }` | Lets a client classify `me` vs `other` (§3.1) without guessing from labels. |
 

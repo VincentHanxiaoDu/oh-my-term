@@ -288,7 +288,10 @@ generated doc entry.
 | Name | Verb | Kind | Role | Effects | Description |
 |---|---|---|---|---|---|
 | `tui.open_command_palette` | `open-command-palette` | Command | V | — | Open the palette ([16 §3.5](../architecture/16-input-and-keymap.md#3-the-leader-key)). |
-| `tui.open_keymap_help` | `open-keymap-help` | Command | V | — | Open the keymap cheat sheet. |
+| `tui.open_keymap_help` | `open-keymap-help` | Command | V | — | Open the keymap cheat sheet ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace)). |
+| `tui.open_session_picker` | `open-session-picker` | Command | V | — | Open the session list ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace), `<leader> w`); the web equivalent is the session list view. |
+| `tui.open_settings` | `open-settings` | Command | V | — | Open the settings surface over [10](../architecture/10-configuration.md) ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace), `<leader> ,`). It opens a view; it does not write config, so no `WRITES_CONFIG`. |
+| `tui.open_agent_dashboard` | `open-agent-dashboard` | Command | V | — | Open the agent dashboard ([16 §8.2](../architecture/16-input-and-keymap.md#82-the-leader-namespace), `<leader> A`). |
 | `tui.set_keymap` | `set-keymap` | Command | O | — | Switch keymap at runtime (`Runtime` layer); `omt keys use vim`. |
 | `tui.copy_mode.*` | `copy-mode-*` | Command | O | — | Motions, selection, yank — the action set the vim and emacs keymaps both target ([16 §6.6](../architecture/16-input-and-keymap.md#6-modal-keymaps-vim-mode-and-emacs-mode), §6.7). Enumerated in 16, not restated here. |
 
@@ -640,8 +643,18 @@ and it is removed from the `Cas` residue below.
 
 Per-client or per-identity soft state where a visible loser is the right
 outcome: `pane.scroll`, `pane.select`, `session.blocks.fold`,
-`layout.views.select`, `identity.prefs.set`, and the proposed
+`layout.views.select`, `identity.prefs.set`, the `tui.open_*` family
+(`open_command_palette`, `open_keymap_help`, `open_session_picker`,
+`open_settings`, `open_agent_dashboard`) and `tui.copy_mode.*`, and the proposed
 `continuity.draft.set`.
+
+> **Choice made here.** The `tui.*` commands were previously covered only by the
+> `Cas` residue below, which is wrong for them: opening a surface has no CAS
+> target — no version, no epoch, no file layer — so the residue's own
+> justification does not hold, and a replayed "open the palette" should simply
+> leave the palette open rather than return a cached result. They are per-client
+> view state, which is exactly `Lww`. `tui.set_keymap` is **not** in this list:
+> it writes the `Runtime` config layer and keeps its `Cas` target.
 
 ### `Cas`
 

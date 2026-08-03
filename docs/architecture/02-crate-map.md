@@ -97,9 +97,15 @@ state machine — bytes in, state and damage out. No I/O, no async.
 See [04 — Terminal core](04-terminal-core.md).
 
 ### `omt-pty`
-PTY lifecycle across Unix and Windows: spawn with injected env, resize,
-foreground-process-group inspection, signal handling, read/write actors, and
-process-tree/environ introspection (used by agent detection tier 1).
+PTY lifecycle **on Unix** — macOS and Linux, which is the whole of v1's target
+([D10](decisions.md#d10--platform-targets-macos-and-linux-windows-via-wsl2);
+Windows is supported through WSL2, which is Linux): spawn with injected env,
+resize, foreground-process-group inspection, signal handling, read/write actors,
+and process-tree/environ introspection (used by agent detection tier 1). The
+crate exposes a `PtyHandle` abstraction, so a native-Windows ConPTY backend
+remains implementable behind it — but that is a future change with its own
+decision, not a v1 obligation, and nothing here is written against ConPTY's
+lifecycle model (no `SIGWINCH`, no process group, no `TIOCSWINSZ`).
 
 ### `omt-agent-adapters`
 One module per agent, each implementing `AgentAdapter` and contributing
