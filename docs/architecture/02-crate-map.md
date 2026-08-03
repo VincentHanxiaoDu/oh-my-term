@@ -333,7 +333,20 @@ agent.
 1. No cycles; no crate depends on a higher layer.
 2. `omt-tui`, `omt-server`, `omt-plugin-host` are leaves — nothing depends on
    them.
-3. L2 crates do not depend on each other, with **three** allowed exceptions:
+3. **Within L1 the order is `omt-catalog` → `omt-events` → `omt-proto`**, and
+   the reverse edges are forbidden. `omt-catalog` depends on nothing in L1:
+   the declaration machinery must be usable by any crate, including the ones
+   that declare event-shaped capabilities. `omt-events` may use `capability!`
+   — `events.subscribe` is declared where the events live — so it depends on
+   `omt-catalog`. `omt-proto` encodes both and therefore depends on both.
+
+   The forbidden edge is `omt-catalog → omt-events`, and it is forbidden
+   because it is the one that would close a cycle. Concretely: a capability
+   whose input or output type is an `Event` would create it. Such a capability
+   should carry the event's *identifiers* and let the client resolve them, or
+   live in `omt-proto` where both sides are already visible.
+
+4. L2 crates do not depend on each other, with **three** allowed exceptions:
    - `omt-agent-adapters → omt-pty` — process inspection.
    - `omt-media → omt-term` — OSC 52 emission.
    - `omt-auth → omt-identity` — authentication must verify a credential
@@ -346,8 +359,8 @@ agent.
    `omt-open` receives `Match`/`Target` from `omt-types` rather than depending
    on `omt-term`; and `omt-input` decodes bytes and resolves to capability
    *names*, so it depends on `omt-catalog` and `omt-types` only.
-4. Only L4+ may use `anyhow`; L0–L3 use crate-local `thiserror` types.
-5. Only L4+ may spawn tasks or own a runtime; L0–L2 are runtime-agnostic
+5. Only L4+ may use `anyhow`; L0–L3 use crate-local `thiserror` types.
+6. Only L4+ may spawn tasks or own a runtime; L0–L2 are runtime-agnostic
    (async traits where needed, no `tokio::spawn`).
 
 ## Ownership for parallel implementation

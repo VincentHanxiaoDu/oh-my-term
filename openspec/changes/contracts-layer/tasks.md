@@ -14,9 +14,11 @@
       with "not implemented"
 - [ ] 1.4 Write the layering test: assert the dependency graph matches
       [02](../../../docs/architecture/02-crate-map.md) — no cycles, no upward
-      edges, L2 crates independent except the **three** documented exceptions
-      (`omt-agent-adapters → omt-pty`, `omt-media → omt-term`,
-      `omt-auth → omt-identity`)
+      edges, the L1 order `omt-catalog → omt-events → omt-proto` with the
+      reverse edges forbidden (rule 3 — the `omt-catalog → omt-events` edge is
+      the one that closes a cycle), and L2 crates independent except the
+      **three** documented exceptions (`omt-agent-adapters → omt-pty`,
+      `omt-media → omt-term`, `omt-auth → omt-identity`)
 - [ ] 1.5 Write the CI workflow: `fmt`, `clippy -D warnings`, `test`, the
       layering test, and a `codegen --check` step that fails on a stale
       committed artifact. Mark the `codegen` step `continue-on-error` until 7.6
