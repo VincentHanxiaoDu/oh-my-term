@@ -663,7 +663,7 @@ handlers; `omt-daemon` registers them. Roles: `V`iewer < `O`perator < `A`dmin.
 | `session.close` | O | `{ session, force: bool }` | `{ status }` — effects: `DESTRUCTIVE` |
 | `session.restart` | O | `{ session }` | `{ session }` — effects: `SPAWNS_PROCESS`, `DESTRUCTIVE` |
 | `session.rename` | O | `{ session, title }` | `SessionInfo` |
-| `session.attach` | V | `{ session, mode, since_seq?, size, size_policy }` | `Attached { snapshot, seq } \| ResyncRequired { snapshot, seq }` |
+| `session.attach` | V | `{ session, mode, since_seq?, viewport }` | `Attached { snapshot, seq } \| ResyncRequired { snapshot, seq }` — `viewport` is a report, not a claim; see [07 §4.3](07-remote-protocol.md#43-the-resize-problem) |
 | `session.detach` | V | `{ session }` | `Ack` |
 | `session.resize` | O | `{ session, cols, rows, pixel_width?, pixel_height?, request_authoritative }` | `{ authoritative: GridSize, owner: SizeOwner }` — per [07 §4.3](07-remote-protocol.md#43-the-resize-problem); requires the writer token only when `request_authoritative` |
 | `session.send_text` | O | `{ session, text, submit }` | `{ seq }` — effects: `WRITES_PTY`; requires writer token |

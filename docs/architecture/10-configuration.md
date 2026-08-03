@@ -1268,7 +1268,7 @@ these is available in the TUI, over HTTP/WS, and as `omt config <verb>`.
 | `keys.list` / `keys.conflicts` | Query | Viewer | resolved keymap + diagnostics |
 | `workflow.*`, `launch.*` | mixed | Operator | §9 |
 
-`effects` declarations: `config.set` carries `Effects::TOUCHES_FS`;
+`effects` declarations: `config.set` carries `Effects::WRITES_FS`;
 `config.set` on a `Restart`-class key additionally carries
 `Effects::DESTRUCTIVE` when the change is lossy (scrollback shrink, store
 backend change), which is what makes the mobile client require a confirm gesture

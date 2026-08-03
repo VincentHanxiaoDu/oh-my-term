@@ -800,7 +800,7 @@ a voice button (§7), and `⌘/Ctrl+Enter` to submit. Draft text is persisted pe
 
 ```tsx
 export interface InteractionCardProps {
-  interaction: OpenInteraction;              // includes id, kind, prompt, timeout_ms, agent, session
+  interaction: OpenInteraction;              // 06 §5: id, kind, timeout_at, viewers, agent, session
   variant: "inline" | "sheet" | "list";      // block view / focused / dashboard
   onResolve(response: InteractionResponse): void;
 }

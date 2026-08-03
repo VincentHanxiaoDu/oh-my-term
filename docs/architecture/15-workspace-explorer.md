@@ -558,12 +558,17 @@ a plain directory is not a degraded repository.
 Declared in the style of [03 §2](03-capability-catalog.md#2-declaring-a-capability);
 handlers live in `omt-daemon` over the providers.
 
-**One new effect bit.** The existing set is `WRITES_PTY, SPAWNS_PROCESS,
-TOUCHES_FS, NETWORK, DESTRUCTIVE`. We split `TOUCHES_FS` into `READS_FS` and
-`WRITES_FS`. `READS_FS` is permitted for `Viewer`; `WRITES_FS` joins the
+**One new effect bit, already adopted catalogue-wide.** The effect set is
+`WRITES_PTY, SPAWNS_PROCESS, READS_FS, WRITES_FS, NETWORK, DESTRUCTIVE`
+([03 §2](03-capability-catalog.md#2-declaring-a-capability)) — the earlier
+`TOUCHES_FS` bit was split into `READS_FS` and `WRITES_FS` for this document's
+sake, and every prior declaration has been migrated
+(`session.target_resolve` → `READS_FS`, `workspace.worktree.add` →
+`WRITES_FS`, `media.file.push`/`media.clipboard.write` → `WRITES_FS`,
+`media.file.pull` → `READS_FS`, `config.set` → `WRITES_FS`). `READS_FS` is
+permitted for `Viewer`; `WRITES_FS` joins the
 [13 §4](13-security.md#4-roles-and-their-mapping-onto-the-catalog) CI rule that
-fails the build when paired with `Viewer`. Existing `TOUCHES_FS` declarations
-(`session.target_resolve`, `workspace.worktree.add`) migrate in the same change.
+fails the build when paired with `Viewer`.
 
 **One deprecation.** [05 §10.1](05-session-model.md#101-workspace) declares
 `workspace.git.status` returning `GitIdentity + { dirty, ahead, behind }` —
