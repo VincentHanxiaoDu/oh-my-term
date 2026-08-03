@@ -1072,11 +1072,11 @@ keymap = "default"     # "default" | "vim" | "emacs" | a name in keymaps/
 "<leader> |"      = { capability = "pane.split", args = { direction = "vertical" } }
 "<leader> -"      = { capability = "pane.split", args = { direction = "horizontal" } }
 "<leader> z"      = "pane.zoom"
-"<leader> ["      = "tui.copy_mode.enter"
-"<leader> w"      = "tui.open_session_picker"
-"<leader> a"      = "tui.open_agent_dashboard"
-"<leader> ,"      = "tui.open_settings"
-"ctrl-shift-p"    = "tui.open_command_palette"
+"<leader> ["      = "ui.copy_mode.enter"
+"<leader> w"      = "ui.open_session_picker"
+"<leader> a"      = "ui.open_agent_dashboard"
+"<leader> ,"      = "ui.open_settings"
+"ctrl-shift-p"    = "ui.open_command_palette"
 
 # ── Context-scoped: `when` restricts the binding ──────────────────────────
 [[binding]]
