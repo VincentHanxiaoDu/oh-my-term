@@ -1,0 +1,931 @@
+# Remote Protocol, Transport and Auth
+
+How an `omt` instance talks to a remote client. This document specifies
+`omt-proto` (the wire contract), `omt-transport` (the byte pipes) and the
+protocol-facing half of `omt-server`.
+
+Related: [02 — Crate map](02-crate-map.md) ·
+[03 — Capability catalog](03-capability-catalog.md) ·
+[05 — Session model](05-session-model.md) ·
+[08 — Web client](08-web-client.md) ·
+[12 — Collaboration](12-collaboration.md) ·
+[13 — Security model](13-security.md)
+
+---
+
+## 1. Topology and federation
+
+### 1.1 The shape
+
+```
+   phone (web client)                         laptop (web client / TUI)
+        │  │  │                                       │
+        │  │  └────── wss ───────► instance C (cloud dev box)
+        │  └───────── wss ───────► instance B (workstation, via tailnet)
+        └──────────── wss ───────► instance A (laptop, via tailnet)
+                                        ▲
+                                   unix socket
+                                        │
+                                  omt CLI, omt-hook, local TUI
+```
+
+Two facts define everything else:
+
+- **Each instance is authoritative for its own sessions.** An instance never
+  proxies another instance, never mirrors another instance's state, and never
+  needs to know that other instances exist. There is no cluster, no leader
+  election, no shared store. An instance that is offline simply contributes
+  nothing.
+- **The client federates.** The web client holds a list of *instance
+  connections*, each with its own credential, its own connection state, its own
+  event sequence space, and its own catalog. The unified session list is a
+  client-side merge.
+
+This is the opposite of another tool's model, where the first client to attach becomes
+the store owner. It costs the client some complexity and buys: no single point
+of failure, no cross-machine trust requirement, and a natural Tailscale story
+(each machine publishes itself; the phone collects them).
+
+### 1.2 Instance identity
+
+```rust
+/// Stable, generated once at first daemon start, persisted in the state dir.
+pub struct InstanceId(Uuid);
+
+pub struct InstanceDescriptor {
+    pub id: InstanceId,
+    pub name: String,             // user-editable, defaults to hostname
+    pub version: semver::Version, // omt build version
+    pub proto: ProtoVersion,      // wire protocol version
+    pub catalog_hash: [u8; 32],   // blake3 of the sorted capability name+schema list
+    pub platform: Platform,       // os, arch
+    pub started_at: OffsetDateTime,
+}
+```
+
+`id` is the join key everywhere: session ids are only unique *within* an
+instance, so the client's global key for a session is `(InstanceId, SessionId)`.
+Wire messages never carry `InstanceId` — the connection determines it. This
+keeps frames small and makes it impossible to spoof another instance's id over
+an authenticated connection.
+
+### 1.3 Adding an instance
+
+Three paths, all producing the same client-side record:
+
+| Path | Flow | Use |
+|---|---|---|
+| **Invite link** | `omt invite --role operator --ttl 24h` prints `https://host:7878/#/join?i=<b64 invite>`. Opening it on the phone adds the instance and exchanges the invite for a long-lived credential. | first setup, sharing with a colleague |
+| **Manual** | user enters URL + bearer token, or URL + username/password | scripted / password managers |
+| **Tailnet discovery** | client queries the local tailnet for peers advertising `_omt._tcp` (or, when the client runs on a tailnet device, the Tailscale LocalAPI peer list) and offers a one-tap "add" that authenticates via tailnet identity | the common case once Tailscale is in play |
+
+An invite is a signed, expiring, scoped token; it is *not* the credential. The
+first successful use exchanges it for a per-device credential bound to a device
+public key, so a leaked link is time-boxed and revocable per device. Full
+mechanics in [13 §3](13-security.md).
+
+```json
+{
+  "t": "join.exchange",
+  "id": "req_1",
+  "invite": "eyJ2IjoxLCJpbnN0Ijoi…",
+  "device": {
+    "name": "Vincent's iPhone",
+    "pubkey": "ed25519:9f3a…",
+    "platform": "ios/safari"
+  }
+}
+```
+
+```json
+{
+  "t": "join.credential",
+  "id": "req_1",
+  "instance": { "id": "3f2a…", "name": "workstation", "version": "0.4.1", "proto": 1 },
+  "credential": { "kind": "bearer", "token": "omt_c_9K3…", "role": "operator", "expires_at": null }
+}
+```
+
+### 1.4 Per-instance connection state
+
+The client models each instance as a small state machine, surfaced in the UI —
+never hidden, because "is my laptop reachable" is a question the user asks
+constantly.
+
+```
+Unconfigured → Connecting → Handshaking → Authenticating
+                   ▲                            │
+                   │                            ▼
+              Backoff ◄── Disconnected ◄─── Ready ──► Degraded (resynced / partial)
+                                  ▲                       │
+                                  └───────────────────────┘
+   terminal states: Unauthorized (credential rejected/revoked),
+                    Incompatible (proto version unsupported)
+```
+
+`Unauthorized` and `Incompatible` do **not** retry; everything else backs off.
+Each instance row in the session list carries its state so a stale list is
+visibly stale rather than quietly wrong.
+
+### 1.5 Federating across versions
+
+Per [03 §7](03-capability-catalog.md#7-versioning), the handshake returns the
+instance's actual capability list. The client keeps a per-instance
+`Set<CapabilityName>` and computes:
+
+- **Per-session actions** are gated on *that session's instance* — not on the
+  intersection. A session on a new instance keeps its new buttons.
+- **Multi-select / bulk actions** across sessions from several instances are
+  gated on the **intersection** of the selected instances' catalogs. Actions
+  outside the intersection are shown disabled with "not supported on
+  `workstation` (0.3.2)".
+- **Unknown event payload variants** are ignored by the client (all `Payload`
+  enums are `#[serde(other)]`-tolerant and the TS types carry a catch-all), so a
+  newer instance can emit events an older client cannot render without breaking
+  the stream.
+
+Rendering the intersection and greying out the rest is the rule; failing is
+never the rule.
+
+### 1.6 The unified session list
+
+The client merges per-instance session lists into one view sorted by
+*attention*, not by instance:
+
+1. sessions with an open `Interaction` (blocked agent — needs a human),
+2. sessions in `needs_attention`,
+3. `busy`,
+4. `idle`, most recently active first.
+
+Instance is a subtitle and a filter, not the primary grouping. This is a
+deliberate product decision: the user's question is "what needs me?", and the
+answer should not be spread across four collapsed sections.
+
+---
+
+## 2. Transport layer
+
+### 2.1 The trait
+
+`omt-transport` is framing only. No auth, no routing, no protocol semantics —
+those live in `omt-proto` and `omt-server` respectively (P1).
+
+```rust
+/// A bidirectional, ordered, reliable message pipe carrying `Frame`s.
+#[async_trait]
+pub trait Transport: Send + 'static {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Receive the next frame. `Ok(None)` means the peer closed cleanly.
+    async fn recv(&mut self) -> Result<Option<Frame>, Self::Error>;
+
+    /// Send one frame. Implementations must be cancel-safe.
+    async fn send(&mut self, frame: Frame) -> Result<(), Self::Error>;
+
+    /// Best-effort flush; used before a deliberate close.
+    async fn flush(&mut self) -> Result<(), Self::Error>;
+
+    fn peer(&self) -> PeerInfo;      // socket addr, uid for unix, tailnet identity if any
+    fn kind(&self) -> TransportKind; // WebSocket | UnixSocket | SshStdio
+}
+
+/// Exactly two frame kinds. Everything above is built on this.
+pub enum Frame {
+    /// UTF-8 JSON control message (`ProtoMessage`).
+    Text(Bytes),
+    /// Length-delimited binary payload with an 8-byte header (see §3.6).
+    Binary(Bytes),
+}
+```
+
+Ordering and reliability are assumed *within* a connection; the protocol layer
+provides recovery *across* connections (§5). Transports must not reorder, must
+not merge frames, and must not deliver partial frames.
+
+### 2.2 WebSocket — primary
+
+`wss://<host>:7878/v1/ws`, subprotocol `omt.v1`. Native WebSocket framing
+carries `Frame` directly (`Text` → text frame, `Binary` → binary frame); no
+extra length prefix is needed. Limits:
+
+| Limit | Value | Rationale |
+|---|---|---|
+| max control frame | 1 MiB | schemas are small; a bigger control frame is a bug or an attack |
+| max binary frame | 8 MiB | one image/screenshot; larger uploads are chunked (§3.6) |
+| max in-flight unacked terminal bytes | 256 KiB per subscription | backpressure trigger (§6) |
+| permessage-deflate | **off** for terminal/binary, on for control | terminal output is already compressed by coalescing; deflate on every keystroke costs latency and CPU for nothing |
+
+### 2.3 Unix socket — local CLI, TUI fallback, hooks
+
+`$XDG_RUNTIME_DIR/omt/<instance>.sock`, mode `0600`. Framing is a 4-byte
+little-endian length prefix plus a 1-byte kind tag (`0` text, `1` binary), then
+the payload. Identical `ProtoMessage` catalogue — this is the point: the local
+CLI exercises the same protocol the phone does, so a bug in the remote path
+shows up in `omt session list`.
+
+Unlike another tool, the socket is **not** implicitly trusted. `SO_PEERCRED`
+(Linux) / `LOCAL_PEERCRED` (macOS) is checked, and a peer whose uid differs from
+the daemon's uid is rejected before the handshake. Same-uid peers get the
+`Local` actor and `Admin` role by default, configurable down. See
+[13 §2](13-security.md).
+
+`omt-hook` uses this socket and nothing else; it never speaks WebSocket.
+
+### 2.4 SSH stdio bridge — `omt --remote <target>`
+
+`omt --remote workbox` does **not** invent a network protocol. It runs:
+
+```
+ssh -T <target> -- omt serve --stdio --proto 1
+```
+
+and speaks the length-prefixed framing of §2.3 over the ssh subprocess's
+stdin/stdout. This gives, for free: existing SSH auth and host-key trust,
+jump hosts, agent forwarding, and corporate policy compliance. Concretely:
+
+- omt generates a temporary SSH config that includes the user's config first,
+  then adds `ServerAliveInterval 15`, `ServerAliveCountMax 4`, and a private
+  `ControlPath` so a second `--remote` to the same host reuses the connection.
+  `[remote].manage_ssh_config = false` opts out entirely.
+- Remote binary resolution: `PATH` → known install prefixes → prompt to install
+  a version-matched binary to `~/.local/bin/omt`. `OMT_REMOTE_BINARY` overrides
+  for development.
+- Version skew is handled by the same catalog-intersection rule as §1.5, so a
+  slightly older remote is usable, not fatal.
+- stderr from the remote process is captured and surfaced as diagnostics; it is
+  never interleaved into the frame stream (a classic stdio-bridge bug).
+
+Authentication over the stdio bridge is transport-level: the peer already proved
+SSH access to the account that owns the daemon. The bridge therefore skips the
+`auth.*` exchange and is assigned `Admin` unless configured otherwise.
+
+### 2.5 Keepalive, reconnect, backoff
+
+- **Keepalive**: the server sends a `ping` control message every 20 s if the
+  connection has been idle; the client must answer `pong` within 10 s. WebSocket
+  protocol-level pings are also used where available, but the application-level
+  ping is authoritative because intermediaries answer protocol pings.
+- **Death detection**: 2 missed pongs, or a transport error, closes the
+  connection. On mobile this is deliberately generous — radios sleep.
+- **Reconnect** (client side) uses full-jitter exponential backoff:
+
+```rust
+fn backoff(attempt: u32) -> Duration {
+    let base = Duration::from_millis(250);
+    let cap  = Duration::from_secs(30);
+    let exp  = cap.min(base * 2u32.saturating_pow(attempt.min(10)));
+    Duration::from_millis(rand::thread_rng().gen_range(0..=exp.as_millis() as u64))
+}
+```
+
+Full jitter (not "exp/2 + jitter") because the pathological case is a laptop
+waking up and every one of its instance connections retrying in lockstep.
+Attempt counter resets after 60 s of a healthy connection, not on connect, so a
+flapping link does not reset into a hot loop.
+
+- **Foreground override**: when the tab becomes visible or the network changes
+  (`online` event / `navigator.connection` change), the client resets the
+  attempt counter and reconnects immediately. Users tapping into an app expect
+  it to try *now*.
+
+---
+
+## 3. Message protocol
+
+### 3.1 Encoding decisions
+
+| Channel | Encoding | Why |
+|---|---|---|
+| control (handshake, auth, capability calls, events) | **JSON** text frames | debuggable with `websocat`, one schema source (`schemars`) shared with REST and the TS client, negligible volume |
+| terminal output | **binary** frames, raw bytes with an 8-byte header | this is the high-rate path; base64 in JSON costs 33 % bandwidth and a parse per frame |
+| audio (STT upload) | **binary** frames, Opus | obvious |
+| images / files | **binary** frames, chunked | ditto |
+
+Rejected: a single binary encoding (bincode/msgpack) for everything, as another tool
+does. It saves a few percent on a channel that is not the bottleneck, and costs
+the ability to read the wire in a browser devtools panel — which for a product
+whose primary client is a browser is a bad trade. The terminal and media paths,
+where it actually matters, *are* binary.
+
+### 3.2 The envelope
+
+```rust
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "t", rename_all = "snake_case")]
+pub enum ProtoMessage {
+    // ---- connection lifecycle ----
+    Hello(Hello),                       // C→S, first message
+    Welcome(Welcome),                   // S→C
+    AuthChallenge(AuthChallenge),       // S→C
+    Auth(Auth),                         // C→S
+    AuthOk(AuthOk),                     // S→C
+    Error(ProtoError),                  // either direction, may be unsolicited
+    Ping { nonce: u64 },
+    Pong { nonce: u64 },
+    Close { code: CloseCode, reason: String },
+
+    // ---- capability RPC ----
+    Call(Call),                         // C→S
+    Result(CallResult),                 // S→C
+    Cancel { id: RequestId },           // C→S
+
+    // ---- events ----
+    Subscribe(Subscribe),               // C→S
+    Unsubscribe { sub: SubId },         // C→S
+    Event(EventFrame),                  // S→C
+    Resync(Resync),                     // S→C, unsolicited
+    Lagged(Lagged),                     // S→C, unsolicited
+
+    // ---- terminal ----
+    TermAttach(TermAttach),             // C→S
+    TermDetach { session: SessionId },  // C→S
+    TermInput(TermInput),               // C→S (small inputs; large paste uses binary)
+    TermResize(TermResize),             // C→S
+    TermSnapshotMeta(TermSnapshotMeta), // S→C, precedes a binary snapshot payload
+
+    // ---- binary channel bookkeeping ----
+    BlobBegin(BlobBegin),               // either direction
+    BlobAbort { blob: BlobId, reason: String },
+    BlobDone { blob: BlobId, sha256: String },
+}
+```
+
+Every request-bearing message carries `id: RequestId` (client-generated, unique
+per connection); every response echoes it. Unsolicited server messages carry no
+`id`.
+
+### 3.3 Handshake and capability negotiation
+
+```json
+{ "t": "hello", "id": "req_0",
+  "proto": [1],
+  "client": { "name": "omt-web", "version": "0.4.1", "kind": "web" },
+  "device": { "id": "dev_7Qa…", "name": "iPhone", "platform": "ios/safari" },
+  "features": ["term.binary", "blob.chunked", "stt.opus"],
+  "resume": { "session_token": "omt_s_5tR…" }
+}
+```
+
+```json
+{ "t": "welcome", "id": "req_0",
+  "proto": 1,
+  "instance": { "id": "3f2a…", "name": "workstation", "version": "0.4.1",
+                "platform": { "os": "linux", "arch": "aarch64" },
+                "catalog_hash": "b3:7c1e…" },
+  "auth": { "required": true, "methods": ["bearer", "password", "tailnet"] },
+  "features": ["term.binary", "blob.chunked", "stt.opus", "push.webpush"],
+  "limits": { "max_control_frame": 1048576, "max_binary_frame": 8388608,
+              "replay_window_bytes": 4194304, "replay_window_events": 4096 }
+}
+```
+
+`proto` in `Hello` is the list of versions the client supports; the server picks
+the highest it also supports and states it in `Welcome`. No match →
+`Error{code:"unsupported_proto"}` then `Close`. Feature strings are additive
+capability flags for things too fine-grained to be a proto version bump; both
+sides intersect them and neither may use a feature the other did not list.
+
+The **catalog** itself is fetched with a normal capability call after auth
+(`instance.catalog`), keyed by `catalog_hash` so the client can cache it across
+reconnects and across sessions:
+
+```json
+{ "t": "call", "id": "req_2", "name": "instance.catalog",
+  "input": { "known_hash": "b3:7c1e…" } }
+```
+
+```json
+{ "t": "result", "id": "req_2", "ok": true,
+  "output": { "unchanged": true } }
+```
+
+### 3.4 Auth
+
+```json
+{ "t": "auth_challenge", "id": null,
+  "methods": ["bearer", "password", "tailnet"],
+  "nonce": "n_9f2c…" }
+```
+
+```json
+{ "t": "auth", "id": "req_1", "method": "bearer",
+  "bearer": { "token": "omt_c_9K3…" },
+  "device_sig": "ed25519:5b7e…" }
+```
+
+```json
+{ "t": "auth_ok", "id": "req_1",
+  "actor": { "id": "act_12", "label": "iPhone (Vincent)", "kind": "remote" },
+  "role": "operator",
+  "policy": { "interaction_kinds": ["choice", "text", "permission"],
+              "deny_destructive_autoapprove": true },
+  "session_token": "omt_s_5tR…",
+  "expires_at": "2026-08-04T09:11:00Z" }
+```
+
+`session_token` is a short-lived resume token (default 12 h) so a reconnect can
+skip the credential round-trip; it is bound to the device key and to the
+credential, and is invalidated when the credential is revoked. `policy` is the
+per-credential interaction policy from [13 §7](13-security.md) — the client uses
+it to render affordances it is allowed to use, and the server enforces it
+regardless.
+
+### 3.5 Capability call / result
+
+The protocol is a thin envelope over the catalog. `omt-proto` owns no policy and
+no capability knowledge; it forwards `(name, input_json)` to
+`CapabilityRegistry::dispatch`.
+
+```json
+{ "t": "call", "id": "req_31", "name": "interaction.resolve",
+  "input": {
+    "session": "s_4b2f",
+    "interaction_id": "int_88",
+    "response": { "kind": "choices", "choices": [["Use Postgres"]] }
+  },
+  "deadline_ms": 10000 }
+```
+
+```json
+{ "t": "result", "id": "req_31", "ok": true,
+  "output": { "resolved_by": "act_12", "seq": 91422 } }
+```
+
+```json
+{ "t": "result", "id": "req_31", "ok": false,
+  "error": { "code": "conflict",
+             "message": "Interaction int_88 was already resolved by the local TUI",
+             "detail": { "resolved_by": "local", "at": "2026-08-03T18:22:04.113Z" } } }
+```
+
+Error codes are exactly the closed catalog enum (`not_found`, `conflict`,
+`unauthorized`, `precondition_failed`, `unsupported`, `internal`) plus
+protocol-level `unsupported_proto`, `auth_failed`, `rate_limited`,
+`frame_too_large`. Clients switch on `code`, never on `message`.
+
+Calls are concurrent and out-of-order by design; `Cancel` requests best-effort
+abortion and is honoured for queries and for commands that have not yet taken
+effect.
+
+### 3.6 Binary payloads
+
+A binary frame is an 8-byte header followed by the payload:
+
+```
+ 0        1        2                4                            8
+ +--------+--------+----------------+----------------------------+
+ | ver(1) | kind(1)|   stream(u16)  |        seq_or_off(u32)      | payload…
+ +--------+--------+----------------+----------------------------+
+ kind: 1 = terminal output   2 = terminal input   3 = blob chunk
+       4 = audio chunk       5 = terminal snapshot
+```
+
+`stream` is a small integer handed out by the server (for terminal streams, at
+`TermAttach` time) — 2 bytes rather than a 16-byte UUID per frame, which at 60
+frames/s matters. `seq_or_off` is the per-stream sequence for terminal and audio
+and the byte offset for blob chunks.
+
+Blobs (images, file push/pull, snapshots) are negotiated in JSON and carried in
+binary:
+
+```json
+{ "t": "blob_begin", "id": "req_44", "blob": "blob_7", "stream": 12,
+  "purpose": "image_paste", "session": "s_4b2f",
+  "mime": "image/png", "bytes": 481203, "sha256": "9c1f…" }
+```
+
+then N `kind=3` binary frames with ascending offsets, then
+`{"t":"blob_done","blob":"blob_7","sha256":"9c1f…"}`. The receiver verifies size
+and digest, and rejects on mismatch. Quotas and temp-file lifecycle are
+[09 — SSH and media](09-ssh-and-media.md)'s business.
+
+### 3.7 Subscriptions
+
+```json
+{ "t": "subscribe", "id": "req_5", "sub": "sub_1",
+  "filter": { "sessions": ["s_4b2f", "s_9de1"], "kinds": ["agent", "interaction", "presence"] },
+  "since_seq": { "s_4b2f": 91380, "s_9de1": 4021 },
+  "policy": { "on_lag": "resync", "max_buffered_events": 2048 } }
+```
+
+```json
+{ "t": "event", "sub": "sub_1", "session": "s_4b2f", "seq": 91381,
+  "ts": "2026-08-03T18:21:59.882Z", "source": "hook",
+  "payload": { "kind": "interaction",
+               "id": "int_88",
+               "interaction": {
+                 "kind": "choice",
+                 "questions": [{ "question": "Which database should I use?",
+                                 "header": "Database",
+                                 "multi_select": false,
+                                 "options": [{ "label": "Postgres", "description": "…" },
+                                             { "label": "SQLite",   "description": "…" }] }]
+               },
+               "timeout_ms": 600000 } }
+```
+
+Filters are coarse on purpose (session set × event-kind set). Fine-grained
+server-side filtering is a footgun: it makes resume semantics ambiguous, because
+`since_seq` must mean "everything you would have received", which depends on the
+filter. Coarse filters keep that mapping obvious.
+
+`kinds` mirrors the top-level grouping of `omt-events`: `terminal`, `agent`,
+`interaction`, `session_tree`, `presence`, `config`, `plugin`, `audit`.
+
+---
+
+## 4. Terminal streaming
+
+### 4.1 The three options
+
+| | (a) Raw byte passthrough | (b) Server-side grid diffs | (c) Hybrid |
+|---|---|---|---|
+| Server cost | none (tee the PTY) | full render + diff per client | render only when needed |
+| Bandwidth | high on redraws, low on typing | low and bounded | bounded |
+| Fidelity | perfect (xterm.js is a real emulator) | limited to what the diff format encodes | perfect |
+| Resume | requires replaying a byte window | trivial (send a grid) | trivial |
+| Multi-size clients | broken (one PTY size for all) | solved (render per client) | solved |
+| Client complexity | low | medium (custom renderer) | medium |
+
+### 4.2 The decision: (c) hybrid, byte-stream-primary
+
+**Steady state is raw bytes.** After attach, the server tees PTY output to each
+attached client as `kind=1` binary frames, coalesced (§6.2). xterm.js is a
+correct emulator; re-implementing its job server-side and shipping a lossy diff
+format would be a fidelity regression for no benefit on the common path (a phone
+watching an agent scroll text).
+
+**Snapshots are grid state.** On attach, on resume outside the replay window,
+and after any resync, the server sends a *snapshot*: the authoritative grid from
+`omt-term`, serialized, followed by byte frames from the snapshot's sequence
+onward. The snapshot is exactly what another tool's `RenderEncoding::TerminalAnsi`
+almost is, but explicit and typed rather than pre-diffed ANSI:
+
+```json
+{ "t": "term_snapshot_meta", "session": "s_4b2f", "stream": 12,
+  "seq": 91422, "cols": 120, "rows": 40,
+  "encoding": "grid_v1", "bytes": 24816,
+  "cursor": { "row": 12, "col": 4, "visible": true, "shape": "block" },
+  "modes": { "alt_screen": true, "bracketed_paste": true, "app_cursor": false },
+  "scrollback_available": 12000 }
+```
+
+followed by one `kind=5` binary frame. `grid_v1` is a compact run-length
+encoding of cells (codepoint, style id, width) plus a style table — the same
+structure `omt-term` already maintains for damage tracking, so producing it is
+cheap and it is exactly reconstructible into an xterm.js buffer via
+`writeln`-free direct buffer population.
+
+So: **snapshot to establish state, bytes to keep it.** Grid diffs are used in
+exactly one place — the *block view* on mobile, which renders structured command
+blocks (OSC 133) rather than a terminal, and therefore consumes semantic
+`terminal.block.*` events, not bytes at all. That is where mobile bandwidth is
+actually won: a phone in block view receives no PTY bytes.
+
+### 4.3 The resize problem
+
+Two clients attached to one session with different viewports is the genuinely
+hard case, because a PTY has exactly one `TIOCSWINSZ` and the program inside
+(especially a full-screen TUI agent) renders for that one size.
+
+Rejected: **per-client server-side render.** It requires a full emulator
+instance per client per session and reflow that no full-screen TUI cooperates
+with — an agent that drew a box at 120 columns cannot be re-rendered at 40; the
+information is gone. It only works for reflowable line-oriented output, which is
+precisely the case where it is least needed.
+
+**Decision: one authoritative PTY size per session, owned by the writer, with
+fit-to-view for everyone else, plus an explicit resize handoff.**
+
+```rust
+pub struct ViewportPolicy {
+    /// The size actually applied to the PTY. Set by the writer's viewport,
+    /// or pinned by the user.
+    pub authoritative: TermSize,
+    pub owner: SizeOwner,     // Writer | Pinned { by: ActorId } | Smallest
+}
+
+pub enum SizeOwner {
+    /// Default. The current writer's viewport drives the PTY.
+    Writer,
+    /// A client explicitly pinned a size ("keep this session at 120x40").
+    Pinned { by: ActorId, size: TermSize },
+    /// Opt-in: PTY is set to the smallest attached viewport, so nobody is cropped.
+    Smallest,
+}
+```
+
+Non-authoritative clients receive the full grid and render it **scaled to fit
+width, letterboxed vertically**, with a visible badge: `120×40 · driven by
+laptop`. A phone therefore sees the real screen, small but complete and
+correct — never a cropped window into a layout it cannot understand, and never
+a reflow that mangles a TUI.
+
+Consequences, stated plainly because they are user-visible:
+
+- Taking the writer token *may resize the PTY*, which for a full-screen agent
+  causes a redraw. The client warns before the first takeover of a session whose
+  size would change by more than 20 %, and offers "take input without resizing"
+  (which acquires the writer token with `keep_size: true`, leaving
+  `authoritative` pinned).
+- `Smallest` exists for genuine pair-programming, where a resize storm is worse
+  than a small terminal.
+- The phone can always *read* at full fidelity; the letterbox affects legibility,
+  not correctness. Combined with the block view (§4.2) as the default mobile
+  surface, the small-text case is the exception rather than the norm.
+
+```json
+{ "t": "term_attach", "id": "req_9", "session": "s_4b2f",
+  "viewport": { "cols": 52, "rows": 24, "dpr": 3 },
+  "want": "grid_then_bytes",
+  "since_seq": 91380 }
+```
+
+```json
+{ "t": "term_resize", "id": "req_12", "session": "s_4b2f",
+  "viewport": { "cols": 60, "rows": 30 },
+  "request_authoritative": false }
+```
+
+A client always reports its viewport (used for presence, for `Smallest`, and to
+decide letterboxing); `request_authoritative` is the explicit ask, and is
+refused with `precondition_failed` if the client does not hold the writer token.
+
+---
+
+## 5. Resume and reliability
+
+### 5.1 Sequence spaces
+
+- Every event carries `(session_id, seq)`, `seq` strictly monotonic per session,
+  assigned by the state layer at mutation time (never by the transport).
+- Terminal byte frames carry their own per-stream `seq` in the binary header,
+  in the **same sequence space** as that session's events. This is the key
+  design point: a client that resumes at `seq = N` gets both events and terminal
+  bytes from `N` onward, correctly interleaved, so a `Interaction` event and the
+  PTY bytes that drew its box cannot cross.
+- Instance-scoped events (config, plugin, peers) use the reserved session id
+  `s_instance` with its own sequence.
+
+### 5.2 Replay window
+
+The daemon keeps, per session, a ring buffer of the last `min(4 MiB, 4096
+events)` (both configurable, both reported in `Welcome.limits`). On
+`Subscribe{since_seq}` or `TermAttach{since_seq}`:
+
+| Condition | Response |
+|---|---|
+| `since_seq` inside the window | replay from `since_seq + 1`; nothing else |
+| `since_seq` older than the window | `Resync` + snapshot, then live |
+| `since_seq` newer than current (client from the future — e.g. daemon restarted and re-seeded) | `Resync` with `reason: "sequence_reset"` |
+| session unknown | `Error{not_found}` |
+
+```json
+{ "t": "resync", "sub": "sub_1", "session": "s_4b2f",
+  "reason": "window_exceeded",
+  "from_seq": 91380, "now_seq": 104882,
+  "dropped_events": 8213,
+  "snapshot_follows": true }
+```
+
+The client **must** treat `Resync` as "discard local state for this session and
+rebuild". It is a normal, expected message, not an error — a phone that slept
+for an hour will always get one.
+
+### 5.3 Daemon restart
+
+Sessions survive daemon restart via `omt-store` (append-only log + snapshots).
+Sequence numbers survive too: the store records the high-water `seq` per session
+and the daemon resumes from `high_water + 1`, never restarting at zero. That is
+what makes a client's `since_seq` meaningful across a restart.
+
+What does *not* survive: the replay window (in memory), open subscriptions, and
+writer tokens (all released on restart — see
+[12 §3](12-collaboration.md)). So the first reconnect after a daemon restart is
+always a resync. The client is told explicitly:
+
+```json
+{ "t": "welcome", "instance": { "started_at": "2026-08-03T18:40:11Z", "…": "…" },
+  "restart": { "since_last_seen": true, "reason": "process_restart" } }
+```
+
+PTYs themselves do not survive a daemon restart unless the daemon re-parents
+them (it does, via a small supervisor process that owns the PTY fds — see
+[05 — Session model](05-session-model.md)). Where re-parenting is impossible the
+session is marked `dead` with its scrollback intact, and the agent-native resume
+path (`claude --resume <uuid>`, `codex resume`) is offered as a one-tap action.
+
+### 5.4 Mobile specifics
+
+| Situation | Behaviour |
+|---|---|
+| **Tab backgrounded** | client sends `Subscribe`-level `policy.background: true`, which downgrades terminal subscriptions to *suspended* (server stops sending bytes, keeps advancing `seq`) while leaving `agent`/`interaction`/`presence` events flowing. Resume on visibility sends `since_seq` and typically gets a snapshot. |
+| **iOS suspends the socket** | detected on `visibilitychange` → immediate reconnect with the resume `session_token`; no credential round-trip, so warm reconnect is one RTT. |
+| **Network switch (Wi-Fi → cellular)** | connection error → immediate reconnect (attempt counter reset, §2.5), new TCP/TLS handshake, resume by `session_token` + `since_seq`. |
+| **Long sleep (hours)** | `session_token` may have expired → full auth; `since_seq` far outside the window → resync. Both are one round trip each and the UI shows "catching up" rather than an error. |
+| **Metered connection** | client sets `policy.terminal: "blocks_only"`, receiving structured block events and no PTY bytes until the user opens the full terminal view. |
+
+---
+
+## 6. Backpressure
+
+Backpressure is per **subscription**, not per connection, because a phone that
+cannot keep up with a firehose session must not lose its `interaction` events —
+those are the product.
+
+### 6.1 Policy
+
+```rust
+pub struct SubscriptionPolicy {
+    /// What to do when this subscription's buffer is full.
+    pub on_lag: LagPolicy,
+    pub max_buffered_events: usize,   // default 2048
+    pub max_buffered_bytes: usize,    // default 1 MiB of terminal payload
+}
+
+pub enum LagPolicy {
+    /// Default. Drop the oldest terminal frames first, then coalesce, then —
+    /// only if still behind — drop everything for the session and send `Resync`.
+    Resync,
+    /// Never drop; apply flow control upstream. Only legal for local transports,
+    /// because a slow remote peer would otherwise stall the PTY reader.
+    Block,
+    /// Drop terminal frames, never drop non-terminal events; if non-terminal
+    /// buffer overflows, close the connection with `overloaded`.
+    Strict,
+}
+```
+
+**Event classes are not equal.** The server maintains two queues per
+subscription: *lossy* (terminal bytes) and *lossless* (everything else).
+Terminal bytes are dropped and coalesced freely. Lossless events are never
+silently dropped — if the lossless queue overflows, the session is resynced
+(which is itself an announced state), and if resync cannot be delivered the
+connection is closed with `overloaded`. There is no code path where a client
+misses an `Interaction` and does not know it.
+
+### 6.2 Coalescing terminal frames
+
+The terminal fan-out task per subscription:
+
+1. accumulates PTY output in a per-subscription buffer with a **flush timer of
+   16 ms** (one display frame),
+2. flushes early if the buffer exceeds 32 KiB,
+3. if the buffer exceeds `max_buffered_bytes` before the socket drains, feeds
+   the accumulated bytes through `omt-term` for that session's grid state and
+   replaces the whole buffer with a **snapshot** — which is strictly smaller
+   than a screenful of redraws and is exactly correct.
+
+Step 3 is the elegant part: the fallback under load is not "drop and hope" but
+"collapse to state", which is the one thing a terminal stream can always be
+collapsed into. A phone on a bad link therefore sees fewer intermediate frames
+but never a corrupted screen.
+
+Typing is exempt from coalescing: input frames (`kind=2`) are sent immediately,
+unbuffered. Latency of the local echo path dominates perceived quality.
+
+### 6.3 How the client learns
+
+Every drop is announced. A client's terminal view can be in exactly three
+states, all visible:
+
+- `live` — receiving bytes continuously,
+- `coalesced` — receiving snapshots under load (badge: "catching up"),
+- `resynced` — state was rebuilt from a snapshot, scrollback before the snapshot
+  came from `session.scrollback.get`, not from the stream.
+
+```json
+{ "t": "lagged", "sub": "sub_1", "session": "s_4b2f",
+  "class": "terminal", "dropped_bytes": 1841200,
+  "action": "snapshot_sent", "seq": 104901 }
+```
+
+---
+
+## 7. Latency budget
+
+Target: **a keystroke from a phone on a tailnet appears on the remote screen and
+comes back within 120 ms p50, 250 ms p95.** Budget for a phone on LTE →
+Tailscale DERP-less direct path → laptop:
+
+| Segment | Budget (p50) | Notes |
+|---|---|---|
+| touch → JS keydown | 16 ms | one frame |
+| JS → WebSocket frame on the wire | 2 ms | no batching for input |
+| network RTT/2 (WireGuard direct) | 25 ms | 60 ms if relayed via DERP |
+| server: decode, authorize, write to PTY | 1 ms | authorization is a role compare, precomputed at auth time |
+| PTY → program → PTY echo | 5–40 ms | the agent's own cost, not ours |
+| server: read, coalesce (first-byte flush) | 0–16 ms | first byte after idle flushes immediately |
+| network RTT/2 | 25 ms | |
+| xterm.js parse + paint | 8 ms | |
+
+Optimizations that matter, in order of impact:
+
+1. **Flush immediately when the coalescing buffer was empty.** The 16 ms timer
+   applies to the *second* byte onward. This alone is most of the perceived
+   difference.
+2. **No permessage-deflate on the terminal path** (§2.2) — deflate adds a
+   context-flush per message and CPU on both ends for output that is already
+   sparse when typing.
+3. **Local echo for plain printable keys when the session is not in alt-screen
+   and bracketed-paste is off.** xterm.js renders the character optimistically
+   and reconciles against the server byte stream; a mismatch within 250 ms
+   reverts. This is the single largest perceived win on a relayed link, and it
+   is safe precisely because it is bounded to the case where the remote program
+   is known to be a line-oriented shell. See
+   [12 §6](12-collaboration.md) for the optimistic-UI rules.
+4. **Prefer direct WireGuard over DERP**: the client surfaces relay status,
+   because a relayed tailnet path roughly doubles the budget and users can
+   usually fix it.
+5. **Coalesce input on paste only**: a paste becomes one binary frame with
+   bracketed-paste markers, not 4000 keystroke frames.
+6. **Never block the PTY reader on a slow client** (§6.1 — `Block` is
+   local-only).
+
+---
+
+## 8. Notifications to a closed tab
+
+The flagship scenario — an agent blocks on a question while the user's phone is
+in their pocket — requires push, because no tab is open and no socket exists.
+
+### 8.1 Web Push (primary)
+
+Standard VAPID Web Push, supported by iOS Safari for installed PWAs (16.4+) and
+by every desktop browser.
+
+- The client subscribes via the service worker and posts the subscription to
+  `notification.push.subscribe` (a normal capability, so it is auth'd and
+  audited). The daemon stores endpoint + keys per device credential.
+- The daemon signs and POSTs directly to the browser vendor's push service
+  (`fcm.googleapis.com`, `web.push.apple.com`). **This is the only outbound
+  network connection omt ever makes**, it is off by default, and enabling it is
+  an explicit, documented consent step ([13 §9](13-security.md)).
+- **Payloads are encrypted end-to-end** by the Web Push spec (aes128gcm with the
+  client's keys), so the vendor's push service sees ciphertext. Even so, omt
+  sends only a *pointer*, never content:
+
+```json
+{ "v": 1, "instance": "3f2a…", "session": "s_4b2f",
+  "kind": "interaction", "interaction": "int_88",
+  "title": "claude · api-gateway", "body": "Needs a decision" }
+```
+
+The service worker fetches the actual question over the authenticated WebSocket
+when the notification is tapped or when it can do so silently. Consequence: a
+notification for a revoked device shows a generic title and nothing more.
+
+- Triggers, all configurable per device: interaction opened, agent turn ended
+  after > N seconds, agent error, session died, writer takeover requested.
+- Coalescing: at most one notification per session per 30 s, replaced in place
+  by `tag: "<instance>:<session>"`, so a chatty agent does not produce a
+  notification tray avalanche.
+
+### 8.2 The Tailscale-friendly self-hosted path
+
+Web Push requires reaching a vendor endpoint on the public internet, which some
+users will refuse. Two alternatives ship:
+
+- **`ntfy` / Gotify webhook sink.** The daemon POSTs the same pointer payload to
+  a user-configured URL, which may be a tailnet-internal `ntfy` instance. The
+  user's phone runs the `ntfy` app, already connected to their tailnet. Zero
+  public egress. This is the recommended fully-private configuration.
+- **Foreground-persistent PWA.** When the PWA is installed and the tailnet is
+  up, the client keeps its WebSocket open in the background as long as the OS
+  allows, and uses the Notifications API locally. Reliable on Android, best
+  effort on iOS — which is exactly why it is not the primary path.
+
+Rejected: an omt-operated push relay. It would be a hosted service, and
+[00 §8](00-overview.md#8-what-omt-is-not) says there isn't one.
+
+---
+
+## 9. OPEN QUESTIONS
+
+1. **Grid snapshot format.** `grid_v1` needs a concrete encoding and a
+   round-trip fuzz test against `omt-term`. Open: whether to encode styles as a
+   per-snapshot table (smaller) or as an interned global table shared across
+   snapshots on a connection (smaller still, but stateful and therefore harder
+   to resume). Owner: `omt-term` + `omt-proto`.
+2. **Does `since_seq` for terminal bytes hold up in practice?** Putting PTY
+   bytes and events in one sequence space is elegant but means the sequence
+   allocator is on the PTY hot path. Needs a benchmark at 10 MB/s of output
+   before it is committed to.
+3. **Writer-token resize warning threshold** (20 %) is a guess. Needs user
+   testing; may need to be per-agent (a full-screen TUI cares, a shell does not).
+4. **`Smallest` size policy vs. agents that refuse to render below 80 columns.**
+   Several agent TUIs degrade badly under ~80 cols. Do we clamp the authoritative
+   size to a per-agent minimum reported by the adapter? Coordinate with
+   [06 — Agent layer](06-agent-layer.md).
+5. **iOS PWA push reliability** for the flagship scenario has not been measured.
+   If it is bad, the `ntfy` path may need to become the *default* recommendation
+   rather than the private-mode alternative.
+6. **Blob chunk size** (currently unspecified; likely 256 KiB) interacts with
+   backpressure — a large image upload from a phone must not starve the
+   interaction path. Probably needs its own queue class alongside lossy/lossless.
+7. **SSH bridge and binary frames**: the stdio path carries the same framing,
+   but ssh's own windowing may interact badly with 8 MiB frames. May need a
+   smaller `max_binary_frame` negotiated per transport kind.
+8. **Federated search/actions across instances** (e.g. "find the session that
+   touched `auth.rs`") is currently client-side fan-out. Whether that stays
+   acceptable at ~10 instances is unmeasured.
