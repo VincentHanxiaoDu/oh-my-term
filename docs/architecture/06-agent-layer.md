@@ -513,13 +513,23 @@ gated by [D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-no
 (token, quiescence, re-verification, atomic write). Whether that responder is
 `Independent` — and therefore on by default — depends on whether the
 `AskUserQuestion` card accepts typing a number or letter, or requires counting
-arrow keys. **That spike is in flight**; its record is
+arrow keys.
+
+**That question is settled: it accepts a digit.**
 [`../research/spike-card-answering.md`](../research/spike-card-answering.md)
-(pending — it may not exist yet). If the card is arrow-key-only the responder is
-`Inferred`, D3 disables it by default, and the remote surface shows the card as
-observed-but-not-answerable with the terminal view one tap away. The same
-Claude Code session in `native` mode has a native responder and no such gate,
-which is the honest reason `native` exists.
+verified live against Claude Code v2.1.x that an ASCII digit resolves the option
+at that *absolute* index in the option list and submits in the same keystroke —
+proven by pressing `↓ ↓ 1` and getting option 1, not option 3. The responder is
+therefore `Independent` and **on by default** for a single-select `Choice`.
+
+The answerability that follows is per card type, not blanket, and is carried on
+the interaction as `deliverable` (§5.1):
+[D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical)
+records single-select `Choice` and a permission *allow* as `Synthetic`, and
+multi-select, plan review and a specific *deny* as `None` — for those the remote
+surface shows the card observed-but-not-answerable, with the reason and the
+terminal view one tap away. The same Claude Code session in `native` mode has a
+native responder and no such gate, which is the honest reason `native` exists.
 
 The synthetic responder exists under a precise rule, stated in
 [D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger):
