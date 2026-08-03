@@ -183,11 +183,23 @@ Anything omt renders as a card must come from tier 3, 4 or 5, so that a locale
 change or a version bump degrades attentiveness, never correctness. This is the
 main departure from another tool, whose entire state model is tier 0.
 
-The flagship mechanism is Claude Code's `PreToolUse` hook returning
-`permissionDecision: "defer"` on `AskUserQuestion`: it parks the tool call,
-hands omt the exact `questions` array, and lets a phone answer it. That
-assumption is load-bearing and is validated by a spike before anything is built
-on it — see [06 — Agent layer](06-agent-layer.md).
+The flagship mechanism is **mirroring, not interception**
+([D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)).
+Claude Code's `PreToolUse` hook fires *before* the agent draws its card and
+carries the exact `questions` array, so omt can render that card on a phone
+while the agent's own CLI draws its own card locally, unchanged. Whichever side
+answers first, the other is updated. omt never parks the tool call and never
+draws a replacement over a live TUI.
+
+Answering remotely means delivering the answer through the agent's own card,
+which is verified to be safe for the cases omt offers: a digit selects the
+option at that absolute index and submits, independent of where the highlight
+sits ([D16](decisions.md#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical),
+verified live). Delivery is a gated transaction and success is confirmed by
+observing the agent record the answer, never assumed
+([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write),
+[D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)) —
+see [06 — Agent layer](06-agent-layer.md).
 
 ## 6. Terminal core
 

@@ -330,13 +330,14 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Success.** She arrow-keys and hits ⏎ in the agent, exactly as before. omt
   observes the resolution via hook/transcript and closes its `Interaction`
   ledger entry as `ResolvedExternally`.
-- **Failure.** omt renders a competing card and the two disagree. omt's deferral
-  (`permissionDecision: "defer"`) *parks* the tool call so the agent's own card
-  never appears at the desk — this is the load-bearing risk in 06 §5.3 and the
-  desk case is where it hurts most. **Required behaviour: when a local
-  attached client is focused on the pane, deferral must still let the native
-  card render, or omt must render an equivalent card in-pane.** 06 does not
-  state which. See G20.
+- **Failure.** omt renders a competing card and the two disagree.
+  **Resolved by [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):**
+  omt does not park the tool call and never draws a card in the pane, so the
+  agent's own card always renders at the desk exactly as it would without omt.
+  The remaining hazard is not a competing card but a competing *writer* — her
+  keystrokes racing an injected answer — which is
+  [D13](../architecture/decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s
+  gated transaction and 12 §4.5's conflict case.
 
 ### J8 — Agent blocks while the user is in another pane
 
@@ -429,11 +430,14 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 
 - **Trigger.** Ana taps "Yes" and immediately realises she meant "No".
 - **Steps.** She looks for undo.
-- **Shows.** Ideally: for ~3 seconds, an **Undo** affordance on the just-resolved
-  card, valid only while omt has not yet released the deferred tool call.
-- **Success.** Within the deferral window, the resolution is retractable. After
-  it, omt says plainly *"already sent to the agent — press Esc/interrupt to stop
-  it"* and offers `agent.interrupt` as the honest next action.
+- **Shows.** An **Undo** affordance is only honest while the answer has not been
+  written — the `Resolving` window between the CAS and the injection, which is
+  milliseconds under [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+  because nothing is parked. Keystrokes already typed cannot be retracted.
+- **Success.** omt does not offer a fake undo. Once the state is `Submitted` it
+  says plainly *"already sent to the agent — press Esc/interrupt to stop it"* and
+  offers `agent.interrupt` as the honest next action. R18's retraction window is
+  re-scoped accordingly.
 - **Failure.** 12 §4.1 makes interactions resolve-once and irreversible with no
   grace window. That is correct for consistency and **wrong for a phone**, where
   fat-fingering is the norm. A short, explicitly-modelled *pending* state before
@@ -1235,21 +1239,27 @@ metadata on the session card (`Bash(npm test) ×7`) with a configurable amber
 threshold. **No automatic action** — omt does not interrupt agents on its own
 (D1's spirit). Purely attentional.
 
-## G20 — Deferral versus the local user's native card — **specification gap in 06**
+## G20 — Deferral versus the local user's native card — **CLOSED by D11**
 
-**Need.** J7. If omt defers `AskUserQuestion` to park the tool call for remote
-answering, what does the user sitting at the terminal see? If the native card
-never renders, omt has *degraded* the local experience to enable the remote one,
-which contradicts P4.
+**Need.** J7. If omt parked the tool call to enable remote answering, the user at
+the terminal would never see the agent's own card — omt would have *degraded* the
+local experience to enable the remote one, contradicting P4.
 
-**In scope.** Yes — it is the core mechanism.
+**Answer.** [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):
+**omt does not park the tool call.** The agent's own CLI draws its own card,
+normally and unchanged; omt observes it through the `PreToolUse` hook — which
+fires *before* the card is drawn and carries the verbatim `questions` array —
+mirrors it to remote surfaces, and syncs the resolution in whichever direction it
+happens. There is no competing card and no local degradation, so the question
+this gap posed does not arise.
 
-**Minimum honest answer.** 06 §5.3 must state the rule explicitly. The likely
-correct one: when deferral is used, omt renders its own equivalent card in-pane
-(it has the exact structured `questions` array, so fidelity is not lost), and
-labels it as omt-rendered. The alternative — defer only when no local client is
-focused — creates two code paths and a race. Either way, decide it in writing;
-this is the highest-consequence undecided detail in the architecture.
+The risk did not vanish, it moved: a remote answer is now delivered *through* the
+agent's own card, so the local user's keyboard and omt's injection are two
+writers on one PTY. That is
+[D13](../architecture/decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s
+gated transaction, 12 §3.5's `InputGate`, and 12 §4.5's conflict case. Deferral
+survives only as an opt-in optimization
+([06 §5.3](../architecture/06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization)).
 
 ## G21 — Free-text and annotated answers to structured questions — **specification gap in 06/08**
 
