@@ -70,8 +70,10 @@ to resume a subscription from a stated position.
 #### Scenario: Resume beyond the retained window is handled explicitly
 
 - **WHEN** a client resumes from a position the instance no longer retains
-- **THEN** it is told to resynchronize and is given a snapshot
-- **AND** it is told how much it missed
+- **THEN** the protocol encodes a resynchronize directive carrying a reference to
+  the snapshot that replaces the gap and a count of what was missed
+- **AND** there is no encoding by which a resume silently returns less than was
+  asked for
 
 ### Requirement: A slow consumer degrades visibly, never silently
 
@@ -86,11 +88,11 @@ never silently drops an event a client believes it received.
   and how much
 - **AND** there is no encoding in which data is dropped without such a notice
 
-#### Scenario: A permanently slow subscriber is disconnected, not starved
+#### Scenario: There is an encoding for giving up on a subscriber
 
 - **WHEN** a subscriber remains unable to keep up beyond the policy's limit
-- **THEN** the connection is closed with a stated reason rather than the
-  instance buffering without bound
+- **THEN** the protocol encodes a close that carries a stated reason
+- **AND** no encoding exists for abandoning a subscriber silently
 
 ### Requirement: Terminal bytes carry ordering and consumption information
 
@@ -131,12 +133,13 @@ encode a directive back to the hook that is safe to act on when the instance is
 slow, unreachable or absent. The hook binary's own behaviour is delivered by the
 change that builds it; what is specified here is the encoding it depends on.
 
-#### Scenario: The hook reports and the agent proceeds
+#### Scenario: The report carries the agent's payload unmodified
 
-- **WHEN** an agent's hook fires and the instance is reachable
-- **THEN** the observation, including the agent's verbatim payload, reaches the
-  instance
-- **AND** the agent continues without perceptible delay
+- **WHEN** a hook report is encoded
+- **THEN** it carries the agent's own payload byte-for-byte, alongside the event
+  name the agent used, rather than a normalized rendering of either
+- **AND** a payload too large to carry is marked as truncated rather than
+  silently shortened
 
 #### Scenario: The safe directive requires no reply to construct
 

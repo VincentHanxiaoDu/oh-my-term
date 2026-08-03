@@ -9,7 +9,8 @@
 - [ ] 1.2a Create the stub surfaces the parity gate needs (D-6): `crates/omt`
       (the binary codegen runs), `crates/omt-tui` with an action table and no
       rendering, `crates/omt-server` with a route table and no listener, and a
-      `web/` package with a tsconfig and the generated handler map
+      `web/` package with a tsconfig and a hand-written placeholder handler map
+      (7.3 replaces it; without a placeholder, 8.2 cannot run before 7.3)
 - [ ] 1.3 Create `xtask` with a `codegen` subcommand stub that exits non-zero
       with "not implemented"
 - [ ] 1.4 Write the layering test: assert the dependency graph matches
@@ -65,7 +66,7 @@
       carry D15's three-way discrimination
 - [ ] 3.5 `RequestId` as `(DeviceId, monotonic u64)` with its wire encoding
 - [ ] 3.6 `Decl`: the all-`const` metadata struct, including `title`, `aliases`,
-      `hidden` and `since`
+      `hidden` with its required `hidden_reason`, and `since`
 
 ## 4. `omt-catalog` — machinery
 
@@ -166,9 +167,12 @@
 
 ## 8. Proving capabilities and the parity gate
 
-- [ ] 8.1 Declare `instance.info`, `instance.catalog` and `events.subscribe`
-      with real handlers — the minimum that exercises query, metadata and
-      subscription — plus the types `instance.catalog` returns: `CatalogEntry`,
+- [ ] 8.1 Declare `instance.info` and `instance.catalog` in `crates/omt`, and
+      `events.subscribe` in `omt-events` — where the events live, which is the
+      edge the L1 order exists to permit (02 rule 3). All three ship with real
+      handlers, since `seal()` is strict (D-8); together they exercise query,
+      metadata and subscription. Plus the types `instance.catalog` returns:
+      `CatalogEntry`,
       `CatalogHash`, and `Origin` including its `Plugin` variant, which the
       proposal promises is declared even though hosting is doc 11's change
 - [ ] 8.2 The parity test over the registry, all five artifacts and both

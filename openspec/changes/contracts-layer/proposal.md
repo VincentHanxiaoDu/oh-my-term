@@ -97,7 +97,7 @@ None. This is the first change; no specs exist yet.
 - Establishes the CI gates every later change inherits: `cargo fmt`,
   `clippy -D warnings`, the codegen `--check` diff, the layering test, and the
   parity test over the registry.
-- Fixes the shape of the eight artifacts listed in
-  [`docs/architecture/README.md`](../../../docs/architecture/README.md) as
-  contracts-layer obligations, including the `omt-hook` wire that the flagship
+- Freezes the wire surface every later change reads: the capability declaration
+  shape, the event envelope with its closed kind and source vocabularies, the
+  terminal frame header, and the `omt-hook` ingress the flagship observation
   path depends on.

@@ -18,16 +18,17 @@ Authoritative sources, which win over anything restated here:
 - [decisions.md](../../../docs/architecture/decisions.md) — all sixteen bind;
   D15 (intent classes) and D2 (remote equals local) shape this change most.
 
-**Crates:** creates `omt-types`, `omt-catalog`, `omt-events`, `omt-proto`, and
-`xtask`. Modifies nothing — there is nothing yet to modify.
+**Crates:** creates `omt-types`, `omt-util`, `omt-catalog`, `omt-events`,
+`omt-proto` and `xtask`, plus the stub surfaces of D-6 (`omt`, `omt-tui`,
+`omt-server`, `web/`). Modifies nothing — there is nothing yet to modify.
 
 ## Goals / Non-Goals
 
 Beyond the proposal's scope, at the design level:
 
 **Goals**
-- The four crates compile and test with no runtime and no I/O, so that later
-  crates can use them under deterministic simulation
+- The five library crates compile and test with no runtime and no I/O, so that
+  later crates can use them under deterministic simulation
   ([05 §12](../../../docs/architecture/05-session-model.md)).
 - Every trait in this layer is provably implementable from outside its crate.
 - Generated artifacts are reproducible byte-for-byte from a given binary.
@@ -201,9 +202,6 @@ review as a diff rather than invisible until a client breaks.
   scan and awkward for cross-compilation. Accepted: correctness of the list is
   worth more than codegen speed, and cross-compiled targets can consume the
   committed artifacts.
-- **A capability declared with no handler returns `unsupported`** → a surface may
-  offer something that does not work yet. Mitigation: the parity test lists them,
-  so the gap is visible rather than discovered by a user.
 
 ## Migration Plan
 
