@@ -449,9 +449,12 @@ made to. Two independent reasons:
 
 - An alt-screen TUI produces no command boundaries at all — [04 §6.3](04-terminal-core.md)
   correctly suspends segmentation there.
-- **Worse, and less obvious: Claude Code is not an alt-screen program.** Its Ink
-  renderer draws inline on the primary screen, so the alt-screen rule never
-  fires. There is no shell in the loop, so no OSC 133 ever arrives, so the
+- **Worse, and less obvious: there is no shell in the loop.** An agent CLI is
+  the foreground process for the whole session, so no OSC 133 ever arrives —
+  whether or not it uses the alternate screen. (Claude Code does use the
+  alternate screen for some full-screen views; verified in
+  [`spike-card-answering.md` §5](../research/spike-card-answering.md). That only
+  adds intervals where segmentation is suspended outright.) So the
   heuristic segmenter runs — and its close conditions are "PTY quiet **and the
   foreground pgid returned to the shell**" or "a real OSC 133 `A`". In a
   long-lived agent session the foreground pgid is the agent for the whole
