@@ -14,6 +14,7 @@ Exit: 0 clean, 1 on any failure.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -104,6 +105,49 @@ def check_links(files: list[Path]) -> tuple[list[str], list[str]]:
     return bad_files, bad_anchors
 
 
+def check_no_secrets(files: list[Path]) -> list[str]:
+    """No private key material anywhere in the tree.
+
+    This exists because it already happened: a `.gitignore` rule was written at
+    the wrong path level, the file it was meant to exclude was committed, and
+    nobody noticed until an unrelated check surfaced it. Two unpushed commits
+    made it recoverable; a push would not have.
+    """
+    markers = (
+        "BEGIN OPENSSH PRIVATE KEY",
+        "BEGIN RSA PRIVATE KEY",
+        "BEGIN EC PRIVATE KEY",
+        "BEGIN PGP PRIVATE KEY",
+    )
+    # Only tracked files. A key generated locally and correctly gitignored is
+    # doing its job; the failure this catches is one that would be *published*.
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout.split(b"\0")
+    except (OSError, subprocess.CalledProcessError):
+        return []
+
+    problems = []
+    for raw in tracked:
+        if not raw:
+            continue
+        f = ROOT / raw.decode()
+        if not f.is_file():
+            continue
+        try:
+            head = f.read_bytes()[:4096].decode("utf-8", "ignore")
+        except OSError:
+            continue
+        for m in markers:
+            if m in head:
+                problems.append(f"{f.relative_to(ROOT)} contains `{m}` and is tracked by git")
+    return problems
+
+
 def check_decisions_referenced(files: list[Path]) -> list[str]:
     """A decision nothing outside the log references was never propagated.
 
@@ -155,6 +199,7 @@ def main() -> int:
     checks.append(("unclosed code fences", fences))
     checks.append(("broken file links", bad_files))
     checks.append(("dangling section anchors", bad_anchors))
+    checks.append(("private key material", check_no_secrets(files)))
     checks.append(("unpropagated decisions", check_decisions_referenced(files)))
 
     failed = 0
