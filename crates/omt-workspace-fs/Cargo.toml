@@ -1,0 +1,18 @@
+[package]
+name = "omt-workspace-fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The workspace file tree: listing, filtering, and staying inside the root."
+
+[dependencies]
+omt-types = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -418,11 +418,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-identity"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-input"
 version = "0.1.0"
 dependencies = [
  "omt-types",
  "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "omt-media"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "serde_json",
+ "sha2",
  "thiserror",
 ]
 
@@ -537,6 +557,16 @@ dependencies = [
 name = "omt-util"
 version = "0.1.0"
 dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "omt-workspace-fs"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "tempfile",
  "thiserror",
 ]
 

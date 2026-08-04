@@ -1,0 +1,15 @@
+[package]
+name = "omt-identity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Identities and their devices: registration, naming, and revocation."
+
+[dependencies]
+omt-types = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

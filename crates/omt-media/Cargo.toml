@@ -1,0 +1,19 @@
+[package]
+name = "omt-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Blobs: content-addressed storage, type sniffing, and transfer limits."
+
+[dependencies]
+omt-types = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+sha2 = "0.10"
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
