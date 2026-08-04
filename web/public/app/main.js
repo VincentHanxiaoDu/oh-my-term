@@ -1,0 +1,121 @@
+/**
+ * The entry point: the few lines that turn modules into a running client.
+ *
+ * Everything decidable lives in the modules this imports and is tested there.
+ * What is here is the wiring only a browser can exercise — the token, the
+ * socket, the viewport, the service worker — kept deliberately thin so that
+ * "untested" and "trivial" describe the same code.
+ */
+import { App } from './app.js';
+import { Store } from './store.js';
+import { connect } from './connect.js';
+import { canPush } from './push.js';
+import { fit } from './screen.js';
+/**
+ * Where the token comes from.
+ *
+ * The fragment, never the query: a query string is written to the server's
+ * access log, to browser history and to any `Referer` the page sends, and a
+ * bearer token in any of those outlives the person who pasted it. It is
+ * stripped from the address bar as soon as it is read.
+ */
+function takeToken(loc, storage) {
+    const fragment = new URLSearchParams(loc.hash.replace(/^#/, ''));
+    const fresh = fragment.get('token');
+    if (fresh !== null) {
+        storage.setItem('omt.token', fresh);
+        history.replaceState(null, '', loc.pathname);
+        return fresh;
+    }
+    return storage.getItem('omt.token');
+}
+/**
+ * This browser's identity, stable across reloads.
+ *
+ * The instance uses it to tell one client from another when resolving a card,
+ * so it must survive a refresh — otherwise every reload looks like a new device
+ * and the ledger cannot tell a retry from a second person answering.
+ */
+function deviceId(storage) {
+    const existing = storage.getItem('omt.device');
+    if (existing !== null) {
+        return existing;
+    }
+    const fresh = crypto.randomUUID();
+    storage.setItem('omt.device', fresh);
+    return fresh;
+}
+function main() {
+    const root = document.getElementById('app');
+    if (root === null) {
+        return;
+    }
+    const token = takeToken(window.location, window.localStorage);
+    if (token === null) {
+        root.textContent =
+            'Open the link `omt web` printed. It carries the token, which is shown once.';
+        return;
+    }
+    let store;
+    const transport = connect({ url: window.location.origin, token }, {
+        onMessage: (message) => store.receive(message),
+        onOpen: () => store.connect(token),
+    });
+    store = new Store(deviceId(window.localStorage), transport);
+    const app = new App(store, root);
+    // The grid follows the viewport, not the other way round. A phone rotating
+    // or a keyboard opening halves the usable height, and a terminal that keeps
+    // the old size hides the line being typed behind the keyboard.
+    let last = { cols: 0, rows: 0 };
+    const resize = () => {
+        const cell = measureCell();
+        const view = window.visualViewport;
+        const next = fit({
+            width: view?.width ?? root.clientWidth,
+            height: view?.height ?? root.clientHeight,
+            cellWidth: cell.width,
+            cellHeight: cell.height,
+        });
+        if (next.cols === last.cols && next.rows === last.rows) {
+            return;
+        }
+        last = next;
+        const session = app.route.screen === 'terminal' ? app.route.session : null;
+        if (session !== null) {
+            void store.call('session.resize', session, next.cols, next.rows).catch(() => { });
+        }
+    };
+    window.addEventListener('resize', resize);
+    window.visualViewport?.addEventListener('resize', resize);
+    resize();
+    // Registered last, and only if it could ever help: a failed service worker
+    // must cost the notifications, not the client. Everything above already
+    // works without it.
+    if (canPush(environment()).available) {
+        void navigator.serviceWorker.register('/sw.js');
+    }
+    app.render();
+}
+/** How big one character is — measured, never assumed. */
+function measureCell() {
+    const probe = document.createElement('span');
+    probe.className = 'terminal';
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.textContent = 'M';
+    document.body.append(probe);
+    const box = probe.getBoundingClientRect();
+    probe.remove();
+    return { width: box.width, height: box.height };
+}
+function environment() {
+    return {
+        hasServiceWorker: 'serviceWorker' in navigator,
+        hasPushManager: 'PushManager' in window,
+        isSecureContext: window.isSecureContext,
+        isStandalone: window.matchMedia('(display-mode: standalone)').matches,
+        isIos: /iP(hone|ad|od)/.test(navigator.userAgent),
+        permission: ('Notification' in window ? Notification.permission : 'default'),
+    };
+}
+main();

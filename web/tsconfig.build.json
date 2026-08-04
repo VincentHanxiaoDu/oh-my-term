@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "public/app",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src"]
+}

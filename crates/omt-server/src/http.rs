@@ -85,7 +85,45 @@ pub fn router(state: HttpState) -> Router {
         .route("/api/health", get(health))
         .route("/api/catalog", get(catalog))
         .route("/api/ws", get(websocket))
+        .fallback(get(asset))
         .with_state(state)
+}
+
+include!(concat!(env!("OUT_DIR"), "/assets.rs"));
+
+/// The web client itself.
+///
+/// Unauthenticated, deliberately: these bytes are the same for every install
+/// and contain no instance state. The token gates `/api/*`, which is where
+/// anything about *this* machine lives. Gating the shell as well would mean the
+/// page that asks for a token could not load without one.
+///
+/// Anything not found falls back to the shell rather than to 404, because a
+/// client-routed path is a real URL to the user even though no file matches it.
+async fn asset(uri: axum::http::Uri) -> impl IntoResponse {
+    let path = uri.path();
+    let wanted = if path == "/" { "/index.html" } else { path };
+    let found = ASSETS
+        .iter()
+        .find(|(route, _, _)| *route == wanted)
+        // A path under /api that reached here is a genuine 404 and must not be
+        // answered with HTML, or a client bug reads as a parse error.
+        .or_else(|| {
+            if path.starts_with("/api/") || path.contains('.') {
+                None
+            } else {
+                ASSETS.iter().find(|(route, _, _)| *route == "/index.html")
+            }
+        });
+    match found {
+        Some((_, mime, bytes)) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, *mime)],
+            *bytes,
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
 }
 
 /// Whether the instance is up.
@@ -262,6 +300,32 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert("x-token", "omt_c_something".parse().expect("header"));
         assert_eq!(bearer(&h), None);
+    }
+
+    #[test]
+    fn the_web_client_is_embedded_in_the_binary() {
+        // Not a build artifact somebody has to copy next to the binary: `cargo
+        // install omt` has to produce a working web client, and a missing
+        // asset directory is a blank page with nothing in the log.
+        assert!(
+            ASSETS.iter().any(|(r, _, _)| *r == "/index.html"),
+            "the shell is missing; run `npm run build` in web/"
+        );
+        assert!(
+            ASSETS.iter().any(|(r, _, _)| *r == "/app/main.js"),
+            "the entry point is missing"
+        );
+    }
+
+    #[test]
+    fn every_script_is_served_as_a_module_not_as_text() {
+        // A browser refuses to execute a module served as text/plain, and the
+        // page then loads with no error anywhere that says so.
+        for (route, mime, _) in ASSETS {
+            if route.ends_with(".js") {
+                assert!(mime.starts_with("text/javascript"), "{route} is {mime}");
+            }
+        }
     }
 
     #[test]

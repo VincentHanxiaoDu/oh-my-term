@@ -9,16 +9,15 @@
  * open card is not necessarily one omt can answer, and a button offered for one
  * it cannot means the user finds out by the wrong option being chosen.
  */
-
-export * from './protocol.js'
-export * from './resume.js'
-export * from './session.js'
-export * from './threads.js'
-export * from './capabilities.js'
-export * from './connect.js'
-export * from './store.js'
-export * from './screen.js'
-export * from './touch.js'
-export * from './push.js'
-export * from './app.js'
-export * from './generated/catalog.js'
+export * from './protocol.js';
+export * from './resume.js';
+export * from './session.js';
+export * from './threads.js';
+export * from './capabilities.js';
+export * from './connect.js';
+export * from './store.js';
+export * from './screen.js';
+export * from './touch.js';
+export * from './push.js';
+export * from './app.js';
+export * from './generated/catalog.js';
