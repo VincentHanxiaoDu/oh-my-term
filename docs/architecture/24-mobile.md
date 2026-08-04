@@ -249,9 +249,29 @@ The EU DMA changes nothing here. `BrowserEngineKit` shipped in 2024 and as of
 2026 no third-party-engine browser has actually shipped, and it would be
 EU-only regardless.
 
-## 7. Open question: running an agent *on* the phone
+## 7. Settled: a phone is a client, not the machine
 
-Whether a phone could be the machine rather than a window onto one is under
-research — see [research/mobile-native.md](../research/mobile-native.md). The
-answer changes the architecture materially if it is yes, so nothing here
-assumes it either way.
+Researched and closed — see [research/mobile-native.md](../research/mobile-native.md).
+
+**iOS: no.** `fork` and `spawn` exist in the API and do not work; Apple DTS
+confirms this is platform policy rather than the sandbox, so **there is no
+entitlement to request**. That invalidates every agent CLI, all of which shell
+out to tools. The DMA does not help — UTM was rejected under 2.5.2 for the EU
+marketplaces too, and Apple denied iSH's interoperability request for JIT.
+
+**Android: works, not shippable.** Termux is frozen at `targetSdk` 28 because
+Android 10's W^X rule forbids executing from an app's writable directory, and
+Play has required 29+ since 2020. The phantom process killer then caps forked
+children at 32, which `npm install` exceeds, and cannot be raised from inside
+an app.
+
+**Browser: ruled out by memory.** Tabs crash at ~100 MB on an iPhone SE 3, and
+the failure is uncatchable.
+
+**Nobody ships this.** Claude Code mobile, Cursor, Codex, Jules, Replit and
+another tool are all remote. The gap is structural, not un-attempted.
+
+Two things follow that this document does assume: the client stays a client,
+and iOS Live Activities are worth a native app *later* — Cursor tracks eight
+concurrent agents in the Dynamic Island, which is this document's subagent grid
+in another form.
