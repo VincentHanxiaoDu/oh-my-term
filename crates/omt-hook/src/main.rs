@@ -11,7 +11,7 @@
 use std::io::{self, IsTerminal};
 use std::process::ExitCode;
 
-use omt_hook::{EXIT_OK, HookEnv, emit_proceed, parse_agent, read_payload};
+use omt_hook::{EXIT_OK, HookEnv, drain_stdin, emit_proceed, parse_agent, read_payload, report};
 
 fn main() -> ExitCode {
     // Nothing below may propagate a failure. Every path ends in the same place:
@@ -22,17 +22,29 @@ fn main() -> ExitCode {
 
     let result = std::panic::catch_unwind(|| {
         let env = HookEnv::from_process(agent);
+        let interactive = io::stdin().is_terminal();
+
         if !env.is_worth_trying() {
             // omt did not spawn this agent. Nothing to report to, and trying
             // anyway would cost a syscall on every hook event forever.
+            //
+            // But stdin is still drained first. The agent is mid-write to this
+            // pipe, and exiting without reading hands it a broken pipe part way
+            // through — which it reports as the hook exiting 127, and then it
+            // dies. The guard clause that skips the work must not skip the
+            // read.
+            if !interactive {
+                drain_stdin(io::stdin().lock());
+            }
             return;
         }
-        let payload = if io::stdin().is_terminal() {
+
+        let payload = if interactive {
             None
         } else {
             read_payload(io::stdin().lock())
         };
-        report(&env, payload.as_ref());
+        let _ = report(&env, payload.as_ref());
     });
 
     if result.is_err() {
@@ -42,13 +54,4 @@ fn main() -> ExitCode {
 
     let _ = emit_proceed(io::stdout().lock(), agent);
     ExitCode::from(EXIT_OK as u8)
-}
-
-/// Send the observation, or give up quietly.
-///
-/// Deliberately returns nothing: there is no failure a caller could usefully
-/// handle, because every one leads to the same behaviour.
-fn report(_env: &HookEnv, _payload: Option<&serde_json::Value>) {
-    // The socket client lands with omt-transport. Until then the hook is
-    // already correct in the way that matters: it never breaks the agent.
 }

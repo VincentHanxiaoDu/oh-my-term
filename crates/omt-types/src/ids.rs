@@ -12,6 +12,14 @@ use serde::{Deserialize, Serialize};
 ///
 /// The prefix is what makes an id readable in a log or an error message —
 /// `sess_1f0c…` says what it is without a schema in hand.
+/// An id that could not be read back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("not a `{expected}` id in its wire form")]
+pub struct IdParseError {
+    /// The prefix that was expected.
+    pub expected: &'static str,
+}
+
 macro_rules! uuid_id {
     ($(#[$m:meta])* $name:ident, $prefix:literal) => {
         $(#[$m])*
@@ -42,6 +50,40 @@ macro_rules! uuid_id {
             #[must_use]
             pub const fn as_uuid(&self) -> &uuid::Uuid {
                 &self.0
+            }
+
+            /// The **lossless** form, for anywhere this id must survive a round
+            /// trip through a string.
+            ///
+            /// [`fmt::Display`] is deliberately abbreviated so a log line stays
+            /// readable, which means it cannot be parsed back. Everywhere an id
+            /// is written out to be read again — an injected environment
+            /// variable, a deep link, a stored record — has to use this
+            /// instead, or the identity is quietly destroyed at the boundary.
+            #[must_use]
+            pub fn to_wire(&self) -> String {
+                format!("{}_{}", $prefix, self.0.simple())
+            }
+
+            /// Recover an id from [`Self::to_wire`].
+            ///
+            /// The prefix is checked, not skipped: a `PaneId` handed to
+            /// `SessionId::from_wire` is a bug that would otherwise produce a
+            /// valid-looking id pointing at nothing.
+            #[must_use]
+            pub fn from_wire(s: &str) -> Option<Self> {
+                let rest = s.strip_prefix($prefix)?.strip_prefix('_')?;
+                uuid::Uuid::parse_str(rest).ok().map(Self)
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = IdParseError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Self::from_wire(s).ok_or(IdParseError {
+                    expected: $prefix,
+                })
             }
         }
 
@@ -221,5 +263,60 @@ mod tests {
         assert!(json.starts_with('"'), "expected a bare string, got {json}");
         let back: SessionId = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(id, back);
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod wire_tests {
+    use super::*;
+
+    #[test]
+    fn the_wire_form_round_trips() {
+        // Everywhere an id is written out to be read again — an injected
+        // environment variable, a deep link, a stored record — depends on this.
+        let id = SessionId::new();
+        assert_eq!(SessionId::from_wire(&id.to_wire()), Some(id));
+    }
+
+    #[test]
+    fn the_display_form_deliberately_does_not() {
+        // Display is abbreviated so a log line stays readable. That is fine as
+        // long as nothing tries to parse it back, which is exactly why the two
+        // forms are separate methods rather than one.
+        let id = SessionId::new();
+        assert!(id.to_string().len() < id.to_wire().len());
+        assert_eq!(
+            SessionId::from_wire(&id.to_string()),
+            None,
+            "the short form must not parse, or it would round-trip to a *different* id"
+        );
+    }
+
+    #[test]
+    fn an_id_of_another_kind_is_refused() {
+        // A PaneId handed to SessionId::from_wire would otherwise produce a
+        // valid-looking id pointing at nothing.
+        let pane = PaneId::new();
+        assert_eq!(SessionId::from_wire(&pane.to_wire()), None);
+        assert!(PaneId::from_wire(&pane.to_wire()).is_some());
+    }
+
+    #[test]
+    fn nonsense_is_refused_rather_than_defaulted() {
+        for bad in ["", "sess_", "sess_notauuid", "wholly unrelated"] {
+            assert_eq!(SessionId::from_wire(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn parsing_names_the_prefix_it_wanted() {
+        let err: Result<SessionId, _> = "nope".parse();
+        let err = err.expect_err("must refuse");
+        assert!(err.to_string().contains(SessionId::PREFIX), "{err}");
     }
 }

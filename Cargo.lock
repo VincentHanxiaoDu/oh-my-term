@@ -411,6 +411,8 @@ dependencies = [
 name = "omt-hook"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "omt-agent-adapters",
  "omt-proto",
  "omt-transport",
  "omt-types",

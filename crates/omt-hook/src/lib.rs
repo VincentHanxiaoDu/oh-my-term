@@ -9,7 +9,7 @@
 use std::io::{Read, Write};
 use std::time::Duration;
 
-use omt_proto::{FrameKind, HookAck, HookDirective, HookEvent, ProtoMessage};
+use omt_proto::{FrameKind, HookAck, HookCorrelation, HookDirective, HookEvent, ProtoMessage};
 use omt_types::AgentKind;
 
 /// How long to wait for the daemon before giving up.
@@ -124,7 +124,17 @@ pub fn parse_agent(args: &[String]) -> AgentKind {
     }
 }
 
-/// Read the agent's payload from stdin.
+/// Read the agent's payload from stdin, to end of input.
+///
+/// **Always read to the end, even when the payload will not be used.** The
+/// agent is writing to this process's stdin; exiting before the write finishes
+/// closes the pipe under it, and the agent takes an `EPIPE` — or a `SIGPIPE` —
+/// part way through a write it had no reason to expect to fail. It surfaces as
+/// the agent reporting the hook exited 127 and then dying, which looks like
+/// anything but "the hook returned too early".
+///
+/// This is why [`drain_stdin`] exists and why every early-exit path calls it:
+/// the guard clause that skips the work must not also skip the read.
 ///
 /// # Errors
 /// Never fails upward: unreadable or malformed input yields `None`, and the
@@ -140,6 +150,16 @@ pub fn read_payload(mut input: impl Read) -> Option<serde_json::Value> {
     serde_json::from_str(&buf).ok()
 }
 
+/// Consume stdin to the end and discard it.
+///
+/// For the paths that exit without wanting the payload. Reading and throwing it
+/// away is not waste: it is the difference between the agent finishing its
+/// write and the agent taking a broken pipe.
+pub fn drain_stdin(mut input: impl Read) {
+    let mut sink = Vec::new();
+    let _ = input.read_to_end(&mut sink);
+}
+
 /// Write what the agent expects, and say how it went.
 ///
 /// # Errors
@@ -147,6 +167,118 @@ pub fn read_payload(mut input: impl Read) -> Option<serde_json::Value> {
 /// ignores — at that point the agent is not reading anyway.
 pub fn emit_proceed(mut out: impl Write, agent: AgentKind) -> std::io::Result<()> {
     writeln!(out, "{}", proceed_document(agent))
+}
+
+/// How long the hook will wait before giving up and letting its agent proceed.
+///
+/// Short on purpose. The budget belongs to somebody else's agent, and a hook
+/// that blocks is a hook the user experiences as the agent being slow.
+pub const DEADLINE_MS: u32 = 250;
+
+/// Build and send the observation for this invocation.
+///
+/// # Errors
+/// Returns why it did not get through. Every variant leads to the same
+/// behaviour — the agent proceeds — so this is for diagnosis, never a decision.
+pub fn report(env: &HookEnv, payload: Option<&serde_json::Value>) -> Result<HookDirective, Missed> {
+    let Some(socket) = env.socket.as_deref() else {
+        return Err(Missed::Unreachable(
+            "no socket in the environment".to_owned(),
+        ));
+    };
+    let event = build_event(env, payload);
+    report_to_daemon(
+        socket,
+        &event,
+        std::time::Duration::from_millis(u64::from(DEADLINE_MS)),
+    )
+}
+
+/// Turn what arrived into what the daemon expects.
+///
+/// The agent's own event name is carried **verbatim**. Normalizing it here
+/// would mean an event this build has never seen becomes unloggable rather
+/// than merely unrecognized, and a hook is the worst place to decide what an
+/// agent meant.
+#[must_use]
+pub fn build_event(env: &HookEnv, payload: Option<&serde_json::Value>) -> HookEvent {
+    let field = |k: &str| {
+        payload
+            .and_then(|p| p.get(k))
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    };
+
+    let event = field("hook_event_name")
+        .or_else(|| field("event"))
+        .or_else(|| std::env::var("OMT_HOOK_EVENT").ok())
+        .unwrap_or_else(|| "unknown".to_owned());
+
+    let base = HookEvent {
+        // A per-process value, not a request id: a hook lives for milliseconds
+        // and makes exactly one call, so uniqueness within the connection is
+        // the whole requirement.
+        nonce: nonce(),
+        hook_proto: 1,
+        agent: env.agent,
+        agent_version: field("version"),
+        agent_session: field("session_id"),
+        event,
+        tool_use_id: field("tool_use_id"),
+        tool_name: field("tool_name"),
+        tool_input: None,
+        raw: None,
+        truncated: None,
+        correlation: HookCorrelation {
+            // `from_wire`, never `parse` on the Display form: Display is
+            // abbreviated for logs and cannot be read back, so parsing it would
+            // silently correlate to nothing.
+            instance: env
+                .instance
+                .as_deref()
+                .and_then(omt_types::InstanceId::from_wire),
+            // Never guessed. An unattributed observation is recoverable; one
+            // attributed to the wrong session silently corrupts that session.
+            session: env
+                .session
+                .as_deref()
+                .and_then(omt_types::SessionId::from_wire),
+            pid: std::process::id(),
+            ppid: parent_pid(),
+            cwd: std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        },
+        deadline_ms: DEADLINE_MS,
+    };
+
+    match payload.and_then(|p| p.get("tool_input")) {
+        Some(input) => base.with_payload("tool_input", input.clone()),
+        None => base,
+    }
+}
+
+fn nonce() -> u64 {
+    // The pid plus a monotonic counter: unique within this process, and this
+    // process makes one call in its life.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    (u64::from(std::process::id()) << 16) | (n & 0xffff)
+}
+
+fn parent_pid() -> u32 {
+    #[cfg(unix)]
+    {
+        // SAFETY: getppid takes no arguments and cannot fail.
+        #[allow(unsafe_code, reason = "getppid is infallible and argument-free")]
+        unsafe {
+            libc::getppid() as u32
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        0
+    }
 }
 
 /// Report an observation and read the directive back.
@@ -208,6 +340,40 @@ pub const EXIT_OK: i32 = 0;
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draining_consumes_everything_the_agent_wrote() {
+        // The bug this exists for: the agent is writing its payload to this
+        // process's stdin. Exiting before the write finishes closes the pipe
+        // under it and the agent takes a broken pipe part way through — which
+        // it reports as the hook exiting 127, and then it dies. Reading and
+        // throwing the bytes away is not waste; it is the difference.
+        struct Counting<'a> {
+            data: &'a [u8],
+            read: &'a std::cell::Cell<usize>,
+        }
+        impl Read for Counting<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.data.len().min(buf.len());
+                buf[..n].copy_from_slice(&self.data[..n]);
+                self.data = &self.data[n..];
+                self.read.set(self.read.get() + n);
+                Ok(n)
+            }
+        }
+
+        let payload = br#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#;
+        let read = std::cell::Cell::new(0);
+        drain_stdin(Counting {
+            data: payload,
+            read: &read,
+        });
+        assert_eq!(
+            read.get(),
+            payload.len(),
+            "the hook exited without consuming what the agent wrote"
+        );
+    }
 
     #[test]
     fn every_agent_has_a_proceed_document() {
