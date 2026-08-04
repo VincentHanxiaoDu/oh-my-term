@@ -199,3 +199,25 @@ describe('the store', () => {
 
 // Imported late so the type is in scope for the helper above.
 import type { Interaction } from '../src/index.js'
+
+describe('what a client does on arrival', () => {
+  it('asks what is running as soon as it is welcomed', async () => {
+    // Otherwise it sits on an empty roster forever, looking exactly like an
+    // instance with nothing on it.
+    const sent: unknown[] = []
+    const store = new Store('11111111-1111-1111-1111-111111111111', {
+      send: (m) => sent.push(m),
+    })
+    store.receive({
+      t: 'welcome',
+      proto: 1,
+      role: 'operator',
+      catalog_hash: 'h',
+      capabilities: ['workspace.list', 'session.list'],
+    } as never)
+    await Promise.resolve()
+    const asked = sent.map((m) => (m as { capability?: string }).capability)
+    expect(asked).toContain('workspace.list')
+    expect(asked).toContain('session.list')
+  })
+})

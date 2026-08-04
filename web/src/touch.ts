@@ -181,3 +181,41 @@ export function riskOf(command: string): Risk {
   const reversible = [/^rm\s/, /^git\s+(checkout|restore|clean)/, /^mv\s/]
   return reversible.some((r) => r.test(c)) ? 'reversible' : 'ordinary'
 }
+
+/** What a keypress sends, or nothing if the terminal has no use for it. */
+export function keyToBytes(event: {
+  key: string
+  ctrlKey: boolean
+  altKey: boolean
+  metaKey: boolean
+}): string | null {
+  // Left alone: these are the browser's, and a terminal that swallows Cmd-V
+  // has taken paste away from the user to gain nothing.
+  if (event.metaKey) {
+    return null
+  }
+  if (event.ctrlKey && event.key.length === 1) {
+    const code = event.key.toUpperCase().charCodeAt(0)
+    return code >= 64 && code < 96 ? String.fromCharCode(code - 64) : null
+  }
+  switch (event.key) {
+    case 'Enter':
+      return '\r'
+    case 'Backspace':
+      return '\x7f'
+    case 'Tab':
+      return '\t'
+    case 'Escape':
+      return '\x1b'
+    case 'ArrowUp':
+      return '\x1b[A'
+    case 'ArrowDown':
+      return '\x1b[B'
+    case 'ArrowRight':
+      return '\x1b[C'
+    case 'ArrowLeft':
+      return '\x1b[D'
+    default:
+      return event.key.length === 1 ? event.key : null
+  }
+}

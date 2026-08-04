@@ -22,6 +22,13 @@ pub fn run(bind: &str) -> Result<()> {
     // it, and watch a screen that never changes — every byte sits in the pty
     // buffer with nobody reading it.
     spawn_pump(state.clone());
+    // The directory `omt web` was started in, opened before anything is served.
+    // A browser has no filesystem of its own to point at, so an instance with
+    // no workspace gives it a session-creation form it cannot fill in — and the
+    // local `omt` already treats the working directory as the obvious answer.
+    if let (Ok(cwd), Ok(mut instance)) = (std::env::current_dir(), state.lock()) {
+        let _ = instance.open_workspace(&cwd.display().to_string());
+    }
     let registry = crate::capabilities::registry(state).context("building the registry")?;
 
     let mut credentials = CredentialStore::new();

@@ -13,10 +13,17 @@ use std::{env, fs, path::Path};
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/public");
+    // The directory alone is not enough: editing a file inside it does not
+    // change the directory's own mtime, so cargo keeps the stale embed and the
+    // browser is served last build's client with nothing to say so. Each file
+    // is named individually below, which does catch it.
     println!("cargo:rerun-if-changed={}", root.display());
 
     let mut entries = Vec::new();
     walk(&root, &root, &mut entries);
+    for (_, path) in &entries {
+        println!("cargo:rerun-if-changed={path}");
+    }
     entries.sort();
 
     let mut out = String::from(

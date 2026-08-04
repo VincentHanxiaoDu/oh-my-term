@@ -133,6 +133,12 @@ export class Store {
     if (message.t === 'result') {
       this.#settle(message)
     }
+    if (message.t === 'welcome') {
+      // The welcome says what this instance offers, not what it holds. Without
+      // this the client sits on an empty roster forever, looking exactly like
+      // an instance with nothing running.
+      void this.refresh()
+    }
     if (message.t === 'goodbye') {
       this.#problems.unshift({
         message: message.detail,
@@ -152,12 +158,21 @@ export class Store {
     this.#emit()
   }
 
-  /** Re-read everything from the instance. */
+  /**
+   * Re-read everything from the instance.
+   *
+   * Both calls go out together. Chaining them costs two round trips before the
+   * roster can draw anything, and neither answer depends on the other — over a
+   * phone link that is the difference between opening to a list and opening to
+   * a blank screen that fills in twice.
+   */
   async refresh(): Promise<void> {
     try {
-      const workspaces = (await this.call('workspace.list')) as { workspaces: WorkspaceSummary[] }
+      const [workspaces, sessions] = (await Promise.all([
+        this.call('workspace.list'),
+        this.call('session.list'),
+      ])) as [{ workspaces: WorkspaceSummary[] }, { sessions: SessionSummary[] }]
       this.#workspaces = workspaces.workspaces
-      const sessions = (await this.call('session.list')) as { sessions: SessionSummary[] }
       this.#sessions = sessions.sessions
     } catch (e) {
       const failure = e as CallFailure

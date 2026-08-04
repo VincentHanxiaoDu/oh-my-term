@@ -13,6 +13,8 @@
 import { KEY_BAR, KEY_BAR_SECONDARY, applyLatch, confirmation, riskOf } from './touch.js'
 import type { Interaction } from './protocol.js'
 import type { Store, ViewState } from './store.js'
+import { changed, paint } from './terminal.js'
+import type { Snapshot } from './terminal.js'
 import { trimTrailingBlank } from './screen.js'
 
 /** Which screen is showing. */
@@ -119,12 +121,24 @@ export function cardStatus(interaction: Interaction): { answerable: boolean; why
   return { answerable: true }
 }
 
+/**
+ * How often the terminal screen asks for a new picture.
+ *
+ * Chosen against the thing people actually notice: the gap between pressing a
+ * key and seeing it. Faster than this buys nothing a person can perceive, and
+ * costs a request every time.
+ */
+export const POLL_MS = 150
+
 /** A tiny renderer, so the shell has no framework and no build step. */
 export class App {
   #store: Store
   #root: HTMLElement
   #route: Route = { screen: 'roster' }
   #latched: 'ctrl' | 'alt' | null = null
+  #screen: Snapshot | null = null
+  #epoch = 0
+  #poll: ReturnType<typeof setInterval> | null = null
 
   constructor(store: Store, root: HTMLElement) {
     this.#store = store
@@ -135,7 +149,37 @@ export class App {
   /** Go somewhere. */
   go(route: Route): void {
     this.#route = route
+    // The poll belongs to the terminal screen and to nothing else. Left
+    // running, it keeps asking a phone's radio for a screen nobody is looking
+    // at, which is the kind of thing that shows up as battery drain.
+    if (this.#poll !== null) {
+      clearInterval(this.#poll)
+      this.#poll = null
+    }
+    if (route.screen === 'terminal') {
+      const session = route.session
+      this.#poll = setInterval(() => void this.refreshTerminal(session), POLL_MS)
+    }
     this.render()
+  }
+
+  /**
+   * Type into the session on screen.
+   *
+   * The epoch goes with every write. Input already in flight when the token
+   * changed hands is rejected rather than landing in whatever the new holder
+   * is composing — which is the entire reason the token exists.
+   */
+  async type(text: string): Promise<void> {
+    if (this.#route.screen !== 'terminal') {
+      return
+    }
+    try {
+      await this.#store.call('session.write', this.#route.session, text, this.#epoch)
+      await this.refreshTerminal(this.#route.session)
+    } catch {
+      // On the store's problem list already.
+    }
   }
 
   /** Which screen is showing. */
@@ -202,6 +246,21 @@ export class App {
   }
 
   #roster(state: ViewState): HTMLElement {
+    const box = document.createElement('div')
+
+    // Offered only when there is somewhere to put it. A button that opens a
+    // form asking for a path the phone cannot browse is worse than no button.
+    const workspace = state.workspaces[0]
+    if (workspace !== undefined) {
+      const create = document.createElement('button')
+      create.className = 'create'
+      create.textContent = 'New session'
+      create.addEventListener('click', () => {
+        void this.newSession(workspace.id)
+      })
+      box.append(create)
+    }
+
     const list = document.createElement('ul')
     for (const session of orderRoster(
       state.sessions.map((s) => ({ ...s, title: s.title })),
@@ -219,7 +278,30 @@ export class App {
       item.append(button)
       list.append(item)
     }
-    return list
+    box.append(list)
+    return box
+  }
+
+  /**
+   * Start a session and go straight to it.
+   *
+   * Straight to it, because the reason somebody pressed this is that they want
+   * to type — leaving them on the roster to find the row themselves adds a tap
+   * to the one flow that should have none.
+   */
+  async newSession(workspace: string): Promise<void> {
+    try {
+      const out = (await this.#store.call('session.create', workspace)) as { session: string }
+      // The writer token, immediately: without it every keystroke is refused,
+      // and the refusal arrives only once the user has already typed something.
+      const claim = (await this.#store.call('session.acquire', out.session)) as { epoch: number }
+      this.#epoch = claim.epoch
+      this.#screen = null
+      await this.#store.refresh()
+      this.go({ screen: 'terminal', session: out.session })
+    } catch {
+      // The store already put it on the problem list.
+    }
   }
 
   #session(session: string): HTMLElement {
@@ -247,11 +329,35 @@ export class App {
   }
 
   #terminal(session: string): HTMLElement {
-    const pre = document.createElement('pre')
-    pre.className = 'terminal'
-    const rows = this.#store.state.sessions.find((s) => s.id === session);
-    pre.textContent = rows ? '' : 'no such session'
-    return pre
+    const host = document.createElement('div')
+    host.className = 'terminal'
+    if (this.#screen === null) {
+      host.textContent = 'reading the screen…'
+      void this.refreshTerminal(session)
+    } else {
+      paint(host, this.#screen)
+    }
+    return host
+  }
+
+  /**
+   * Fetch the screen and redraw only if it moved.
+   *
+   * Pulled rather than pushed: a phone that has been in a pocket for an hour
+   * wants the screen as it is now, not an hour of deltas to replay before it
+   * can find out.
+   */
+  async refreshTerminal(session: string): Promise<void> {
+    try {
+      const next = (await this.#store.call('session.snapshot', session)) as Snapshot
+      if (changed(this.#screen, next)) {
+        this.#screen = next
+        this.render()
+      }
+    } catch {
+      // Already on the store's problem list, which is on screen. Reporting the
+      // same failure twice is not more informative.
+    }
   }
 
   #card(state: ViewState, id: string): HTMLElement {

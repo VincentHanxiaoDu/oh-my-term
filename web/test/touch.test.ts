@@ -8,6 +8,7 @@ import {
   confirmation,
   dragToArrows,
   gestureBytes,
+  keyToBytes,
   riskOf,
 } from '../src/index.js'
 
@@ -153,5 +154,43 @@ describe('card safety', () => {
     expect(approvalStillValid(approved, { id: 'i1', commandHash: 'abc' })).toBe(true)
     expect(approvalStillValid(approved, { id: 'i1', commandHash: 'CHANGED' })).toBe(false)
     expect(approvalStillValid(approved, { id: 'i2', commandHash: 'abc' })).toBe(false)
+  })
+})
+
+describe('what a keypress sends', () => {
+  const press = (key: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) =>
+    keyToBytes({ key, ctrlKey: false, altKey: false, metaKey: false, ...mods })
+
+  it('turns Ctrl-C into the byte a shell acts on', () => {
+    expect(press('c', { ctrlKey: true })).toBe('\x03')
+  })
+
+  it('leaves the browser its own shortcuts', () => {
+    // A terminal that swallows Cmd-V has taken paste away to gain nothing.
+    expect(press('v', { metaKey: true })).toBeNull()
+  })
+
+  it('sends carriage return for Enter, not a newline', () => {
+    // A line discipline in canonical mode acts on CR; LF leaves the command
+    // sitting there looking submitted.
+    expect(press('Enter')).toBe('\r')
+  })
+
+  it('sends delete for Backspace', () => {
+    expect(press('Backspace')).toBe('\x7f')
+  })
+
+  it('sends the arrows as escape sequences readline understands', () => {
+    expect(press('ArrowUp')).toBe('\x1b[A')
+  })
+
+  it('ignores keys a terminal has no use for', () => {
+    // Returning something for these is how F5 stops reloading the page.
+    expect(press('F5')).toBeNull()
+    expect(press('Shift')).toBeNull()
+  })
+
+  it('passes an ordinary character through', () => {
+    expect(press('a')).toBe('a')
   })
 })

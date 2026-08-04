@@ -10,6 +10,7 @@ import { App } from './app.js';
 import { Store } from './store.js';
 import { connect } from './connect.js';
 import { canPush } from './push.js';
+import { keyToBytes } from './touch.js';
 import { fit } from './screen.js';
 /**
  * Where the token comes from.
@@ -94,6 +95,22 @@ function main() {
     if (canPush(environment()).available) {
         void navigator.serviceWorker.register('/sw.js');
     }
+    // Everything typed goes to the session on screen. Attached once, on the
+    // document, because the terminal is redrawn on every frame and a listener on
+    // it would be lost with the element it was attached to.
+    document.addEventListener('keydown', (event) => {
+        if (app.route.screen !== 'terminal') {
+            return;
+        }
+        const bytes = keyToBytes(event);
+        if (bytes === null) {
+            return;
+        }
+        // Only once it is going somewhere: preventing default on a key omt does
+        // not handle would break the browser's own shortcuts for no reason.
+        event.preventDefault();
+        void app.type(bytes);
+    });
     app.render();
 }
 /** How big one character is — measured, never assumed. */
