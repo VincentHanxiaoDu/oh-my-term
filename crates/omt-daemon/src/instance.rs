@@ -225,6 +225,12 @@ impl Instance {
         self.tree.workspaces()
     }
 
+    /// A workspace's canonical root.
+    #[must_use]
+    pub fn workspace_root(&self, id: WorkspaceId) -> Option<String> {
+        self.tree.workspace(id).map(|w| w.root.clone())
+    }
+
     /// Every session.
     #[must_use]
     pub fn sessions(&self) -> Vec<&omt_session::Session> {

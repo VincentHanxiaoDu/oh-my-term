@@ -26,6 +26,36 @@ export interface SessionSummary {
   cwd?: string
 }
 
+/** One entry in a file listing. */
+export interface FsEntry {
+  name: string
+  rel: string
+  is_dir: boolean
+  is_symlink: boolean
+  size?: number
+}
+
+/** What git says about a workspace. */
+export interface GitStatus {
+  branch?: string
+  ahead: number
+  behind: number
+  modified: number
+  staged: number
+  untracked: number
+  dirty: boolean
+}
+
+/** One changed file. */
+export interface DiffFile {
+  path: string
+  from?: string
+  kind: string
+  added: number
+  removed: number
+  binary: boolean
+}
+
 /** One thread — the session's own, or a subagent. */
 export interface ThreadSummary {
   id: string
@@ -62,6 +92,18 @@ export const HANDLERS = {
 
   'agent.threads': (request: RequestId, session: string) =>
     call(request, 'agent.threads', { session }),
+
+  'agent.interrupt': (request: RequestId, session: string) =>
+    call(request, 'agent.interrupt', { session }),
+
+  'fs.list': (request: RequestId, workspace: string, path = '') =>
+    call(request, 'fs.list', { workspace, path }),
+
+  'git.status': (request: RequestId, workspace: string) =>
+    call(request, 'git.status', { workspace }),
+
+  'git.diff': (request: RequestId, workspace: string, staged = false) =>
+    call(request, 'git.diff', { workspace, staged }),
 } as const
 
 /** The capability names this client handles. */

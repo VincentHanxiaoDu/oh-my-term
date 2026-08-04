@@ -586,6 +586,357 @@ fn describe_agent_state(state: &omt_types::AgentState) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+/// Input to `fs.list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FsListIn {
+    /// Which workspace.
+    pub workspace: String,
+    /// A workspace-relative path. Empty means the root.
+    #[serde(default)]
+    pub path: String,
+}
+
+/// One entry.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct FsEntry {
+    /// Its name.
+    pub name: String,
+    /// Its workspace-relative path, which a client sends back.
+    pub rel: String,
+    /// Whether it is a directory.
+    pub is_dir: bool,
+    /// Whether it is a symlink — reported, not followed silently.
+    pub is_symlink: bool,
+    /// Its size, for files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+}
+
+/// What `fs.list` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct FsListOut {
+    /// The entries, directories first.
+    pub entries: Vec<FsEntry>,
+}
+
+capability! {
+    /// List a directory inside a workspace.
+    pub struct FsList;
+    input  = FsListIn,
+    output = FsListOut,
+    decl = Decl {
+        name: "fs.list",
+        group: "fs",
+        verb: "list",
+        title: "List files",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::READS_FS,
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "List a directory inside a workspace. Paths are workspace-relative \
+              and cannot escape it.",
+    },
+}
+
+struct FsListHandler(State);
+
+impl CapabilityHandler<FsList> for FsListHandler {
+    fn call(&self, _ctx: &CallContext, input: FsListIn) -> Result<FsListOut, CapabilityError> {
+        let id = WorkspaceId::from_wire(&input.workspace).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a workspace id", input.workspace))
+        })?;
+        let root = {
+            let instance = self.0.lock()?;
+            instance
+                .workspace_root(id)
+                .ok_or_else(|| CapabilityError::not_found("no such workspace"))?
+        };
+        let fs = omt_workspace_fs::WorkspaceFs::new(std::path::Path::new(&root))
+            .map_err(|e| CapabilityError::not_found(e.to_string()))?;
+        let entries = fs
+            .list(&input.path)
+            // The workspace layer's own refusal, verbatim: it already
+            // distinguishes "outside the workspace" from "not there", and
+            // flattening them here would make a typo look like an attack.
+            .map_err(|e| CapabilityError::invalid_input(e.to_string()))?;
+        Ok(FsListOut {
+            entries: entries
+                .into_iter()
+                .map(|e| FsEntry {
+                    name: e.name,
+                    rel: e.rel,
+                    is_dir: e.is_dir,
+                    is_symlink: e.is_symlink,
+                    size: e.size,
+                })
+                .collect(),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Git
+// ---------------------------------------------------------------------------
+
+/// Input to `git.status`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GitStatusIn {
+    /// Which workspace.
+    pub workspace: String,
+}
+
+/// What `git.status` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct GitStatusOut {
+    /// The branch, or absent on a detached head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Commits ahead of upstream.
+    pub ahead: u32,
+    /// Commits behind it.
+    pub behind: u32,
+    /// Files changed but not staged.
+    pub modified: u32,
+    /// Files staged.
+    pub staged: u32,
+    /// Files git does not know about.
+    pub untracked: u32,
+    /// Whether anything is uncommitted.
+    pub dirty: bool,
+}
+
+capability! {
+    /// What git says about a workspace.
+    pub struct GitStatus;
+    input  = GitStatusIn,
+    output = GitStatusOut,
+    decl = Decl {
+        name: "git.status",
+        group: "git",
+        verb: "status",
+        title: "Git status",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::READS_FS,
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Branch, divergence and working-tree state. Reads only — nothing \
+              here commits, checks out or fetches.",
+    },
+}
+
+struct GitStatusHandler(State);
+
+impl CapabilityHandler<GitStatus> for GitStatusHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: GitStatusIn,
+    ) -> Result<GitStatusOut, CapabilityError> {
+        let id = WorkspaceId::from_wire(&input.workspace).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a workspace id", input.workspace))
+        })?;
+        let root = {
+            let instance = self.0.lock()?;
+            instance
+                .workspace_root(id)
+                .ok_or_else(|| CapabilityError::not_found("no such workspace"))?
+        };
+        let status = omt_workspace_fs::status(std::path::Path::new(&root))
+            .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
+        Ok(GitStatusOut {
+            branch: status.branch,
+            ahead: status.ahead,
+            behind: status.behind,
+            modified: status.modified,
+            staged: status.staged,
+            untracked: status.untracked,
+            dirty: status.modified > 0 || status.staged > 0 || status.untracked > 0,
+        })
+    }
+}
+
+/// Input to `git.diff`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GitDiffIn {
+    /// Which workspace.
+    pub workspace: String,
+    /// Whether to take the staged diff rather than the unstaged one.
+    #[serde(default)]
+    pub staged: bool,
+}
+
+/// One changed file.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct DiffFile {
+    /// Where it is now.
+    pub path: String,
+    /// Where it was, for a rename.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// What happened to it.
+    pub kind: String,
+    /// Lines added.
+    pub added: u32,
+    /// Lines removed.
+    pub removed: u32,
+    /// Whether git considers it binary.
+    pub binary: bool,
+}
+
+/// What `git.diff` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct GitDiffOut {
+    /// The changed files.
+    pub files: Vec<DiffFile>,
+}
+
+capability! {
+    /// What changed in a workspace.
+    pub struct GitDiff;
+    input  = GitDiffIn,
+    output = GitDiffOut,
+    decl = Decl {
+        name: "git.diff",
+        group: "git",
+        verb: "diff",
+        title: "Git diff",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::READS_FS,
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Which files changed, with line counts. Staged and unstaged are \
+              separate answers.",
+    },
+}
+
+struct GitDiffHandler(State);
+
+impl CapabilityHandler<GitDiff> for GitDiffHandler {
+    fn call(&self, _ctx: &CallContext, input: GitDiffIn) -> Result<GitDiffOut, CapabilityError> {
+        let id = WorkspaceId::from_wire(&input.workspace).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a workspace id", input.workspace))
+        })?;
+        let root = {
+            let instance = self.0.lock()?;
+            instance
+                .workspace_root(id)
+                .ok_or_else(|| CapabilityError::not_found("no such workspace"))?
+        };
+        let target = if input.staged {
+            omt_workspace_fs::DiffTarget::Staged
+        } else {
+            omt_workspace_fs::DiffTarget::Unstaged
+        };
+        let files = omt_workspace_fs::changed_files(std::path::Path::new(&root), target, None)
+            .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
+        Ok(GitDiffOut {
+            files: files
+                .into_iter()
+                .map(|f| DiffFile {
+                    path: f.path,
+                    from: f.from,
+                    kind: format!("{:?}", f.kind).to_lowercase(),
+                    added: f.added,
+                    removed: f.removed,
+                    binary: f.binary,
+                })
+                .collect(),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Agents
+// ---------------------------------------------------------------------------
+
+/// Input to `agent.interrupt`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AgentInterruptIn {
+    /// Which session.
+    pub session: String,
+}
+
+/// What `agent.interrupt` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct AgentInterruptOut {
+    /// How it was interrupted.
+    pub method: String,
+}
+
+capability! {
+    /// Stop what an agent is doing.
+    pub struct AgentInterrupt;
+    input  = AgentInterruptIn,
+    output = AgentInterruptOut,
+    decl = Decl {
+        name: "agent.interrupt",
+        group: "agent",
+        verb: "interrupt",
+        title: "Interrupt an agent",
+        aliases: &["stop"],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::WRITES_PTY,
+        // Raw bytes toward a process: never replayed, because re-sending an
+        // interrupt lands wherever the agent has got to by then.
+        intent: Some(Intent::RawStream),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Stop an agent. For an agent with no protocol of its own this is \
+              the entire remote control surface.",
+    },
+}
+
+struct AgentInterruptHandler(State);
+
+impl CapabilityHandler<AgentInterrupt> for AgentInterruptHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: AgentInterruptIn,
+    ) -> Result<AgentInterruptOut, CapabilityError> {
+        let id = SessionId::from_wire(&input.session).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a session id", input.session))
+        })?;
+        let mut instance = self.0.lock()?;
+        let runtime = instance
+            .runtime_mut(id)
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?;
+
+        // Ctrl-C rather than a per-agent key, until the binding says which
+        // agent this is: a control character is position-independent by
+        // construction, so it is safe without inferring anything about what is
+        // on screen.
+        runtime
+            .write_bytes(b"\x03")
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+        Ok(AgentInterruptOut {
+            method: "ctrl-c".to_owned(),
+        })
+    }
+}
+
 /// Build the registry this binary serves.
 ///
 /// # Errors
@@ -600,7 +951,11 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<WorkspaceOpen, _>(WorkspaceOpenHandler(state.clone()))?;
     r.register::<SessionList, _>(SessionListHandler(state.clone()))?;
     r.register::<SessionClose, _>(SessionCloseHandler(state.clone()))?;
-    r.register::<AgentThreads, _>(AgentThreadsHandler(state))?;
+    r.register::<AgentThreads, _>(AgentThreadsHandler(state.clone()))?;
+    r.register::<FsList, _>(FsListHandler(state.clone()))?;
+    r.register::<GitStatus, _>(GitStatusHandler(state.clone()))?;
+    r.register::<GitDiff, _>(GitDiffHandler(state.clone()))?;
+    r.register::<AgentInterrupt, _>(AgentInterruptHandler(state))?;
     r.seal()?;
     Ok(r)
 }

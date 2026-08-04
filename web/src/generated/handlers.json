@@ -1,1 +1,1 @@
-["agent.threads","events.subscribe","instance.catalog","instance.info","session.close","session.list","workspace.list","workspace.open"]
+["agent.interrupt", "agent.threads", "events.subscribe", "fs.list", "git.diff", "git.status", "instance.catalog", "instance.info", "session.close", "session.list", "workspace.list", "workspace.open"]

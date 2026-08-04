@@ -199,6 +199,26 @@ impl SessionRuntime {
             .map_err(|e| RuntimeError::Io(e.to_string()))
     }
 
+    /// Write bytes without a writer token.
+    ///
+    /// For control characters only — an interrupt is position-independent by
+    /// construction, so it needs no claim on the input channel and gating it
+    /// would mean a remote client could not stop a runaway agent without first
+    /// taking the token from whoever is typing.
+    ///
+    /// # Errors
+    /// Fails if the write does.
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<usize, RuntimeError> {
+        debug_assert!(
+            bytes.iter().all(|b| *b < 0x20),
+            "write_bytes is for control characters; anything else needs the token"
+        );
+        self.pty
+            .writer()
+            .write(bytes)
+            .map_err(|e| RuntimeError::Io(e.to_string()))
+    }
+
     /// Resize both halves.
     ///
     /// The terminal and the kernel are told together and in that order: the

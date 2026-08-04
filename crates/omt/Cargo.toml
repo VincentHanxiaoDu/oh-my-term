@@ -28,6 +28,7 @@ omt-server = { path = "../omt-server" }
 omt-auth = { workspace = true }
 omt-daemon = { workspace = true }
 omt-session = { workspace = true }
+omt-workspace-fs = { workspace = true }
 omt-pty = { workspace = true }
 omt-term = { workspace = true }
 omt-input = { workspace = true }

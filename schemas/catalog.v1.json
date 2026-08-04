@@ -2,6 +2,30 @@
   "capabilities": [
     {
       "aliases": [
+        "stop"
+      ],
+      "doc": "Stop an agent. For an agent with no protocol of its own this is the entire remote control surface.",
+      "effects": [
+        "writes_pty"
+      ],
+      "group": "agent",
+      "hidden": false,
+      "intent": {
+        "class": "raw_stream"
+      },
+      "kind": "command",
+      "name": "agent.interrupt",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent/interrupt",
+      "since": "0.1.0",
+      "title": "Interrupt an agent",
+      "verb": "interrupt"
+    },
+    {
+      "aliases": [
         "subagents"
       ],
       "doc": "Every thread in a session — the main one and each subagent — with what it is doing and any card it raised.",
@@ -37,6 +61,66 @@
       "since": "0.1.0",
       "title": "Subscribe to events",
       "verb": "subscribe"
+    },
+    {
+      "aliases": [],
+      "doc": "List a directory inside a workspace. Paths are workspace-relative and cannot escape it.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "fs",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "fs.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/fs/list",
+      "since": "0.1.0",
+      "title": "List files",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Which files changed, with line counts. Staged and unstaged are separate answers.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "git",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "git.diff",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/git/diff",
+      "since": "0.1.0",
+      "title": "Git diff",
+      "verb": "diff"
+    },
+    {
+      "aliases": [],
+      "doc": "Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "git",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "git.status",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/git/status",
+      "since": "0.1.0",
+      "title": "Git status",
+      "verb": "status"
     },
     {
       "aliases": [],

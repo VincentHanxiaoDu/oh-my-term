@@ -62,6 +62,22 @@ pub const ACTIONS: &[Action] = &[
         capability: "agent.threads",
         binding: None,
     },
+    Action {
+        capability: "agent.interrupt",
+        binding: None,
+    },
+    Action {
+        capability: "fs.list",
+        binding: None,
+    },
+    Action {
+        capability: "git.status",
+        binding: None,
+    },
+    Action {
+        capability: "git.diff",
+        binding: None,
+    },
 ];
 
 /// Whether a capability is reachable in the TUI.

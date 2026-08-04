@@ -37,7 +37,10 @@ describe('the handler list means what the parity gate thinks it means', () => {
   })
 
   it('does not claim to handle something it has no function for', () => {
-    expect(handles('agent.interrupt')).toBe(false)
+    // Deliberately a capability that does not exist at all, rather than one
+    // that is merely unimplemented today — the second kind makes this test go
+    // stale the moment somebody implements it, which is exactly what happened.
+    expect(handles('nothing.of.the.sort')).toBe(false)
   })
 })
 

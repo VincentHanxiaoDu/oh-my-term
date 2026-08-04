@@ -7,8 +7,12 @@
 
 /** Every capability this build declares. */
 export const CAPABILITIES = [
+  'agent.interrupt',
   'agent.threads',
   'events.subscribe',
+  'fs.list',
+  'git.diff',
+  'git.status',
   'instance.catalog',
   'instance.info',
   'session.close',
@@ -22,8 +26,12 @@ export type Capability = (typeof CAPABILITIES)[number]
 
 /** What each capability is, for a palette or a settings screen. */
 export const CAPABILITY_INFO: Record<Capability, { title: string; group: string; kind: string; role: string; doc: string }> = {
+  'agent.interrupt': { title: "Interrupt an agent", group: 'agent', kind: 'command', role: 'operator', doc: "Stop an agent. For an agent with no protocol of its own this is the entire remote control surface." },
   'agent.threads': { title: "List agent threads", group: 'agent', kind: 'query', role: 'viewer', doc: "Every thread in a session — the main one and each subagent — with what it is doing and any card it raised." },
   'events.subscribe': { title: "Subscribe to events", group: 'events', kind: 'query', role: 'viewer', doc: "Subscribe to the event stream." },
+  'fs.list': { title: "List files", group: 'fs', kind: 'query', role: 'viewer', doc: "List a directory inside a workspace. Paths are workspace-relative and cannot escape it." },
+  'git.diff': { title: "Git diff", group: 'git', kind: 'query', role: 'viewer', doc: "Which files changed, with line counts. Staged and unstaged are separate answers." },
+  'git.status': { title: "Git status", group: 'git', kind: 'query', role: 'viewer', doc: "Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches." },
   'instance.catalog': { title: "List capabilities", group: 'instance', kind: 'query', role: 'viewer', doc: "Every capability this instance offers." },
   'instance.info': { title: "Instance info", group: 'instance', kind: 'query', role: 'viewer', doc: "Version and protocol of this instance." },
   'session.close': { title: "Close a session", group: 'session', kind: 'command', role: 'operator', doc: "End a session and stop the process on it. Idempotent." },
