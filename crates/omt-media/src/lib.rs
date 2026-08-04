@@ -5,6 +5,10 @@
 //! so the second attempt is a no-op rather than a second copy — and a client
 //! that already has a blob can say so by name rather than sending it again.
 
+pub mod transfer;
+
+pub use transfer::{CHUNK_BYTES, Progress, Receiver, TransferError, TransferPlan};
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
