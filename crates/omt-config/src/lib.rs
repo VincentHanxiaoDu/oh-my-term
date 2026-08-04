@@ -1,0 +1,17 @@
+//! The layered configuration model.
+//!
+//! Six layers, merged per leaf key, with every resolved value carrying where it
+//! came from. The provenance is not a nicety: a setting whose origin cannot be
+//! traced is a setting nobody can debug, and "why is my font wrong" is
+//! otherwise unanswerable across four files.
+
+pub mod layer;
+pub mod merge;
+pub mod write;
+
+pub use layer::{APPENDING_ARRAYS, ArrayMerge, Layer, Scope, UNSET};
+pub use merge::{
+    DROPPED_BY_SCOPE, Diagnostic, KeySpec, LayerInput, Provenance, Resolved, Severity, UNKNOWN_KEY,
+    merge,
+};
+pub use write::{WriteError, set_value};

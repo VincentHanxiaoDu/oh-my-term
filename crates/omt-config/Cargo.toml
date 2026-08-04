@@ -1,0 +1,17 @@
+[package]
+name = "omt-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The layered configuration model: merge, provenance, and diagnostics."
+
+[dependencies]
+omt-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml_edit = "0.23"
+
+[lints]
+workspace = true

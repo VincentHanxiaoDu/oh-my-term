@@ -11,6 +11,7 @@ members = [
     "crates/omt-pty",
     "crates/omt-agent-adapters",
     "crates/omt-agent",
+    "crates/omt-config",
     "crates/omt-tui",
     "crates/omt-server",
     "crates/omt",
@@ -37,6 +38,7 @@ omt-term = { path = "crates/omt-term" }
 omt-pty = { path = "crates/omt-pty" }
 omt-agent-adapters = { path = "crates/omt-agent-adapters" }
 omt-agent = { path = "crates/omt-agent" }
+omt-config = { path = "crates/omt-config" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
