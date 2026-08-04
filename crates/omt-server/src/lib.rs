@@ -6,8 +6,10 @@
 //! stops being true without anybody noticing.
 
 pub mod dispatch;
+pub mod http;
 
 pub use dispatch::{Peer, catalog_hash, handle};
+pub use http::{DEFAULT_BIND, HttpState, bearer, router};
 
 use omt_catalog::CapabilityRegistry;
 

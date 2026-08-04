@@ -13,3 +13,5 @@ pub mod state;
 pub mod serve;
 
 pub mod remote;
+
+pub mod web;

@@ -27,6 +27,8 @@ fn main() -> Result<()> {
         // `omt` on its own does the thing the name promises.
         [] => omt::run::run_shell(None),
         ["run", program] => omt::run::run_shell(Some((*program).to_owned())),
+        ["web"] => omt::web::run(omt_server::DEFAULT_BIND),
+        ["web", "--bind", addr] => omt::web::run(addr),
         ["serve"] => {
             let path = omt::serve::default_socket_path();
             println!("listening on {}", path.display());
