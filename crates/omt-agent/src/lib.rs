@@ -10,6 +10,7 @@
 
 pub mod ledger;
 pub mod merge;
+pub mod threads;
 
 pub use ledger::{
     Confirmation, DEFAULT_CONFIRMATION_MS, Ledger, LedgerError, Observation, confirms,
@@ -18,3 +19,4 @@ pub use merge::{
     ConsideredSource, Explanation, MergeMachine, Millis, SourceReading, freshness_window,
     is_answerable, needs_human,
 };
+pub use threads::{MAIN_THREAD, RosterSummary, Thread, ThreadRoster};
