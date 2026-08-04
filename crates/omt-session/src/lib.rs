@@ -6,9 +6,11 @@
 //! so input in flight when the token changes hands is rejected rather than
 //! landing in somebody else's command line.
 
+pub mod fanout;
 pub mod tree;
 pub mod writer;
 
+pub use fanout::{Arm, ArmState, Fanout, FanoutError};
 pub use tree::{
     Instance, InstanceLimits, LayoutView, Pane, Session, SessionKind, SessionMode, SessionState,
     TreeError, Workspace,
