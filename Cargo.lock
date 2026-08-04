@@ -375,6 +375,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-daemon"
+version = "0.1.0"
+dependencies = [
+ "omt-agent",
+ "omt-agent-adapters",
+ "omt-auth",
+ "omt-catalog",
+ "omt-config",
+ "omt-events",
+ "omt-proto",
+ "omt-session",
+ "omt-store",
+ "omt-types",
+ "omt-util",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-events"
 version = "0.1.0"
 dependencies = [

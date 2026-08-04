@@ -1,0 +1,26 @@
+[package]
+name = "omt-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The instance: sessions, agents, events and dispatch, assembled."
+
+[dependencies]
+omt-types = { workspace = true }
+omt-util = { workspace = true }
+omt-catalog = { workspace = true }
+omt-events = { workspace = true }
+omt-proto = { workspace = true }
+omt-session = { workspace = true }
+omt-agent = { workspace = true }
+omt-agent-adapters = { workspace = true }
+omt-config = { workspace = true }
+omt-store = { workspace = true }
+omt-auth = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
