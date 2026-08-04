@@ -230,6 +230,78 @@ fn is_fresh(reading: &SourceReading, now: Millis) -> bool {
     now.saturating_sub(reading.at) <= freshness_window(reading.tier)
 }
 
+/// How long an agent may say nothing before it is called wedged.
+///
+/// Well past the slowest tier's freshness window, because "every source went
+/// quiet" is normal for a few seconds and alarming after a minute. Under it,
+/// silence is a gap; over it, with the process still alive, it is a state.
+pub const WEDGED_AFTER_MS: Millis = 90_000;
+
+/// What omt can say about an agent that has gone quiet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Liveness {
+    /// Something has spoken recently.
+    Live,
+    /// Every source is stale, but not for long enough to be alarming.
+    Quiet {
+        /// How long since anything was heard.
+        for_ms: Millis,
+    },
+    /// Nothing has spoken for a long time and the process is still there.
+    ///
+    /// The state `Unknown` cannot express. `Unknown` is honest but not
+    /// actionable — it reads as "omt lost track", when what the user needs to
+    /// know is "this agent is alive and has done nothing for two minutes",
+    /// which is a thing they can interrupt.
+    Wedged {
+        /// How long since anything was heard.
+        for_ms: Millis,
+    },
+    /// The process is gone, which is not a hang.
+    Exited,
+}
+
+impl Liveness {
+    /// Whether the user should be told.
+    #[must_use]
+    pub const fn needs_reporting(self) -> bool {
+        matches!(self, Self::Wedged { .. })
+    }
+}
+
+impl MergeMachine {
+    /// Whether an agent has stopped saying anything while still running.
+    ///
+    /// Takes whether the process is alive, because that is the difference
+    /// between a hang and an exit and this machine cannot see it: an agent that
+    /// left is not wedged, and reporting it as such would have people
+    /// interrupting a process that is not there.
+    #[must_use]
+    pub fn liveness(&self, now: Millis, process_alive: bool) -> Liveness {
+        if !process_alive {
+            return Liveness::Exited;
+        }
+        let newest = self.readings.values().map(|r| r.at).max();
+        let Some(newest) = newest else {
+            // Nothing has ever spoken. That is a starting agent, not a wedged
+            // one, and calling it wedged would fire on every launch.
+            return Liveness::Live;
+        };
+        let quiet_for = now.saturating_sub(newest);
+
+        // Anything still inside its own window counts as live: a hook that
+        // spoke twenty seconds ago is mid-tool-call, not silent.
+        if self.readings.values().any(|r| is_fresh(r, now)) {
+            return Liveness::Live;
+        }
+        if quiet_for >= WEDGED_AFTER_MS {
+            Liveness::Wedged { for_ms: quiet_for }
+        } else {
+            Liveness::Quiet { for_ms: quiet_for }
+        }
+    }
+}
+
 /// Whether a state means a human is needed.
 #[must_use]
 pub const fn needs_human(state: &AgentState) -> bool {
@@ -483,6 +555,66 @@ mod tests {
             .expect("hook considered");
         assert!(!hook.fresh);
         assert!(hook.age_ms > freshness_window(Tier::Hook));
+    }
+
+    #[test]
+    fn an_agent_that_has_gone_quiet_for_a_long_time_is_wedged_not_unknown() {
+        // `Unknown` is honest but not actionable — it reads as "omt lost
+        // track", when what the user needs is "alive, and has done nothing for
+        // two minutes", which is a thing they can interrupt.
+        let mut m = MergeMachine::new();
+        m.observe(reading(Tier::Hook, working(), 0));
+        let long_after = WEDGED_AFTER_MS + 1_000;
+        assert_eq!(m.state(long_after), AgentState::Unknown);
+        assert!(matches!(
+            m.liveness(long_after, true),
+            Liveness::Wedged { .. }
+        ));
+    }
+
+    #[test]
+    fn a_brief_silence_is_not_a_hang() {
+        // Every source going quiet for a few seconds is normal.
+        let mut m = MergeMachine::new();
+        m.observe(reading(Tier::Hook, working(), 0));
+        let a_little_after = freshness_window(Tier::Hook) + 1_000;
+        assert!(matches!(
+            m.liveness(a_little_after, true),
+            Liveness::Quiet { .. }
+        ));
+        assert!(!m.liveness(a_little_after, true).needs_reporting());
+    }
+
+    #[test]
+    fn a_source_still_inside_its_window_is_live() {
+        // A hook that spoke twenty seconds ago is mid-tool-call, not silent.
+        let mut m = MergeMachine::new();
+        m.observe(reading(Tier::Hook, working(), 0));
+        assert_eq!(m.liveness(20_000, true), Liveness::Live);
+    }
+
+    #[test]
+    fn an_agent_that_exited_is_not_wedged() {
+        // Reporting it as such would have people interrupting a process that
+        // is not there.
+        let mut m = MergeMachine::new();
+        m.observe(reading(Tier::Hook, working(), 0));
+        assert_eq!(m.liveness(WEDGED_AFTER_MS + 5_000, false), Liveness::Exited);
+    }
+
+    #[test]
+    fn an_agent_that_has_never_spoken_is_starting_not_wedged() {
+        // Otherwise this fires on every launch.
+        let m = MergeMachine::new();
+        assert_eq!(m.liveness(999_999, true), Liveness::Live);
+    }
+
+    #[test]
+    fn only_a_wedge_is_worth_telling_the_user_about() {
+        assert!(Liveness::Wedged { for_ms: 100_000 }.needs_reporting());
+        assert!(!Liveness::Quiet { for_ms: 5_000 }.needs_reporting());
+        assert!(!Liveness::Live.needs_reporting());
+        assert!(!Liveness::Exited.needs_reporting());
     }
 
     #[test]

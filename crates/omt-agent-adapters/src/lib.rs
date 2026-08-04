@@ -8,6 +8,7 @@
 
 pub mod adapter;
 pub mod agents;
+pub mod bounded;
 pub mod detect;
 pub mod registry;
 
@@ -16,5 +17,9 @@ pub use adapter::{
     Fingerprint, Interrupt, SessionModeSet, SpawnCtx,
 };
 pub use agents::{ClaudeCode, GenericAcp, HeuristicFloor, ScreenSignals, guess_activity};
+pub use bounded::{
+    BoundedError, MAX_FILE_BYTES, MAX_NESTING_DEPTH, MAX_STRUCTURAL_TOKENS, check_structure,
+    parse_line, read_bounded, read_json,
+};
 pub use detect::{Observation, detect, may_emit_structured};
 pub use registry::{AdapterSet, builtin};
