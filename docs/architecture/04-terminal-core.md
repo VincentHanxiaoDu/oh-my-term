@@ -427,6 +427,11 @@ pub struct ScrollbackLimits {
 ```
 
 Eviction drops whole chunks from the front until *all* caps are satisfied. The
+chunk is therefore the unit of eviction as well as of storage, so the caps are
+honoured **to within one chunk**, not exactly, and the last resident chunk is
+never dropped — a single enormous line must make the terminal look like it
+scrolled, not like it erased itself. At the default 64 MiB the overshoot is
+noise; it only matters if a cap is configured smaller than a chunk. The
 byte cap is the one that matters: a session that `cat`s a 200-column log holds
 ~13 KB per 64-line chunk, so 10 000 lines is ~2 MB; a session full of emoji and
 hyperlinks can be 10× that, and only a byte cap catches it. Image payloads are

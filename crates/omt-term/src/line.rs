@@ -97,12 +97,24 @@ impl Line {
     /// A line holding these cells, trimmed.
     #[must_use]
     pub fn from_cells(cells: Vec<Cell>) -> Self {
-        let mut l = Self {
-            cells,
-            ..Self::default()
-        };
+        let mut l = Self::from_cells_untrimmed(cells);
         l.trim();
         l
+    }
+
+    /// A line holding these cells exactly, trailing blanks and all.
+    ///
+    /// Trimming is right for a line the user ended: nothing past the last
+    /// character is content. It is wrong for a row that ended because it hit
+    /// the margin, where a trailing space is a space in the middle of a
+    /// sentence — dropping it makes "several times over" come back as
+    /// "several timesover" after a resize.
+    #[must_use]
+    pub fn from_cells_untrimmed(cells: Vec<Cell>) -> Self {
+        Self {
+            cells,
+            ..Self::default()
+        }
     }
 
     /// The stored cells. Shorter than the terminal's width, usually much.
