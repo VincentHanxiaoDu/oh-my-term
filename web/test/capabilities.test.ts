@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { isCommand } from '../src/index.js'
+import type { ClientMessage } from '../src/index.js'
 import handlersJson from '../src/generated/handlers.json' with { type: 'json' }
 import { HANDLERS, handledCapabilities, handles } from '../src/index.js'
 
@@ -19,7 +21,7 @@ describe('the handler list means what the parity gate thinks it means', () => {
   it('builds a call carrying the request id the client minted', () => {
     const request = { device: 'd1', n: 7 }
     const message = HANDLERS['session.close'](request, 'sess_abc')
-    expect(message).toEqual({
+    expect(message).toMatchObject({
       t: 'call',
       request,
       capability: 'session.close',
@@ -54,5 +56,37 @@ describe('the generated catalog', () => {
     for (const name of CAPABILITIES) {
       expect(handled).toContain(name)
     }
+  })
+})
+
+/** The intent id, from a message that may be any client message. */
+const intentOf = (m: ClientMessage): string | undefined =>
+  'intent' in m ? m.intent : undefined
+
+describe('the intent rule', () => {
+  it('puts an intent id on every command', () => {
+    // Without one the server refuses the call outright — so a client that
+    // omits it can read everything and change nothing.
+    const message = HANDLERS['session.close']({ device: 'd', n: 1 }, 's1')
+    expect(intentOf(message)).toBeTruthy()
+  })
+
+  it('leaves queries without one', () => {
+    // A query has nothing to deduplicate, and an id on it would suggest the
+    // server should remember a read.
+    expect(intentOf(HANDLERS['session.list']({ device: 'd', n: 1 }))).toBeUndefined()
+  })
+
+  it('mints a fresh id per call, not one per client', () => {
+    // A reused id means the second command is recognised as a retry of the
+    // first and silently does nothing.
+    const a = HANDLERS['session.close']({ device: 'd', n: 1 }, 's1')
+    const b = HANDLERS['session.close']({ device: 'd', n: 2 }, 's1')
+    expect(intentOf(a)).not.toBe(intentOf(b))
+  })
+
+  it('agrees with the generated catalog about what a command is', () => {
+    expect(isCommand('session.write')).toBe(true)
+    expect(isCommand('session.read')).toBe(false)
   })
 })

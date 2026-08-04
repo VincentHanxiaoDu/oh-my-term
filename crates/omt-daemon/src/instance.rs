@@ -253,6 +253,42 @@ impl Instance {
         result
     }
 
+    /// Take the writer token for a session.
+    ///
+    /// Returns the epoch the caller now holds. Every write is checked against
+    /// it, so a client that reconnects and resumes typing with a stale epoch is
+    /// rejected rather than landing in whatever the new holder is composing.
+    ///
+    /// # Errors
+    /// Fails if the session is unknown, or if somebody else holds the token and
+    /// `force` was not asked for.
+    pub fn acquire_writer(
+        &mut self,
+        id: SessionId,
+        by: omt_types::Actor,
+        force: bool,
+    ) -> Result<omt_session::Epoch, crate::RuntimeError> {
+        let now = now_ms();
+        let Some(session) = self.tree.session_mut(id) else {
+            return Err(crate::RuntimeError::Io(format!("no session {id}")));
+        };
+        session
+            .writer
+            .acquire(by, now, force, false)
+            .map_err(|e| crate::RuntimeError::Io(e.to_string()))
+    }
+
+    /// Give the writer token up.
+    ///
+    /// Idempotent: releasing a token this actor does not hold is not an error,
+    /// because a client that already lost it on a takeover would otherwise see
+    /// a failure for doing exactly the right thing.
+    pub fn release_writer(&mut self, id: SessionId, by: &omt_types::Actor) -> bool {
+        self.tree
+            .session_mut(id)
+            .is_some_and(|s| s.writer.release(by))
+    }
+
     /// A workspace's canonical root.
     #[must_use]
     pub fn workspace_root(&self, id: WorkspaceId) -> Option<String> {

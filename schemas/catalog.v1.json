@@ -204,6 +204,26 @@
     },
     {
       "aliases": [],
+      "doc": "Take the writer token for a session, returning the epoch every write is checked against.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "session.acquire",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/acquire",
+      "since": "0.1.0",
+      "title": "Take the writer token",
+      "verb": "acquire"
+    },
+    {
+      "aliases": [],
       "doc": "End a session and stop the process on it. Idempotent.",
       "effects": [
         "destructive"
@@ -223,6 +243,30 @@
       "since": "0.1.0",
       "title": "Close a session",
       "verb": "close"
+    },
+    {
+      "aliases": [],
+      "doc": "Start a session in a workspace, running a program on a pty. Deduplicated by intent id, so a reconnect retry does not start a second process.",
+      "effects": [
+        "spawns_process"
+      ],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "session.create",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/create",
+      "since": "0.1.0",
+      "title": "Start a session",
+      "verb": "create"
     },
     {
       "aliases": [
@@ -261,6 +305,26 @@
       "since": "0.1.0",
       "title": "Read a session",
       "verb": "read"
+    },
+    {
+      "aliases": [],
+      "doc": "Give up the writer token. Idempotent: releasing one you do not hold is not an error.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "session.release",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/release",
+      "since": "0.1.0",
+      "title": "Give up the writer token",
+      "verb": "release"
     },
     {
       "aliases": [],

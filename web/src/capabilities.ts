@@ -8,6 +8,8 @@
  */
 
 import type { ClientMessage, RequestId } from './protocol.js'
+import { CAPABILITY_INFO } from './generated/catalog.js'
+import type { Capability } from './generated/catalog.js'
 
 /** A summary of one workspace. */
 export interface WorkspaceSummary {
@@ -93,7 +95,28 @@ export interface ThreadSummary {
 
 /** Build the call for a capability. */
 function call(request: RequestId, capability: string, input: unknown): ClientMessage {
-  return { t: 'call', request, capability, input }
+  // A command carries an intent id and a query must not. Minted here rather
+  // than by each caller, because the rule is "every command, always" and a
+  // rule enforced at seventeen call sites is a rule with a hole in it.
+  return isCommand(capability)
+    ? { t: 'call', request, capability, input, intent: mintIntent() }
+    : { t: 'call', request, capability, input }
+}
+
+/** Whether a capability mutates, according to the catalog the server generated. */
+export function isCommand(capability: string): boolean {
+  return CAPABILITY_INFO[capability as Capability]?.kind === 'command'
+}
+
+/**
+ * A fresh intent id.
+ *
+ * Minted before the message goes out — at intent time, not on arrival —
+ * because the whole point is that a client which lost its connection can
+ * repeat the identical call and be recognised rather than acted on twice.
+ */
+function mintIntent(): string {
+  return crypto.randomUUID()
 }
 
 /** Every capability this client can invoke, by name. */
@@ -142,6 +165,26 @@ export const HANDLERS = {
 
   'session.read': (request: RequestId, session: string, history = 0) =>
     call(request, 'session.read', { session, history }),
+
+  'session.create': (
+    request: RequestId,
+    workspace: string,
+    program?: string,
+    cols = 80,
+    rows = 24,
+  ) =>
+    call(request, 'session.create', {
+      workspace,
+      ...(program === undefined ? {} : { program }),
+      cols,
+      rows,
+    }),
+
+  'session.acquire': (request: RequestId, session: string, force = false) =>
+    call(request, 'session.acquire', { session, force }),
+
+  'session.release': (request: RequestId, session: string) =>
+    call(request, 'session.release', { session }),
 
   'session.snapshot': (request: RequestId, session: string) =>
     call(request, 'session.snapshot', { session }),

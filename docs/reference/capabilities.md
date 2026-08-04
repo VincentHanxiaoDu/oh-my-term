@@ -19,13 +19,16 @@ vanishing.
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
 | `instance.info` | query | viewer | Version and protocol of this instance. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
+| `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
 | `session.close` | command | operator | End a session and stop the process on it. Idempotent. |
+| `session.create` | command | operator | Start a session in a workspace, running a program on a pty. Deduplicated by intent id, so a reconnect retry does not start a second process. |
 | `session.list` | query | viewer | Every session this instance holds, optionally filtered to one workspace. |
 | `session.read` | query | viewer | The visible screen as text, optionally with scrollback. |
+| `session.release` | command | operator | Give up the writer token. Idempotent: releasing one you do not hold is not an error. |
 | `session.resize` | command | operator | Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with. |
 | `session.snapshot` | query | viewer | The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-18 capabilities.
+21 capabilities.

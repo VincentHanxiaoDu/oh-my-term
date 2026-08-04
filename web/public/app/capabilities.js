@@ -6,9 +6,29 @@
  * to add a line". So every name there has a function here, and a test asserts
  * the two agree — otherwise the gate degrades into a list that passes itself.
  */
+import { CAPABILITY_INFO } from './generated/catalog.js';
 /** Build the call for a capability. */
 function call(request, capability, input) {
-    return { t: 'call', request, capability, input };
+    // A command carries an intent id and a query must not. Minted here rather
+    // than by each caller, because the rule is "every command, always" and a
+    // rule enforced at seventeen call sites is a rule with a hole in it.
+    return isCommand(capability)
+        ? { t: 'call', request, capability, input, intent: mintIntent() }
+        : { t: 'call', request, capability, input };
+}
+/** Whether a capability mutates, according to the catalog the server generated. */
+export function isCommand(capability) {
+    return CAPABILITY_INFO[capability]?.kind === 'command';
+}
+/**
+ * A fresh intent id.
+ *
+ * Minted before the message goes out — at intent time, not on arrival —
+ * because the whole point is that a client which lost its connection can
+ * repeat the identical call and be recognised rather than acted on twice.
+ */
+function mintIntent() {
+    return crypto.randomUUID();
 }
 /** Every capability this client can invoke, by name. */
 export const HANDLERS = {
@@ -30,6 +50,14 @@ export const HANDLERS = {
     'session.write': (request, session, text, epoch) => call(request, 'session.write', { session, text, epoch }),
     'session.resize': (request, session, cols, rows) => call(request, 'session.resize', { session, cols, rows }),
     'session.read': (request, session, history = 0) => call(request, 'session.read', { session, history }),
+    'session.create': (request, workspace, program, cols = 80, rows = 24) => call(request, 'session.create', {
+        workspace,
+        ...(program === undefined ? {} : { program }),
+        cols,
+        rows,
+    }),
+    'session.acquire': (request, session, force = false) => call(request, 'session.acquire', { session, force }),
+    'session.release': (request, session) => call(request, 'session.release', { session }),
     'session.snapshot': (request, session) => call(request, 'session.snapshot', { session }),
     'config.get': (request, key) => call(request, 'config.get', key === undefined ? {} : { key }),
     'keys.cheatsheet': (request) => call(request, 'keys.cheatsheet', {}),

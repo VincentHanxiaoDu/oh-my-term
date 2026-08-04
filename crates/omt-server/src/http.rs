@@ -59,6 +59,25 @@ impl HttpState {
             .ok()
             .map(|c| c.role)
     }
+
+    /// Check the credential on a WebSocket upgrade.
+    ///
+    /// Separate from `authorize` because it accepts one thing that method must
+    /// not: a token in the subprotocol list. A browser cannot set a header on a
+    /// `WebSocket`, so that is the only channel it has — and keeping it to this
+    /// method means an ordinary API request still cannot authenticate that way.
+    #[must_use]
+    pub fn authorize_upgrade(&self, headers: &HeaderMap) -> Option<Role> {
+        if let Some(role) = self.authorize(headers) {
+            return Some(role);
+        }
+        let token = subprotocol_token(headers)?;
+        let store = self.credentials.lock().ok()?;
+        store
+            .verify(&token, Timestamp::now(), false)
+            .ok()
+            .map(|c| c.role)
+    }
 }
 
 /// Pull the bearer token out of the headers.
@@ -76,6 +95,25 @@ pub fn bearer(headers: &HeaderMap) -> Option<String> {
     value
         .strip_prefix("Bearer ")
         .or_else(|| value.strip_prefix("bearer "))
+        .map(str::to_owned)
+}
+
+/// The token a browser sent, which cannot be a header.
+///
+/// `WebSocket` in a browser has no way to set one — the only field it controls
+/// is the subprotocol list. So the client offers `omt.token.<token>` alongside
+/// `omt.v1`, and it is read here and nowhere else: this is the one place a
+/// credential arrives outside `Authorization`, and confining it to the upgrade
+/// keeps it out of the ordinary request path.
+#[must_use]
+pub fn subprotocol_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(axum::http::header::SEC_WEBSOCKET_PROTOCOL)?
+        .to_str()
+        .ok()?
+        .split(',')
+        .map(str::trim)
+        .find_map(|p| p.strip_prefix("omt.token."))
         .map(str::to_owned)
 }
 
@@ -163,8 +201,13 @@ async fn websocket(
     // Checked *before* the upgrade. Accepting the socket and then closing it
     // would let an unauthenticated caller hold a connection, and browsers
     // report the failure as an opaque network error rather than a 401.
-    let role = state.authorize(&headers).ok_or_else(unauthorized)?;
-    Ok(upgrade.on_upgrade(move |socket| serve_socket(socket, state, role)))
+    let role = state.authorize_upgrade(&headers).ok_or_else(unauthorized)?;
+    // The negotiated subprotocol has to be echoed or the browser rejects the
+    // upgrade it just completed — and reports it as a bare connection failure
+    // with nothing about why.
+    Ok(upgrade
+        .protocols(["omt.v1"])
+        .on_upgrade(move |socket| serve_socket(socket, state, role)))
 }
 
 fn unauthorized() -> Response {

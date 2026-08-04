@@ -384,3 +384,150 @@ fn the_bridge_relays_stdin_and_stdout_to_a_live_instance() {
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Call a capability and unwrap what it produced.
+fn call_ok(
+    client: &mut std::os::unix::net::UnixStream,
+    n: u64,
+    capability: &str,
+    input: serde_json::Value,
+    command: bool,
+) -> serde_json::Value {
+    send(
+        client,
+        &ProtoMessage::Call(Call {
+            request: request(n),
+            capability: capability.to_owned(),
+            input,
+            intent: command.then(omt_types::IntentId::new),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(client) else {
+        panic!("expected a result for {capability}");
+    };
+    match result.outcome {
+        CallOutcome::Ok { output } => output,
+        CallOutcome::Err { error } => panic!("{capability} failed: {error:?}"),
+    }
+}
+
+#[test]
+fn a_remote_client_starts_a_shell_types_into_it_and_sees_the_output() {
+    // The end-to-end claim, and the one that was false: every step below
+    // existed except that a browser could not reach it. Opening a workspace it
+    // could do; starting a session, taking the writer token, and seeing a byte
+    // come back it could not. This test is the reason all three exist.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_string_lossy().into_owned();
+    let workspace = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": root }),
+        true,
+    );
+
+    let session = call_ok(
+        &mut client,
+        2,
+        "session.create",
+        serde_json::json!({
+            "workspace": workspace["id"],
+            "program": "/bin/sh",
+            "cols": 40,
+            "rows": 10,
+        }),
+        true,
+    );
+    let id = session["session"].as_str().expect("session id").to_owned();
+
+    // Without this the write is refused outright: the token is what stops input
+    // already in flight from landing in somebody else's command line, and until
+    // there was a capability for it no remote client could ever type.
+    let claim = call_ok(
+        &mut client,
+        3,
+        "session.acquire",
+        serde_json::json!({ "session": id, "force": false }),
+        true,
+    );
+    let epoch = claim["epoch"].as_u64().expect("epoch");
+
+    call_ok(
+        &mut client,
+        4,
+        "session.write",
+        serde_json::json!({ "session": id, "text": "echo hello-from-remote\n", "epoch": epoch }),
+        true,
+    );
+
+    // Somebody has to move the bytes. The TUI pumps inside its render loop, so
+    // a session it owns advances on its own; one created over a socket does not
+    // until the surface serving it pumps too.
+    let mut screen = String::new();
+    for _ in 0..100 {
+        {
+            let mut instance = state.lock().expect("lock");
+            let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
+            for each in ids {
+                let _ = instance.pump_session(each);
+            }
+        }
+        let snapshot = call_ok(
+            &mut client,
+            5,
+            "session.snapshot",
+            serde_json::json!({ "session": id }),
+            false,
+        );
+        screen = snapshot["rows"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .map(|row| {
+                row.as_array()
+                    .expect("runs")
+                    .iter()
+                    .filter_map(|r| r["text"].as_str())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if screen.contains("hello-from-remote\n") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(
+        screen.contains("hello-from-remote"),
+        "the shell's output never reached the client:\n{screen}"
+    );
+
+    call_ok(
+        &mut client,
+        6,
+        "session.close",
+        serde_json::json!({ "session": id }),
+        true,
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}

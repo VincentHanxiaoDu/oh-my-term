@@ -2,7 +2,8 @@
 
 use anyhow::Result;
 use omt_catalog::{
-    CallContext, CapabilityError, CapabilityHandler, CapabilityRegistry, Decl, Effects, Intent,
+    CallContext, CapabilityError, CapabilityHandler, CapabilityRegistry, Decl, DedupKey, Effects,
+    Intent,
     Kind, Parity, capability,
 };
 use omt_types::{Role, SessionId, WorkspaceId};
@@ -1155,6 +1156,242 @@ impl CapabilityHandler<SessionRead> for SessionReadHandler {
     }
 }
 
+/// Input to `session.acquire`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionAcquireIn {
+    /// Which session.
+    pub session: String,
+    /// Take it even though somebody else holds it.
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// What `session.acquire` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionAcquireOut {
+    /// The epoch the caller now holds, which every write is checked against.
+    pub epoch: u64,
+}
+
+capability! {
+    /// Take the writer token.
+    pub struct SessionAcquire;
+    input  = SessionAcquireIn,
+    output = SessionAcquireOut,
+    decl = Decl {
+        name: "session.acquire",
+        group: "session",
+        verb: "acquire",
+        title: "Take the writer token",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        // Compare-and-swap: the swap is against who holds the token, and a
+        // repeat of the same intent must return the epoch it already granted
+        // rather than minting a second one — which would invalidate the writes
+        // the caller is making with the first.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Take the writer token for a session, returning the epoch every write is checked against.",
+    },
+}
+
+struct SessionAcquireHandler(State);
+
+impl CapabilityHandler<SessionAcquire> for SessionAcquireHandler {
+    fn call(
+        &self,
+        ctx: &CallContext,
+        input: SessionAcquireIn,
+    ) -> Result<SessionAcquireOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let mut instance = self.0.lock()?;
+        let epoch = instance
+            .acquire_writer(id, ctx.actor.clone(), input.force)
+            .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
+        Ok(SessionAcquireOut {
+            epoch: epoch.0,
+        })
+    }
+}
+
+/// Input to `session.release`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionReleaseIn {
+    /// Which session.
+    pub session: String,
+}
+
+/// What `session.release` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionReleaseOut {
+    /// Whether this caller had been holding it.
+    pub released: bool,
+}
+
+capability! {
+    /// Give the writer token up.
+    pub struct SessionRelease;
+    input  = SessionReleaseIn,
+    output = SessionReleaseOut,
+    decl = Decl {
+        name: "session.release",
+        group: "session",
+        verb: "release",
+        title: "Give up the writer token",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Give up the writer token. Idempotent: releasing one you do not hold is not an error.",
+    },
+}
+
+struct SessionReleaseHandler(State);
+
+impl CapabilityHandler<SessionRelease> for SessionReleaseHandler {
+    fn call(
+        &self,
+        ctx: &CallContext,
+        input: SessionReleaseIn,
+    ) -> Result<SessionReleaseOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let mut instance = self.0.lock()?;
+        Ok(SessionReleaseOut {
+            released: instance.release_writer(id, &ctx.actor),
+        })
+    }
+}
+
+/// Input to `session.create`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionCreateIn {
+    /// Which workspace to start it in.
+    pub workspace: String,
+    /// What to run. Absent means the user's shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    /// Arguments to it.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Columns to start at.
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+    /// Rows.
+    #[serde(default = "default_rows")]
+    pub rows: u16,
+}
+
+fn default_cols() -> u16 {
+    80
+}
+fn default_rows() -> u16 {
+    24
+}
+
+/// What `session.create` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionCreateOut {
+    /// The new session.
+    pub session: String,
+}
+
+capability! {
+    /// Start a session.
+    pub struct SessionCreate;
+    input  = SessionCreateIn,
+    output = SessionCreateOut,
+    decl = Decl {
+        name: "session.create",
+        group: "session",
+        verb: "create",
+        title: "Start a session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::SPAWNS_PROCESS,
+        // Deduplicated by intent id, because the retry this protects against
+        // is the ordinary one: a phone loses the connection between sending
+        // and hearing back, resends, and without this the user has two shells
+        // and no way to know which one their next keystroke reached. The
+        // window outlives any plausible reconnect for the same reason.
+        intent: Some(Intent::Append {
+            dedup: DedupKey::IntentId,
+            ttl_secs: 600,
+        }),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Start a session in a workspace, running a program on a pty. Deduplicated by intent id, so a reconnect retry does not start a second process.",
+    },
+}
+
+struct SessionCreateHandler(State);
+
+impl CapabilityHandler<SessionCreate> for SessionCreateHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: SessionCreateIn,
+    ) -> Result<SessionCreateOut, CapabilityError> {
+        let workspace = WorkspaceId::from_wire(&input.workspace).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a workspace id", input.workspace))
+        })?;
+        let mut instance = self.0.lock()?;
+        let root = instance
+            .workspace_root(workspace)
+            .ok_or_else(|| CapabilityError::not_found("no such workspace"))?;
+
+        let program = input
+            .program
+            .or_else(|| std::env::var("SHELL").ok())
+            .unwrap_or_else(|| "/bin/sh".to_owned());
+
+        let id = instance
+            .create_session(
+                workspace,
+                omt_session::SessionKind::Shell,
+                omt_session::SessionMode::Pty,
+            )
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+
+        let runtime = omt_daemon::SessionRuntime::spawn(
+            id,
+            &omt_pty::PtyConfig {
+                program: program.into(),
+                args: input.args,
+                cwd: Some(root.into()),
+                size: omt_pty::PtySize::new(input.cols, input.rows),
+                // The same variable the local path sets, so a hook started by
+                // a browser-created session knows which pane it belongs to
+                // exactly as one started from the terminal does.
+                env: vec![("OMT_SESSION".to_owned(), id.to_wire())],
+                ..omt_pty::PtyConfig::default()
+            },
+            omt_term::ScrollbackLimits::default(),
+        )
+        .map_err(|e| CapabilityError::internal(e.to_string()))?;
+
+        instance
+            .attach(runtime)
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+
+        Ok(SessionCreateOut {
+            session: id.to_wire(),
+        })
+    }
+}
+
 /// Input to `session.snapshot`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SessionSnapshotIn {
@@ -1509,6 +1746,9 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<AgentInterrupt, _>(AgentInterruptHandler(state.clone()))?;
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
+    r.register::<SessionCreate, _>(SessionCreateHandler(state.clone()))?;
+    r.register::<SessionAcquire, _>(SessionAcquireHandler(state.clone()))?;
+    r.register::<SessionRelease, _>(SessionReleaseHandler(state.clone()))?;
     r.register::<SessionRead, _>(SessionReadHandler(state.clone()))?;
     r.register::<SessionSnapshot, _>(SessionSnapshotHandler(state.clone()))?;
     r.register::<ConfigGet, _>(ConfigGetHandler(state))?;
