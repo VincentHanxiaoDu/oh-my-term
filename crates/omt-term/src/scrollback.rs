@@ -343,10 +343,49 @@ impl Scrollback {
     ///
     /// The entry point the grid uses: rows leaving the top of the screen are
     /// content, and content is stored logically.
+    ///
+    /// The join continues into what is already stored, not just within this
+    /// batch. Rows scroll off one at a time, so a batch is usually a single
+    /// row, and joining only within it would file every row of a wrapped line
+    /// separately — which is exactly the geometry this whole module exists to
+    /// avoid storing.
     pub fn push_rows(&mut self, rows: &[Line]) {
         for line in unwrap_lines(rows) {
-            self.push(line);
+            if self.last_continues() {
+                self.append_to_last(&line);
+            } else {
+                self.push(line);
+            }
         }
+    }
+
+    /// Whether the newest stored line was left mid-wrap.
+    fn last_continues(&self) -> bool {
+        self.chunks
+            .back()
+            .and_then(|c| c.lines.last())
+            .is_some_and(|l| l.wrap().continues())
+    }
+
+    fn append_to_last(&mut self, line: &Line) {
+        let Some(chunk) = self.chunks.back_mut() else {
+            return;
+        };
+        let Some(last) = chunk.lines.last_mut() else {
+            return;
+        };
+        let before = last.byte_size();
+        last.append(line);
+        let after = last.byte_size();
+        let delta = after.saturating_sub(before);
+        chunk.bytes += delta;
+        chunk.wrapped_at = None;
+        chunk.may_have_wide |= line
+            .cells()
+            .iter()
+            .any(|c| c.flags.intersects(Flags::WIDE | Flags::COMPLEX));
+        self.bytes += delta;
+        self.enforce_limits();
     }
 
     fn enforce_limits(&mut self) {
@@ -757,6 +796,19 @@ mod tests {
         assert!(rows.len() > 1);
         sb.push_rows(&rows);
         assert_eq!(sb.len(), 1, "one logical line, not {}", rows.len());
+        assert_eq!(sb.line(0).expect("line").text(), "a long line that wrapped");
+    }
+
+    #[test]
+    fn a_row_pushed_alone_continues_the_line_it_belongs_to() {
+        // Rows scroll off one at a time, so joining only within a batch would
+        // file every row of a wrapped line separately.
+        let mut sb = Scrollback::new(ScrollbackLimits::default());
+        let rows = wrap_line(&logical("a long line that wrapped"), 6);
+        for row in &rows {
+            sb.push_rows(std::slice::from_ref(row));
+        }
+        assert_eq!(sb.len(), 1, "one logical line");
         assert_eq!(sb.line(0).expect("line").text(), "a long line that wrapped");
     }
 

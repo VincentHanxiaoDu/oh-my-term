@@ -12,6 +12,7 @@ bitflags = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 unicode-width = "0.2"
+vte = "0.15"
 
 [lints]
 workspace = true

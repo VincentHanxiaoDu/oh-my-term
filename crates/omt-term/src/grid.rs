@@ -235,10 +235,13 @@ impl Grid {
 
     /// Write one cell at the cursor and advance, wrapping if allowed.
     ///
-    /// Returns the row that was completed by a wrap, if any, so the caller can
-    /// push it to scrollback.
-    pub fn put(&mut self, cell: Cell, width: u16) -> Option<u16> {
-        let mut scrolled = None;
+    /// Returns any rows that left the top of the scrolling region, so the
+    /// caller can file them. They are returned rather than dropped because a
+    /// long line that wraps past the bottom of the screen scrolls exactly like
+    /// a newline does, and content lost this way is content the user watched
+    /// go by and cannot scroll back to.
+    pub fn put(&mut self, cell: Cell, width: u16) -> Vec<Line> {
+        let mut scrolled = Vec::new();
         let last = self.size.cols - 1;
 
         if self.pending_wrap {
@@ -259,7 +262,7 @@ impl Grid {
                 self.row_mut(self.cursor.row)
                     .set(last, Cell::wrap_padding(bg));
                 self.row_mut(self.cursor.row).set_wrap(Wrap::SoftWide);
-                scrolled = self.linefeed_scrolling().or(scrolled);
+                scrolled.extend(self.linefeed_scrolling());
                 self.cursor.col = 0;
             } else {
                 // No wrap: the cluster does not fit and is dropped rather than
@@ -293,16 +296,15 @@ impl Grid {
 
     /// Move down one row, scrolling the region if that would leave it.
     ///
-    /// Returns the row that scrolled off the top of the region, if any.
-    pub fn linefeed_scrolling(&mut self) -> Option<u16> {
+    /// Returns whatever left the top of the region.
+    pub fn linefeed_scrolling(&mut self) -> Vec<Line> {
         if self.cursor.row == self.margins.bottom {
-            self.scroll_up(1);
-            Some(self.margins.top)
-        } else if self.cursor.row + 1 < self.size.rows {
-            self.cursor.row += 1;
-            None
+            self.scroll_up(1)
         } else {
-            None
+            if self.cursor.row + 1 < self.size.rows {
+                self.cursor.row += 1;
+            }
+            Vec::new()
         }
     }
 
