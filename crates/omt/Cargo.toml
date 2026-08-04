@@ -29,3 +29,7 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 linkme = { workspace = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
+blake3 = { workspace = true }
+serde_json = { workspace = true }

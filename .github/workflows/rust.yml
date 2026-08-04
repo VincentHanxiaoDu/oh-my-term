@@ -1,0 +1,111 @@
+name: rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: fmt · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        # Warnings are denied at the workspace level; this makes the CI failure
+        # explicit rather than depending on a lint table nobody reads.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Docs build without warnings
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+
+  invariants:
+    name: layering · codegen · parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The crate graph is the thing that lets changes land in parallel
+      # worktrees without collisions, so it is checked rather than trusted.
+      - name: Layering
+        run: cargo run -q -p xtask -- layering
+
+      # A stale generated artifact means the committed catalog and the linked
+      # binary disagree, which is how a capability silently vanishes.
+      - name: Generated artifacts are current
+        run: cargo run -q -p xtask -- codegen-check
+
+      # The reason the catalog exists. It is proven to fail — see the test that
+      # asserts a missing web handler is caught by name.
+      - name: Parity gate
+        run: cargo test -p omt --test parity
+
+  ssh:
+    name: ssh over a real remote
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Generate the fixture key
+        # Generated per run rather than committed: a checked-in private key is
+        # a habit that escapes the repository it started in.
+        run: |
+          ssh-keygen -t ed25519 -f tests/docker/keys/id_test -N '' -C omt-ci -q
+          chmod 600 tests/docker/keys/id_test
+
+      - name: Start the remote
+        run: docker compose -f tests/docker/compose.yml up -d --build
+
+      - name: Wait for sshd
+        run: |
+          for i in $(seq 1 30); do
+            if ssh -i tests/docker/keys/id_test -p 2222 \
+                 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                 -o ConnectTimeout=2 -o LogLevel=ERROR \
+                 omtuser@127.0.0.1 true 2>/dev/null; then
+              echo "sshd is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::sshd never came up"
+          docker compose -f tests/docker/compose.yml logs
+          exit 1
+
+      - name: SSH integration tests
+        run: cargo test -p omt --test ssh_remote -- --ignored
+
+      - name: Remote logs on failure
+        if: failure()
+        run: docker compose -f tests/docker/compose.yml logs
+
+      - name: Stop the remote
+        if: always()
+        run: docker compose -f tests/docker/compose.yml down -v

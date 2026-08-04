@@ -1,0 +1,16 @@
+# The SSH fixture. `docker compose up -d` and the tests have a real remote host.
+services:
+  remote:
+    build: .
+    container_name: omt-test-remote
+    ports:
+      - "127.0.0.1:2222:22"
+    volumes:
+      # The test's public key, mounted rather than baked, so a rebuilt image is
+      # not required to rotate it.
+      - ./keys/id_test.pub:/home/omtuser/.ssh/authorized_keys:ro
+    # The key is generated locally and in CI rather than committed; only the
+    # public half is ever written, and never tracked.
+    # Bound to loopback only: a test fixture that listens on every interface is
+    # a test fixture somebody eventually finds.
+    restart: "no"

@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 use omt_catalog::{
-    CallContext, CapabilityError, CapabilityHandler, CapabilityRegistry, Decl, Effects,
-    Kind, Parity, capability,
+    CallContext, CapabilityError, CapabilityHandler, CapabilityRegistry, Decl, Effects, Kind,
+    Parity, capability,
 };
 use omt_types::Role;
 use serde::{Deserialize, Serialize};

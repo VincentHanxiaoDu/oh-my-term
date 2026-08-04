@@ -196,6 +196,7 @@ name = "omt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "linkme",
  "omt-catalog",
  "omt-events",
