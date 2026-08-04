@@ -1,0 +1,17 @@
+{
+  "name": "@oh-my-term/client",
+  "version": "0.1.0",
+  "description": "The omt remote client: protocol, resume, and the capability surface.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -8,3 +8,6 @@ dist/
 # The public half is generated too — mounting it is cheaper than tracking it,
 # and a repository that has never held a private key cannot leak one.
 tests/docker/keys/
+
+# Web client dependencies
+web/node_modules/

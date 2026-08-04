@@ -65,6 +65,29 @@ jobs:
       - name: Parity gate
         run: cargo test -p omt --test parity
 
+  web:
+    name: web client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      # Types first: most of what this package promises is a type, and a
+      # passing test suite over wrong types is a passing test suite.
+      - name: Typecheck
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Test
+        working-directory: web
+        run: npx vitest run
+
   ssh:
     name: ssh over a real remote
     runs-on: ubuntu-latest
