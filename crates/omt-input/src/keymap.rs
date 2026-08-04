@@ -202,6 +202,84 @@ pub fn defaults() -> Keymap {
     km
 }
 
+/// One line of a cheatsheet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheatsheetEntry {
+    /// Which mode it applies in.
+    pub mode: Mode,
+    /// The chord, in its canonical spelling.
+    pub chord: String,
+    /// What it does.
+    pub action: String,
+    /// Whether the program underneath sees this key.
+    ///
+    /// The column people actually need: a cheatsheet that did not say which
+    /// keys omt takes leaves them guessing why one stopped reaching vim.
+    pub reaches_program: bool,
+}
+
+/// Every binding, as a cheatsheet.
+///
+/// Generated from the keymap rather than written, so it cannot go stale — a
+/// hand-maintained cheatsheet is wrong the first time somebody rebinds
+/// anything, and being confidently wrong about a keybinding is worse than
+/// having no list.
+#[must_use]
+pub fn cheatsheet(keymap: &Keymap) -> Vec<CheatsheetEntry> {
+    let mut out: Vec<CheatsheetEntry> = keymap
+        .bindings()
+        .into_iter()
+        .filter_map(|(mode, chord, action)| {
+            let name = match action {
+                Action::Capability { name } => name.clone(),
+                // An explicit unbind and a passthrough both mean "the program
+                // gets this", which is the absence of a binding rather than one
+                // worth listing.
+                Action::Passthrough | Action::Unbound => return None,
+            };
+            Some(CheatsheetEntry {
+                mode,
+                chord: chord.canonical(),
+                action: name,
+                reaches_program: false,
+            })
+        })
+        .collect();
+
+    // The reserved keys are listed too, precisely because they are *not*
+    // bound: "Ctrl+C interrupts the program" is the single most useful line on
+    // the sheet, and it is invisible if only bindings are shown.
+    for (chord, reason) in RESERVED_GLOBAL {
+        out.push(CheatsheetEntry {
+            mode: Mode::Global,
+            chord: (*chord).to_owned(),
+            action: (*reason).to_owned(),
+            reaches_program: true,
+        });
+    }
+
+    out.sort_by(|a, b| a.mode.cmp(&b.mode).then_with(|| a.chord.cmp(&b.chord)));
+    out
+}
+
+/// The cheatsheet as markdown.
+#[must_use]
+pub fn cheatsheet_markdown(keymap: &Keymap) -> String {
+    let mut out = String::from("| Key | Mode | Does |\n|---|---|---|\n");
+    for entry in cheatsheet(keymap) {
+        let what = if entry.reaches_program {
+            format!("**reaches the program** — {}", entry.action)
+        } else {
+            entry.action.clone()
+        };
+        out.push_str(&format!(
+            "| `{}` | {:?} | {} |\n",
+            entry.chord, entry.mode, what
+        ));
+    }
+    out
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -376,6 +454,69 @@ mod tests {
         let mut km = Keymap::new();
         km.bind(Mode::Global, Chord::ctrl('c'), Action::Passthrough)
             .expect("stating the default is allowed");
+    }
+
+    #[test]
+    fn the_cheatsheet_lists_what_omt_takes_and_what_it_does_not() {
+        // "Ctrl+C interrupts the program" is the single most useful line on
+        // the sheet, and it is invisible if only bindings are shown.
+        let sheet = cheatsheet(&defaults());
+        assert!(
+            sheet
+                .iter()
+                .any(|e| e.chord == "cmd-k" && !e.reaches_program),
+            "a binding is missing"
+        );
+        let ctrl_c = sheet
+            .iter()
+            .find(|e| e.chord == "ctrl-c")
+            .expect("ctrl-c must be on the sheet");
+        assert!(ctrl_c.reaches_program);
+        assert!(ctrl_c.action.contains("interrupted"), "{}", ctrl_c.action);
+    }
+
+    #[test]
+    fn the_cheatsheet_is_generated_so_it_cannot_go_stale() {
+        // A hand-maintained one is wrong the first time somebody rebinds
+        // anything, and being confidently wrong about a keybinding is worse
+        // than having no list.
+        let mut km = defaults();
+        km.bind(
+            Mode::Global,
+            Chord::parse("cmd-j").expect("parse"),
+            capability("my.custom.thing"),
+        )
+        .expect("bind");
+        assert!(
+            cheatsheet(&km)
+                .iter()
+                .any(|e| e.action == "my.custom.thing"),
+            "a user's own binding is missing from their cheatsheet"
+        );
+    }
+
+    #[test]
+    fn an_unbound_key_is_not_listed_as_a_binding() {
+        let mut km = defaults();
+        km.bind(
+            Mode::Global,
+            Chord::parse("cmd-k").expect("parse"),
+            Action::Unbound,
+        )
+        .expect("unbind");
+        assert!(
+            !cheatsheet(&km)
+                .iter()
+                .any(|e| e.chord == "cmd-k" && e.action == "palette.open")
+        );
+    }
+
+    #[test]
+    fn the_markdown_renders_every_row() {
+        let md = cheatsheet_markdown(&defaults());
+        let rows = md.lines().filter(|l| l.starts_with("| `")).count();
+        assert_eq!(rows, cheatsheet(&defaults()).len());
+        assert!(md.contains("reaches the program"), "{md}");
     }
 
     #[test]

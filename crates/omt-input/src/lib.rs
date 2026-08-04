@@ -11,5 +11,6 @@ pub mod keymap;
 
 pub use key::{Chord, ChordParseError, EncodeMode, Key, Modifiers, encode};
 pub use keymap::{
-    Action, BindingRefused, Keymap, Mode, RESERVED_BINDING, RESERVED_GLOBAL, defaults,
+    Action, BindingRefused, CheatsheetEntry, Keymap, Mode, RESERVED_BINDING, RESERVED_GLOBAL,
+    cheatsheet, cheatsheet_markdown, defaults,
 };

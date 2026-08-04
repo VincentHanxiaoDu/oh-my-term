@@ -901,6 +901,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-theme"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "toml_edit",
+]
+
+[[package]]
 name = "omt-transport"
 version = "0.1.0"
 dependencies = [

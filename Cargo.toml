@@ -8,6 +8,7 @@ members = [
     "crates/omt-proto",
     "crates/omt-transport",
     "crates/omt-term",
+    "crates/omt-theme",
     "crates/omt-pty",
     "crates/omt-agent-adapters",
     "crates/omt-agent",
@@ -47,6 +48,7 @@ omt-events = { path = "crates/omt-events" }
 omt-proto = { path = "crates/omt-proto" }
 omt-transport = { path = "crates/omt-transport" }
 omt-term = { path = "crates/omt-term" }
+omt-theme = { path = "crates/omt-theme" }
 omt-pty = { path = "crates/omt-pty" }
 omt-agent-adapters = { path = "crates/omt-agent-adapters" }
 omt-agent = { path = "crates/omt-agent" }

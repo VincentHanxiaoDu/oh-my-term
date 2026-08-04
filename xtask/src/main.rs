@@ -41,7 +41,7 @@ fn layer_of(name: &str) -> Option<u8> {
         "omt-catalog" | "omt-events" | "omt-proto" => 1,
         "omt-term" | "omt-pty" | "omt-agent-adapters" | "omt-transport" | "omt-auth"
         | "omt-identity" | "omt-stt" | "omt-media" | "omt-workspace-fs" | "omt-open"
-        | "omt-input" => 2,
+        | "omt-input" | "omt-theme" => 2,
         "omt-session" | "omt-agent" | "omt-config" | "omt-store" | "omt-recall" => 3,
         "omt-daemon" => 4,
         "omt-tui" | "omt-server" | "omt-plugin-host" => 5,
