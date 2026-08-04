@@ -407,6 +407,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-open"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-proto"
 version = "0.1.0"
 dependencies = [

@@ -16,6 +16,7 @@ members = [
     "crates/omt-input",
     "crates/omt-store",
     "crates/omt-auth",
+    "crates/omt-open",
     "crates/omt-tui",
     "crates/omt-server",
     "crates/omt",
@@ -47,6 +48,7 @@ omt-session = { path = "crates/omt-session" }
 omt-input = { path = "crates/omt-input" }
 omt-store = { path = "crates/omt-store" }
 omt-auth = { path = "crates/omt-auth" }
+omt-open = { path = "crates/omt-open" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
