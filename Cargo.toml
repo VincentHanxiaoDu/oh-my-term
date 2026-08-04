@@ -20,7 +20,10 @@ members = [
     "crates/omt-identity",
     "crates/omt-media",
     "crates/omt-workspace-fs",
+    "crates/omt-recall",
+    "crates/omt-stt",
     "crates/omt-daemon",
+    "crates/omt-plugin-host",
     "crates/omt-tui",
     "crates/omt-server",
     "crates/omt",
@@ -56,6 +59,9 @@ omt-open = { path = "crates/omt-open" }
 omt-identity = { path = "crates/omt-identity" }
 omt-media = { path = "crates/omt-media" }
 omt-workspace-fs = { path = "crates/omt-workspace-fs" }
+omt-recall = { path = "crates/omt-recall" }
+omt-stt = { path = "crates/omt-stt" }
+omt-plugin-host = { path = "crates/omt-plugin-host" }
 omt-daemon = { path = "crates/omt-daemon" }
 
 serde = { version = "1", features = ["derive"] }

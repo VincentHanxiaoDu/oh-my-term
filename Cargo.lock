@@ -456,6 +456,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-plugin-host"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-proto"
 version = "0.1.0"
 dependencies = [
@@ -474,6 +484,16 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "omt-types",
+ "thiserror",
+]
+
+[[package]]
+name = "omt-recall"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -505,6 +525,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "omt-stt"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

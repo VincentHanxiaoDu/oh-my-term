@@ -1,0 +1,16 @@
+[package]
+name = "omt-plugin-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Plugin manifests, permissions, and the host that enforces them."
+
+[dependencies]
+omt-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

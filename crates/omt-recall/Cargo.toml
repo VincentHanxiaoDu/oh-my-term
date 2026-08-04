@@ -1,0 +1,16 @@
+[package]
+name = "omt-recall"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command history: recording, searching and ranking what was run."
+
+[dependencies]
+omt-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
