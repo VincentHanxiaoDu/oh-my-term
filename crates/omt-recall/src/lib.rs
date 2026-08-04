@@ -4,6 +4,10 @@
 //! alone. A command run fifty times in another project is not what the user
 //! wants here, and a history that offers it is one they stop reading.
 
+pub mod schedule;
+
+pub use schedule::{FAILURES_BEFORE_DISABLING, Job, JobState, Schedule, Skipped, Trigger};
+
 use std::collections::BTreeMap;
 
 use omt_types::{SessionId, Timestamp, WorkspaceId};

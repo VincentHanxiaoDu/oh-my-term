@@ -10,6 +10,7 @@ pub mod adapter;
 pub mod agents;
 pub mod bounded;
 pub mod detect;
+pub mod install;
 pub mod registry;
 
 pub use adapter::{
@@ -22,4 +23,8 @@ pub use bounded::{
     parse_line, read_bounded, read_json,
 };
 pub use detect::{Observation, detect, may_emit_structured};
+pub use install::{
+    INSTALL_VERSION, InstallError, Plan, STAMP_KEY, events_for, is_stale, plan_install,
+    plan_uninstall,
+};
 pub use registry::{AdapterSet, builtin};
