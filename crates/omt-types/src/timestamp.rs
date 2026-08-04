@@ -35,6 +35,24 @@ impl Timestamp {
         self.0
     }
 
+    /// An instant a fixed number of seconds after the epoch.
+    ///
+    /// For tests and for anything that needs a reproducible instant: a test
+    /// asserting on expiry against a real clock is a test that fails once a
+    /// year for reasons nobody can reproduce.
+    ///
+    /// # Panics
+    /// Never in practice — the conversion only fails outside the range of
+    /// representable dates, which `i64` seconds cannot reach.
+    #[must_use]
+    pub fn from_unix_seconds(secs: i64) -> Self {
+        #[allow(
+            clippy::expect_used,
+            reason = "unreachable: i64 seconds is always in range"
+        )]
+        Self(time::OffsetDateTime::from_unix_timestamp(secs).expect("in range"))
+    }
+
     /// Milliseconds since the epoch, for arithmetic that wants a number.
     #[must_use]
     pub fn unix_millis(&self) -> i128 {
