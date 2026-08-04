@@ -1,0 +1,17 @@
+[package]
+name = "omt-term"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Terminal emulation: parser, grid, scrollback, reflow. Pure state machine."
+
+[dependencies]
+omt-types = { workspace = true }
+bitflags = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+unicode-width = "0.2"
+
+[lints]
+workspace = true
