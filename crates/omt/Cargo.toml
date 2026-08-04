@@ -6,6 +6,14 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "omt"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omt"
+path = "src/main.rs"
+
 [lints]
 workspace = true
 
@@ -16,5 +24,8 @@ omt-events = { workspace = true }
 omt-proto = { workspace = true }
 omt-tui = { path = "../omt-tui" }
 omt-server = { path = "../omt-server" }
+serde = { workspace = true }
 serde_json = { workspace = true }
+schemars = { workspace = true }
+linkme = { workspace = true }
 anyhow = { workspace = true }

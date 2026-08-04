@@ -1,6 +1,28 @@
 //! The omt binary.
+//!
+//! It links every crate that declares a capability, which is what makes it the
+//! right place to dump the catalog from: the dump is then the list the process
+//! actually registers, not a list re-derived by reading source.
 
-fn main() -> anyhow::Result<()> {
-    println!("omt {}", env!("CARGO_PKG_VERSION"));
-    Ok(())
+use anyhow::{Result, bail};
+use omt::capabilities;
+
+fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["debug", "catalog-dump", "--json"] => {
+            println!("{}", capabilities::dump()?);
+            Ok(())
+        }
+        [] | ["--version"] => {
+            println!("omt {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
+        other => bail!("unrecognised arguments: {other:?}"),
+    }
 }

@@ -1,0 +1,82 @@
+{
+  "capabilities": [
+    {
+      "aliases": [],
+      "doc": "Subscribe to the event stream.",
+      "effects": [],
+      "group": "events",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "events.subscribe",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/events/subscribe",
+      "since": "0.1.0",
+      "title": "Subscribe to events",
+      "verb": "subscribe"
+    },
+    {
+      "aliases": [],
+      "doc": "Every capability this instance offers.",
+      "effects": [],
+      "group": "instance",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "instance.catalog",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/instance/catalog",
+      "since": "0.1.0",
+      "title": "List capabilities",
+      "verb": "catalog"
+    },
+    {
+      "aliases": [
+        "version"
+      ],
+      "doc": "Version and protocol of this instance.",
+      "effects": [],
+      "group": "instance",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "instance.info",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/instance/info",
+      "since": "0.1.0",
+      "title": "Instance info",
+      "verb": "info"
+    }
+  ],
+  "proto": 1,
+  "schemas": {
+    "CatalogIn": {
+      "$ref": "#/$defs/CatalogIn"
+    },
+    "CatalogOut": {
+      "$ref": "#/$defs/CatalogOut"
+    },
+    "InfoIn": {
+      "$ref": "#/$defs/InfoIn"
+    },
+    "InfoOut": {
+      "$ref": "#/$defs/InfoOut"
+    },
+    "SubscribeIn": {
+      "$ref": "#/$defs/SubscribeIn"
+    },
+    "SubscribeOut": {
+      "$ref": "#/$defs/SubscribeOut"
+    }
+  },
+  "version": 1
+}

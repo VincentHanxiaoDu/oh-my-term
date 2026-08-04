@@ -196,12 +196,15 @@ name = "omt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "linkme",
  "omt-catalog",
  "omt-events",
  "omt-proto",
  "omt-server",
  "omt-tui",
  "omt-types",
+ "schemars",
+ "serde",
  "serde_json",
 ]
 
