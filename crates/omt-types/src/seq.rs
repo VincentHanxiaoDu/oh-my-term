@@ -15,7 +15,16 @@ use crate::ids::{SessionId, WorkspaceId};
 /// increments per second a `u64` lasts about 580 years, so there is no
 /// wrap behaviour to define. That absence is the point.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
     schemars::JsonSchema,
 )]
 #[serde(transparent)]
@@ -62,7 +71,16 @@ impl fmt::Display for Seq {
 /// every event in the system, which is the wrong thing to put on the PTY hot
 /// path for a guarantee nothing needs.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
     schemars::JsonSchema,
 )]
 #[serde(tag = "scope", rename_all = "snake_case")]
@@ -104,6 +122,11 @@ impl SeqScope {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
@@ -134,7 +157,9 @@ mod tests {
 
     #[test]
     fn scopes_resume_by_distinct_keys() {
-        let a = SeqScope::Session { session: SessionId::new() };
+        let a = SeqScope::Session {
+            session: SessionId::new(),
+        };
         let b = SeqScope::Workspace {
             workspace: WorkspaceId::from_canonical_path("/x"),
         };

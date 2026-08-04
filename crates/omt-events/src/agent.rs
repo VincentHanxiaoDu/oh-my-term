@@ -5,9 +5,7 @@
 //! a conversation consumes this and needs no per-agent code — which is the
 //! whole reason it exists.
 
-use omt_types::{
-    AgentKind, BindingId, InteractionId, SessionId, Seq, Tier, Timestamp,
-};
+use omt_types::{AgentKind, BindingId, InteractionId, Seq, SessionId, Tier, Timestamp};
 use serde::{Deserialize, Serialize};
 
 /// One observation about an agent.
@@ -410,6 +408,11 @@ pub struct SlashCommand {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
@@ -445,7 +448,12 @@ mod tests {
 
     #[test]
     fn a_heuristic_source_may_emit_an_activity_guess() {
-        let e = event(Tier::Heuristic, AgentPayload::Activity { state: ActivityGuess::Busy });
+        let e = event(
+            Tier::Heuristic,
+            AgentPayload::Activity {
+                state: ActivityGuess::Busy,
+            },
+        );
         assert!(e.tier_permits_payload());
     }
 
@@ -475,13 +483,27 @@ mod tests {
 
     #[test]
     fn activity_is_the_only_unstructured_payload() {
-        assert!(!AgentPayload::Activity { state: ActivityGuess::Idle }.is_structured());
-        assert!(AgentPayload::Notification { kind: "x".into(), message: "y".into() }.is_structured());
+        assert!(
+            !AgentPayload::Activity {
+                state: ActivityGuess::Idle
+            }
+            .is_structured()
+        );
+        assert!(
+            AgentPayload::Notification {
+                kind: "x".into(),
+                message: "y".into()
+            }
+            .is_structured()
+        );
     }
 
     #[test]
     fn partial_marks_a_streamed_fragment() {
-        let e = AgentPayload::AssistantText { text: "ance".into(), partial: true };
+        let e = AgentPayload::AssistantText {
+            text: "ance".into(),
+            partial: true,
+        };
         let json = serde_json::to_string(&e).expect("serialize");
         assert!(json.contains(r#""partial":true"#), "{json}");
     }
@@ -528,7 +550,13 @@ mod tests {
 
     #[test]
     fn a_whole_event_round_trips() {
-        let e = event(Tier::Hook, AgentPayload::TurnStart { turn: None, trigger: TurnTrigger::Human });
+        let e = event(
+            Tier::Hook,
+            AgentPayload::TurnStart {
+                turn: None,
+                trigger: TurnTrigger::Human,
+            },
+        );
         let json = serde_json::to_string(&e).expect("serialize");
         let back: AgentEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(e, back);

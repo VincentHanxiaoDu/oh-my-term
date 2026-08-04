@@ -1,3 +1,9 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+
 //! Implements the catalog's traits from *outside* the crate, using only its
 //! public API.
 //!
@@ -8,7 +14,7 @@
 //! wrong, not the test.
 
 use omt_catalog::{
-    Capability, CapabilityHandler, CapabilityError, CapabilityRegistry, CallContext, Decl, Effects,
+    CallContext, Capability, CapabilityError, CapabilityHandler, CapabilityRegistry, Decl, Effects,
     Intent, Kind, Parity, RequestId, Surface, capability,
 };
 use omt_types::{Actor, DeviceId, Role};
@@ -58,7 +64,9 @@ struct GreetHandler;
 
 impl CapabilityHandler<Greet> for GreetHandler {
     fn call(&self, _ctx: &CallContext, input: GreetIn) -> Result<GreetOut, CapabilityError> {
-        Ok(GreetOut { greeting: format!("hello, {}", input.who) })
+        Ok(GreetOut {
+            greeting: format!("hello, {}", input.who),
+        })
     }
 }
 
@@ -66,7 +74,10 @@ fn ctx() -> CallContext {
     CallContext {
         actor: Actor::Local,
         role: Role::Viewer,
-        request: RequestId { device: DeviceId::new(), n: 1 },
+        request: RequestId {
+            device: DeviceId::new(),
+            n: 1,
+        },
         intent: None,
     }
 }
@@ -74,11 +85,16 @@ fn ctx() -> CallContext {
 #[test]
 fn a_third_party_capability_registers_and_dispatches() {
     let mut r = CapabilityRegistry::new();
-    r.register::<Greet, _>(GreetHandler).expect("register from outside the crate");
+    r.register::<Greet, _>(GreetHandler)
+        .expect("register from outside the crate");
     r.seal().expect("seal");
 
     let out = r
-        .dispatch("thirdparty.greet", &ctx(), serde_json::json!({"who": "ada"}))
+        .dispatch(
+            "thirdparty.greet",
+            &ctx(),
+            serde_json::json!({"who": "ada"}),
+        )
         .expect("dispatch");
     assert_eq!(out.output, serde_json::json!({"greeting": "hello, ada"}));
 }
@@ -150,7 +166,10 @@ capability! {
     },
 }
 
+/// Present to prove `Widen` is implementable; the widening guard is asserted
+/// against the predicate directly, so it is never registered.
 struct WidenHandler;
+#[allow(dead_code, reason = "exists to prove the trait is implementable")]
 impl CapabilityHandler<Widen> for WidenHandler {
     fn call(&self, _ctx: &CallContext, _input: WidenIn) -> Result<WidenOut, CapabilityError> {
         Ok(WidenOut {})

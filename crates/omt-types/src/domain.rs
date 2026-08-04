@@ -11,7 +11,16 @@ use serde::{Deserialize, Serialize};
 /// agent is a deliberate edit here plus an adapter, which is the right amount
 /// of friction.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
     schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
@@ -83,9 +92,7 @@ impl fmt::Display for AgentKind {
 }
 
 /// How a session runs its agent.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionMode {
     /// The user's real CLI in a real PTY, observed from outside.
@@ -149,9 +156,7 @@ impl AgentState {
 }
 
 /// Why an agent is blocked.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockReason {
     /// A structured question with enumerated options.
@@ -175,7 +180,16 @@ pub enum BlockReason {
 /// to sitting at the TUI, because access control decides who may connect, not
 /// what they may do once connected.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
     schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
@@ -227,7 +241,10 @@ impl fmt::Display for Actor {
         match self {
             Self::Local => f.write_str("local"),
             Self::Remote { device, .. } => write!(f, "{device}"),
-            Self::Plugin { plugin, on_behalf_of } => write!(f, "plugin:{plugin} for {on_behalf_of}"),
+            Self::Plugin {
+                plugin,
+                on_behalf_of,
+            } => write!(f, "plugin:{plugin} for {on_behalf_of}"),
             Self::System => f.write_str("system"),
             Self::Agent => f.write_str("agent"),
         }
@@ -241,7 +258,16 @@ impl fmt::Display for Actor {
 /// variants exist to be self-documenting and to let a plugin slot a new source
 /// in at the right authority, not because each has its own rule.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
     schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
@@ -274,6 +300,11 @@ impl Tier {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
@@ -308,8 +339,13 @@ mod tests {
 
     #[test]
     fn blocked_is_the_only_state_needing_a_human() {
-        assert!(AgentState::Blocked { reason: BlockReason::Question, interaction: None }
-            .needs_human());
+        assert!(
+            AgentState::Blocked {
+                reason: BlockReason::Question,
+                interaction: None
+            }
+            .needs_human()
+        );
         for s in [
             AgentState::Starting,
             AgentState::Idle,

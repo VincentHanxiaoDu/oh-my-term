@@ -45,6 +45,9 @@ missing_docs = "deny"
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
+# Denied in library code, where an unwrap is a crash a user experiences.
+# Test code re-enables them: in a test, `expect("...")` *is* the assertion, and
+# forbidding it would push tests toward silent `let _ =` instead.
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"

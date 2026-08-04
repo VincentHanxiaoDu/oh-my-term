@@ -54,7 +54,9 @@ pub enum ConflictState {
 }
 
 /// A capability failure.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, thiserror::Error)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, thiserror::Error,
+)]
 #[error("{code:?}: {message}")]
 pub struct CapabilityError {
     /// The stable code.
@@ -80,37 +82,61 @@ impl CapabilityError {
     /// A `not_found`.
     #[must_use]
     pub fn not_found(message: impl Into<String>) -> Self {
-        Self { code: ErrorCode::NotFound, message: message.into(), detail: None }
+        Self {
+            code: ErrorCode::NotFound,
+            message: message.into(),
+            detail: None,
+        }
     }
 
     /// An `unauthorized`.
     #[must_use]
     pub fn unauthorized(message: impl Into<String>) -> Self {
-        Self { code: ErrorCode::Unauthorized, message: message.into(), detail: None }
+        Self {
+            code: ErrorCode::Unauthorized,
+            message: message.into(),
+            detail: None,
+        }
     }
 
     /// An `unsupported`.
     #[must_use]
     pub fn unsupported(message: impl Into<String>) -> Self {
-        Self { code: ErrorCode::Unsupported, message: message.into(), detail: None }
+        Self {
+            code: ErrorCode::Unsupported,
+            message: message.into(),
+            detail: None,
+        }
     }
 
     /// A `precondition_failed`.
     #[must_use]
     pub fn precondition_failed(message: impl Into<String>) -> Self {
-        Self { code: ErrorCode::PreconditionFailed, message: message.into(), detail: None }
+        Self {
+            code: ErrorCode::PreconditionFailed,
+            message: message.into(),
+            detail: None,
+        }
     }
 
     /// An `invalid_input`.
     #[must_use]
     pub fn invalid_input(message: impl Into<String>) -> Self {
-        Self { code: ErrorCode::InvalidInput, message: message.into(), detail: None }
+        Self {
+            code: ErrorCode::InvalidInput,
+            message: message.into(),
+            detail: None,
+        }
     }
 
     /// An `internal`.
     #[must_use]
     pub fn internal(message: impl Into<String>) -> Self {
-        Self { code: ErrorCode::Internal, message: message.into(), detail: None }
+        Self {
+            code: ErrorCode::Internal,
+            message: message.into(),
+            detail: None,
+        }
     }
 
     /// A `conflict`, carrying why.
@@ -134,6 +160,11 @@ impl CapabilityError {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
@@ -143,7 +174,9 @@ mod tests {
         // three different sentences on screen.
         let answered = CapabilityError::conflict(
             "answered elsewhere",
-            ConflictState::AlreadyResolved { by: "iPhone".into() },
+            ConflictState::AlreadyResolved {
+                by: "iPhone".into(),
+            },
         );
         let withdrawn = CapabilityError::conflict("withdrawn", ConflictState::Cancelled);
         let expired = CapabilityError::conflict("expired", ConflictState::Abandoned);
@@ -152,8 +185,14 @@ mod tests {
             answered.conflict_state(),
             Some(ConflictState::AlreadyResolved { .. })
         ));
-        assert!(matches!(withdrawn.conflict_state(), Some(ConflictState::Cancelled)));
-        assert!(matches!(expired.conflict_state(), Some(ConflictState::Abandoned)));
+        assert!(matches!(
+            withdrawn.conflict_state(),
+            Some(ConflictState::Cancelled)
+        ));
+        assert!(matches!(
+            expired.conflict_state(),
+            Some(ConflictState::Abandoned)
+        ));
         assert_ne!(answered.detail, withdrawn.detail);
     }
 
@@ -161,7 +200,9 @@ mod tests {
     fn already_resolved_names_the_winner() {
         let e = CapabilityError::conflict(
             "lost the race",
-            ConflictState::AlreadyResolved { by: "iPhone".into() },
+            ConflictState::AlreadyResolved {
+                by: "iPhone".into(),
+            },
         );
         let Some(ConflictState::AlreadyResolved { by }) = e.conflict_state() else {
             panic!("expected AlreadyResolved");
@@ -173,7 +214,10 @@ mod tests {
     fn errors_round_trip_with_their_detail() {
         let e = CapabilityError::conflict(
             "x",
-            ConflictState::VersionMismatch { expected: 1, actual: 2 },
+            ConflictState::VersionMismatch {
+                expected: 1,
+                actual: 2,
+            },
         );
         let json = serde_json::to_string(&e).expect("serialize");
         let back: CapabilityError = serde_json::from_str(&json).expect("deserialize");

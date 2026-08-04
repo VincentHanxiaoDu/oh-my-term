@@ -69,7 +69,9 @@ impl<T> Registry<T> {
     /// An empty registry.
     #[must_use]
     pub fn new() -> Self {
-        Self { entries: BTreeMap::new() }
+        Self {
+            entries: BTreeMap::new(),
+        }
     }
 
     /// Register `value` under `name`.
@@ -127,6 +129,11 @@ pub enum RegistryError {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 

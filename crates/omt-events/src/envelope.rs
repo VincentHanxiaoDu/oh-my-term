@@ -1,8 +1,6 @@
 //! The event envelope, its closed vocabularies, and the bus.
 
-use omt_types::{
-    ClientId, InteractionId, SessionId, Seq, SeqScope, SessionMode, Timestamp, WorkspaceId,
-};
+use omt_types::{ClientId, Seq, SeqScope, SessionId, SessionMode, Timestamp, WorkspaceId};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::AgentEvent;
@@ -14,7 +12,16 @@ use crate::interaction::Interaction;
 /// silently missing a family nobody told it about. An event with no kind would
 /// be unsubscribable, which is why every payload has one.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
     schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
@@ -45,9 +52,7 @@ pub enum EventKind {
 ///
 /// One closed set, shared by every kind. `heuristic` rather than `pty`, because
 /// the name should say how much to trust it, not where it came from.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EventSourceTag {
     /// Screen or bell inference.
@@ -389,6 +394,11 @@ impl ReplayWindow {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
@@ -444,7 +454,12 @@ mod tests {
         for n in 1..=10 {
             w.push(ev(s, n));
         }
-        let ResumeOutcome::Resync { reason, dropped, from } = w.resume_from(Seq::new(1)) else {
+        let ResumeOutcome::Resync {
+            reason,
+            dropped,
+            from,
+        } = w.resume_from(Seq::new(1))
+        else {
             panic!("expected a resync instruction");
         };
         assert_eq!(reason, LagReason::WindowExceeded);
@@ -459,7 +474,11 @@ mod tests {
         for n in 1..=100 {
             w.push(ev(s, n));
         }
-        assert_eq!(w.len(), 4, "an unbounded buffer would be an invisible failure");
+        assert_eq!(
+            w.len(),
+            4,
+            "an unbounded buffer would be an invisible failure"
+        );
     }
 
     #[test]
@@ -471,16 +490,28 @@ mod tests {
             w.push(ev(s, n));
         }
         // window holds 3,4,5; asking for "after 2" is exactly satisfiable
-        assert!(matches!(w.resume_from(Seq::new(2)), ResumeOutcome::Replayed { .. }));
-        assert!(matches!(w.resume_from(Seq::new(1)), ResumeOutcome::Resync { .. }));
+        assert!(matches!(
+            w.resume_from(Seq::new(2)),
+            ResumeOutcome::Replayed { .. }
+        ));
+        assert!(matches!(
+            w.resume_from(Seq::new(1)),
+            ResumeOutcome::Resync { .. }
+        ));
     }
 
     #[test]
     fn a_filter_selects_by_kind() {
         let s = SessionId::new();
-        let f = Filter { kinds: vec![EventKind::Agent], sessions: vec![] };
+        let f = Filter {
+            kinds: vec![EventKind::Agent],
+            sessions: vec![],
+        };
         assert!(!f.matches(&ev(s, 1)));
-        let f = Filter { kinds: vec![EventKind::Terminal], sessions: vec![] };
+        let f = Filter {
+            kinds: vec![EventKind::Terminal],
+            sessions: vec![],
+        };
         assert!(f.matches(&ev(s, 1)));
     }
 
@@ -488,7 +519,10 @@ mod tests {
     fn a_filter_selects_by_session() {
         let a = SessionId::new();
         let b = SessionId::new();
-        let f = Filter { kinds: vec![], sessions: vec![a] };
+        let f = Filter {
+            kinds: vec![],
+            sessions: vec![a],
+        };
         assert!(f.matches(&ev(a, 1)));
         assert!(!f.matches(&ev(b, 1)));
     }
@@ -513,7 +547,7 @@ mod tests {
         // So a client that missed an earlier transition still converges.
         use crate::interaction::*;
         let i = Interaction {
-            id: InteractionId::new(),
+            id: omt_types::InteractionId::new(),
             session: SessionId::new(),
             binding: omt_types::BindingId::new(),
             kind: InteractionKind::Text {
@@ -526,7 +560,9 @@ mod tests {
             opened_at: Timestamp::UNIX_EPOCH,
             expires_at: None,
         };
-        let p = EventPayload::Interaction { interaction: Box::new(i.clone()) };
+        let p = EventPayload::Interaction {
+            interaction: Box::new(i.clone()),
+        };
         assert_eq!(p.kind(), EventKind::Interaction);
         let json = serde_json::to_string(&p).expect("serialize");
         let back: EventPayload = serde_json::from_str(&json).expect("deserialize");

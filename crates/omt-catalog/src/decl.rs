@@ -310,7 +310,9 @@ impl Decl {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DeclError {
     /// A command with no retry semantics.
-    #[error("`{name}` is a Command with no intent class; dispatch could not know whether a repeat is safe")]
+    #[error(
+        "`{name}` is a Command with no intent class; dispatch could not know whether a repeat is safe"
+    )]
     CommandWithoutIntent {
         /// The capability.
         name: &'static str,
@@ -334,7 +336,9 @@ pub enum DeclError {
         name: &'static str,
     },
     /// The dotted name and the route disagree.
-    #[error("`{name}` does not match its group and verb (`{group}` / `{verb}`); the CLI, the route and the wire name would disagree")]
+    #[error(
+        "`{name}` does not match its group and verb (`{group}` / `{verb}`); the CLI, the route and the wire name would disagree"
+    )]
     NameDoesNotMatchRoute {
         /// The capability.
         name: &'static str,
@@ -344,7 +348,9 @@ pub enum DeclError {
         verb: &'static str,
     },
     /// A read-only role that can write.
-    #[error("`{name}` is Viewer but declares write or destructive effects; a shared read-only link would not be read-only")]
+    #[error(
+        "`{name}` is Viewer but declares write or destructive effects; a shared read-only link would not be read-only"
+    )]
     ViewerWithWriteEffects {
         /// The capability.
         name: &'static str,
@@ -363,6 +369,11 @@ impl fmt::Display for Effects {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
@@ -413,7 +424,12 @@ mod tests {
         let mut d = decl();
         d.intent = None;
         let errs = d.validate().expect_err("must be rejected");
-        assert_eq!(errs, [DeclError::CommandWithoutIntent { name: "session.send_text" }]);
+        assert_eq!(
+            errs,
+            [DeclError::CommandWithoutIntent {
+                name: "session.send_text"
+            }]
+        );
     }
 
     #[test]
@@ -422,7 +438,9 @@ mod tests {
         d.kind = Kind::Query;
         // intent stays Some
         let errs = d.validate().expect_err("must be rejected");
-        assert!(errs.contains(&DeclError::QueryWithIntent { name: "session.send_text" }));
+        assert!(errs.contains(&DeclError::QueryWithIntent {
+            name: "session.send_text"
+        }));
     }
 
     #[test]
@@ -430,7 +448,9 @@ mod tests {
         let mut d = decl();
         d.hidden = true;
         let errs = d.validate().expect_err("must be rejected");
-        assert!(errs.contains(&DeclError::HiddenWithoutReason { name: "session.send_text" }));
+        assert!(errs.contains(&DeclError::HiddenWithoutReason {
+            name: "session.send_text"
+        }));
     }
 
     #[test]
@@ -438,7 +458,9 @@ mod tests {
         let mut d = decl();
         d.role = Role::Viewer;
         let errs = d.validate().expect_err("must be rejected");
-        assert!(errs.contains(&DeclError::ViewerWithWriteEffects { name: "session.send_text" }));
+        assert!(errs.contains(&DeclError::ViewerWithWriteEffects {
+            name: "session.send_text"
+        }));
     }
 
     #[test]
@@ -476,15 +498,29 @@ mod tests {
             reason: "no notification surface on a CLI",
         };
         assert!(d.is_exempt_from(Surface::Cli));
-        assert!(!d.is_exempt_from(Surface::Web), "a CLI exemption must not excuse the web");
+        assert!(
+            !d.is_exempt_from(Surface::Web),
+            "a CLI exemption must not excuse the web"
+        );
     }
 
     #[test]
     fn raw_stream_is_never_retryable() {
         assert!(!Intent::RawStream.retry_is_safe());
-        assert!(!Intent::ExternallyConfirmed { confirm_within_ms: 10_000 }.retry_is_safe());
+        assert!(
+            !Intent::ExternallyConfirmed {
+                confirm_within_ms: 10_000
+            }
+            .retry_is_safe()
+        );
         assert!(Intent::Cas.retry_is_safe());
-        assert!(Intent::Append { dedup: DedupKey::IntentId, ttl_secs: 600 }.retry_is_safe());
+        assert!(
+            Intent::Append {
+                dedup: DedupKey::IntentId,
+                ttl_secs: 600
+            }
+            .retry_is_safe()
+        );
         assert!(Intent::LwwFreeText.retry_is_safe());
     }
 }

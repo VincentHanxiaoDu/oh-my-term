@@ -366,6 +366,11 @@ pub enum PlanDecision {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
@@ -377,16 +382,25 @@ mod tests {
     fn answerability_comes_from_deliverable_not_from_openness() {
         // The rule that stops a surface offering to answer something omt
         // cannot safely answer.
-        let undeliverable = Deliverable::None { reason: NotDeliverableReason::TooManyOptions };
+        let undeliverable = Deliverable::None {
+            reason: NotDeliverableReason::TooManyOptions,
+        };
         assert!(!undeliverable.is_answerable());
         assert!(Deliverable::Native.is_answerable());
-        assert!(Deliverable::Synthetic { requires_token: true }.is_answerable());
+        assert!(
+            Deliverable::Synthetic {
+                requires_token: true
+            }
+            .is_answerable()
+        );
     }
 
     #[test]
     fn an_undeliverable_interaction_carries_its_reason() {
         // So a UI can say *why*, rather than "unavailable".
-        let d = Deliverable::None { reason: NotDeliverableReason::FreeTextFocused };
+        let d = Deliverable::None {
+            reason: NotDeliverableReason::FreeTextFocused,
+        };
         let json = serde_json::to_string(&d).expect("serialize");
         assert!(json.contains("free_text_focused"), "{json}");
     }
@@ -420,7 +434,14 @@ mod tests {
     fn terminal_states_are_exactly_the_four() {
         let by = Actor::Local;
         let r = InteractionResponse::Escaped;
-        assert!(InteractionState::Resolved { by: by.clone(), at: now(), response: r.clone() }.is_terminal());
+        assert!(
+            InteractionState::Resolved {
+                by: by.clone(),
+                at: now(),
+                response: r.clone()
+            }
+            .is_terminal()
+        );
         assert!(
             InteractionState::Undelivered {
                 by: by.clone(),
@@ -438,7 +459,13 @@ mod tests {
             }
             .is_terminal()
         );
-        assert!(InteractionState::Abandoned { at: now(), detail: "x".into() }.is_terminal());
+        assert!(
+            InteractionState::Abandoned {
+                at: now(),
+                detail: "x".into()
+            }
+            .is_terminal()
+        );
         assert!(!InteractionState::Open.is_terminal());
     }
 
@@ -486,11 +513,16 @@ mod tests {
                     question: "Which?".into(),
                     header: "Pick".into(),
                     multi_select: false,
-                    options: vec![ChoiceOption { label: "A".into(), description: None }],
+                    options: vec![ChoiceOption {
+                        label: "A".into(),
+                        description: None,
+                    }],
                     allow_free_text: true,
                 }],
             },
-            deliverable: Deliverable::Synthetic { requires_token: true },
+            deliverable: Deliverable::Synthetic {
+                requires_token: true,
+            },
             state: InteractionState::Open,
             opened_at: now(),
             expires_at: None,

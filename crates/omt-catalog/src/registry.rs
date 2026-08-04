@@ -55,7 +55,19 @@ pub struct CallContext {
 ///
 /// `(device, counter)` rather than a per-connection number: the whole point is
 /// to be recognisable *after* the connection that issued it is gone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 pub struct RequestId {
     /// Which device issued it.
     pub device: DeviceId,
@@ -153,17 +165,21 @@ impl CapabilityRegistry {
         handler: H,
     ) -> Result<(), RegistryError> {
         let decl = C::DECL;
-        decl.validate().map_err(|errors| RegistryError::InvalidDeclaration {
-            name: decl.name,
-            errors,
-        })?;
+        decl.validate()
+            .map_err(|errors| RegistryError::InvalidDeclaration {
+                name: decl.name,
+                errors,
+            })?;
         if self.decls.contains_key(decl.name) {
             return Err(RegistryError::Duplicate { name: decl.name });
         }
         self.decls.insert(decl.name, decl);
         self.handlers.insert(
             decl.name,
-            Box::new(Erased::<C, H> { handler, _marker: std::marker::PhantomData }),
+            Box::new(Erased::<C, H> {
+                handler,
+                _marker: std::marker::PhantomData,
+            }),
         );
         Ok(())
     }
@@ -173,10 +189,11 @@ impl CapabilityRegistry {
     /// # Errors
     /// Refuses a duplicate or invalid declaration.
     pub fn declare_only(&mut self, decl: &'static Decl) -> Result<(), RegistryError> {
-        decl.validate().map_err(|errors| RegistryError::InvalidDeclaration {
-            name: decl.name,
-            errors,
-        })?;
+        decl.validate()
+            .map_err(|errors| RegistryError::InvalidDeclaration {
+                name: decl.name,
+                errors,
+            })?;
         if self.decls.contains_key(decl.name) {
             return Err(RegistryError::Duplicate { name: decl.name });
         }
@@ -319,6 +336,11 @@ pub enum RegistryError {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
     use crate::decl::{Intent, Parity};
@@ -361,7 +383,11 @@ mod tests {
 
         fn refine_effects(input: &Self::Input) -> Effects {
             // The conditional-effects case: it only spawns when asked to.
-            if input.spawn { Effects::SPAWNS_PROCESS } else { Effects::empty() }
+            if input.spawn {
+                Effects::SPAWNS_PROCESS
+            } else {
+                Effects::empty()
+            }
         }
     }
 
@@ -376,7 +402,10 @@ mod tests {
         CallContext {
             actor: Actor::Local,
             role,
-            request: RequestId { device: DeviceId::new(), n: 1 },
+            request: RequestId {
+                device: DeviceId::new(),
+                n: 1,
+            },
             intent: Some(IntentId::new()),
         }
     }
@@ -391,7 +420,11 @@ mod tests {
     fn dispatch_runs_the_handler() {
         let r = registry();
         let out = r
-            .dispatch("test.echo", &ctx(Role::Operator), serde_json::json!({"text": "hi"}))
+            .dispatch(
+                "test.echo",
+                &ctx(Role::Operator),
+                serde_json::json!({"text": "hi"}),
+            )
             .expect("dispatch");
         assert_eq!(out.output, serde_json::json!({"text": "hi"}));
     }
@@ -400,7 +433,11 @@ mod tests {
     fn a_caller_below_the_role_is_refused_before_the_handler_runs() {
         let r = registry();
         let err = r
-            .dispatch("test.echo", &ctx(Role::Viewer), serde_json::json!({"text": "hi"}))
+            .dispatch(
+                "test.echo",
+                &ctx(Role::Viewer),
+                serde_json::json!({"text": "hi"}),
+            )
             .expect_err("must be refused");
         assert_eq!(err.code, crate::error::ErrorCode::Unauthorized);
     }
@@ -429,9 +466,17 @@ mod tests {
     fn effects_are_refined_per_call() {
         let r = registry();
         let quiet = r
-            .dispatch("test.echo", &ctx(Role::Operator), serde_json::json!({"text": "x"}))
+            .dispatch(
+                "test.echo",
+                &ctx(Role::Operator),
+                serde_json::json!({"text": "x"}),
+            )
             .expect("dispatch");
-        assert_eq!(quiet.effects, Effects::empty(), "it did not spawn, so it says so");
+        assert_eq!(
+            quiet.effects,
+            Effects::empty(),
+            "it did not spawn, so it says so"
+        );
 
         let loud = r
             .dispatch(
@@ -447,7 +492,11 @@ mod tests {
     fn malformed_input_is_invalid_not_internal() {
         let r = registry();
         let err = r
-            .dispatch("test.echo", &ctx(Role::Operator), serde_json::json!({"wrong": 1}))
+            .dispatch(
+                "test.echo",
+                &ctx(Role::Operator),
+                serde_json::json!({"wrong": 1}),
+            )
             .expect_err("must be refused");
         assert_eq!(err.code, crate::error::ErrorCode::InvalidInput);
     }
@@ -455,7 +504,9 @@ mod tests {
     #[test]
     fn duplicate_registration_is_refused() {
         let mut r = registry();
-        let err = r.register::<Echo, _>(EchoHandler).expect_err("duplicate must be refused");
+        let err = r
+            .register::<Echo, _>(EchoHandler)
+            .expect_err("duplicate must be refused");
         assert_eq!(err, RegistryError::Duplicate { name: "test.echo" });
     }
 
@@ -464,7 +515,12 @@ mod tests {
         let mut r = CapabilityRegistry::new();
         r.declare_only(&ECHO_DECL).expect("declare");
         let err = r.seal().expect_err("must refuse to seal");
-        assert_eq!(err, RegistryError::MissingHandlers { names: vec!["test.echo"] });
+        assert_eq!(
+            err,
+            RegistryError::MissingHandlers {
+                names: vec!["test.echo"]
+            }
+        );
     }
 
     #[test]

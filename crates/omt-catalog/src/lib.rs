@@ -18,7 +18,7 @@ mod registry;
 pub use decl::{Decl, DeclError, DedupKey, Effects, Intent, Kind, Parity, Surface};
 pub use error::{CapabilityError, ConflictState, ErrorCode, ErrorDetail};
 pub use registry::{
-    Capability, CapabilityHandler, CapabilityRegistry, CallContext, DispatchOutcome, RegistryError,
+    CallContext, Capability, CapabilityHandler, CapabilityRegistry, DispatchOutcome, RegistryError,
     RequestId,
 };
 

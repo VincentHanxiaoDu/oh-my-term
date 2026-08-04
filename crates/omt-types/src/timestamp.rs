@@ -44,7 +44,10 @@ impl Timestamp {
 
 impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0.format(&time::format_description::well_known::Rfc3339) {
+        match self
+            .0
+            .format(&time::format_description::well_known::Rfc3339)
+        {
             Ok(s) => f.write_str(&s),
             Err(_) => f.write_str("<unformattable timestamp>"),
         }
@@ -85,6 +88,11 @@ impl schemars::JsonSchema for Timestamp {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
 mod tests {
     use super::*;
 
