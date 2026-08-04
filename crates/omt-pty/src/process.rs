@@ -139,11 +139,11 @@ fn split_environ(raw: &[u8]) -> Vec<(String, String)> {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use super::{PathBuf, ProcessInfo, io};
+    use super::{ProcessInfo, io};
 
     pub fn info(pid: i32) -> io::Result<ProcessInfo> {
         let base = format!("/proc/{pid}");
-        let argv = std::fs::read(format!("{base}/cmdline"))
+        let argv: Vec<String> = std::fs::read(format!("{base}/cmdline"))
             .map(|raw| {
                 raw.split(|b| *b == 0)
                     .filter(|s| !s.is_empty())
@@ -170,8 +170,8 @@ mod linux {
             pid,
             ppid,
             argv,
-            exe: exe.map(PathBuf::from),
-            cwd: cwd.map(PathBuf::from),
+            exe,
+            cwd,
         })
     }
 }
@@ -335,11 +335,17 @@ mod tests {
         use crate::spawn::{Pty, PtyConfig};
         let pty = Pty::spawn(&PtyConfig {
             program: std::path::PathBuf::from("/bin/sh"),
-            args: vec!["-c".into(), "sleep 3".into()],
+            args: vec!["-c".into(), "echo up; sleep 3".into()],
             env: vec![("OMT_SESSION".into(), "s-abc".into())],
             ..PtyConfig::default()
         })
         .expect("spawn");
+        // Wait until the child has actually exec'd. Between fork and execve it
+        // still carries *our* environment, so reading too early reports the
+        // test runner's variables and calls it the child's.
+        use std::io::Read as _;
+        let mut buf = [0u8; 64];
+        let _ = pty.reader().read(&mut buf);
         let env = read_environ(pty.pid()).expect("environ");
         assert!(
             env.iter().any(|(k, v)| k == "OMT_SESSION" && v == "s-abc"),
