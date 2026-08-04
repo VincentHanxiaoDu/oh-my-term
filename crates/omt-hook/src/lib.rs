@@ -9,6 +9,7 @@
 use std::io::{Read, Write};
 use std::time::Duration;
 
+use omt_proto::{FrameKind, HookAck, HookDirective, HookEvent, ProtoMessage};
 use omt_types::AgentKind;
 
 /// How long to wait for the daemon before giving up.
@@ -146,6 +147,51 @@ pub fn read_payload(mut input: impl Read) -> Option<serde_json::Value> {
 /// ignores — at that point the agent is not reading anyway.
 pub fn emit_proceed(mut out: impl Write, agent: AgentKind) -> std::io::Result<()> {
     writeln!(out, "{}", proceed_document(agent))
+}
+
+/// Report an observation and read the directive back.
+///
+/// # Errors
+/// Returns why it did not get through. Every variant leads to the same
+/// behaviour — the caller proceeds — so the value is for diagnosis, never for
+/// a decision.
+pub fn report_to_daemon(
+    socket: &str,
+    event: &HookEvent,
+    deadline: Duration,
+) -> Result<HookDirective, Missed> {
+    let mut stream =
+        omt_transport::connect(socket).map_err(|e| Missed::Unreachable(e.to_string()))?;
+
+    // Both directions are bounded. A daemon that accepted the connection and
+    // then stopped talking would otherwise hold the agent for as long as it
+    // stayed quiet, which is the failure this whole binary exists to prevent.
+    stream
+        .set_read_timeout(Some(deadline))
+        .and_then(|()| stream.set_write_timeout(Some(deadline)))
+        .map_err(|e| Missed::Unreachable(e.to_string()))?;
+
+    let message = ProtoMessage::HookEvent(Box::new(event.clone()));
+    let body = serde_json::to_vec(&message).map_err(|e| Missed::BadReply(e.to_string()))?;
+    omt_transport::write_frame(&mut stream, FrameKind::Text, &body)
+        .map_err(|e| Missed::Unreachable(e.to_string()))?;
+
+    let (_, payload) = omt_transport::read_frame(&mut stream).map_err(|e| match e {
+        omt_transport::FramingError::Io(m) if m.contains("timed out") => Missed::TimedOut,
+        other => Missed::BadReply(other.to_string()),
+    })?;
+
+    match serde_json::from_slice::<ProtoMessage>(&payload) {
+        Ok(ProtoMessage::HookAck(HookAck { nonce, directive })) if nonce == event.nonce => {
+            Ok(directive)
+        }
+        // A reply for a different nonce is somebody else's answer. Acting on it
+        // would be worse than not being answered at all.
+        Ok(_) => Err(Missed::BadReply(
+            "reply did not match the request".to_owned(),
+        )),
+        Err(e) => Err(Missed::BadReply(e.to_string())),
+    }
 }
 
 /// The exit status this binary always returns.

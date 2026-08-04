@@ -20,6 +20,7 @@ path = "src/main.rs"
 [dependencies]
 omt-types = { workspace = true }
 omt-proto = { workspace = true }
+omt-transport = { workspace = true }
 serde_json = { workspace = true }
 
 # Deliberately no async runtime, no HTTP client, no tracing. This binary is
