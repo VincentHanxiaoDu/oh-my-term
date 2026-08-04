@@ -30,6 +30,7 @@ export const HANDLERS = {
     'session.write': (request, session, text, epoch) => call(request, 'session.write', { session, text, epoch }),
     'session.resize': (request, session, cols, rows) => call(request, 'session.resize', { session, cols, rows }),
     'session.read': (request, session, history = 0) => call(request, 'session.read', { session, history }),
+    'session.snapshot': (request, session) => call(request, 'session.snapshot', { session }),
     'config.get': (request, key) => call(request, 'config.get', key === undefined ? {} : { key }),
     'keys.cheatsheet': (request) => call(request, 'keys.cheatsheet', {}),
 };

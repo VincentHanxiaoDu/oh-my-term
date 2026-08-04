@@ -143,6 +143,9 @@ export const HANDLERS = {
   'session.read': (request: RequestId, session: string, history = 0) =>
     call(request, 'session.read', { session, history }),
 
+  'session.snapshot': (request: RequestId, session: string) =>
+    call(request, 'session.snapshot', { session }),
+
   'config.get': (request: RequestId, key?: string) =>
     call(request, 'config.get', key === undefined ? {} : { key }),
 

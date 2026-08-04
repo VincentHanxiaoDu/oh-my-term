@@ -223,7 +223,8 @@ thing the user needs to be told.
 | Application shell, screens, key bar | ✅ `web/src/app.ts`, `main.ts` |
 | Push | ✅ `web/src/push.ts`, `public/sw.js` |
 | Hold-to-confirm | ✅ the rule in `touch.ts`, applied in `layOutCard` |
-| Touch layer over xterm.js | ⚠️ gestures and sizing decided and tested; the terminal screen still renders text, not a grid |
+| Terminal rendering | ✅ `session.snapshot` → `web/src/terminal.ts`, styled runs from the one emulator |
+| Touch gestures and sizing | ✅ `touch.ts`, `screen.ts` |
 | Native iOS/Android | ❌ scaffolded only — see `mobile/README.md` |
 
 ## 6.1 PWA or native

@@ -22,7 +22,20 @@
         --working: #59a5ff;
         --idle: #4a4a4a;
         --done: #6cc070;
+        --omt-bg: var(--bg);
+        --omt-fg: var(--fg);
         color-scheme: dark light;
+
+        /* The ANSI palette. The instance sends indexed colours as
+           var(--omt-ansi-N) rather than as resolved hex, because the index is
+           what the program meant and the palette is what the user chose — a
+           theme that cannot restyle "red" is not a theme. */
+        --omt-ansi-0: #101010; --omt-ansi-1: #e05252; --omt-ansi-2: #6cc070;
+        --omt-ansi-3: #d7ba7d; --omt-ansi-4: #59a5ff; --omt-ansi-5: #c586c0;
+        --omt-ansi-6: #4ec9b0; --omt-ansi-7: #d0d0d0; --omt-ansi-8: #6a6a6a;
+        --omt-ansi-9: #ff7b72; --omt-ansi-10: #8ade94; --omt-ansi-11: #ffd479;
+        --omt-ansi-12: #8ab4ff; --omt-ansi-13: #dda0dd; --omt-ansi-14: #7fdbca;
+        --omt-ansi-15: #ffffff;
       }
       @media (prefers-color-scheme: light) {
         :root { --bg: #fbfbfb; --fg: #1a1a1a; --dim: #6a6a6a; --idle: #cfcfcf; }
@@ -45,6 +58,21 @@
         /* Wide output scrolls inside its own box rather than making the page
            scroll sideways. */
         overflow-x: auto;
+        /* Every line is a row of the grid, so a line with no content still
+           occupies one — otherwise a blank line collapses and everything below
+           it moves up by one row from where the terminal has it. */
+        line-height: 1.2;
+      }
+      .terminal .line { position: relative; min-height: 1.2em; }
+      .terminal .cursor {
+        position: absolute;
+        top: 0;
+        width: 1ch;
+        height: 1.2em;
+        background: var(--fg);
+        /* Blended rather than solid: a solid block hides the character under
+           the cursor, which is the one character being typed. */
+        mix-blend-mode: difference;
       }
       .keybar {
         position: fixed;

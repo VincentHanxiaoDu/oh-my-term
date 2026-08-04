@@ -286,6 +286,24 @@
     },
     {
       "aliases": [],
+      "doc": "The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.snapshot",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/snapshot",
+      "since": "0.1.0",
+      "title": "Snapshot a session",
+      "verb": "snapshot"
+    },
+    {
+      "aliases": [],
       "doc": "Write input to a session, gated on the writer token's epoch.",
       "effects": [
         "writes_pty"

@@ -19,5 +19,6 @@ export * from './store.js';
 export * from './screen.js';
 export * from './touch.js';
 export * from './push.js';
+export * from './terminal.js';
 export * from './app.js';
 export * from './generated/catalog.js';

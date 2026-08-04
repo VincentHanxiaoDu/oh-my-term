@@ -1,1 +1,20 @@
-["agent.interrupt", "agent.threads", "config.get", "events.subscribe", "fs.list", "git.diff", "git.status", "instance.catalog", "instance.info", "keys.cheatsheet", "session.close", "session.list", "session.read", "session.resize", "session.write", "workspace.list", "workspace.open"]
+[
+  "agent.interrupt",
+  "agent.threads",
+  "config.get",
+  "events.subscribe",
+  "fs.list",
+  "git.diff",
+  "git.status",
+  "instance.catalog",
+  "instance.info",
+  "keys.cheatsheet",
+  "session.close",
+  "session.list",
+  "session.read",
+  "session.resize",
+  "session.snapshot",
+  "session.write",
+  "workspace.list",
+  "workspace.open"
+]

@@ -5,7 +5,12 @@ import {
   orderRoster,
   renderSessionRow,
   rosterHeader,
+  changed,
+  isCoherent,
+  styleOf,
+  widthOf,
 } from '../src/index.js'
+import type { Snapshot, StyledRun } from '../src/index.js'
 import type { Interaction } from '../src/index.js'
 
 describe('the roster', () => {
@@ -113,5 +118,73 @@ describe('a card', () => {
       deliverable: { kind: 'native' },
     } as unknown as Interaction
     expect(cardStatus(interaction).answerable).toBe(true)
+  })
+})
+
+describe('the terminal screen', () => {
+  const run = (text: string, extra: Partial<StyledRun> = {}) => ({ text, ...extra })
+  const screen = (rows: StyledRun[][]): Snapshot => ({
+    rows,
+    cols: 10,
+    rows_count: rows.length,
+    cursor: [0, 0],
+    cursor_visible: true,
+    alternate_screen: false,
+  })
+
+  it('swaps the colours for inverse rather than filtering them', () => {
+    // A filter also inverts the glyph's antialiasing and the text comes out
+    // fringed.
+    const css = styleOf(run('x', { fg: '#ff0000', bg: '#000000', inverse: true }))
+    expect(css).toContain('color:#000000')
+    expect(css).toContain('background:#ff0000')
+  })
+
+  it('makes the default explicit when inverse swaps in an absent colour', () => {
+    // Otherwise the swap silently does nothing and a selected line renders
+    // exactly like an unselected one.
+    const css = styleOf(run('x', { inverse: true }))
+    expect(css).not.toContain('inherit')
+    expect(css).not.toContain('transparent')
+  })
+
+  it('leaves an ordinary run inheriting the theme', () => {
+    expect(styleOf(run('x'))).toContain('color:inherit')
+  })
+
+  it('counts a row by characters, not by code units', () => {
+    expect(widthOf([run('漢字'), run('ab')])).toBe(4)
+  })
+
+  it('refuses a snapshot whose cursor is off the screen', () => {
+    // Rendering it anyway shows a plausible screen that is not what the
+    // terminal says, and somebody answers a prompt from it.
+    const bad = { ...screen([[run('hi')]]), cursor: [9, 0] as [number, number] }
+    expect(isCoherent(bad)).toBe(false)
+  })
+
+  it('refuses a snapshot with fewer rows than it claims', () => {
+    expect(isCoherent({ ...screen([[run('hi')]]), rows_count: 5 })).toBe(false)
+  })
+
+  it('accepts a well-formed screen', () => {
+    expect(isCoherent(screen([[run('hi')]]))).toBe(true)
+  })
+
+  it('does not repaint a screen that did not move', () => {
+    const a = screen([[run('hi')]])
+    expect(changed(a, screen([[run('hi')]]))).toBe(false)
+  })
+
+  it('repaints when only the cursor moved', () => {
+    // The text is identical, and a client that compares only text leaves the
+    // cursor behind where it was.
+    const a = screen([[run('hi')]])
+    expect(changed(a, { ...a, cursor: [0, 1] })).toBe(true)
+  })
+
+  it('repaints when a style changed but the text did not', () => {
+    const a = screen([[run('hi')]])
+    expect(changed(a, screen([[run('hi', { bold: true })]]))).toBe(true)
   })
 })

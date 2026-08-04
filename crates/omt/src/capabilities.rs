@@ -1155,6 +1155,176 @@ impl CapabilityHandler<SessionRead> for SessionReadHandler {
     }
 }
 
+/// Input to `session.snapshot`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionSnapshotIn {
+    /// Which session.
+    pub session: String,
+}
+
+/// A run of cells that share a style.
+///
+/// Runs rather than cells: a terminal screen is overwhelmingly long stretches
+/// of one style, and a cell-per-element payload is roughly twenty times larger
+/// for the same picture — which is the difference between a usable phone link
+/// and an unusable one.
+#[derive(Serialize, schemars::JsonSchema, PartialEq, Eq, Debug)]
+pub struct StyledRun {
+    /// The text.
+    pub text: String,
+    /// Foreground, as `#rrggbb`, or absent for the theme's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fg: Option<String>,
+    /// Background, likewise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg: Option<String>,
+    /// Bold.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bold: bool,
+    /// Italic.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub italic: bool,
+    /// Underlined.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub underline: bool,
+    /// Inverse video, left for the client to apply so it can swap against
+    /// whatever its own default colours are.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inverse: bool,
+}
+
+/// What `session.snapshot` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionSnapshotOut {
+    /// One entry per row, each a list of runs.
+    pub rows: Vec<Vec<StyledRun>>,
+    /// Columns, so a client can size itself without counting characters.
+    pub cols: u16,
+    /// Rows.
+    pub rows_count: u16,
+    /// Where the cursor is, as (row, col).
+    pub cursor: (u16, u16),
+    /// Whether the cursor should be drawn at all.
+    pub cursor_visible: bool,
+    /// Whether a full-screen program is drawing.
+    pub alternate_screen: bool,
+}
+
+capability! {
+    /// A session's screen with its colours.
+    pub struct SessionSnapshot;
+    input  = SessionSnapshotIn,
+    output = SessionSnapshotOut,
+    decl = Decl {
+        name: "session.snapshot",
+        group: "session",
+        verb: "snapshot",
+        title: "Snapshot a session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one.",
+    },
+}
+
+struct SessionSnapshotHandler(State);
+
+impl CapabilityHandler<SessionSnapshot> for SessionSnapshotHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: SessionSnapshotIn,
+    ) -> Result<SessionSnapshotOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let instance = self.0.lock()?;
+        let runtime = instance
+            .runtime(id)
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?;
+        let terminal = runtime.terminal();
+        let grid = terminal.grid();
+        let size = grid.size();
+
+        let rows = (0..size.rows)
+            .map(|row| runs_of(&grid.row(row).densified(size.cols)))
+            .collect();
+
+        Ok(SessionSnapshotOut {
+            rows,
+            cols: size.cols,
+            rows_count: size.rows,
+            cursor: (grid.cursor.row, grid.cursor.col),
+            cursor_visible: grid.cursor.visible,
+            alternate_screen: terminal.active() == omt_term::Which::Alternate,
+        })
+    }
+}
+
+/// Collapse a row of cells into runs that share a style.
+fn runs_of(cells: &[omt_term::Cell]) -> Vec<StyledRun> {
+    let mut out: Vec<StyledRun> = Vec::new();
+    for cell in cells {
+        // The spacer half of a wide character carries no glyph of its own.
+        // Emitting anything for it would push every following column right by
+        // one and the line would drift.
+        if cell.flags.contains(omt_term::Flags::WIDE_SPACER) {
+            continue;
+        }
+        let run = StyledRun {
+            text: String::new(),
+            fg: css_color(cell.fg),
+            bg: css_color(cell.bg),
+            bold: cell.flags.contains(omt_term::Flags::BOLD),
+            italic: cell.flags.contains(omt_term::Flags::ITALIC),
+            underline: cell.flags.underline() != omt_term::Underline::None,
+            inverse: cell.flags.contains(omt_term::Flags::INVERSE),
+        };
+        let ch = match cell.resolve() {
+            // An untouched cell is a space, not a NUL: a client rendering NUL
+            // draws a hole where the terminal shows blank.
+            omt_term::Resolved::Char('\0') => ' ',
+            omt_term::Resolved::Char(c) => c,
+            omt_term::Resolved::Grapheme(_) => '?',
+        };
+        match out.last_mut() {
+            Some(last) if style_eq(last, &run) => last.text.push(ch),
+            _ => {
+                let mut fresh = run;
+                fresh.text.push(ch);
+                out.push(fresh);
+            }
+        }
+    }
+    out
+}
+
+fn style_eq(a: &StyledRun, b: &StyledRun) -> bool {
+    a.fg == b.fg
+        && a.bg == b.bg
+        && a.bold == b.bold
+        && a.italic == b.italic
+        && a.underline == b.underline
+        && a.inverse == b.inverse
+}
+
+/// A colour the browser can use directly.
+///
+/// Resolved here rather than sent as a palette index, because the index means
+/// nothing without the theme — and the theme is the instance's, so resolving it
+/// on the client would render the user's terminal in someone else's colours.
+fn css_color(color: omt_term::Color) -> Option<String> {
+    match color.kind() {
+        omt_term::ColorKind::Default => None,
+        omt_term::ColorKind::Indexed(i) => Some(format!("var(--omt-ansi-{i})")),
+        omt_term::ColorKind::Rgb(r, g, b) => Some(format!("#{r:02x}{g:02x}{b:02x}")),
+    }
+}
+
 /// The most scrollback one read returns.
 const MAX_HISTORY_LINES: usize = 5_000;
 
@@ -1340,6 +1510,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
     r.register::<SessionRead, _>(SessionReadHandler(state.clone()))?;
+    r.register::<SessionSnapshot, _>(SessionSnapshotHandler(state.clone()))?;
     r.register::<ConfigGet, _>(ConfigGetHandler(state))?;
     r.register::<KeysCheatsheet, _>(KeysHandler)?;
     r.seal()?;
@@ -1407,6 +1578,63 @@ mod tests {
         // Sealing is strict, so this failing means something is declared with
         // no handler — found here rather than by a caller.
         registry(State::default()).expect("the registry must seal");
+    }
+
+    fn cells(input: &str, cols: u16) -> Vec<omt_term::Cell> {
+        let mut t = omt_term::Terminal::new(omt_term::TermConfig {
+            size: omt_term::GridSize::new(cols, 2),
+            ..omt_term::TermConfig::default()
+        });
+        t.advance(input.as_bytes());
+        t.grid().row(0).densified(cols)
+    }
+
+    #[test]
+    fn one_style_across_a_row_is_one_run() {
+        // A cell-per-element payload is roughly twenty times larger for the
+        // same picture, which is the difference between a usable phone link
+        // and an unusable one.
+        let runs = runs_of(&cells("hello", 5));
+        assert_eq!(runs.len(), 1, "{runs:?}");
+        assert_eq!(runs[0].text, "hello");
+    }
+
+    #[test]
+    fn a_style_change_starts_a_new_run() {
+        let runs = runs_of(&cells("ab\x1b[31mcd", 4));
+        assert_eq!(runs.len(), 2, "{runs:?}");
+        assert_eq!(runs[0].text, "ab");
+        assert_eq!(runs[1].text, "cd");
+    }
+
+    #[test]
+    fn an_untouched_cell_is_a_space_not_a_hole() {
+        // A client rendering NUL draws a hole where the terminal shows blank.
+        let runs = runs_of(&cells("a", 4));
+        let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(text, "a   ");
+    }
+
+    #[test]
+    fn a_wide_character_does_not_also_emit_its_spacer() {
+        // Emitting anything for the spacer half pushes every following column
+        // right by one and the line drifts.
+        let runs = runs_of(&cells("漢b", 4));
+        let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(text, "漢b ");
+    }
+
+    #[test]
+    fn truecolor_survives_as_something_a_browser_can_use() {
+        let runs = runs_of(&cells("\x1b[38;2;10;20;30mX", 1));
+        assert_eq!(runs[0].fg.as_deref(), Some("#0a141e"));
+    }
+
+    #[test]
+    fn a_default_colour_is_left_for_the_client_theme_to_decide() {
+        // Resolving it here would render the user's terminal in the instance's
+        // colours rather than their own.
+        assert_eq!(runs_of(&cells("X", 1))[0].fg, None);
     }
 
     #[test]

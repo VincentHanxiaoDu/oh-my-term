@@ -23,8 +23,9 @@ vanishing.
 | `session.list` | query | viewer | Every session this instance holds, optionally filtered to one workspace. |
 | `session.read` | query | viewer | The visible screen as text, optionally with scrollback. |
 | `session.resize` | command | operator | Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with. |
+| `session.snapshot` | query | viewer | The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-17 capabilities.
+18 capabilities.
