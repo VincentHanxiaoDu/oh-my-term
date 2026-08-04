@@ -11,6 +11,7 @@
 mod domain;
 mod ids;
 mod seq;
+mod timestamp;
 
 pub use domain::{Actor, AgentKind, AgentState, BlockReason, Role, SessionMode, Tier};
 pub use ids::{
@@ -19,5 +20,4 @@ pub use ids::{
 };
 pub use seq::{Seq, SeqScope};
 
-/// A wall-clock instant, as it appears on the wire.
-pub type Timestamp = time::OffsetDateTime;
+pub use timestamp::Timestamp;
