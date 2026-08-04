@@ -6,5 +6,7 @@
 //! which a resuming client cannot detect and cannot recover from.
 
 pub mod instance;
+pub mod runtime;
 
 pub use instance::{Instance, REPLAY_CAPACITY};
+pub use runtime::{Pumped, READ_CHUNK, RuntimeError, SessionRuntime};

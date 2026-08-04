@@ -368,15 +368,41 @@ impl Pty {
 
 impl Drop for Pty {
     fn drop(&mut self) {
-        if self.reaped.is_none() {
-            // A child left running with its master closed would sit on a
-            // SIGHUP it never receives; hanging it up is what closing a window
-            // means.
-            let _ = self.signal(Signal::Hup);
-            let _ = self.try_wait();
+        if self.reaped.is_some() {
+            return;
         }
+
+        // Hanging up is what closing a window means. But a `SIGHUP` followed by
+        // a single non-blocking wait is not enough: the child has not exited
+        // yet at that instant, so it is never reaped, and it stays a zombie for
+        // the life of the daemon. A long-running instance that opens and closes
+        // sessions all day would accumulate one per session.
+        let _ = self.signal(Signal::Hup);
+
+        // Give it a moment to go on its own. Bounded, because dropping a value
+        // must not be able to block a session tree for an arbitrary time.
+        let deadline = std::time::Instant::now() + HANGUP_GRACE;
+        while std::time::Instant::now() < deadline {
+            match self.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(2)),
+                Err(_) => return,
+            }
+        }
+
+        // It ignored the hangup, or is still shutting down. `SIGKILL` cannot be
+        // caught, so the blocking wait after it is bounded by the kernel rather
+        // than by the program's cooperation.
+        let _ = self.signal(Signal::Kill);
+        let _ = self.wait();
     }
 }
+
+/// How long a child gets to exit on its own after a hangup.
+///
+/// Short: this runs inside `Drop`, and a session tree must not be blocked for
+/// an arbitrary time because one program is slow to notice.
+const HANGUP_GRACE: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Read and write halves of the master end.
 ///
@@ -812,6 +838,42 @@ mod tests {
             }
             assert!(Instant::now() < deadline, "never reached EOF");
         }
+    }
+
+    #[test]
+    fn dropping_a_pty_reaps_its_child_rather_than_leaving_a_zombie() {
+        // A hangup plus one non-blocking wait leaves the child unreaped: it has
+        // not exited yet at that instant. A daemon opening and closing sessions
+        // all day would accumulate one zombie per session.
+        let pid = {
+            // Announces itself, so the drop races a genuinely running child the
+            // way a real session close does — rather than one still in exec.
+            let pty = Pty::spawn(&sh("echo up; sleep 30")).expect("spawn");
+            let pid = pty.pid();
+            read_until(&pty, "up", Duration::from_secs(5));
+            pid
+        };
+
+        // SAFETY: signal 0 only probes for the process's existence. A zombie
+        // still answers, which is exactly what this is checking for.
+        #[allow(unsafe_code, reason = "signal 0 probes for a process's existence")]
+        let alive = unsafe { libc::kill(pid, 0) } == 0;
+        assert!(!alive, "the child outlived its Pty as a zombie");
+    }
+
+    #[test]
+    fn dropping_a_pty_whose_child_already_exited_does_nothing() {
+        // The common case, and it must not spend the grace period.
+        let started = Instant::now();
+        {
+            let mut pty = Pty::spawn(&sh("exit 0")).expect("spawn");
+            pty.wait().expect("wait");
+        }
+        assert!(
+            started.elapsed() < Duration::from_millis(150),
+            "an already-reaped child cost {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

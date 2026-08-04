@@ -13,6 +13,9 @@ omt-catalog = { workspace = true }
 omt-events = { workspace = true }
 omt-proto = { workspace = true }
 omt-session = { workspace = true }
+omt-term = { workspace = true }
+omt-pty = { workspace = true }
+omt-input = { workspace = true }
 omt-agent = { workspace = true }
 omt-agent-adapters = { workspace = true }
 omt-config = { workspace = true }
@@ -24,3 +27,6 @@ thiserror = { workspace = true }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+libc = "0.2"

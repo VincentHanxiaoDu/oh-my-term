@@ -175,6 +175,12 @@ pub enum TerminalEvent {
         /// How many lines.
         lines: u64,
     },
+    /// The program rang the bell.
+    ///
+    /// Carried as its own event rather than folded into `Output`: it is the one
+    /// thing a terminal program sends *deliberately* to get a human's
+    /// attention, and a phone decides whether to buzz on it.
+    Bell,
 }
 
 /// Something happened to the session tree.
@@ -202,6 +208,24 @@ pub enum SessionTreeEvent {
     LayoutChanged {
         /// In which workspace.
         workspace: WorkspaceId,
+    },
+    /// A session's title changed — usually because a program set it.
+    Renamed {
+        /// Which.
+        session: SessionId,
+        /// What it is now.
+        title: String,
+    },
+    /// A session's working directory changed.
+    ///
+    /// From the shell's own OSC 7, so it is observed rather than inferred. This
+    /// is what "open a new session here" uses, and it is *not* the workspace —
+    /// the workspace is identity and does not follow `cd`.
+    CwdChanged {
+        /// Which.
+        session: SessionId,
+        /// Where it now is.
+        cwd: String,
     },
 }
 

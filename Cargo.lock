@@ -378,15 +378,19 @@ dependencies = [
 name = "omt-daemon"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "omt-agent",
  "omt-agent-adapters",
  "omt-auth",
  "omt-catalog",
  "omt-config",
  "omt-events",
+ "omt-input",
  "omt-proto",
+ "omt-pty",
  "omt-session",
  "omt-store",
+ "omt-term",
  "omt-types",
  "omt-util",
  "serde",

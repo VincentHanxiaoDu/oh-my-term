@@ -46,6 +46,7 @@ pub struct Instance {
     streams: BTreeMap<SessionId, Stream>,
     instance_stream: Stream,
     merges: BTreeMap<BindingId, MergeMachine>,
+    runtimes: BTreeMap<SessionId, crate::SessionRuntime>,
 }
 
 impl Default for Instance {
@@ -64,6 +65,7 @@ impl Instance {
             streams: BTreeMap::new(),
             instance_stream: Stream::new(),
             merges: BTreeMap::new(),
+            runtimes: BTreeMap::new(),
         }
     }
 
@@ -182,7 +184,120 @@ impl Instance {
         // session that no longer exists and receive silence rather than an
         // answer.
         self.streams.remove(&id);
+        // The runtime goes with it, which is what actually stops the process:
+        // dropping a Pty hangs its child up.
+        self.runtimes.remove(&id);
         Ok(())
+    }
+
+    /// Attach a running process to a session that already exists.
+    ///
+    /// # Errors
+    /// Fails if the session is unknown — a runtime with no session would emit
+    /// events into a stream nothing is reading.
+    pub fn attach(&mut self, runtime: crate::SessionRuntime) -> Result<(), omt_session::TreeError> {
+        let id = runtime.id;
+        if self.tree.session(id).is_none() {
+            return Err(omt_session::TreeError::NoSession(id));
+        }
+        self.runtimes.insert(id, runtime);
+        Ok(())
+    }
+
+    /// A session's runtime.
+    #[must_use]
+    pub fn runtime(&self, id: SessionId) -> Option<&crate::SessionRuntime> {
+        self.runtimes.get(&id)
+    }
+
+    /// A session, from the tree.
+    #[must_use]
+    pub fn session(&self, id: SessionId) -> Option<&omt_session::Session> {
+        self.tree.session(id)
+    }
+
+    /// A session's runtime, mutably.
+    pub fn runtime_mut(&mut self, id: SessionId) -> Option<&mut crate::SessionRuntime> {
+        self.runtimes.get_mut(&id)
+    }
+
+    /// Move one session forward and turn what happened into events.
+    ///
+    /// The one place a host action becomes an event with a position on it. Two
+    /// callers doing this independently would number the same observation
+    /// twice.
+    ///
+    /// # Errors
+    /// Fails if the session has no runtime, or on an I/O error that is not the
+    /// end of the stream.
+    pub fn pump_session(&mut self, id: SessionId) -> Result<Vec<Event>, crate::RuntimeError> {
+        let Some(runtime) = self.runtimes.get_mut(&id) else {
+            return Ok(Vec::new());
+        };
+        let pumped = runtime.pump()?;
+
+        // Collected before emitting, because emitting borrows self mutably and
+        // the runtime is borrowed from the same place.
+        let mut pending: Vec<(EventSourceTag, EventPayload)> = Vec::new();
+        if pumped.bytes > 0 {
+            pending.push((
+                EventSourceTag::Core,
+                EventPayload::Terminal(omt_events::TerminalEvent::Output {
+                    bytes: pumped.bytes as u64,
+                }),
+            ));
+        }
+        for action in &pumped.actions {
+            pending.extend(runtime.event_for(action));
+        }
+        if let Some(status) = pumped.exited {
+            pending.push((
+                EventSourceTag::Core,
+                EventPayload::SessionTree(omt_events::SessionTreeEvent::SessionClosed {
+                    session: id,
+                    code: match status {
+                        omt_pty::ExitStatus::Code(c) => Some(c),
+                        // A signalled process has no exit code, and inventing
+                        // one would make "killed" indistinguishable from a
+                        // program that returned that number.
+                        omt_pty::ExitStatus::Signal(_) => None,
+                    },
+                }),
+            ));
+        }
+
+        let mut out = Vec::new();
+        for (source, payload) in pending {
+            out.extend(self.emit(id, source, payload));
+        }
+        if pumped.exited.is_some() {
+            // The process is gone; the session record should say so before any
+            // client asks.
+            if let Some(session) = self.tree.session_mut(id) {
+                session.state = omt_session::SessionState::Exited {
+                    code: pumped.exited.and_then(|s| match s {
+                        omt_pty::ExitStatus::Code(c) => Some(c),
+                        omt_pty::ExitStatus::Signal(_) => None,
+                    }),
+                };
+                session.exited_at = Some(Timestamp::now());
+            }
+        }
+        Ok(out)
+    }
+
+    /// Move every attached session forward.
+    ///
+    /// # Errors
+    /// Fails on the first session that errors, having already emitted whatever
+    /// the ones before it produced.
+    pub fn pump_all(&mut self) -> Result<Vec<Event>, crate::RuntimeError> {
+        let ids: Vec<SessionId> = self.runtimes.keys().copied().collect();
+        let mut out = Vec::new();
+        for id in ids {
+            out.extend(self.pump_session(id)?);
+        }
+        Ok(out)
     }
 
     /// How many sessions have live streams.
