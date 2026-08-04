@@ -122,7 +122,7 @@ async fn a_browser_speaks_the_same_protocol_the_unix_socket_carries() {
     });
     socket
         .send(Message::Text(
-            serde_json::to_string(&hello).expect("encode").into(),
+            serde_json::to_string(&hello).expect("encode"),
         ))
         .await
         .expect("send");
