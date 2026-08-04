@@ -7,11 +7,16 @@
 
 pub mod import;
 pub mod layer;
+pub mod load;
 pub mod merge;
 pub mod write;
 
 pub use import::{Imported, Source, Unmapped, import, usual_paths};
 pub use layer::{APPENDING_ARRAYS, ArrayMerge, Layer, Scope, UNSET};
+pub use load::{
+    CONFIG_FILE, LoadError, Located, PROJECT_DIR, find_project_config, from_environment, load,
+    search_paths,
+};
 pub use merge::{
     DROPPED_BY_SCOPE, Diagnostic, KeySpec, LayerInput, Provenance, Resolved, Severity, UNKNOWN_KEY,
     merge,
