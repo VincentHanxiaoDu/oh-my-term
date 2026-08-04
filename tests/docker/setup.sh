@@ -12,4 +12,4 @@ if [ ! -f keys/id_test ]; then
     chmod 600 keys/id_test
     echo "generated keys/id_test"
 fi
-docker compose up -d --build
+OMT_TEST_PUBKEY="$(cat keys/id_test.pub)" docker compose up -d --build

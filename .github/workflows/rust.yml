@@ -84,7 +84,9 @@ jobs:
           chmod 600 tests/docker/keys/id_test
 
       - name: Start the remote
-        run: docker compose -f tests/docker/compose.yml up -d --build
+        run: |
+          export OMT_TEST_PUBKEY="$(cat tests/docker/keys/id_test.pub)"
+          docker compose -f tests/docker/compose.yml up -d --build
 
       - name: Wait for sshd
         run: |
@@ -107,8 +109,12 @@ jobs:
 
       - name: Remote logs on failure
         if: failure()
+        env:
+          OMT_TEST_PUBKEY: unused-but-required-by-compose
         run: docker compose -f tests/docker/compose.yml logs
 
       - name: Stop the remote
         if: always()
+        env:
+          OMT_TEST_PUBKEY: unused-but-required-by-compose
         run: docker compose -f tests/docker/compose.yml down -v
