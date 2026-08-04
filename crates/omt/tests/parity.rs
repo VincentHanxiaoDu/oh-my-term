@@ -40,7 +40,7 @@ fn web_handlers() -> BTreeSet<String> {
 }
 
 fn registry() -> CapabilityRegistry {
-    omt::capabilities::registry().expect("the registry must build")
+    omt::capabilities::registry(omt::state::State::default()).expect("the registry must build")
 }
 
 #[test]

@@ -204,6 +204,47 @@ impl WorkspaceId {
     pub const fn as_bytes(&self) -> &[u8; 16] {
         &self.0
     }
+
+    /// The **lossless** form, for anywhere this id must survive a string.
+    ///
+    /// As with every other id, [`fmt::Display`] is abbreviated for logs and
+    /// cannot be parsed back. This one is hand-written rather than macro
+    /// generated, which is exactly how it came to be missing the wire form
+    /// while every other id had one.
+    #[must_use]
+    pub fn to_wire(&self) -> String {
+        let mut out = String::with_capacity(Self::PREFIX.len() + 33);
+        out.push_str(Self::PREFIX);
+        out.push('_');
+        for b in &self.0 {
+            out.push_str(&format!("{b:02x}"));
+        }
+        out
+    }
+
+    /// Recover an id from [`Self::to_wire`].
+    #[must_use]
+    pub fn from_wire(s: &str) -> Option<Self> {
+        let hex = s.strip_prefix(Self::PREFIX)?.strip_prefix('_')?;
+        if hex.len() != 32 {
+            return None;
+        }
+        let mut bytes = [0u8; 16];
+        for (i, byte) in bytes.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
+        }
+        Some(Self(bytes))
+    }
+}
+
+impl std::str::FromStr for WorkspaceId {
+    type Err = IdParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_wire(s).ok_or(IdParseError {
+            expected: Self::PREFIX,
+        })
+    }
 }
 
 impl fmt::Display for WorkspaceId {
@@ -295,6 +336,16 @@ mod wire_tests {
             None,
             "the short form must not parse, or it would round-trip to a *different* id"
         );
+    }
+
+    #[test]
+    fn a_workspace_id_round_trips_through_its_wire_form_too() {
+        // Hand-written rather than macro generated, which is exactly how it
+        // came to be missing this while every other id had it.
+        let id = WorkspaceId::from_canonical_path("/home/me/project");
+        assert_eq!(WorkspaceId::from_wire(&id.to_wire()), Some(id));
+        assert_eq!(WorkspaceId::from_wire(&id.to_string()), None);
+        assert_eq!(WorkspaceId::from_wire("wksp_short"), None);
     }
 
     #[test]

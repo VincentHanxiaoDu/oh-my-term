@@ -47,6 +47,7 @@ pub struct Instance {
     instance_stream: Stream,
     merges: BTreeMap<BindingId, MergeMachine>,
     runtimes: BTreeMap<SessionId, crate::SessionRuntime>,
+    rosters: BTreeMap<SessionId, omt_agent::ThreadRoster>,
 }
 
 impl Default for Instance {
@@ -66,6 +67,7 @@ impl Instance {
             instance_stream: Stream::new(),
             merges: BTreeMap::new(),
             runtimes: BTreeMap::new(),
+            rosters: BTreeMap::new(),
         }
     }
 
@@ -187,6 +189,7 @@ impl Instance {
         // The runtime goes with it, which is what actually stops the process:
         // dropping a Pty hangs its child up.
         self.runtimes.remove(&id);
+        self.rosters.remove(&id);
         Ok(())
     }
 
@@ -208,6 +211,35 @@ impl Instance {
     #[must_use]
     pub fn runtime(&self, id: SessionId) -> Option<&crate::SessionRuntime> {
         self.runtimes.get(&id)
+    }
+
+    /// Whether a workspace is already open.
+    #[must_use]
+    pub fn workspace_exists(&self, id: WorkspaceId) -> bool {
+        self.tree.workspace(id).is_some()
+    }
+
+    /// Every workspace.
+    #[must_use]
+    pub fn workspaces(&self) -> Vec<&omt_session::Workspace> {
+        self.tree.workspaces()
+    }
+
+    /// Every session.
+    #[must_use]
+    pub fn sessions(&self) -> Vec<&omt_session::Session> {
+        self.tree.sessions()
+    }
+
+    /// A session's thread roster — its main thread and each subagent.
+    #[must_use]
+    pub fn threads(&self, id: SessionId) -> Option<&omt_agent::ThreadRoster> {
+        self.rosters.get(&id)
+    }
+
+    /// Fold an agent observation into a session's roster.
+    pub fn observe_thread(&mut self, id: SessionId, event: &omt_events::AgentEvent) {
+        self.rosters.entry(id).or_default().observe(event);
     }
 
     /// A session, from the tree.

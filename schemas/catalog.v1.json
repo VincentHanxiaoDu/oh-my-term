@@ -1,6 +1,26 @@
 {
   "capabilities": [
     {
+      "aliases": [
+        "subagents"
+      ],
+      "doc": "Every thread in a session — the main one and each subagent — with what it is doing and any card it raised.",
+      "effects": [],
+      "group": "agent",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent.threads",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/agent/threads",
+      "since": "0.1.0",
+      "title": "List agent threads",
+      "verb": "threads"
+    },
+    {
       "aliases": [],
       "doc": "Subscribe to the event stream.",
       "effects": [],
@@ -55,6 +75,86 @@
       "since": "0.1.0",
       "title": "Instance info",
       "verb": "info"
+    },
+    {
+      "aliases": [],
+      "doc": "End a session and stop the process on it. Idempotent.",
+      "effects": [
+        "destructive"
+      ],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "session.close",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/close",
+      "since": "0.1.0",
+      "title": "Close a session",
+      "verb": "close"
+    },
+    {
+      "aliases": [
+        "ls"
+      ],
+      "doc": "Every session this instance holds, optionally filtered to one workspace.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/list",
+      "since": "0.1.0",
+      "title": "List sessions",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Every workspace this instance has open, with its session count.",
+      "effects": [],
+      "group": "workspace",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "workspace.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/workspace/list",
+      "since": "0.1.0",
+      "title": "List workspaces",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Open a workspace at a canonical path. Idempotent: the id is derived from the path.",
+      "effects": [],
+      "group": "workspace",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "workspace.open",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/workspace/open",
+      "since": "0.1.0",
+      "title": "Open a workspace",
+      "verb": "open"
     }
   ],
   "proto": 1,

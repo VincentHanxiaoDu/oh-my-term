@@ -42,6 +42,26 @@ pub const ACTIONS: &[Action] = &[
         capability: "events.subscribe",
         binding: None,
     },
+    Action {
+        capability: "workspace.list",
+        binding: None,
+    },
+    Action {
+        capability: "workspace.open",
+        binding: None,
+    },
+    Action {
+        capability: "session.list",
+        binding: None,
+    },
+    Action {
+        capability: "session.close",
+        binding: None,
+    },
+    Action {
+        capability: "agent.threads",
+        binding: None,
+    },
 ];
 
 /// Whether a capability is reachable in the TUI.

@@ -1,1 +1,1 @@
-["events.subscribe","instance.catalog","instance.info"]
+["agent.threads","events.subscribe","instance.catalog","instance.info","session.close","session.list","workspace.list","workspace.open"]
