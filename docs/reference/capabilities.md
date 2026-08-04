@@ -11,15 +11,20 @@ vanishing.
 |---|---|---|---|
 | `agent.interrupt` | command | operator | Stop an agent. For an agent with no protocol of its own this is the entire remote control surface. |
 | `agent.threads` | query | viewer | Every thread in a session — the main one and each subagent — with what it is doing and any card it raised. |
+| `config.get` | query | viewer | Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable. |
 | `events.subscribe` | query | viewer | Subscribe to the event stream. |
 | `fs.list` | query | viewer | List a directory inside a workspace. Paths are workspace-relative and cannot escape it. |
 | `git.diff` | query | viewer | Which files changed, with line counts. Staged and unstaged are separate answers. |
 | `git.status` | query | viewer | Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches. |
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
 | `instance.info` | query | viewer | Version and protocol of this instance. |
+| `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `session.close` | command | operator | End a session and stop the process on it. Idempotent. |
 | `session.list` | query | viewer | Every session this instance holds, optionally filtered to one workspace. |
+| `session.read` | query | viewer | The visible screen as text, optionally with scrollback. |
+| `session.resize` | command | operator | Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with. |
+| `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-12 capabilities.
+17 capabilities.

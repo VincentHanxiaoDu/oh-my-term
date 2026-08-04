@@ -937,6 +937,387 @@ impl CapabilityHandler<AgentInterrupt> for AgentInterruptHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Session input and geometry
+// ---------------------------------------------------------------------------
+
+/// Input to `session.write`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionWriteIn {
+    /// Which session.
+    pub session: String,
+    /// What to type.
+    pub text: String,
+    /// The writer-token epoch the caller believed it held.
+    ///
+    /// Required, not optional. Input already in flight when the token changed
+    /// hands must be rejected rather than landing in somebody else's command
+    /// line, and a caller that could omit this would be a caller exempt from
+    /// the check.
+    pub epoch: u64,
+}
+
+/// What `session.write` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionWriteOut {
+    /// How many bytes went out.
+    ///
+    /// Bytes written, not bytes delivered. The far side is a program omt does
+    /// not own, so a successful write proves the pipe accepted it and nothing
+    /// more.
+    pub bytes: usize,
+}
+
+capability! {
+    /// Type into a session.
+    pub struct SessionWrite;
+    input  = SessionWriteIn,
+    output = SessionWriteOut,
+    decl = Decl {
+        name: "session.write",
+        group: "session",
+        verb: "write",
+        title: "Type into a session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::WRITES_PTY,
+        // Never replayed: re-sending the tail of a shell command is how a
+        // retry becomes a disaster.
+        intent: Some(Intent::RawStream),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Write input to a session, gated on the writer token's epoch.",
+    },
+}
+
+struct SessionWriteHandler(State);
+
+impl CapabilityHandler<SessionWrite> for SessionWriteHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: SessionWriteIn,
+    ) -> Result<SessionWriteOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let mut instance = self.0.lock()?;
+        let bytes = instance
+            .write_session_input(id, omt_session::Epoch(input.epoch), input.text.as_bytes())
+            .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
+        Ok(SessionWriteOut { bytes })
+    }
+}
+
+/// Input to `session.resize`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionResizeIn {
+    /// Which session.
+    pub session: String,
+    /// New width.
+    pub cols: u16,
+    /// New height.
+    pub rows: u16,
+}
+
+/// What `session.resize` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionResizeOut {
+    /// The size now in force.
+    pub cols: u16,
+    /// The size now in force.
+    pub rows: u16,
+}
+
+capability! {
+    /// Change a session's size.
+    pub struct SessionResize;
+    input  = SessionResizeIn,
+    output = SessionResizeOut,
+    decl = Decl {
+        name: "session.resize",
+        group: "session",
+        verb: "resize",
+        title: "Resize a session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::WRITES_PTY,
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Resize a session. The grid and the kernel are told together, so \
+              a program is never handed a size the kernel disagrees with.",
+    },
+}
+
+struct SessionResizeHandler(State);
+
+impl CapabilityHandler<SessionResize> for SessionResizeHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: SessionResizeIn,
+    ) -> Result<SessionResizeOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let mut instance = self.0.lock()?;
+        instance
+            .runtime_mut(id)
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?
+            .resize(input.cols, input.rows)
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+        Ok(SessionResizeOut {
+            cols: input.cols,
+            rows: input.rows,
+        })
+    }
+}
+
+/// Input to `session.read`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionReadIn {
+    /// Which session.
+    pub session: String,
+    /// How many lines of scrollback to include before the screen.
+    #[serde(default)]
+    pub history: u32,
+}
+
+/// What `session.read` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionReadOut {
+    /// The visible screen, one string per row.
+    pub screen: Vec<String>,
+    /// Scrollback before it, oldest first.
+    pub history: Vec<String>,
+    /// Where the cursor is.
+    pub cursor: (u16, u16),
+    /// Whether a full-screen program is drawing.
+    ///
+    /// A client rendering a transcript needs to know: while this is true the
+    /// program owns every cell and a line-oriented view of it is nonsense.
+    pub alternate_screen: bool,
+}
+
+capability! {
+    /// What is on a session's screen.
+    pub struct SessionRead;
+    input  = SessionReadIn,
+    output = SessionReadOut,
+    decl = Decl {
+        name: "session.read",
+        group: "session",
+        verb: "read",
+        title: "Read a session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "The visible screen as text, optionally with scrollback.",
+    },
+}
+
+struct SessionReadHandler(State);
+
+impl CapabilityHandler<SessionRead> for SessionReadHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: SessionReadIn,
+    ) -> Result<SessionReadOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let instance = self.0.lock()?;
+        let runtime = instance
+            .runtime(id)
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?;
+        let terminal = runtime.terminal();
+
+        // Bounded rather than "all of it": a client asking for a million lines
+        // over a phone link would be answered, slowly, and time out.
+        let want = (input.history as usize).min(MAX_HISTORY_LINES);
+        let all: Vec<String> = terminal.scrollback().lines().map(|l| l.text()).collect();
+        let history = all[all.len().saturating_sub(want)..].to_vec();
+
+        Ok(SessionReadOut {
+            screen: terminal.screen_text(),
+            history,
+            cursor: (terminal.grid().cursor.row, terminal.grid().cursor.col),
+            alternate_screen: terminal.active() == omt_term::Which::Alternate,
+        })
+    }
+}
+
+/// The most scrollback one read returns.
+const MAX_HISTORY_LINES: usize = 5_000;
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+/// Input to `config.get`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ConfigGetIn {
+    /// A dotted key, or absent for everything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+/// One resolved setting and where it came from.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct ConfigValue {
+    /// The dotted key.
+    pub key: String,
+    /// Its value.
+    pub value: serde_json::Value,
+    /// Which layer won.
+    pub layer: String,
+    /// The file it came from, where there was one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+}
+
+/// What `config.get` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct ConfigGetOut {
+    /// The settings.
+    pub values: Vec<ConfigValue>,
+}
+
+capability! {
+    /// Read configuration, with provenance.
+    pub struct ConfigGet;
+    input  = ConfigGetIn,
+    output = ConfigGetOut,
+    decl = Decl {
+        name: "config.get",
+        group: "config",
+        verb: "get",
+        title: "Read configuration",
+        aliases: &["config.sources"],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::READS_FS,
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Resolved settings, each with the layer and file it came from — \
+              which is what makes a surprising value traceable.",
+    },
+}
+
+struct ConfigGetHandler(State);
+
+impl CapabilityHandler<ConfigGet> for ConfigGetHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: ConfigGetIn,
+    ) -> Result<ConfigGetOut, CapabilityError> {
+        let resolved = self.0.config()?;
+        let values = resolved
+            .keys()
+            .into_iter()
+            .filter(|k| input.key.as_deref().is_none_or(|want| *k == want))
+            .map(|k| {
+                let provenance = resolved.source(k);
+                ConfigValue {
+                    key: k.to_owned(),
+                    value: resolved.get(k).cloned().unwrap_or(serde_json::Value::Null),
+                    layer: provenance
+                        .map_or_else(|| "builtin".to_owned(), |p| format!("{:?}", p.layer)),
+                    file: provenance.and_then(|p| p.file.clone()),
+                }
+            })
+            .collect();
+        Ok(ConfigGetOut { values })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Keys
+// ---------------------------------------------------------------------------
+
+/// Input to `keys.cheatsheet`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct KeysIn {}
+
+/// One line of the cheatsheet.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct KeyBinding {
+    /// The chord, canonically spelled.
+    pub chord: String,
+    /// Which mode it applies in.
+    pub mode: String,
+    /// What it does, or why it is reserved.
+    pub action: String,
+    /// Whether the program underneath sees this key.
+    pub reaches_program: bool,
+}
+
+/// What `keys.cheatsheet` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct KeysOut {
+    /// Every binding, and every reserved key.
+    pub bindings: Vec<KeyBinding>,
+}
+
+capability! {
+    /// Every key, generated from the live keymap.
+    pub struct KeysCheatsheet;
+    input  = KeysIn,
+    output = KeysOut,
+    decl = Decl {
+        name: "keys.cheatsheet",
+        group: "keys",
+        verb: "cheatsheet",
+        title: "Keyboard reference",
+        aliases: &["keys"],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Every binding and every reserved key, generated from the keymap \
+              in force so it cannot go stale.",
+    },
+}
+
+struct KeysHandler;
+
+impl CapabilityHandler<KeysCheatsheet> for KeysHandler {
+    fn call(&self, _ctx: &CallContext, _input: KeysIn) -> Result<KeysOut, CapabilityError> {
+        Ok(KeysOut {
+            bindings: omt_input::cheatsheet(&omt_input::defaults())
+                .into_iter()
+                .map(|e| KeyBinding {
+                    chord: e.chord,
+                    mode: format!("{:?}", e.mode).to_lowercase(),
+                    action: e.action,
+                    reaches_program: e.reaches_program,
+                })
+                .collect(),
+        })
+    }
+}
+
+fn session_id(text: &str) -> Result<SessionId, CapabilityError> {
+    SessionId::from_wire(text)
+        .ok_or_else(|| CapabilityError::invalid_input(format!("`{text}` is not a session id")))
+}
+
 /// Build the registry this binary serves.
 ///
 /// # Errors
@@ -955,7 +1336,12 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<FsList, _>(FsListHandler(state.clone()))?;
     r.register::<GitStatus, _>(GitStatusHandler(state.clone()))?;
     r.register::<GitDiff, _>(GitDiffHandler(state.clone()))?;
-    r.register::<AgentInterrupt, _>(AgentInterruptHandler(state))?;
+    r.register::<AgentInterrupt, _>(AgentInterruptHandler(state.clone()))?;
+    r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
+    r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
+    r.register::<SessionRead, _>(SessionReadHandler(state.clone()))?;
+    r.register::<ConfigGet, _>(ConfigGetHandler(state))?;
+    r.register::<KeysCheatsheet, _>(KeysHandler)?;
     r.seal()?;
     Ok(r)
 }

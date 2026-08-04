@@ -45,6 +45,28 @@
       "verb": "threads"
     },
     {
+      "aliases": [
+        "config.sources"
+      ],
+      "doc": "Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "config",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "config.get",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/config/get",
+      "since": "0.1.0",
+      "title": "Read configuration",
+      "verb": "get"
+    },
+    {
       "aliases": [],
       "doc": "Subscribe to the event stream.",
       "effects": [],
@@ -161,6 +183,26 @@
       "verb": "info"
     },
     {
+      "aliases": [
+        "keys"
+      ],
+      "doc": "Every binding and every reserved key, generated from the keymap in force so it cannot go stale.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.cheatsheet",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/cheatsheet",
+      "since": "0.1.0",
+      "title": "Keyboard reference",
+      "verb": "cheatsheet"
+    },
+    {
       "aliases": [],
       "doc": "End a session and stop the process on it. Idempotent.",
       "effects": [
@@ -201,6 +243,68 @@
       "since": "0.1.0",
       "title": "List sessions",
       "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "The visible screen as text, optionally with scrollback.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.read",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/read",
+      "since": "0.1.0",
+      "title": "Read a session",
+      "verb": "read"
+    },
+    {
+      "aliases": [],
+      "doc": "Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with.",
+      "effects": [
+        "writes_pty"
+      ],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "session.resize",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/resize",
+      "since": "0.1.0",
+      "title": "Resize a session",
+      "verb": "resize"
+    },
+    {
+      "aliases": [],
+      "doc": "Write input to a session, gated on the writer token's epoch.",
+      "effects": [
+        "writes_pty"
+      ],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "raw_stream"
+      },
+      "kind": "command",
+      "name": "session.write",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/write",
+      "since": "0.1.0",
+      "title": "Type into a session",
+      "verb": "write"
     },
     {
       "aliases": [],

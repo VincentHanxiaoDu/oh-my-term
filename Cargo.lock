@@ -632,6 +632,7 @@ dependencies = [
  "omt-agent",
  "omt-auth",
  "omt-catalog",
+ "omt-config",
  "omt-daemon",
  "omt-events",
  "omt-input",

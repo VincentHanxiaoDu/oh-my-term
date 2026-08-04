@@ -78,6 +78,26 @@ pub const ACTIONS: &[Action] = &[
         capability: "git.diff",
         binding: None,
     },
+    Action {
+        capability: "session.write",
+        binding: None,
+    },
+    Action {
+        capability: "session.resize",
+        binding: None,
+    },
+    Action {
+        capability: "session.read",
+        binding: None,
+    },
+    Action {
+        capability: "config.get",
+        binding: None,
+    },
+    Action {
+        capability: "keys.cheatsheet",
+        binding: None,
+    },
 ];
 
 /// Whether a capability is reachable in the TUI.

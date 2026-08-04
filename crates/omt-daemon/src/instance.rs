@@ -225,6 +225,34 @@ impl Instance {
         self.tree.workspaces()
     }
 
+    /// Write input to a session, checked against the writer token.
+    ///
+    /// The token lives here rather than on the runtime because it is a property
+    /// of the session — a remote client and the local TUI contend for the same
+    /// one, and two copies would let both believe they held it.
+    ///
+    /// # Errors
+    /// Fails if the session is unknown, or if the epoch is stale.
+    pub fn write_session_input(
+        &mut self,
+        id: SessionId,
+        epoch: omt_session::Epoch,
+        bytes: &[u8],
+    ) -> Result<usize, crate::RuntimeError> {
+        let Some(session) = self.tree.session_mut(id) else {
+            return Err(crate::RuntimeError::Io(format!("no session {id}")));
+        };
+        let mut writer = std::mem::take(&mut session.writer);
+        let result = self.runtimes.get_mut(&id).map_or_else(
+            || Err(crate::RuntimeError::Io(format!("no runtime for {id}"))),
+            |runtime| runtime.write_input(&mut writer, epoch, now_ms(), bytes),
+        );
+        if let Some(session) = self.tree.session_mut(id) {
+            session.writer = writer;
+        }
+        result
+    }
+
     /// A workspace's canonical root.
     #[must_use]
     pub fn workspace_root(&self, id: WorkspaceId) -> Option<String> {
@@ -343,6 +371,19 @@ impl Instance {
     pub fn stream_count(&self) -> usize {
         self.streams.len()
     }
+}
+
+/// Milliseconds since this process started.
+///
+/// Monotonic rather than wall-clock: the writer token's idle timeout must not
+/// move because somebody's clock was corrected.
+fn now_ms() -> u64 {
+    use std::sync::OnceLock;
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
 }
 
 #[cfg(test)]

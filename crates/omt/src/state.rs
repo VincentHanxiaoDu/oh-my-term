@@ -14,6 +14,19 @@ use omt_daemon::Instance;
 #[derive(Clone)]
 pub struct State {
     instance: Arc<Mutex<Instance>>,
+    config: Arc<Mutex<Option<Arc<omt_config::Resolved>>>>,
+}
+
+/// Where omt keeps its configuration.
+fn config_home() -> std::path::PathBuf {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|h| std::path::PathBuf::from(h).join(".config"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        })
+        .join("omt")
 }
 
 impl Default for State {
@@ -28,7 +41,32 @@ impl State {
     pub fn new(instance: Instance) -> Self {
         Self {
             instance: Arc::new(Mutex::new(instance)),
+            config: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// The resolved configuration.
+    ///
+    /// Loaded lazily and cached: reading four files on every `config.get`
+    /// would make a settings screen that polls into a disk-bound loop.
+    ///
+    /// # Errors
+    /// Fails if a config file exists but cannot be read or parsed.
+    pub fn config(&self) -> Result<std::sync::Arc<omt_config::Resolved>, CapabilityError> {
+        if let Some(cached) = self.config.lock().ok().and_then(|c| c.clone()) {
+            return Ok(cached);
+        }
+        let home = config_home();
+        let layers =
+            omt_config::load(&home, None).map_err(|e| CapabilityError::internal(e.to_string()))?;
+        // No schema yet, so every key resolves and nothing is reported unknown.
+        // Stated rather than silently true: once the schema exists this is the
+        // line that starts rejecting typos.
+        let resolved = std::sync::Arc::new(omt_config::merge(&layers, &[]));
+        if let Ok(mut slot) = self.config.lock() {
+            *slot = Some(resolved.clone());
+        }
+        Ok(resolved)
     }
 
     /// Borrow the instance.

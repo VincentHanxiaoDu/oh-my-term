@@ -56,6 +56,32 @@ export interface DiffFile {
   binary: boolean
 }
 
+/** What is on a session's screen. */
+export interface ScreenContents {
+  screen: string[]
+  history: string[]
+  cursor: [number, number]
+  /** While true a full-screen program owns every cell and a line view is nonsense. */
+  alternate_screen: boolean
+}
+
+/** One resolved setting, and where it came from. */
+export interface ConfigValue {
+  key: string
+  value: unknown
+  layer: string
+  file?: string
+}
+
+/** One line of the keyboard reference. */
+export interface KeyBinding {
+  chord: string
+  mode: string
+  action: string
+  /** Whether the program underneath sees this key. */
+  reaches_program: boolean
+}
+
 /** One thread — the session's own, or a subagent. */
 export interface ThreadSummary {
   id: string
@@ -104,6 +130,23 @@ export const HANDLERS = {
 
   'git.diff': (request: RequestId, workspace: string, staged = false) =>
     call(request, 'git.diff', { workspace, staged }),
+
+  // The epoch is required, not optional: input already in flight when the
+  // writer token changed hands must be rejected rather than landing in
+  // somebody else's command line.
+  'session.write': (request: RequestId, session: string, text: string, epoch: number) =>
+    call(request, 'session.write', { session, text, epoch }),
+
+  'session.resize': (request: RequestId, session: string, cols: number, rows: number) =>
+    call(request, 'session.resize', { session, cols, rows }),
+
+  'session.read': (request: RequestId, session: string, history = 0) =>
+    call(request, 'session.read', { session, history }),
+
+  'config.get': (request: RequestId, key?: string) =>
+    call(request, 'config.get', key === undefined ? {} : { key }),
+
+  'keys.cheatsheet': (request: RequestId) => call(request, 'keys.cheatsheet', {}),
 } as const
 
 /** The capability names this client handles. */
