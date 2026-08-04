@@ -6,6 +6,12 @@
 //! silently is not a grant, and one that is checked only at install is not an
 //! enforcement.
 
+pub mod api;
+
+pub use api::{
+    CallError, MAX_WRITE_BYTES, NotifyLevel, PluginCall, authorize, is_workspace_relative,
+};
+
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
