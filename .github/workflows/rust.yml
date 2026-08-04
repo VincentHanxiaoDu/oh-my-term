@@ -77,6 +77,9 @@ jobs:
         # Generated per run rather than committed: a checked-in private key is
         # a habit that escapes the repository it started in.
         run: |
+          # The directory is gitignored along with its contents, so it does not
+          # exist in a fresh checkout.
+          mkdir -p tests/docker/keys
           ssh-keygen -t ed25519 -f tests/docker/keys/id_test -N '' -C omt-ci -q
           chmod 600 tests/docker/keys/id_test
 
