@@ -356,6 +356,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-session"
+version = "0.1.0"
+dependencies = [
+ "omt-events",
+ "omt-types",
+ "omt-util",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-term"
 version = "0.1.0"
 dependencies = [

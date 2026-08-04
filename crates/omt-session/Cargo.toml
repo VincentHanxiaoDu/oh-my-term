@@ -1,0 +1,17 @@
+[package]
+name = "omt-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The session tree: workspaces, sessions, layout, and the writer token."
+
+[dependencies]
+omt-types = { workspace = true }
+omt-events = { workspace = true }
+omt-util = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
