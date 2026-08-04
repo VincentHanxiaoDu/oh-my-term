@@ -1,0 +1,56 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/omt-types",
+    "crates/omt-util",
+    "crates/omt-catalog",
+    "crates/omt-events",
+    "crates/omt-proto",
+    "crates/omt-tui",
+    "crates/omt-server",
+    "crates/omt",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "Apache-2.0"
+repository = "https://github.com/VincentHanxiaoDu/oh-my-term"
+authors = ["oh-my-term contributors"]
+
+[workspace.dependencies]
+omt-types = { path = "crates/omt-types" }
+omt-util = { path = "crates/omt-util" }
+omt-catalog = { path = "crates/omt-catalog" }
+omt-events = { path = "crates/omt-events" }
+omt-proto = { path = "crates/omt-proto" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = { version = "1", features = ["uuid1"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+thiserror = "2"
+linkme = "0.3"
+bitflags = { version = "2", features = ["serde"] }
+blake3 = "1"
+indexmap = { version = "2", features = ["serde"] }
+smallvec = { version = "1", features = ["serde", "union"] }
+anyhow = "1"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[profile.release]
+lto = "thin"
+strip = true
