@@ -5,10 +5,12 @@
 //! forgot would be a silent hole rather than a loud one.
 
 mod framing;
+pub mod ssh;
 #[cfg(unix)]
 mod unix;
 
 pub use framing::{FramingError, PREFIX_LEN, read_frame, write_frame};
+pub use ssh::{Remote, push_blob_command, remote_blob_path, shell_quote};
 #[cfg(unix)]
 pub use unix::{
     PeerCredentials, SOCKET_MODE, SocketListener, connect, current_uid, peer_credentials,

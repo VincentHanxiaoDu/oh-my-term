@@ -321,3 +321,66 @@ fn the_binary_serves_on_a_socket_a_client_can_reach() {
     drop(stream);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_bridge_relays_stdin_and_stdout_to_a_live_instance() {
+    // What `omt ssh` runs on the far side. Without this the remote path is a
+    // design: ssh would carry bytes to a process that could not answer.
+    let dir = std::env::temp_dir().join(format!("omt-bridge-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("tempdir");
+    let socket = dir.join("omt.sock");
+
+    let state = omt::state::State::default();
+    let served = state.clone();
+    let path = socket.clone();
+    std::thread::spawn(move || {
+        let _ = omt::serve::serve(&path, served);
+    });
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while omt_transport::connect(&socket).is_err() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never started listening"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    // Exactly what ssh would run on the far side.
+    let exe = std::env::current_exe()
+        .expect("test exe")
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("target dir")
+        .join("omt");
+    let mut child = std::process::Command::new(exe)
+        .args(["bridge", "--socket", socket.to_str().expect("utf8")])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn bridge");
+
+    let mut to = child.stdin.take().expect("stdin");
+    let mut from = child.stdout.take().expect("stdout");
+
+    let hello = ProtoMessage::Hello(Hello {
+        proto: omt_proto::PROTO_VERSION,
+        client: "bridged".to_owned(),
+        token: None,
+    });
+    let bytes = serde_json::to_vec(&hello).expect("encode");
+    omt_transport::write_frame(&mut to, omt_proto::FrameKind::Text, &bytes).expect("write");
+    use std::io::Write as _;
+    to.flush().expect("flush");
+
+    let (_, payload) = omt_transport::read_frame(&mut from).expect("read");
+    let reply: ProtoMessage = serde_json::from_slice(&payload).expect("decode");
+    assert!(
+        matches!(reply, ProtoMessage::Welcome(_)),
+        "the bridge did not relay a welcome back: {reply:?}"
+    );
+
+    drop(to);
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}

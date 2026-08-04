@@ -4,7 +4,7 @@
 //! and an ssh forward or a web bridge reaches it from further away. Everything
 //! that arrives here goes through the same dispatch the local TUI uses.
 
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -91,5 +91,61 @@ fn serve_connection(mut stream: std::os::unix::net::UnixStream, state: &State) -
                 return Ok(());
             }
         }
+    }
+}
+
+/// Relay this process's stdin and stdout to a local instance's socket.
+///
+/// What `omt ssh` runs on the far side. The far side resolves its own socket,
+/// which is the point: a path forwarded from the near side could point at an
+/// instance that has since been replaced, and the client would attach to
+/// somebody else's sessions without either end noticing.
+///
+/// # Errors
+/// Fails if the socket cannot be reached.
+pub fn bridge(socket: Option<&Path>) -> Result<()> {
+    let path = socket.map_or_else(default_socket_path, Path::to_path_buf);
+    let stream = omt_transport::connect(&path)
+        .with_context(|| format!("connecting to {}", path.display()))?;
+
+    // Two directions, two threads. A single-threaded relay would block one way
+    // while waiting on the other, which deadlocks the first time both sides
+    // have something to say at once — and both sides do, on every handshake.
+    let mut to_socket = stream.try_clone().context("cloning the socket")?;
+    let mut from_socket = stream;
+
+    let up = std::thread::spawn(move || {
+        let mut stdin = io::stdin().lock();
+        let _ = relay(&mut stdin, &mut to_socket);
+        // Half-close, so the far side sees the end of input rather than
+        // waiting for bytes that will never come.
+        let _ = to_socket.shutdown(std::net::Shutdown::Write);
+    });
+
+    let mut stdout = io::stdout().lock();
+    let _ = relay(&mut from_socket, &mut stdout);
+    let _ = stdout.flush();
+    let _ = up.join();
+    Ok(())
+}
+
+/// Copy, flushing after every chunk.
+///
+/// Deliberately not `io::copy`, which never flushes. Rust's stdout is
+/// block-buffered when it is a pipe — which is exactly what it is under ssh —
+/// so the first frame would sit in an eight-kilobyte buffer waiting for
+/// traffic that only arrives once it has been answered. The connection appears
+/// to hang on the handshake, every time.
+fn relay(from: &mut impl io::Read, to: &mut impl Write) -> io::Result<()> {
+    let mut buf = [0u8; 32 * 1024];
+    loop {
+        let n = match from.read(&mut buf) {
+            Ok(0) => return Ok(()),
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        to.write_all(&buf[..n])?;
+        to.flush()?;
     }
 }

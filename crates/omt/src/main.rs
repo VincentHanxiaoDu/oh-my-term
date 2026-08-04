@@ -32,6 +32,10 @@ fn main() -> Result<()> {
             println!("listening on {}", path.display());
             omt::serve::serve(&path, omt::state::State::default())
         }
+        // Run on the far side of an ssh connection, not by a person.
+        ["bridge"] => omt::serve::bridge(None),
+        ["bridge", "--socket", path] => omt::serve::bridge(Some(std::path::Path::new(path))),
+        ["ssh", destination] => omt::remote::attach(destination),
         ["serve", "--socket", path] => {
             omt::serve::serve(std::path::Path::new(path), omt::state::State::default())
         }
