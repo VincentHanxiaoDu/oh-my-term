@@ -151,9 +151,14 @@ pub fn from_vscode(name: &str, text: &str) -> Result<Imported, ImportError> {
         bright[i] = get(&format!("terminal.ansiBright{n}")).unwrap_or(bright[i]);
     }
 
+    // Only the keys actually consumed count as mapped. Excluding every
+    // `editor.*` would under-report: two of them are read as fallbacks and the
+    // other several hundred are genuinely things a terminal cannot show, which
+    // is exactly what the user wants to be told.
+    const CONSUMED_EDITOR: [&str; 2] = ["editor.background", "editor.foreground"];
     let unmapped: Vec<String> = colors
         .keys()
-        .filter(|k| !k.starts_with("terminal.") && !k.starts_with("editor."))
+        .filter(|k| !k.starts_with("terminal") && !CONSUMED_EDITOR.contains(&k.as_str()))
         .cloned()
         .collect();
 
@@ -340,6 +345,19 @@ terminal_colors:
             !imported.unmapped.iter().any(|k| k.starts_with("terminal.")),
             "a mapped key was reported as unmapped"
         );
+    }
+
+    #[test]
+    fn an_editor_key_that_is_not_consumed_is_reported() {
+        // Excluding every `editor.*` under-reports: two are read as fallbacks
+        // and the rest are genuinely things a terminal cannot show.
+        let text = r##"{"colors":{
+            "editor.background":"#000000",
+            "editor.foreground":"#ffffff",
+            "editor.lineHighlightBackground":"#222222"
+        }}"##;
+        let imported = from_vscode("x", text).expect("import");
+        assert_eq!(imported.unmapped, ["editor.lineHighlightBackground"]);
     }
 
     #[test]

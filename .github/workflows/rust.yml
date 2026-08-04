@@ -88,6 +88,19 @@ jobs:
         working-directory: web
         run: npx vitest run
 
+  e2e:
+    name: end to end in Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Not in a container here: the runner already *is* Linux, and the
+      # container exists so a developer on a Mac gets the same answer CI does.
+      - name: End to end
+        run: cargo test --test e2e -p omt -- --test-threads=1
+
   ssh:
     name: ssh over a real remote
     runs-on: ubuntu-latest
