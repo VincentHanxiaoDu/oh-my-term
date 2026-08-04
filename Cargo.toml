@@ -9,6 +9,7 @@ members = [
     "crates/omt-tui",
     "crates/omt-server",
     "crates/omt",
+    "crates/omt-hook",
     "xtask",
 ]
 

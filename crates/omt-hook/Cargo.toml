@@ -1,0 +1,28 @@
+[package]
+name = "omt-hook"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "omt_hook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omt-hook"
+path = "src/main.rs"
+
+[dependencies]
+omt-types = { workspace = true }
+omt-proto = { workspace = true }
+serde_json = { workspace = true }
+
+# Deliberately no async runtime, no HTTP client, no tracing. This binary is
+# executed by an agent on every hook event, several per tool call, on a
+# single-digit-millisecond budget. Every dependency is startup cost paid by
+# somebody else's agent.
