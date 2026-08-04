@@ -258,3 +258,66 @@ fn a_viewer_cannot_invoke_an_operator_capability() {
         "a viewer opened a workspace"
     );
 }
+
+#[test]
+fn the_binary_serves_on_a_socket_a_client_can_reach() {
+    // The dispatch path existed before this; nothing bound a socket, so
+    // nothing outside the process could reach it. This is the difference
+    // between a design and a running service.
+    let dir = std::env::temp_dir().join(format!("omt-serve-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("tempdir");
+    let socket = dir.join("omt.sock");
+
+    let state = omt::state::State::default();
+    let served = state.clone();
+    let path = socket.clone();
+    std::thread::spawn(move || {
+        let _ = omt::serve::serve(&path, served);
+    });
+
+    // Wait for it to bind rather than sleeping a guess.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut stream = loop {
+        if let Ok(s) = omt_transport::connect(&socket) {
+            break s;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never started listening"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+
+    send(
+        &mut stream,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "integration".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(welcome) = recv(&mut stream) else {
+        panic!("expected a welcome");
+    };
+    assert!(welcome.capabilities.contains(&"session.list".to_owned()));
+
+    send(
+        &mut stream,
+        &ProtoMessage::Call(Call {
+            request: request(1),
+            capability: "workspace.open".to_owned(),
+            input: serde_json::json!({ "root": "/tmp/over-the-socket" }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut stream) else {
+        panic!("expected a result");
+    };
+    assert!(matches!(result.outcome, CallOutcome::Ok { .. }));
+
+    // And it landed in the instance this process holds.
+    assert_eq!(state.lock().expect("lock").workspaces().len(), 1);
+
+    drop(stream);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -27,6 +27,14 @@ fn main() -> Result<()> {
         // `omt` on its own does the thing the name promises.
         [] => omt::run::run_shell(None),
         ["run", program] => omt::run::run_shell(Some((*program).to_owned())),
+        ["serve"] => {
+            let path = omt::serve::default_socket_path();
+            println!("listening on {}", path.display());
+            omt::serve::serve(&path, omt::state::State::default())
+        }
+        ["serve", "--socket", path] => {
+            omt::serve::serve(std::path::Path::new(path), omt::state::State::default())
+        }
         other => bail!("unrecognised arguments: {other:?}"),
     }
 }
