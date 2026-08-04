@@ -1,0 +1,17 @@
+[package]
+name = "omt-pty"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PTY lifecycle on Unix: spawn, resize, signals, process inspection."
+
+[dependencies]
+omt-types = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true

@@ -8,6 +8,7 @@ members = [
     "crates/omt-proto",
     "crates/omt-transport",
     "crates/omt-term",
+    "crates/omt-pty",
     "crates/omt-tui",
     "crates/omt-server",
     "crates/omt",
@@ -31,6 +32,7 @@ omt-events = { path = "crates/omt-events" }
 omt-proto = { path = "crates/omt-proto" }
 omt-transport = { path = "crates/omt-transport" }
 omt-term = { path = "crates/omt-term" }
+omt-pty = { path = "crates/omt-pty" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -281,6 +281,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-pty"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omt-types",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-server"
 version = "0.1.0"
 dependencies = [
