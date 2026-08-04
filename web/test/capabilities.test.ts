@@ -40,3 +40,16 @@ describe('the handler list means what the parity gate thinks it means', () => {
     expect(handles('agent.interrupt')).toBe(false)
   })
 })
+
+describe('the generated catalog', () => {
+  it('is what the client implements handlers against', async () => {
+    // Generated from the binary rather than hand-copied, so the two cannot
+    // disagree about what exists. Drift here would not fail a build — it would
+    // make a call go out for something the server does not have.
+    const { CAPABILITIES } = await import('../src/generated/catalog.js')
+    const handled = handledCapabilities()
+    for (const name of CAPABILITIES) {
+      expect(handled).toContain(name)
+    }
+  })
+})
