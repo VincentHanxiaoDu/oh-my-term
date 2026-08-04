@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- viewport-fit=cover so the key bar can sit above the home indicator
+         rather than behind it; the safe-area insets below do the rest. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#101010" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <title>omt</title>
+    <style>
+      :root {
+        --bg: #101010;
+        --fg: #e0e0e0;
+        --dim: #808080;
+        --blocked: #ffb454;
+        --working: #59a5ff;
+        --idle: #4a4a4a;
+        --done: #6cc070;
+        color-scheme: dark light;
+      }
+      @media (prefers-color-scheme: light) {
+        :root { --bg: #fbfbfb; --fg: #1a1a1a; --dim: #6a6a6a; --idle: #cfcfcf; }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        /* Respect the notch and the home indicator on every edge. */
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+                 env(safe-area-inset-bottom) env(safe-area-inset-left);
+        -webkit-text-size-adjust: 100%;
+      }
+      #app { max-width: 720px; margin: 0 auto; padding: 12px; }
+      .terminal {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+        white-space: pre;
+        /* Wide output scrolls inside its own box rather than making the page
+           scroll sideways. */
+        overflow-x: auto;
+      }
+      .keybar {
+        position: fixed;
+        left: 0; right: 0;
+        bottom: env(safe-area-inset-bottom);
+        display: flex;
+        gap: 4px;
+        padding: 6px;
+        overflow-x: auto;
+        background: var(--bg);
+        border-top: 1px solid var(--idle);
+      }
+      .keybar button {
+        /* 44pt is Apple's minimum target; anything smaller is a mis-tap. */
+        min-width: 44px;
+        min-height: 44px;
+        font: inherit;
+        color: var(--fg);
+        background: transparent;
+        border: 1px solid var(--idle);
+        border-radius: 8px;
+      }
+      .cell { display: inline-block; width: 1.6em; text-align: center; }
+      .cell.blocked { color: var(--blocked); }
+      .cell.working { color: var(--working); }
+      .cell.idle { color: var(--dim); }
+      .cell.finished { color: var(--done); }
+      .noscript { padding: 24px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <noscript>
+      <p class="noscript">omt's client needs JavaScript to talk to your instance.</p>
+    </noscript>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
