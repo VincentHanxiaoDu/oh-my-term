@@ -1,0 +1,15 @@
+[package]
+name = "omt-input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Key decoding, keymap resolution, and encoding back to a pty."
+
+[dependencies]
+omt-types = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
