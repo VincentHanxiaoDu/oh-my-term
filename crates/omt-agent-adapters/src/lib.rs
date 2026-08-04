@@ -6,6 +6,7 @@
 //! frozen — one shaped only by Claude Code would fit exactly one agent, and
 //! nobody would find out until the second one was written.
 
+pub mod acp;
 pub mod adapter;
 pub mod agents;
 pub mod bounded;
@@ -13,6 +14,7 @@ pub mod detect;
 pub mod install;
 pub mod registry;
 
+pub use acp::{AcpError, Incoming, Message, Rpc, RpcError, initialize_params, parse};
 pub use adapter::{
     AcpSpawn, AdapterError, AgentAdapter, AttachmentClass, AttachmentReference, Detection,
     Fingerprint, Interrupt, SessionModeSet, SpawnCtx,

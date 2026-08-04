@@ -7,6 +7,10 @@
 //! containment is checked against the *canonical* path and not against the
 //! string the caller sent.
 
+pub mod git;
+
+pub use git::{Forge, GitError, GitStatus, forge, parse_remote, status};
+
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
