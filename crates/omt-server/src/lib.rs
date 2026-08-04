@@ -1,7 +1,13 @@
 //! The HTTP and WebSocket surface: generated routes over one dispatch path.
 //!
-//! A stub for now, carrying the route table the parity gate checks. Like the
-//! TUI stub, it exists early so the gate has something real to fail against.
+//! Every call takes one path through [`dispatch::handle`], whether it came
+//! from a phone, the CLI or the TUI's own palette. There is deliberately no
+//! faster local route: a second path is how "remote is equivalent to local"
+//! stops being true without anybody noticing.
+
+pub mod dispatch;
+
+pub use dispatch::{Peer, catalog_hash, handle};
 
 use omt_catalog::CapabilityRegistry;
 

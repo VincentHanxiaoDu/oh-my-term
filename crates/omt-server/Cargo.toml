@@ -13,3 +13,9 @@ workspace = true
 omt-types = { workspace = true }
 omt-catalog = { workspace = true }
 omt-proto = { workspace = true }
+omt-transport = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+omt-events = { workspace = true }

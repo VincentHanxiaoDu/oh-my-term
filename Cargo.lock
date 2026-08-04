@@ -412,6 +412,7 @@ dependencies = [
  "omt-server",
  "omt-session",
  "omt-term",
+ "omt-transport",
  "omt-tui",
  "omt-types",
  "schemars",
@@ -614,8 +615,12 @@ name = "omt-server"
 version = "0.1.0"
 dependencies = [
  "omt-catalog",
+ "omt-events",
  "omt-proto",
+ "omt-transport",
  "omt-types",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

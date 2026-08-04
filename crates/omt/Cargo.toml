@@ -22,6 +22,7 @@ omt-types = { workspace = true }
 omt-catalog = { workspace = true }
 omt-events = { workspace = true }
 omt-proto = { workspace = true }
+omt-transport = { workspace = true }
 omt-tui = { path = "../omt-tui" }
 omt-server = { path = "../omt-server" }
 omt-daemon = { workspace = true }
