@@ -1067,8 +1067,14 @@ matters.
 - **Consent per host, remembered.** Writing an executable into someone's
   `~/.local/bin` is a side effect and is prompted once, recorded in
   `[remote.hosts."box"] bootstrap_consent = true`. `--yes` for scripts;
-  `[remote] bootstrap = "assume-installed"` for locked-down hosts, where the
-  failure names the exact `uname` and the download URL.
+  `[remote] bootstrap = "assume-installed"` for locked-down hosts. When omt is
+  then *not* there, the session does not fail: it falls back to the pty-wrapper
+  rung of [09 §5.1](09-ssh-and-media.md#51-tier-overview)'s ladder, so the user
+  still gets a working terminal, and the diagnostic that would have been the
+  failure — the exact `uname` and the download URL — is shown as a notice
+  instead. Someone who typed `omt ssh box` wants to work on box; refusing to
+  give them a terminal because a media tier is unavailable would be the wrong
+  trade.
 - **Verification.** The uploaded artifact's BLAKE3 is checked on the remote by
   the freshly installed binary itself (`omt --print-self-hash`) against the
   local value before it is used. A truncated upload is caught immediately rather

@@ -108,9 +108,8 @@ transport or client.
 
 For every declared capability the build SHALL verify that a route and schema
 exist, that it is **reachable** in the TUI, that the web client has a handler,
-that it appears in the generated reference, and that it is reachable by name
-from the command palette — or that it carries an explicit, listed exemption for
-the surfaces it omits.
+and that it appears in the generated reference — or that it carries an explicit,
+listed exemption for the surfaces it omits.
 
 TUI reachability is satisfied by palette membership **or** by an explicit
 binding. It is deliberately not "a binding exists": the palette is the universal
@@ -122,13 +121,6 @@ system does not keep.
 - **WHEN** a capability is declared and any required surface is absent
 - **THEN** the parity check fails and names both the capability and the missing
   surface
-
-#### Scenario: The check runs in both directions
-
-- **WHEN** a surface binds a name that no capability declares
-- **THEN** the check fails
-- **AND** it fails for the same reason as the forward direction: a surface and
-  the catalog disagreeing
 
 #### Scenario: Administrative capabilities are not required on every surface
 

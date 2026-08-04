@@ -179,7 +179,7 @@ This is the concrete realization of artifact #3 in the
 
 ```ts
 // src/capabilities/registry.ts
-import type { CapabilityName, Input, Output, ExemptName } from "../generated/capabilities";
+import type { CapabilityName, CoreCapabilityName, Input, Output, ExemptName } from "../generated/capabilities";
 
 export interface HandlerCtx { instance: InstanceClient; ui: UiBus; }
 

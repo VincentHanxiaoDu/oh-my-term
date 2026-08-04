@@ -262,6 +262,13 @@ messages are `HookEvent` and `HookAck`, specified in §3.8.
 ssh -T <target> -- omt serve --stdio --proto 1
 ```
 
+This is the tier-0 rung. If the far side has no omt and none will be installed,
+`omt ssh` does not fail — it falls back to running `ssh` inside a local
+omt-managed PTY, which gives a working terminal without this transport
+([09 §5.1](09-ssh-and-media.md#51-tier-overview)). Everything below describes the
+tier-0 path; the fallback speaks no omt protocol at all, which is exactly why it
+is a different rung.
+
 and speaks the length-prefixed framing of §2.3 over the ssh subprocess's
 stdin/stdout. This gives, for free: existing SSH auth and host-key trust,
 jump hosts, agent forwarding, and corporate policy compliance. Concretely:
