@@ -376,6 +376,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-store"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-term"
 version = "0.1.0"
 dependencies = [
