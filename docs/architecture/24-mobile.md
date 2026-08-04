@@ -220,10 +220,11 @@ thing the user needs to be told.
 | Thread roster and grid ordering | ✅ `omt-agent`, `web/src/threads.ts` |
 | Answerability from `Deliverable` | ✅ |
 | Capability calls over WebSocket | ✅ |
-| Application shell, screens, key bar | ❌ |
-| Push | ❌ |
-| Hold-to-confirm | ❌ (the rule is decided; the widget is not written) |
-| Touch layer over xterm.js | ❌ (and it is more work than it sounds) |
+| Application shell, screens, key bar | ✅ `web/src/app.ts`, `main.ts` |
+| Push | ✅ `web/src/push.ts`, `public/sw.js` |
+| Hold-to-confirm | ✅ the rule in `touch.ts`, applied in `layOutCard` |
+| Touch layer over xterm.js | ⚠️ gestures and sizing decided and tested; the terminal screen still renders text, not a grid |
+| Native iOS/Android | ❌ scaffolded only — see `mobile/README.md` |
 
 ## 6.1 PWA or native
 

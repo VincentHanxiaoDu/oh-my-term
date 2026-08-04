@@ -88,6 +88,17 @@ jobs:
         working-directory: web
         run: npx vitest run
 
+      # The compiled client is committed, because `cargo install omt` has to
+      # produce a working web client without Node anywhere on the machine.
+      # Committed means it can go stale, so the build runs here and the diff
+      # is the failure — the alternative is a released binary serving last
+      # month's client with no sign that it happened.
+      - name: The committed client matches its source
+        working-directory: web
+        run: |
+          npm run build
+          git diff --exit-code -- public/app
+
   e2e:
     name: end to end in Linux
     runs-on: ubuntu-latest
