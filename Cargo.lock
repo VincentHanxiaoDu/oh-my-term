@@ -232,6 +232,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "omt-agent"
+version = "0.1.0"
+dependencies = [
+ "omt-agent-adapters",
+ "omt-events",
+ "omt-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "omt-agent-adapters"
 version = "0.1.0"
 dependencies = [
