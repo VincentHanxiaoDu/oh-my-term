@@ -24,6 +24,12 @@ omt-events = { workspace = true }
 omt-proto = { workspace = true }
 omt-tui = { path = "../omt-tui" }
 omt-server = { path = "../omt-server" }
+omt-daemon = { workspace = true }
+omt-session = { workspace = true }
+omt-pty = { workspace = true }
+omt-term = { workspace = true }
+omt-input = { workspace = true }
+crossterm = "0.29"
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }

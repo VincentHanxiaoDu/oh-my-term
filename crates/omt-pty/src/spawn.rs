@@ -349,6 +349,38 @@ impl Pty {
         Ok(s)
     }
 
+    /// Stop reads from blocking when there is nothing to read.
+    ///
+    /// Required by any caller that polls rather than dedicating a thread: a
+    /// blocking read on an idle session holds the whole loop, so the terminal
+    /// stops responding to the keyboard until the program happens to print
+    /// something. That is indistinguishable from a hang.
+    ///
+    /// # Errors
+    /// Fails if the descriptor's flags cannot be read or set.
+    pub fn set_nonblocking(&self, on: bool) -> Result<(), PtyError> {
+        let fd = self.master.as_raw_fd();
+        // SAFETY: `fd` is an open descriptor owned by self; F_GETFL takes no
+        // further arguments and reports through errno.
+        #[allow(unsafe_code, reason = "no safe wrapper for fcntl")]
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 {
+            return Err(PtyError::Io(io::Error::last_os_error()));
+        }
+        let updated = if on {
+            flags | libc::O_NONBLOCK
+        } else {
+            flags & !libc::O_NONBLOCK
+        };
+        // SAFETY: as above, setting the flags just read back.
+        #[allow(unsafe_code, reason = "no safe wrapper for fcntl")]
+        let rc = unsafe { libc::fcntl(fd, libc::F_SETFL, updated) };
+        if rc < 0 {
+            return Err(PtyError::Io(io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+
     /// A reader over the master end.
     #[must_use]
     pub fn reader(&self) -> PtyIo {
@@ -818,6 +850,47 @@ mod tests {
         })
         .expect_err("must refuse");
         assert!(matches!(err, PtyError::InteriorNul { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn a_nonblocking_read_returns_rather_than_waiting_for_output() {
+        // The property a polling loop depends on. A blocking read on an idle
+        // session holds the loop, and the terminal stops responding to the
+        // keyboard until the program happens to print — which is
+        // indistinguishable from a hang.
+        let pty = Pty::spawn(&sh("sleep 5")).expect("spawn");
+        pty.set_nonblocking(true).expect("nonblocking");
+
+        let started = Instant::now();
+        let mut r = pty.reader();
+        let mut buf = [0u8; 64];
+        let result = r.read(&mut buf);
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "the read blocked for {:?}",
+            started.elapsed()
+        );
+        match result {
+            Err(e) => assert_eq!(e.kind(), io::ErrorKind::WouldBlock, "{e:?}"),
+            Ok(n) => assert_eq!(n, 0, "an idle pty produced {n} bytes"),
+        }
+    }
+
+    #[test]
+    fn a_nonblocking_pty_still_delivers_what_the_program_wrote() {
+        let pty = Pty::spawn(&sh("echo present; sleep 5")).expect("spawn");
+        pty.set_nonblocking(true).expect("nonblocking");
+        let mut r = pty.reader();
+        let mut out = String::new();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && !out.contains("present") {
+            let mut buf = [0u8; 1024];
+            match r.read(&mut buf) {
+                Ok(n) if n > 0 => out.push_str(&String::from_utf8_lossy(&buf[..n])),
+                _ => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+        assert!(out.contains("present"), "{out:?}");
     }
 
     #[test]

@@ -5,3 +5,5 @@
 //! separately-maintained list would be checking the wrong thing.
 
 pub mod capabilities;
+
+pub mod run;

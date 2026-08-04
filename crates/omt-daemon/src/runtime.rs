@@ -86,6 +86,10 @@ impl SessionRuntime {
     ) -> Result<Self, RuntimeError> {
         let size = GridSize::new(config.size.cols, config.size.rows);
         let pty = Pty::spawn(config)?;
+        // A polling caller must never be held by a quiet session. `pump` is
+        // written to treat "nothing to read" as zero bytes, which only works if
+        // the read actually returns.
+        pty.set_nonblocking(true)?;
         let terminal = Terminal::new(TermConfig {
             size,
             scrollback,

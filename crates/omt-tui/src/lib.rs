@@ -1,8 +1,15 @@
 //! The native TUI: a client of the catalog, not a privileged path into it.
 //!
-//! A stub for now, carrying only the action table the parity gate checks. It
-//! exists this early on purpose — a gate with one of its four arms missing
-//! cannot fail, and a check that cannot fail proves nothing.
+//! It renders a grid, forwards keys, and reaches everything else through the
+//! catalog — the same path a phone takes. The action table below is what the
+//! parity gate checks; it exists so a gate with one of its arms missing cannot
+//! silently pass.
+
+pub mod app;
+pub mod render;
+
+pub use app::{Input, RawGuard, translate};
+pub use render::Screen;
 
 use omt_catalog::CapabilityRegistry;
 

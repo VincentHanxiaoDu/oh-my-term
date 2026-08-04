@@ -19,10 +19,14 @@ fn main() -> Result<()> {
             println!("{}", capabilities::dump()?);
             Ok(())
         }
-        [] | ["--version"] => {
+        ["--version"] => {
             println!("omt {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
+        // The default: run a shell here. Everything else is a subcommand, so
+        // `omt` on its own does the thing the name promises.
+        [] => omt::run::run_shell(None),
+        ["run", program] => omt::run::run_shell(Some((*program).to_owned())),
         other => bail!("unrecognised arguments: {other:?}"),
     }
 }
