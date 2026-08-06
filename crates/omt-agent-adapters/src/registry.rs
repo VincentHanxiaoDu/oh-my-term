@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use omt_types::AgentKind;
 
 use crate::adapter::AgentAdapter;
-use crate::agents::{ClaudeCode, GenericAcp, HeuristicFloor};
+use crate::agents::{ClaudeCode, Codex, Cursor, GenericAcp, HeuristicFloor};
 
 /// Every adapter available to an instance.
 ///
@@ -66,6 +66,8 @@ impl AdapterSet {
 pub fn builtin() -> AdapterSet {
     let mut set = AdapterSet::new();
     set.insert(Box::new(ClaudeCode));
+    set.insert(Box::new(Codex));
+    set.insert(Box::new(Cursor));
     for kind in GenericAcp::COVERS {
         set.insert(Box::new(GenericAcp::new(*kind)));
     }
@@ -120,8 +122,13 @@ mod tests {
     #[test]
     fn the_builtin_set_covers_every_agent_in_the_matrix() {
         let set = builtin();
+        // Every agent the architecture's matrix names. Listed here rather
+        // than derived, so adding a row to the docs and forgetting the adapter
+        // fails a test instead of shipping a gap.
         for kind in [
             AgentKind::ClaudeCode,
+            AgentKind::Codex,
+            AgentKind::Cursor,
             AgentKind::Opencode,
             AgentKind::GeminiCli,
             AgentKind::QwenCode,

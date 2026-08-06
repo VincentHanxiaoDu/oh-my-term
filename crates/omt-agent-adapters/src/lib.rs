@@ -19,7 +19,9 @@ pub use adapter::{
     AcpSpawn, AdapterError, AgentAdapter, AttachmentClass, AttachmentReference, Detection,
     Fingerprint, Interrupt, SessionModeSet, SpawnCtx,
 };
-pub use agents::{ClaudeCode, GenericAcp, HeuristicFloor, ScreenSignals, guess_activity};
+pub use agents::{
+    ClaudeCode, Codex, Cursor, GenericAcp, HeuristicFloor, ScreenSignals, guess_activity,
+};
 pub use bounded::{
     BoundedError, MAX_FILE_BYTES, MAX_NESTING_DEPTH, MAX_STRUCTURAL_TOKENS, check_structure,
     parse_line, read_bounded, read_json,
