@@ -1,0 +1,26 @@
+plugins {
+    id("com.android.application")
+    kotlin("android")
+}
+
+android {
+    namespace = "dev.ohmyterm.omt"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "dev.ohmyterm.omt"
+        // 26, because a foreground service holding a socket is the whole reason
+        // this app exists rather than the PWA, and the service APIs below that
+        // are different enough to be a second implementation.
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.1.0"
+    }
+
+    kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

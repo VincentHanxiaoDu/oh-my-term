@@ -11,3 +11,6 @@ tests/docker/keys/
 
 # Web client dependencies
 web/node_modules/
+
+# Swift build output for the mobile client library.
+mobile/ios/.build/

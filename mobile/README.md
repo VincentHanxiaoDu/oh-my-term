@@ -1,8 +1,11 @@
 # Native clients
 
-**Status: scaffold.** The directories here hold the decisions and the project
-skeletons. Neither app is built, shipped, or claimed to work — the web client
-is the one that does, and it is what you should use today.
+**Status: a client library each, and no app.** The Swift package compiles and
+its assertions run — `cd ios && swift run omt-client-check` — and the Kotlin
+equivalent is written with its own tests. What does not exist is either
+*application*: no UI, no socket lifecycle, no push registration, nothing built
+against a device. The web client is the one that works, and it is what you
+should use today.
 
 ## Why these exist at all
 
