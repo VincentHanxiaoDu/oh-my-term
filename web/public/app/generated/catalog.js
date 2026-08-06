@@ -47,6 +47,7 @@ export const CAPABILITIES = [
     'theme.get',
     'voice.append',
     'voice.clear',
+    'voice.providers',
     'workspace.list',
     'workspace.open',
 ];
@@ -93,6 +94,7 @@ export const CAPABILITY_INFO = {
     'theme.get': { title: "Read the theme", group: 'theme', kind: 'query', role: 'viewer', doc: "The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults." },
     'voice.append': { title: "Add dictated text", group: 'voice', kind: 'command', role: 'operator', doc: "Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending." },
     'voice.clear': { title: "Clear dictation", group: 'voice', kind: 'command', role: 'operator', doc: "Discard a session's dictation buffer. Idempotent." },
+    'voice.providers': { title: "List speech engines", group: 'voice', kind: 'query', role: 'viewer', doc: "Speech-to-text engines this instance can use, and whether each has a key. Presence only — a capability that returned a key would put it in the first log somebody captured." },
     'workspace.list': { title: "List workspaces", group: 'workspace', kind: 'query', role: 'viewer', doc: "Every workspace this instance has open, with its session count." },
     'workspace.open': { title: "Open a workspace", group: 'workspace', kind: 'command', role: 'operator', doc: "Open a workspace at a canonical path. Idempotent: the id is derived from the path." },
 };

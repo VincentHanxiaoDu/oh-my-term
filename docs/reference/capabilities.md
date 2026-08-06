@@ -50,7 +50,8 @@ vanishing.
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
 | `voice.append` | command | operator | Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending. |
 | `voice.clear` | command | operator | Discard a session's dictation buffer. Idempotent. |
+| `voice.providers` | query | viewer | Speech-to-text engines this instance can use, and whether each has a key. Presence only — a capability that returned a key would put it in the first log somebody captured. |
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-43 capabilities.
+44 capabilities.

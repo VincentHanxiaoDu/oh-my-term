@@ -832,6 +832,24 @@
     },
     {
       "aliases": [],
+      "doc": "Speech-to-text engines this instance can use, and whether each has a key. Presence only — a capability that returned a key would put it in the first log somebody captured.",
+      "effects": [],
+      "group": "voice",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "voice.providers",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/voice/providers",
+      "since": "0.1.0",
+      "title": "List speech engines",
+      "verb": "providers"
+    },
+    {
+      "aliases": [],
       "doc": "Every workspace this instance has open, with its session count.",
       "effects": [],
       "group": "workspace",

@@ -40,6 +40,7 @@
   "theme.get",
   "voice.append",
   "voice.clear",
+  "voice.providers",
   "workspace.list",
   "workspace.open"
 ]

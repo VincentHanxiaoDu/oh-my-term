@@ -33,6 +33,8 @@ pub struct State {
     voice: Arc<Mutex<std::collections::BTreeMap<String, omt_stt::TranscriptBuffer>>>,
     /// Credentials minted for plugins.
     credentials: Arc<Mutex<omt_auth::CredentialStore>>,
+    /// Speech engines this instance can use.
+    stt: Arc<Mutex<omt_stt::ProviderSet>>,
 }
 
 /// Where omt keeps its configuration.
@@ -64,6 +66,9 @@ impl State {
             jobs: Arc::new(Mutex::new(Vec::new())),
             voice: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             credentials: Arc::new(Mutex::new(omt_auth::CredentialStore::new())),
+            // Empty on a fresh install, deliberately. omt ships no key and
+            // makes no network call until the user says where their audio goes.
+            stt: Arc::new(Mutex::new(omt_stt::ProviderSet::new())),
             config: Arc::new(Mutex::new(None)),
         }
     }
@@ -182,5 +187,17 @@ impl State {
         Ok(store
             .mint(role, &format!("plugin:{plugin}"), None, None)
             .token)
+    }
+}
+
+impl State {
+    /// The speech engines registered here.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn stt_providers(&self) -> Result<MutexGuard<'_, omt_stt::ProviderSet>, CapabilityError> {
+        self.stt
+            .lock()
+            .map_err(|_| CapabilityError::internal("the speech provider lock was poisoned"))
     }
 }

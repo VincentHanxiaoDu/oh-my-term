@@ -318,3 +318,149 @@ mod tests {
         assert!(!Unconfigured.is_available());
     }
 }
+
+/// A speech-to-text engine omt can drive.
+///
+/// A trait rather than a match on a provider name, because the interesting
+/// providers are the ones omt has not heard of: a local whisper.cpp, a
+/// company's own endpoint, something that does not exist yet. Adding one must
+/// not mean editing this crate.
+///
+/// omt itself never ships a key and never calls a provider without one. That is
+/// the whole of BYOK: the user's audio goes where the user said, paid for by
+/// the user's own account, and omt is not in the middle of it.
+pub trait SttProvider: Send + Sync {
+    /// Its id, which is what configuration names.
+    fn id(&self) -> &str;
+
+    /// What it is called in a settings screen.
+    fn label(&self) -> &str;
+
+    /// Whether it needs a credential.
+    ///
+    /// A local engine does not, and a settings screen that demanded a key for
+    /// whisper.cpp would make the private option look like the hard one.
+    fn needs_key(&self) -> bool {
+        true
+    }
+
+    /// Which audio it accepts.
+    fn accepts(&self) -> AudioFormat;
+
+    /// Turn a chunk of audio into a transcript.
+    ///
+    /// # Errors
+    /// Whatever the engine could not do — a missing key, a refused request, an
+    /// audio format it does not take.
+    fn transcribe(&self, audio: &[u8]) -> Result<Transcript, SttError>;
+}
+
+/// Every provider an instance knows.
+///
+/// A registry rather than an enum, for the same reason the adapter set is one:
+/// the extension point is the registry, and the names are only labels.
+#[derive(Default)]
+pub struct ProviderSet {
+    providers: Vec<Box<dyn SttProvider>>,
+}
+
+impl ProviderSet {
+    /// An empty set.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a provider, replacing any with the same id.
+    pub fn insert(&mut self, provider: Box<dyn SttProvider>) {
+        self.providers.retain(|p| p.id() != provider.id());
+        self.providers.push(provider);
+    }
+
+    /// One provider by id.
+    #[must_use]
+    pub fn get(&self, id: &str) -> Option<&dyn SttProvider> {
+        self.providers
+            .iter()
+            .find(|p| p.id() == id)
+            .map(std::convert::AsRef::as_ref)
+    }
+
+    /// Every provider.
+    #[must_use]
+    pub fn all(&self) -> Vec<&dyn SttProvider> {
+        self.providers
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect()
+    }
+
+    /// Whether there are none.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.providers.is_empty()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
+mod provider_tests {
+    use super::*;
+
+    /// A provider written using only the public surface. If this stops
+    /// compiling, the extension point has closed.
+    struct Local;
+
+    impl SttProvider for Local {
+        fn id(&self) -> &str {
+            "whisper-local"
+        }
+        fn label(&self) -> &str {
+            "whisper.cpp"
+        }
+        fn needs_key(&self) -> bool {
+            false
+        }
+        fn accepts(&self) -> AudioFormat {
+            AudioFormat::STANDARD
+        }
+        fn transcribe(&self, _audio: &[u8]) -> Result<Transcript, SttError> {
+            Ok(Transcript {
+                text: "hello".to_owned(),
+                is_final: true,
+                confidence: None,
+            })
+        }
+    }
+
+    #[test]
+    fn a_provider_can_be_written_from_outside_this_crate() {
+        let mut set = ProviderSet::new();
+        set.insert(Box::new(Local));
+        let p = set.get("whisper-local").expect("registered");
+        assert_eq!(p.label(), "whisper.cpp");
+    }
+
+    #[test]
+    fn a_local_engine_is_not_made_to_pretend_it_needs_a_key() {
+        // A settings screen that demanded one for whisper.cpp would make the
+        // private option look like the hard one.
+        assert!(!Local.needs_key());
+    }
+
+    #[test]
+    fn a_second_provider_with_the_same_id_replaces_the_first() {
+        // Overriding a built-in with a better one must not need a fork.
+        let mut set = ProviderSet::new();
+        set.insert(Box::new(Local));
+        set.insert(Box::new(Local));
+        assert_eq!(set.all().len(), 1);
+    }
+
+    #[test]
+    fn an_instance_with_no_providers_says_so_rather_than_pretending() {
+        // Which is omt's shipped state: no key, no provider, no audio leaving
+        // the machine until the user says where it goes.
+        assert!(ProviderSet::new().is_empty());
+    }
+}

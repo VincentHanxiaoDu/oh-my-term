@@ -243,6 +243,8 @@ export const HANDLERS = {
 
   'job.list': (request: RequestId) => call(request, 'job.list', {}),
 
+  'voice.providers': (request: RequestId) => call(request, 'voice.providers', {}),
+
   'voice.append': (request: RequestId, session: string, text: string, finalChunk = false) =>
     call(request, 'voice.append', { session, text, final_chunk: finalChunk }),
 

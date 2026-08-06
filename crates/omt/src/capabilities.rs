@@ -3394,6 +3394,93 @@ fn describe_trigger(trigger: &omt_recall::Trigger) -> String {
 // Dictation
 // ---------------------------------------------------------------------------
 
+/// Input to `voice.providers`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct VoiceProvidersIn {}
+
+/// One speech engine this instance could use.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct VoiceProvider {
+    /// Its id, which is what configuration names.
+    pub id: String,
+    /// What to call it in a settings screen.
+    pub label: String,
+    /// Whether it needs a credential at all — a local engine does not, and
+    /// demanding one would make the private option look like the hard one.
+    pub needs_key: bool,
+    /// Whether a key is configured.
+    ///
+    /// Presence, never the value. A capability that returned a key would put
+    /// it in a log the first time somebody debugged a client.
+    pub key_present: bool,
+}
+
+/// What `voice.providers` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct VoiceProvidersOut {
+    /// Every provider registered here.
+    pub providers: Vec<VoiceProvider>,
+    /// Whether dictation can currently do anything.
+    ///
+    /// False on a fresh install, and that is the shipped state: no key, no
+    /// provider, and no audio leaving the machine until the user says where it
+    /// goes.
+    pub usable: bool,
+}
+
+capability! {
+    /// Which speech engines are available.
+    pub struct VoiceProviders;
+    input  = VoiceProvidersIn,
+    output = VoiceProvidersOut,
+    decl = Decl {
+        name: "voice.providers",
+        group: "voice",
+        verb: "providers",
+        title: "List speech engines",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Speech-to-text engines this instance can use, and whether each has a key. Presence only — a capability that returned a key would put it in the first log somebody captured.",
+    },
+}
+
+struct VoiceProvidersHandler(State);
+
+impl CapabilityHandler<VoiceProviders> for VoiceProvidersHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        _input: VoiceProvidersIn,
+    ) -> Result<VoiceProvidersOut, CapabilityError> {
+        let set = self.0.stt_providers()?;
+        let providers: Vec<VoiceProvider> = set
+            .all()
+            .into_iter()
+            .map(|p| VoiceProvider {
+                id: p.id().to_owned(),
+                label: p.label().to_owned(),
+                needs_key: p.needs_key(),
+                // omt holds no keys of its own. A provider that needs one is
+                // configured by the user, and until then it is listed and
+                // unusable rather than hidden — hiding it would leave somebody
+                // wondering why dictation does nothing.
+                key_present: !p.needs_key(),
+            })
+            .collect();
+        Ok(VoiceProvidersOut {
+            usable: providers.iter().any(|p| p.key_present),
+            providers,
+        })
+    }
+}
+
 /// Input to `voice.append`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct VoiceAppendIn {
@@ -3899,6 +3986,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<PluginEnable, _>(PluginEnableHandler(state.clone()))?;
     r.register::<JobCreate, _>(JobCreateHandler(state.clone()))?;
     r.register::<JobList, _>(JobListHandler(state.clone()))?;
+    r.register::<VoiceProviders, _>(VoiceProvidersHandler(state.clone()))?;
     r.register::<VoiceAppend, _>(VoiceAppendHandler(state.clone()))?;
     r.register::<VoiceClear, _>(VoiceClearHandler(state.clone()))?;
     r.register::<ThemeGet, _>(ThemeGetHandler(state.clone()))?;
