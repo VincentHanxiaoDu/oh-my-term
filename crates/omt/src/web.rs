@@ -70,10 +70,14 @@ const PUMP_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
 
 /// Read every session's pty, forever.
 ///
+/// Public because `omt serve` needs it too: a session in a daemon nobody is
+/// watching still has to advance, or its pty buffer fills and the program on
+/// the far end blocks.
+///
 /// The local TUI does this inside its render loop, which is why a terminal
 /// session works and — until this existed — a browser one did not. Serving is
 /// not enough: somebody has to move the bytes.
-fn spawn_pump(state: State) {
+pub fn spawn_pump(state: State) {
     std::thread::spawn(move || {
         loop {
             // The lock is taken and dropped inside each tick, never held across

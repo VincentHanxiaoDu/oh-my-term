@@ -6,6 +6,7 @@
 
 pub mod capabilities;
 
+pub mod attach;
 pub mod run;
 pub mod scheduler;
 

@@ -29,6 +29,7 @@ omt-auth = { workspace = true }
 omt-daemon = { workspace = true }
 omt-session = { workspace = true }
 omt-workspace-fs = { workspace = true }
+libc = "0.2"
 omt-media = { workspace = true }
 omt-store = { workspace = true }
 omt-stt = { workspace = true }

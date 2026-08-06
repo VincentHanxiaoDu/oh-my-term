@@ -37,6 +37,19 @@ pub fn default_socket_path() -> PathBuf {
 /// Fails if the socket cannot be created. Once listening it does not return:
 /// an individual bad accept is skipped rather than ending the server.
 pub fn serve(path: &Path, state: State) -> Result<()> {
+    // Sessions in a daemon nobody is looking at still have to advance: a pty
+    // whose output is never read fills its buffer and the program blocks. This
+    // is the same pump `omt web` runs, and for the same reason.
+    crate::web::spawn_pump(state.clone());
+    crate::scheduler::spawn(state.clone());
+
+    // A socket left behind by a daemon that died is a file that exists and
+    // refuses every connection. Removing it here means a crash does not
+    // require a manual cleanup before omt will start again.
+    if !crate::attach::daemon_is_running(path) {
+        let _ = std::fs::remove_file(path);
+    }
+
     let listener = omt_transport::SocketListener::bind(path)
         .with_context(|| format!("binding {}", path.display()))?;
 

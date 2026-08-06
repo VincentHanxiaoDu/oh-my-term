@@ -13,6 +13,8 @@ omt                    # run a shell here
 omt run zsh            # run something specific
 omt serve              # listen on a Unix socket
 omt web                # listen for browsers, prints a token once
+omt serve              # a daemon whose sessions outlive every terminal
+omt attach             # attach a terminal to it; Ctrl-A d leaves it running
 omt ssh my-dev-box     # attach to an omt on another machine
 ```
 

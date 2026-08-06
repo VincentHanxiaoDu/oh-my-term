@@ -36,8 +36,15 @@ fn main() -> Result<()> {
                 key: std::path::PathBuf::from(key),
             }),
         ),
+        ["attach"] => omt::attach::run(None, None),
+        ["attach", "--socket", path] => {
+            omt::attach::run(Some(std::path::Path::new(path)), None)
+        }
         ["serve"] => {
-            let path = omt::serve::default_socket_path();
+            // The stable per-user path, so a terminal can find this daemon.
+            // The old default had the process id in it, which meant nothing
+            // could ever attach to a running one.
+            let path = omt::attach::daemon_socket_path();
             println!("listening on {}", path.display());
             omt::serve::serve(&path, omt::state::State::default())
         }
