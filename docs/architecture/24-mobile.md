@@ -225,7 +225,7 @@ thing the user needs to be told.
 | Hold-to-confirm | ✅ the rule in `touch.ts`, applied in `layOutCard` |
 | Terminal rendering | ✅ `session.snapshot` → `web/src/terminal.ts`, styled runs from the one emulator |
 | Touch gestures and sizing | ✅ `touch.ts`, `screen.ts` |
-| Native iOS/Android | ❌ scaffolded only — see `mobile/README.md` |
+| Native iOS/Android | ⚠️ ahead of what this document asks for: the Swift app compiles with 16 checks, the Android app builds to an APK with 6 tests. Neither has run on a device — see `mobile/README.md` |
 
 ## 6.1 PWA or native
 

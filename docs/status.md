@@ -89,10 +89,23 @@ build here, and listing one as missing was inventing a requirement.
 
 ## Not built
 
-| | Why it is not there |
-|---|---|
-| An iOS build against a simulator or device | Needs full Xcode. This machine has only the Command Line Tools, so there is no iOS SDK and no `simctl` to run one on. Everything else is here: the app compiles, 16 checks drive it, and the icon is in the asset catalog. |
+Nothing. Every capability the architecture documents is implemented, tested,
+and reachable from every surface it names.
 
-Everything else the architecture describes is implemented and tested — including
-the Android app, which now builds: `gradle test` runs 6 tests and
-`gradle assembleDebug` produces an 8.3 MB APK.
+That sentence is only worth anything with the corrections below attached, and
+the last of them is the reason this section is empty:
+
+**A native iOS build was never a documented feature either.**
+[24-mobile §6.1](architecture/24-mobile.md) is explicit that the mobile client
+*is* the web client, and that Live Activities are "a reason to add a native app
+eventually, not a reason to start with one." What exists — a Swift app that
+compiles with 16 checks, and an Android app that builds to an APK with 6 tests
+— is ahead of what the documentation asks for, not behind it. Listing "no
+simulator build" as a gap was the fourth time in this work that a requirement
+was invented and then failed against.
+
+What that leaves genuinely undone is release work, and it is not a feature:
+nobody has run the iOS app on a device (that needs full Xcode; this machine has
+only the Command Line Tools), and neither app has been signed or submitted.
+Those are decisions about shipping, which are yours rather than the
+architecture's.
