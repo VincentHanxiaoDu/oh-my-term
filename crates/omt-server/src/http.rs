@@ -253,12 +253,72 @@ async fn serve_socket(mut socket: WebSocket, state: HttpState, role: Role) {
 /// # Errors
 /// Fails if the address cannot be bound or the runtime cannot be built.
 pub fn run(bind: &str, state: HttpState) -> std::io::Result<()> {
+    run_with_tls(bind, state, None)
+}
+
+/// A certificate and its key.
+#[derive(Debug, Clone)]
+pub struct TlsFiles {
+    /// PEM certificate chain.
+    pub cert: std::path::PathBuf,
+    /// PEM private key.
+    pub key: std::path::PathBuf,
+}
+
+impl TlsFiles {
+    /// Check both files before a listener is built.
+    ///
+    /// Checked here rather than left to the TLS layer because the failure this
+    /// prevents is the confusing one: a server that starts, binds the port, and
+    /// then refuses every connection with a handshake error the browser reports
+    /// as an unrelated network failure. Refusing to start says which file.
+    ///
+    /// # Errors
+    /// Fails if either file cannot be read.
+    pub fn check(&self) -> std::io::Result<()> {
+        for (what, path) in [("certificate", &self.cert), ("key", &self.key)] {
+            std::fs::File::open(path).map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!("the TLS {what} at {} could not be read: {e}", path.display()),
+                )
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// Serve, with TLS when a certificate is given.
+///
+/// # Errors
+/// Fails if the address cannot be bound or the certificate cannot be loaded.
+pub fn run_with_tls(
+    bind: &str,
+    state: HttpState,
+    tls: Option<TlsFiles>,
+) -> std::io::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
     runtime.block_on(async move {
-        let listener = tokio::net::TcpListener::bind(bind).await?;
-        axum::serve(listener, router(state)).await
+        match tls {
+            Some(files) => {
+                files.check()?;
+                let config =
+                    axum_server::tls_rustls::RustlsConfig::from_pem_file(&files.cert, &files.key)
+                        .await?;
+                let addr: std::net::SocketAddr = bind
+                    .parse()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{bind} is not an address: {e}")))?;
+                axum_server::bind_rustls(addr, config)
+                    .serve(router(state).into_make_service())
+                    .await
+            }
+            None => {
+                let listener = tokio::net::TcpListener::bind(bind).await?;
+                axum::serve(listener, router(state)).await
+            }
+        }
     })
 }
 
@@ -343,6 +403,37 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert("x-token", "omt_c_something".parse().expect("header"));
         assert_eq!(bearer(&h), None);
+    }
+
+    #[test]
+    fn a_missing_certificate_is_refused_before_the_port_is_bound() {
+        // The failure this prevents is the confusing one: a server that starts,
+        // binds, and then refuses every connection with a handshake error the
+        // browser reports as an unrelated network failure.
+        let files = TlsFiles {
+            cert: std::path::PathBuf::from("/definitely/not/here.pem"),
+            key: std::path::PathBuf::from("/definitely/not/here.key"),
+        };
+        let err = files.check().expect_err("a missing certificate was accepted");
+        assert!(
+            err.to_string().contains("certificate"),
+            "the error does not say which file: {err}"
+        );
+    }
+
+    #[test]
+    fn a_missing_key_names_the_key_and_not_the_certificate() {
+        // Naming the wrong file sends somebody to check something that is fine.
+        let dir = std::env::temp_dir().join("omt-tls-test");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let cert = dir.join("cert.pem");
+        std::fs::write(&cert, b"not a real certificate").expect("write");
+        let files = TlsFiles {
+            cert,
+            key: dir.join("absent.key"),
+        };
+        let err = files.check().expect_err("a missing key was accepted");
+        assert!(err.to_string().contains("key"), "{err}");
     }
 
     #[test]

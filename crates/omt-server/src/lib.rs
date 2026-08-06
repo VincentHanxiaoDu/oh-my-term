@@ -9,7 +9,7 @@ pub mod dispatch;
 pub mod http;
 
 pub use dispatch::{Peer, catalog_hash, handle};
-pub use http::{DEFAULT_BIND, HttpState, bearer, router};
+pub use http::{DEFAULT_BIND, HttpState, TlsFiles, bearer, router, run_with_tls};
 
 use omt_catalog::CapabilityRegistry;
 

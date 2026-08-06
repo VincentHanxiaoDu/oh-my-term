@@ -29,6 +29,13 @@ fn main() -> Result<()> {
         ["run", program] => omt::run::run_shell(Some((*program).to_owned())),
         ["web"] => omt::web::run(omt_server::DEFAULT_BIND),
         ["web", "--bind", addr] => omt::web::run(addr),
+        ["web", "--bind", addr, "--tls-cert", cert, "--tls-key", key] => omt::web::run_with_tls(
+            addr,
+            Some(omt_server::TlsFiles {
+                cert: std::path::PathBuf::from(cert),
+                key: std::path::PathBuf::from(key),
+            }),
+        ),
         ["serve"] => {
             let path = omt::serve::default_socket_path();
             println!("listening on {}", path.display());

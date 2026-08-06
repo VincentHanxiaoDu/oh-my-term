@@ -43,7 +43,7 @@ Working, and honest about what is not:
 - ✅ Detects agents, tracks state, tracks subagents, mirrors interactions
 - ✅ Remote over a Unix socket, over ssh, and over HTTP/WebSocket
 - ✅ Worktree fan-out, scheduled runs, git status and diff, file transfer
-- ⚠️ No TLS — `omt web` binds loopback; use `omt ssh` or your own reverse proxy
+- ✅ TLS: `omt web --bind HOST:PORT --tls-cert C --tls-key K` (loopback by default)
 - ⚠️ Hook installation reformats JSON configs (content is preserved exactly)
 - ✅ Panes: `Ctrl-A s` splits, `Ctrl-A o` cycles, `Ctrl-A x` closes
 

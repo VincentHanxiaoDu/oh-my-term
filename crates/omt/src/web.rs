@@ -16,6 +16,14 @@ use crate::state::State;
 /// # Errors
 /// Fails if the address cannot be bound.
 pub fn run(bind: &str) -> Result<()> {
+    run_with_tls(bind, None)
+}
+
+/// Start the server, with TLS when a certificate is given.
+///
+/// # Errors
+/// Fails if the address cannot be bound or the certificate cannot be read.
+pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()> {
     let state = State::default();
     // Started before the server, because a session created by the first request
     // must produce output. Without this, a browser can open a shell, type into
@@ -37,11 +45,19 @@ pub fn run(bind: &str) -> Result<()> {
     let mut credentials = CredentialStore::new();
     let minted = credentials.mint(Role::Operator, "first run", None, None);
 
-    println!("omt web on http://{bind}");
+    let scheme = if tls.is_some() { "https" } else { "http" };
+    println!("omt web on {scheme}://{bind}");
     println!("token: {}", minted.token);
     println!("(shown once — it cannot be recovered)");
 
-    omt_server::http::run(bind, HttpState::new(registry, credentials))
+    // Said out loud when it is missing, because the whole point of the warning
+    // is that a token crossing a network in clear text is a token somebody
+    // else now has.
+    if tls.is_none() && !is_loopback(bind) {
+        println!("warning: no TLS on a non-loopback address — anyone on this network can read the token");
+    }
+
+    omt_server::http::run_with_tls(bind, HttpState::new(registry, credentials), tls)
         .with_context(|| format!("serving on {bind}"))
 }
 
@@ -75,4 +91,37 @@ fn spawn_pump(state: State) {
             std::thread::sleep(PUMP_INTERVAL);
         }
     });
+}
+
+/// Whether an address only accepts connections from this machine.
+///
+/// Textual rather than resolved: this decides whether to print a warning, and a
+/// warning that needs DNS to appear is one that does not appear when it matters.
+#[must_use]
+pub fn is_loopback(bind: &str) -> bool {
+    let host = bind.rsplit_once(':').map_or(bind, |(h, _)| h);
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    host == "127.0.0.1" || host == "localhost" || host == "::1" || host.starts_with("127.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loopback_addresses_are_recognised_in_every_spelling() {
+        for bind in ["127.0.0.1:7777", "localhost:7777", "[::1]:7777", "127.1.2.3:80"] {
+            assert!(is_loopback(bind), "{bind} was treated as public");
+        }
+    }
+
+    #[test]
+    fn a_public_address_is_not_mistaken_for_loopback() {
+        // Getting this wrong the other way is the dangerous direction: the
+        // warning that a token is crossing a network in clear text would not
+        // be printed.
+        for bind in ["0.0.0.0:7777", "192.168.1.10:7777", "box.local:7777"] {
+            assert!(!is_loopback(bind), "{bind} was treated as loopback");
+        }
+    }
 }

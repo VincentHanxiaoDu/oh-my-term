@@ -20,6 +20,7 @@ omt-auth = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "io-util"] }
 serde = { workspace = true }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 
 [dev-dependencies]
 omt-events = { workspace = true }
