@@ -56,6 +56,8 @@ export const HANDLERS = {
         cols,
         rows,
     }),
+    'theme.get': (request) => call(request, 'theme.get', {}),
+    'open.recognize': (request, line) => call(request, 'open.recognize', { line }),
     'fs.read': (request, workspace, path, chunk = 0) => call(request, 'fs.read', { workspace, path, chunk }),
     'fs.write': (request, workspace, path, data, chunk = 0, chunks = 1) => call(request, 'fs.write', { workspace, path, data, chunk, chunks }),
     'interaction.list': (request, session) => call(request, 'interaction.list', session === undefined ? {} : { session }),

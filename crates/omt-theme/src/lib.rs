@@ -132,6 +132,49 @@ pub struct Theme {
     pub palette: Palette,
 }
 
+impl Theme {
+    /// The theme omt ships.
+    ///
+    /// One built in, rather than requiring an import before anything has
+    /// colours: a terminal whose first run depends on the user finding a theme
+    /// file is one that looks broken until they do. These are the same values
+    /// the web client falls back to, so a session looks the same in a browser
+    /// as it does locally.
+    #[must_use]
+    pub fn builtin_dark() -> Self {
+        Self {
+            name: "omt dark".to_owned(),
+            appearance: Appearance::Dark,
+            foreground: Rgb(0xe0, 0xe0, 0xe0),
+            background: Rgb(0x10, 0x10, 0x10),
+            cursor: Rgb(0xff, 0xb4, 0x54),
+            selection: Rgb(0x33, 0x3a, 0x45),
+            palette: Palette {
+                normal: [
+                    Rgb(0x10, 0x10, 0x10),
+                    Rgb(0xe0, 0x52, 0x52),
+                    Rgb(0x6c, 0xc0, 0x70),
+                    Rgb(0xd7, 0xba, 0x7d),
+                    Rgb(0x59, 0xa5, 0xff),
+                    Rgb(0xc5, 0x86, 0xc0),
+                    Rgb(0x4e, 0xc9, 0xb0),
+                    Rgb(0xd0, 0xd0, 0xd0),
+                ],
+                bright: [
+                    Rgb(0x6a, 0x6a, 0x6a),
+                    Rgb(0xff, 0x7b, 0x72),
+                    Rgb(0x8a, 0xde, 0x94),
+                    Rgb(0xff, 0xd4, 0x79),
+                    Rgb(0x8a, 0xb4, 0xff),
+                    Rgb(0xdd, 0xa0, 0xdd),
+                    Rgb(0x7f, 0xdb, 0xca),
+                    Rgb(0xff, 0xff, 0xff),
+                ],
+            },
+        }
+    }
+}
+
 /// Whether a theme is light or dark.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -241,6 +284,21 @@ impl Default for FontSettings {
     reason = "in a test, expect() is the assertion"
 )]
 mod tests {
+    #[test]
+    fn the_builtin_theme_is_readable() {
+        // The theme omt ships must pass omt's own contrast rule. Shipping one
+        // that fails the check the importer applies to everyone else would be
+        // the clearest possible statement that the check does not matter.
+        let theme = Theme::builtin_dark();
+        assert!(theme.is_readable(), "{:?}", theme.warnings());
+    }
+
+    #[test]
+    fn the_builtin_theme_says_what_it_is() {
+        let theme = Theme::builtin_dark();
+        assert!(theme.appearance_matches_background());
+    }
+
     use super::*;
 
     fn theme(fg: &str, bg: &str) -> Theme {

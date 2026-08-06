@@ -30,6 +30,8 @@ omt-daemon = { workspace = true }
 omt-session = { workspace = true }
 omt-workspace-fs = { workspace = true }
 omt-media = { workspace = true }
+omt-open = { workspace = true }
+omt-theme = { workspace = true }
 omt-config = { workspace = true }
 omt-pty = { workspace = true }
 omt-term = { workspace = true }
@@ -42,12 +44,11 @@ linkme = { workspace = true }
 anyhow = { workspace = true }
 
 [dev-dependencies]
+omt-plugin-host = { workspace = true }
 blake3 = { workspace = true }
 serde_json = { workspace = true }
 omt-workspace-fs = { workspace = true }
 omt-config = { workspace = true }
-omt-plugin-host = { workspace = true }
-omt-theme = { workspace = true }
 omt-session = { workspace = true }
 omt-daemon = { workspace = true }
 omt-agent = { workspace = true }

@@ -13,6 +13,7 @@
   "interaction.list",
   "interaction.respond",
   "keys.cheatsheet",
+  "open.recognize",
   "session.acquire",
   "session.close",
   "session.create",
@@ -22,6 +23,7 @@
   "session.resize",
   "session.snapshot",
   "session.write",
+  "theme.get",
   "workspace.list",
   "workspace.open"
 ]

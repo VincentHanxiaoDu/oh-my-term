@@ -20,6 +20,7 @@ export const CAPABILITIES = [
     'interaction.list',
     'interaction.respond',
     'keys.cheatsheet',
+    'open.recognize',
     'session.acquire',
     'session.close',
     'session.create',
@@ -29,6 +30,7 @@ export const CAPABILITIES = [
     'session.resize',
     'session.snapshot',
     'session.write',
+    'theme.get',
     'workspace.list',
     'workspace.open',
 ];
@@ -48,6 +50,7 @@ export const CAPABILITY_INFO = {
     'interaction.list': { title: "List open questions", group: 'interaction', kind: 'query', role: 'viewer', doc: "Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot." },
     'interaction.respond': { title: "Answer a question", group: 'interaction', kind: 'command', role: 'operator', doc: "Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state." },
     'keys.cheatsheet': { title: "Keyboard reference", group: 'keys', kind: 'query', role: 'viewer', doc: "Every binding and every reserved key, generated from the keymap in force so it cannot go stale." },
+    'open.recognize': { title: "Find links and paths", group: 'open', kind: 'query', role: 'viewer', doc: "Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern." },
     'session.acquire': { title: "Take the writer token", group: 'session', kind: 'command', role: 'operator', doc: "Take the writer token for a session, returning the epoch every write is checked against." },
     'session.close': { title: "Close a session", group: 'session', kind: 'command', role: 'operator', doc: "End a session and stop the process on it. Idempotent." },
     'session.create': { title: "Start a session", group: 'session', kind: 'command', role: 'operator', doc: "Start a session in a workspace, running a program on a pty. Deduplicated by intent id, so a reconnect retry does not start a second process." },
@@ -57,6 +60,7 @@ export const CAPABILITY_INFO = {
     'session.resize': { title: "Resize a session", group: 'session', kind: 'command', role: 'operator', doc: "Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with." },
     'session.snapshot': { title: "Snapshot a session", group: 'session', kind: 'query', role: 'viewer', doc: "The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one." },
     'session.write': { title: "Type into a session", group: 'session', kind: 'command', role: 'operator', doc: "Write input to a session, gated on the writer token's epoch." },
+    'theme.get': { title: "Read the theme", group: 'theme', kind: 'query', role: 'viewer', doc: "The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults." },
     'workspace.list': { title: "List workspaces", group: 'workspace', kind: 'query', role: 'viewer', doc: "Every workspace this instance has open, with its session count." },
     'workspace.open': { title: "Open a workspace", group: 'workspace', kind: 'command', role: 'operator', doc: "Open a workspace at a canonical path. Idempotent: the id is derived from the path." },
 };

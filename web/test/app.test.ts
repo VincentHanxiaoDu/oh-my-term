@@ -6,12 +6,13 @@ import {
   orderRoster,
   renderSessionRow,
   rosterHeader,
+  applyTheme,
   changed,
   isCoherent,
   styleOf,
   widthOf,
 } from '../src/index.js'
-import type { Snapshot, StyledRun } from '../src/index.js'
+import type { Snapshot, StyledRun, Theme } from '../src/index.js'
 import type { Interaction, InteractionCard } from '../src/index.js'
 
 describe('the roster', () => {
@@ -234,5 +235,48 @@ describe('what a card offers', () => {
     // would have the risk heuristic firing on the word "delete" in prose.
     const offer = cardOffer(card({ prompt: 'Should I delete the old rows?' }))
     expect(offer.options.every((o) => o.confirm === 'tap')).toBe(true)
+  })
+})
+
+describe('the instance theme', () => {
+  const theme = (over: Partial<Theme> = {}): Theme => ({
+    name: 't',
+    appearance: 'dark',
+    foreground: '#eeeeee',
+    background: '#111111',
+    cursor: '#ffb454',
+    selection: '#333a45',
+    ansi: Array.from({ length: 16 }, (_, i) => `#${String(i).padStart(2, '0')}0000`),
+    ...over,
+  })
+
+  const fakeRoot = () => {
+    const set = new Map<string, string>()
+    return { set, style: { setProperty: (k: string, v: string) => set.set(k, v) } } as never as
+      HTMLElement & { set: Map<string, string> }
+  }
+
+  it('publishes all sixteen ANSI colours', () => {
+    const root = fakeRoot()
+    applyTheme(root, theme())
+    expect(root.set.get('--omt-ansi-0')).toBe('#000000')
+    expect(root.set.get('--omt-ansi-15')).toBe('#150000')
+  })
+
+  it('ignores a partial palette rather than applying half of it', () => {
+    // Half a palette leaves the other indices on the built-in fallback, so the
+    // screen comes out in two palettes at once — which reads as a rendering
+    // bug rather than as a missing theme.
+    const root = fakeRoot()
+    applyTheme(root, theme({ ansi: ['#ff0000', '#00ff00'] }))
+    expect(root.set.has('--omt-ansi-0')).toBe(false)
+  })
+
+  it('still applies the foreground and background of a partial theme', () => {
+    // Those two are usable on their own, and dropping them would leave a
+    // themed instance looking entirely unthemed over one bad palette.
+    const root = fakeRoot()
+    applyTheme(root, theme({ ansi: [] }))
+    expect(root.set.get('--omt-fg')).toBe('#eeeeee')
   })
 })

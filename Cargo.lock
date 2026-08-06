@@ -637,6 +637,7 @@ dependencies = [
  "omt-events",
  "omt-input",
  "omt-media",
+ "omt-open",
  "omt-plugin-host",
  "omt-proto",
  "omt-pty",

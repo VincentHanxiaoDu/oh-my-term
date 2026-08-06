@@ -2165,6 +2165,182 @@ impl CapabilityHandler<InteractionRespond> for InteractionRespondHandler {
 }
 
 // ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+
+/// Input to `theme.get`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ThemeGetIn {}
+
+/// A theme as a client needs it.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct ThemeOut {
+    /// What it is called.
+    pub name: String,
+    /// Whether it is meant for a light or a dark terminal.
+    ///
+    /// Stated by the theme rather than guessed from the background, because a
+    /// borderline theme guessed wrong propagates into every contrast decision
+    /// a client then makes.
+    pub appearance: String,
+    /// Default text, as `#rrggbb`.
+    pub foreground: String,
+    /// The background.
+    pub background: String,
+    /// The cursor.
+    pub cursor: String,
+    /// Selected text.
+    pub selection: String,
+    /// The sixteen ANSI colours in their conventional order, 0–15.
+    ///
+    /// Sent as one flat list because that is the order every terminal and every
+    /// client indexes them by; splitting normal from bright would make every
+    /// consumer reassemble it.
+    pub ansi: Vec<String>,
+}
+
+capability! {
+    /// The theme in force.
+    pub struct ThemeGet;
+    input  = ThemeGetIn,
+    output = ThemeOut,
+    decl = Decl {
+        name: "theme.get",
+        group: "theme",
+        verb: "get",
+        title: "Read the theme",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults.",
+    },
+}
+
+struct ThemeGetHandler(State);
+
+impl CapabilityHandler<ThemeGet> for ThemeGetHandler {
+    fn call(&self, _ctx: &CallContext, _input: ThemeGetIn) -> Result<ThemeOut, CapabilityError> {
+        let _ = &self.0;
+        let theme = omt_theme::Theme::builtin_dark();
+        Ok(ThemeOut {
+            name: theme.name,
+            appearance: match theme.appearance {
+                omt_theme::Appearance::Dark => "dark".to_owned(),
+                omt_theme::Appearance::Light => "light".to_owned(),
+            },
+            foreground: theme.foreground.to_hex(),
+            background: theme.background.to_hex(),
+            cursor: theme.cursor.to_hex(),
+            selection: theme.selection.to_hex(),
+            ansi: theme
+                .palette
+                .normal
+                .iter()
+                .chain(theme.palette.bright.iter())
+                .map(|c| c.to_hex())
+                .collect(),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Links
+// ---------------------------------------------------------------------------
+
+/// Input to `open.recognize`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OpenRecognizeIn {
+    /// One line of terminal output.
+    pub line: String,
+}
+
+/// Something on a line that can be opened.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct OpenMatch {
+    /// What kind of thing it is.
+    pub kind: String,
+    /// The thing itself.
+    pub target: String,
+    /// Where it starts in the line, in bytes.
+    pub start: usize,
+    /// Where it ends.
+    pub end: usize,
+    /// The line number, for a path that carried one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_number: Option<u32>,
+}
+
+/// What `open.recognize` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct OpenRecognizeOut {
+    /// Everything found, in the order it appears.
+    pub matches: Vec<OpenMatch>,
+}
+
+capability! {
+    /// Find the openable things on a line.
+    pub struct OpenRecognize;
+    input  = OpenRecognizeIn,
+    output = OpenRecognizeOut,
+    decl = Decl {
+        name: "open.recognize",
+        group: "open",
+        verb: "recognize",
+        title: "Find links and paths",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern.",
+    },
+}
+
+struct OpenRecognizeHandler(State);
+
+impl CapabilityHandler<OpenRecognize> for OpenRecognizeHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: OpenRecognizeIn,
+    ) -> Result<OpenRecognizeOut, CapabilityError> {
+        let _ = &self.0;
+        Ok(OpenRecognizeOut {
+            matches: omt_open::recognize(&input.line)
+                .into_iter()
+                .map(|m| {
+                    let (kind, target, line_number) = describe_target(&m.target);
+                    OpenMatch {
+                        kind,
+                        target,
+                        start: m.start,
+                        end: m.end,
+                        line_number,
+                    }
+                })
+                .collect(),
+        })
+    }
+}
+
+fn describe_target(target: &omt_open::Target) -> (String, String, Option<u32>) {
+    match target {
+        omt_open::Target::Path { raw, line, .. } => ("path".to_owned(), raw.clone(), *line),
+        omt_open::Target::Url { raw, .. } => ("url".to_owned(), raw.clone(), None),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
@@ -2345,6 +2521,8 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<AgentInterrupt, _>(AgentInterruptHandler(state.clone()))?;
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
+    r.register::<ThemeGet, _>(ThemeGetHandler(state.clone()))?;
+    r.register::<OpenRecognize, _>(OpenRecognizeHandler(state.clone()))?;
     r.register::<FsRead, _>(FsReadHandler(state.clone()))?;
     r.register::<FsWrite, _>(FsWriteHandler(state.clone()))?;
     r.register::<InteractionList, _>(InteractionListHandler(state.clone()))?;

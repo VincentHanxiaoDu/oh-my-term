@@ -130,3 +130,39 @@ export function changed(previous: Snapshot | null, next: Snapshot): boolean {
   }
   return JSON.stringify(previous.rows) !== JSON.stringify(next.rows)
 }
+
+/** A theme, as `theme.get` reports it. */
+export interface Theme {
+  name: string
+  appearance: 'dark' | 'light'
+  foreground: string
+  background: string
+  cursor: string
+  selection: string
+  /** The sixteen ANSI colours, 0-15. */
+  ansi: string[]
+}
+
+/**
+ * Apply the instance's theme to the page.
+ *
+ * The instance's, not the browser's: indexed colours travel as
+ * `var(--omt-ansi-N)` precisely so that "red" means the red the user chose. A
+ * client that resolved them itself would render somebody's terminal in
+ * somebody else's palette.
+ */
+export function applyTheme(root: HTMLElement, theme: Theme): void {
+  root.style.setProperty('--omt-fg', theme.foreground)
+  root.style.setProperty('--omt-bg', theme.background)
+  root.style.setProperty('--omt-cursor', theme.cursor)
+  root.style.setProperty('--omt-selection', theme.selection)
+  // Sixteen or nothing. A partial palette leaves some indices resolving to the
+  // built-in fallback, so a themed screen would come out in two palettes at
+  // once — which looks like a rendering bug rather than a missing theme.
+  if (theme.ansi.length === ANSI_COLORS) {
+    theme.ansi.forEach((hex, i) => root.style.setProperty(`--omt-ansi-${i}`, hex))
+  }
+}
+
+/** How many colours a complete palette has. */
+export const ANSI_COLORS = 16

@@ -284,6 +284,24 @@
     },
     {
       "aliases": [],
+      "doc": "Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern.",
+      "effects": [],
+      "group": "open",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "open.recognize",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/open/recognize",
+      "since": "0.1.0",
+      "title": "Find links and paths",
+      "verb": "recognize"
+    },
+    {
+      "aliases": [],
       "doc": "Take the writer token for a session, returning the epoch every write is checked against.",
       "effects": [],
       "group": "session",
@@ -467,6 +485,24 @@
       "since": "0.1.0",
       "title": "Type into a session",
       "verb": "write"
+    },
+    {
+      "aliases": [],
+      "doc": "The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults.",
+      "effects": [],
+      "group": "theme",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "theme.get",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/theme/get",
+      "since": "0.1.0",
+      "title": "Read the theme",
+      "verb": "get"
     },
     {
       "aliases": [],

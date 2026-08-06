@@ -13,6 +13,8 @@ import { connect } from './connect.js'
 import { canPush } from './push.js'
 import { keyToBytes } from './touch.js'
 import { fit } from './screen.js'
+import { applyTheme } from './terminal.js'
+import type { Theme } from './terminal.js'
 
 /**
  * Where the token comes from.
@@ -123,6 +125,16 @@ function main(): void {
     event.preventDefault()
     void app.type(bytes)
   })
+
+  // Asked for once, on arrival. The colours are the instance's — a client that
+  // used its own would render the user's terminal in somebody else's palette.
+  void store
+    .call('theme.get')
+    .then((theme) => applyTheme(document.documentElement, theme as Theme))
+    .catch(() => {
+      // The built-in fallback in the stylesheet already applies. A missing
+      // theme must not stop the client from being usable.
+    })
 
   app.render()
 }

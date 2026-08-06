@@ -12,6 +12,7 @@ import { connect } from './connect.js';
 import { canPush } from './push.js';
 import { keyToBytes } from './touch.js';
 import { fit } from './screen.js';
+import { applyTheme } from './terminal.js';
 /**
  * Where the token comes from.
  *
@@ -110,6 +111,15 @@ function main() {
         // not handle would break the browser's own shortcuts for no reason.
         event.preventDefault();
         void app.type(bytes);
+    });
+    // Asked for once, on arrival. The colours are the instance's — a client that
+    // used its own would render the user's terminal in somebody else's palette.
+    void store
+        .call('theme.get')
+        .then((theme) => applyTheme(document.documentElement, theme))
+        .catch(() => {
+        // The built-in fallback in the stylesheet already applies. A missing
+        // theme must not stop the client from being usable.
     });
     app.render();
 }

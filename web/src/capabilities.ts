@@ -180,6 +180,11 @@ export const HANDLERS = {
       rows,
     }),
 
+  'theme.get': (request: RequestId) => call(request, 'theme.get', {}),
+
+  'open.recognize': (request: RequestId, line: string) =>
+    call(request, 'open.recognize', { line }),
+
   'fs.read': (request: RequestId, workspace: string, path: string, chunk = 0) =>
     call(request, 'fs.read', { workspace, path, chunk }),
 
