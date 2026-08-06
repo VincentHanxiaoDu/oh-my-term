@@ -4,7 +4,10 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use omt_events::{AgentPayload, FileChange, MessageOrigin, StartReason, TurnOutcome, TurnTrigger};
+use omt_events::{
+    AgentPayload, ChoiceOption, ChoiceQuestion, FileChange, MessageOrigin, StartReason,
+    TurnOutcome, TurnTrigger,
+};
 use omt_types::{AgentKind, Tier};
 
 use crate::adapter::{
@@ -111,6 +114,26 @@ impl AgentAdapter for ClaudeCode {
             "PreToolUse" => {
                 let call = s("tool_use_id").unwrap_or_default();
                 let name = s("tool_name").unwrap_or_default();
+                // The one tool whose call *is* a question. Claude Code has no
+                // protocol in this mode, but the hook is still a told source:
+                // the questions and their options arrive verbatim in the tool
+                // input, so a card built from them carries the agent's own
+                // spelling rather than anything read off a screen.
+                if name == ASK_USER_QUESTION
+                    && let Some(questions) = questions_of(payload)
+                {
+                        return Ok(vec![
+                            AgentPayload::ToolCall {
+                                call: call.clone(),
+                                name,
+                                input: payload
+                                    .get("tool_input")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null),
+                            },
+                            AgentPayload::Question { call, questions },
+                        ]);
+                }
                 Ok(vec![AgentPayload::ToolCall {
                     call,
                     name,
@@ -182,6 +205,61 @@ impl AgentAdapter for ClaudeCode {
     }
 }
 
+/// The tool Claude Code uses to ask a structured question.
+const ASK_USER_QUESTION: &str = "AskUserQuestion";
+
+/// Pull the questions out of an `AskUserQuestion` call.
+///
+/// Returns `None` rather than a guess when the shape is not what is expected.
+/// A half-parsed question renders as a card with the wrong options on it, and
+/// somebody answers it — which is strictly worse than omt saying it cannot.
+fn questions_of(payload: &serde_json::Value) -> Option<Vec<ChoiceQuestion>> {
+    let raw = payload.get("tool_input")?.get("questions")?.as_array()?;
+    let questions: Vec<ChoiceQuestion> = raw
+        .iter()
+        .filter_map(|q| {
+            let options: Vec<ChoiceOption> = q
+                .get("options")?
+                .as_array()?
+                .iter()
+                .filter_map(|o| {
+                    Some(ChoiceOption {
+                        label: o.get("label")?.as_str()?.to_owned(),
+                        description: o
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .map(str::to_owned),
+                    })
+                })
+                .collect();
+            // An option list that lost members in parsing would present fewer
+            // choices than the agent offered, and the answer would be one the
+            // user was never shown the alternatives to.
+            if options.len() != q.get("options")?.as_array()?.len() || options.is_empty() {
+                return None;
+            }
+            Some(ChoiceQuestion {
+                question: q.get("question")?.as_str()?.to_owned(),
+                header: q
+                    .get("header")
+                    .and_then(|h| h.as_str())
+                    .unwrap_or("")
+                    .to_owned(),
+                multi_select: q
+                    .get("multiSelect")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+                options,
+                // Claude Code always offers "Other", so free text is always
+                // accepted — hard-coded because it is a property of the tool
+                // rather than of the call.
+                allow_free_text: true,
+            })
+        })
+        .collect();
+    (questions.len() == raw.len() && !questions.is_empty()).then_some(questions)
+}
+
 fn file_change(tool: &str) -> Option<FileChange> {
     match tool {
         "Write" => Some(FileChange::Created),
@@ -221,6 +299,128 @@ mod tests {
         for expected in ["OMT_INSTANCE", "OMT_SESSION", "OMT_SOCK"] {
             assert!(names.contains(&expected.to_owned()), "{names:?}");
         }
+    }
+
+    #[test]
+    fn an_ask_user_question_becomes_a_card_with_the_agent_own_options() {
+        // The answer to "can Claude Code be answered remotely without ACP":
+        // yes, because the hook is a told source. The options arrive verbatim
+        // in the tool input, so the card carries the agent's own spelling
+        // rather than anything read off a screen.
+        let out = norm(
+            "PreToolUse",
+            serde_json::json!({
+                "tool_use_id": "t1",
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [{
+                        "question": "Which database?",
+                        "header": "Database",
+                        "multiSelect": false,
+                        "options": [
+                            {"label": "Postgres", "description": "the safe one"},
+                            {"label": "SQLite"}
+                        ]
+                    }]
+                }
+            }),
+        );
+        let question = out
+            .iter()
+            .find_map(|p| match p {
+                AgentPayload::Question { questions, .. } => Some(questions),
+                _ => None,
+            })
+            .expect("a question");
+        assert_eq!(question[0].question, "Which database?");
+        assert_eq!(
+            question[0]
+                .options
+                .iter()
+                .map(|o| o.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Postgres", "SQLite"],
+            "the options must be the agent's own, in its order"
+        );
+    }
+
+    #[test]
+    fn a_question_still_reports_the_tool_call_underneath_it() {
+        // The card is additional, not a replacement: a transcript that lost the
+        // call would show an answer to a question nobody asked.
+        let out = norm(
+            "PreToolUse",
+            serde_json::json!({
+                "tool_use_id": "t1",
+                "tool_name": "AskUserQuestion",
+                "tool_input": { "questions": [{
+                    "question": "q", "header": "h",
+                    "options": [{"label": "a"}]
+                }]}
+            }),
+        );
+        assert!(
+            out.iter()
+                .any(|p| matches!(p, AgentPayload::ToolCall { .. })),
+            "the tool call was swallowed"
+        );
+    }
+
+    #[test]
+    fn a_malformed_question_raises_no_card_at_all() {
+        // A half-parsed question renders as a card with the wrong options on
+        // it, and somebody answers that. Saying nothing is strictly better.
+        let out = norm(
+            "PreToolUse",
+            serde_json::json!({
+                "tool_use_id": "t1",
+                "tool_name": "AskUserQuestion",
+                "tool_input": { "questions": [{ "question": "q" }] }
+            }),
+        );
+        assert!(
+            !out.iter()
+                .any(|p| matches!(p, AgentPayload::Question { .. })),
+            "a card was built from a shape that was not understood"
+        );
+    }
+
+    #[test]
+    fn an_option_that_cannot_be_read_drops_the_whole_question() {
+        // Presenting three of four options means the user chooses without ever
+        // seeing the one they would have picked.
+        let out = norm(
+            "PreToolUse",
+            serde_json::json!({
+                "tool_use_id": "t1",
+                "tool_name": "AskUserQuestion",
+                "tool_input": { "questions": [{
+                    "question": "q", "header": "h",
+                    "options": [{"label": "a"}, {"note": "no label here"}]
+                }]}
+            }),
+        );
+        assert!(
+            !out.iter()
+                .any(|p| matches!(p, AgentPayload::Question { .. })),
+            "a question was shown with an option missing"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_tool_is_not_mistaken_for_a_question() {
+        let out = norm(
+            "PreToolUse",
+            serde_json::json!({
+                "tool_use_id": "t1",
+                "tool_name": "Bash",
+                "tool_input": { "command": "ls" }
+            }),
+        );
+        assert!(
+            !out.iter()
+                .any(|p| matches!(p, AgentPayload::Question { .. }))
+        );
     }
 
     #[test]

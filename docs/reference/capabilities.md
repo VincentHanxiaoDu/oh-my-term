@@ -14,6 +14,8 @@ vanishing.
 | `config.get` | query | viewer | Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable. |
 | `events.subscribe` | query | viewer | Subscribe to the event stream. |
 | `fs.list` | query | viewer | List a directory inside a workspace. Paths are workspace-relative and cannot escape it. |
+| `fs.read` | query | viewer | Read one chunk of a file. Chunked so a large file over a slow link can show progress and resume rather than restarting. |
+| `fs.write` | command | operator | Write one chunk of a file into a workspace. The file appears only once every chunk has arrived. |
 | `git.diff` | query | viewer | Which files changed, with line counts. Staged and unstaged are separate answers. |
 | `git.status` | query | viewer | Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches. |
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
@@ -33,4 +35,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-23 capabilities.
+25 capabilities.

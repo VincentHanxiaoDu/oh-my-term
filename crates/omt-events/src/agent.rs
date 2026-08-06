@@ -223,6 +223,20 @@ pub enum AgentPayload {
 
     // ---------- interactions ----------
     /// An interaction was raised.
+    /// The agent asked a structured question, with its own options.
+    ///
+    /// Only a told source may emit this — a hook, a protocol — and that is the
+    /// whole point of it existing separately from `Activity`. A screen
+    /// heuristic can say "something is being asked"; only the agent itself can
+    /// say what the options are, and a card is assembled from options.
+    Question {
+        /// The tool call it came from, so an answer can be correlated back to
+        /// the thing that is waiting for it.
+        call: String,
+        /// The questions, verbatim and in the agent's order.
+        questions: Vec<crate::ChoiceQuestion>,
+    },
+    /// An interaction was raised and is waiting.
     InteractionRaised {
         /// Which one. The object itself travels in its own event kind; this
         /// references it rather than duplicating it.

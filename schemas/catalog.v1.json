@@ -106,6 +106,48 @@
     },
     {
       "aliases": [],
+      "doc": "Read one chunk of a file. Chunked so a large file over a slow link can show progress and resume rather than restarting.",
+      "effects": [],
+      "group": "fs",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "fs.read",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/fs/read",
+      "since": "0.1.0",
+      "title": "Read a file",
+      "verb": "read"
+    },
+    {
+      "aliases": [],
+      "doc": "Write one chunk of a file into a workspace. The file appears only once every chunk has arrived.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "fs",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id_and_target",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "fs.write",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/fs/write",
+      "since": "0.1.0",
+      "title": "Write a file",
+      "verb": "write"
+    },
+    {
+      "aliases": [],
       "doc": "Which files changed, with line counts. Staged and unstaged are separate answers.",
       "effects": [
         "reads_fs"

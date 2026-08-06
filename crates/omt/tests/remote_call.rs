@@ -531,3 +531,204 @@ fn a_remote_client_starts_a_shell_types_into_it_and_sees_the_output() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_file_goes_up_and_comes_back_down_over_the_socket() {
+    // Dragging a file onto a remote session is a feature omt claimed and could
+    // not do: omt-media had the chunking, the progress and the resume, and no
+    // capability reached any of it.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    );
+    let id = workspace["id"].clone();
+
+    // Deliberately not text: the bug this catches is a base64 tail handled
+    // wrong, and on text the corrupted byte is still legible.
+    let payload: Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
+    let encoded = {
+        use std::fmt::Write as _;
+        let mut hex = String::new();
+        for b in &payload {
+            write!(hex, "{b:02x}").expect("write");
+        }
+        hex
+    };
+
+    let written = call_ok(
+        &mut client,
+        2,
+        "fs.write",
+        serde_json::json!({
+            "workspace": id,
+            "path": "sub/dir/blob.bin",
+            "data": base64(&payload),
+            "chunk": 0,
+            "chunks": 1,
+        }),
+        true,
+    );
+    assert_eq!(written["complete"], true);
+
+    // On disk, under the name asked for, with directories created along the
+    // way — a transfer that lands only at the workspace root is not a transfer.
+    let landed = std::fs::read(dir.path().join("sub/dir/blob.bin")).expect("the file landed");
+    assert_eq!(landed, payload, "the bytes changed in flight");
+
+    let read = call_ok(
+        &mut client,
+        3,
+        "fs.read",
+        serde_json::json!({ "workspace": id, "path": "sub/dir/blob.bin", "chunk": 0 }),
+        false,
+    );
+    assert_eq!(read["total_bytes"], 1000);
+    assert_eq!(read["chunks"], 1);
+
+    let back = decode64(read["data"].as_str().expect("data"));
+    let back_hex = {
+        use std::fmt::Write as _;
+        let mut hex = String::new();
+        for b in &back {
+            write!(hex, "{b:02x}").expect("write");
+        }
+        hex
+    };
+    assert_eq!(back_hex, encoded, "what came back is not what went up");
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_path_that_climbs_out_of_the_workspace_is_refused() {
+    // The whole reason paths are workspace-relative. A client that can write
+    // `../../.ssh/authorized_keys` has turned a file transfer into a shell.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    );
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(2),
+            capability: "fs.write".to_owned(),
+            input: serde_json::json!({
+                "workspace": workspace["id"],
+                "path": "../escaped.txt",
+                "data": base64(b"nope"),
+                "chunk": 0,
+                "chunks": 1,
+            }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(
+        matches!(result.outcome, CallOutcome::Err { .. }),
+        "the escape was allowed"
+    );
+    assert!(
+        !dir.path().parent().expect("parent").join("escaped.txt").exists(),
+        "a file landed outside the workspace"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+/// Base64, matching what the server expects.
+fn base64(bytes: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for group in bytes.chunks(3) {
+        let b = [
+            group[0],
+            group.get(1).copied().unwrap_or(0),
+            group.get(2).copied().unwrap_or(0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= group.len() {
+                out.push(A[((n >> (18 - i * 6)) & 0x3f) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+fn decode64(text: &str) -> Vec<u8> {
+    let value = |c: u8| -> u32 {
+        match c {
+            b'A'..=b'Z' => u32::from(c - b'A'),
+            b'a'..=b'z' => u32::from(c - b'a') + 26,
+            b'0'..=b'9' => u32::from(c - b'0') + 52,
+            b'+' => 62,
+            _ => 63,
+        }
+    };
+    let body: Vec<u8> = text.bytes().take_while(|c| *c != b'=').collect();
+    let mut out = Vec::new();
+    for group in body.chunks(4) {
+        let mut n = 0u32;
+        for (i, c) in group.iter().enumerate() {
+            n |= value(*c) << (18 - i * 6);
+        }
+        let bytes = match group.len() {
+            2 => 1,
+            3 => 2,
+            _ => 3,
+        };
+        for i in 0..bytes {
+            out.push(((n >> (16 - i * 8)) & 0xff) as u8);
+        }
+    }
+    out
+}

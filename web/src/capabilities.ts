@@ -180,6 +180,18 @@ export const HANDLERS = {
       rows,
     }),
 
+  'fs.read': (request: RequestId, workspace: string, path: string, chunk = 0) =>
+    call(request, 'fs.read', { workspace, path, chunk }),
+
+  'fs.write': (
+    request: RequestId,
+    workspace: string,
+    path: string,
+    data: string,
+    chunk = 0,
+    chunks = 1,
+  ) => call(request, 'fs.write', { workspace, path, data, chunk, chunks }),
+
   'interaction.list': (request: RequestId, session?: string) =>
     call(request, 'interaction.list', session === undefined ? {} : { session }),
 

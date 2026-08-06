@@ -4,6 +4,8 @@
   "config.get",
   "events.subscribe",
   "fs.list",
+  "fs.read",
+  "fs.write",
   "git.diff",
   "git.status",
   "instance.catalog",
