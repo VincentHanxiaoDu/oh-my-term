@@ -91,9 +91,8 @@ build here, and listing one as missing was inventing a requirement.
 
 | | Why it is not there |
 |---|---|
-| An Android build | The Compose UI, the roster rules and the protocol are written with tests. Nothing has compiled them: this machine has no Android SDK, no Gradle and no `kotlinc`. "Written" and "works" are different claims and the Android README says which one applies. |
-| An iOS build against a device | The app compiles and 16 checks drive it (`swift run omt-client-check`) — the SwiftUI roster, the entry point, the socket, the intent rule, a device id that survives a relaunch. What needs full Xcode rather than the command line tools: a simulator run, an icon, signing. |
+| An iOS build against a simulator or device | Needs full Xcode. This machine has only the Command Line Tools, so there is no iOS SDK and no `simctl` to run one on. Everything else is here: the app compiles, 16 checks drive it, and the icon is in the asset catalog. |
 
-Both are toolchain steps rather than missing behaviour. Everything the
-architecture describes is implemented and tested; these two need machines with
-Xcode and the Android SDK on them.
+Everything else the architecture describes is implemented and tested — including
+the Android app, which now builds: `gradle test` runs 6 tests and
+`gradle assembleDebug` produces an 8.3 MB APK.

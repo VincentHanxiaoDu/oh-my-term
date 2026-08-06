@@ -14,3 +14,9 @@ web/node_modules/
 
 # Swift build output for the mobile client library.
 mobile/ios/.build/
+
+# Android build output and the local SDK path, which is per-machine.
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/local.properties

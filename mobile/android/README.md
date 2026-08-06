@@ -1,22 +1,19 @@
 # The Android client
 
-**Written, not built.** The protocol, the roster rules and the Compose UI are
-here with their own tests. What has not happened is a compile: this needs the
-Android SDK and a Gradle toolchain, and the machine it was written on has
-neither.
-
-That is a real difference from the iOS side, which does compile —
-`cd ../ios && swift run omt-client-check` runs sixteen checks — and it is
-stated rather than glossed over, because "the code is written" and "the code
-works" are not the same claim.
-
-## To build it
+**It builds.** `gradle test` runs six tests over the protocol and roster rules,
+and `gradle assembleDebug` produces an APK.
 
 ```sh
-gradle wrapper          # or use Android Studio, which does this for you
-./gradlew test          # the roster and protocol rules
-./gradlew assembleDebug # the app
+gradle test             # the roster and protocol rules
+gradle assembleDebug    # app/build/outputs/apk/debug/app-debug.apk
 ```
+
+`local.properties` points at your Android SDK and is not committed, because it
+is a path on one machine. `gradle.properties` pins the JDK on purpose: Kotlin's
+compiler does not support every JDK a machine might default to, and the failure
+it produces is `Daemon compilation failed: null`, which says nothing about the
+cause. That cost half an hour once; the comment is there so it costs nobody
+else any.
 
 ## What is here
 

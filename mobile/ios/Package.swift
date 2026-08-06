@@ -25,7 +25,15 @@ let package = Package(
         // The app's own code, as a library. An `.iOSApplication` product needs
         // Xcode; keeping the views here means they are compiled by `swift
         // build` on any machine, which is where the mistakes actually are.
-        .target(name: "OmtApp", dependencies: ["OmtClient"], path: "Omt/Sources/OmtApp"),
+        .target(
+            name: "OmtApp",
+            dependencies: ["OmtClient"],
+            path: "Omt/Sources/OmtApp",
+            // The icon travels with the code rather than living only in an
+            // Xcode project, so a checkout has everything an app needs and the
+            // project file is not a place state hides.
+            resources: [.copy("../../Resources/Assets.xcassets")]
+        ),
         .executableTarget(
             name: "OmtClientCheck",
             dependencies: ["OmtClient", "OmtApp"],
