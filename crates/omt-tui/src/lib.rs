@@ -6,9 +6,11 @@
 //! silently pass.
 
 pub mod app;
+pub mod hint;
 pub mod render;
 
 pub use app::{Input, RawGuard, translate};
+pub use hint::{Situation, hint_for, render_hint};
 pub use render::Screen;
 
 use omt_catalog::CapabilityRegistry;

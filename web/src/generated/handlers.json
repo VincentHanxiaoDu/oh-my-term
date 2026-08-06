@@ -8,6 +8,8 @@
   "git.status",
   "instance.catalog",
   "instance.info",
+  "interaction.list",
+  "interaction.respond",
   "keys.cheatsheet",
   "session.acquire",
   "session.close",

@@ -1566,6 +1566,269 @@ fn css_color(color: omt_term::Color) -> Option<String> {
 const MAX_HISTORY_LINES: usize = 5_000;
 
 // ---------------------------------------------------------------------------
+// Interactions
+// ---------------------------------------------------------------------------
+
+/// Input to `interaction.list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct InteractionListIn {
+    /// Only this session's, when given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+/// One card, as a remote surface needs it.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct InteractionSummary {
+    /// Its id, which is how it is answered.
+    pub id: String,
+    /// Which session raised it.
+    pub session: String,
+    /// What kind of card it is.
+    pub kind: String,
+    /// Whether omt can deliver an answer, and over what.
+    ///
+    /// A surface renders its buttons from this and never from the state: a card
+    /// that is open but has no channel must not offer a button, or the user
+    /// finds out by the wrong option being selected.
+    pub deliverable: String,
+    /// Why not, when it cannot be answered here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_deliverable_because: Option<String>,
+    /// Where it is in its lifecycle.
+    pub state: String,
+    /// The question or the command, rendered for a small screen.
+    pub prompt: String,
+    /// The options, verbatim and in the agent's own order.
+    pub options: Vec<String>,
+}
+
+/// What `interaction.list` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct InteractionListOut {
+    /// The cards still waiting.
+    pub interactions: Vec<InteractionSummary>,
+}
+
+capability! {
+    /// Every card waiting for a human.
+    pub struct InteractionList;
+    input  = InteractionListIn,
+    output = InteractionListOut,
+    decl = Decl {
+        name: "interaction.list",
+        group: "interaction",
+        verb: "list",
+        title: "List open questions",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot.",
+    },
+}
+
+struct InteractionListHandler(State);
+
+impl CapabilityHandler<InteractionList> for InteractionListHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: InteractionListIn,
+    ) -> Result<InteractionListOut, CapabilityError> {
+        let filter = match input.session.as_deref() {
+            Some(raw) => Some(session_id(raw)?),
+            None => None,
+        };
+        let instance = self.0.lock()?;
+        let interactions = instance
+            .ledger
+            .open_interactions()
+            .into_iter()
+            .filter(|i| filter.is_none_or(|f| i.session == f))
+            .map(summarize_interaction)
+            .collect();
+        Ok(InteractionListOut { interactions })
+    }
+}
+
+fn summarize_interaction(i: &omt_events::Interaction) -> InteractionSummary {
+    let (kind, prompt, options) = match &i.kind {
+        omt_events::InteractionKind::Choice { questions } => (
+            "choice",
+            questions.first().map(|q| q.question.clone()).unwrap_or_default(),
+            questions
+                .first()
+                .map(|q| q.options.iter().map(|o| o.label.clone()).collect())
+                .unwrap_or_default(),
+        ),
+        omt_events::InteractionKind::Permission {
+            tool,
+            command,
+            options,
+            ..
+        } => (
+            "permission",
+            // The command if there is one, because that is what a person is
+            // actually approving; the tool name alone is not enough to decide.
+            command.clone().unwrap_or_else(|| tool.clone()),
+            options.iter().map(|o| o.label.clone()).collect(),
+        ),
+        omt_events::InteractionKind::PlanReview { plan } => {
+            ("plan_review", plan.clone(), Vec::new())
+        }
+        other => (kind_name(other), String::new(), Vec::new()),
+    };
+
+    let (deliverable, because) = match &i.deliverable {
+        omt_events::Deliverable::Native => ("native".to_owned(), None),
+        omt_events::Deliverable::Synthetic { .. } => ("synthetic".to_owned(), None),
+        omt_events::Deliverable::None { reason } => {
+            ("none".to_owned(), Some(format!("{reason:?}")))
+        }
+    };
+
+    InteractionSummary {
+        id: i.id.to_wire(),
+        session: i.session.to_wire(),
+        kind: kind.to_owned(),
+        deliverable,
+        not_deliverable_because: because,
+        state: state_name(&i.state).to_owned(),
+        prompt,
+        options,
+    }
+}
+
+fn kind_name(kind: &omt_events::InteractionKind) -> &'static str {
+    match kind {
+        omt_events::InteractionKind::Choice { .. } => "choice",
+        omt_events::InteractionKind::Permission { .. } => "permission",
+        omt_events::InteractionKind::PlanReview { .. } => "plan_review",
+        _ => "other",
+    }
+}
+
+fn state_name(state: &omt_events::InteractionState) -> &'static str {
+    match state {
+        omt_events::InteractionState::Open => "open",
+        omt_events::InteractionState::Resolving { .. } => "resolving",
+        omt_events::InteractionState::Submitted { .. } => "submitted",
+        // The only state that means the agent actually took the answer.
+        // Everything above it means omt sent bytes and nothing more.
+        omt_events::InteractionState::Resolved { .. } => "resolved",
+        omt_events::InteractionState::Undelivered { .. } => "undelivered",
+        omt_events::InteractionState::Cancelled { .. } => "cancelled",
+        omt_events::InteractionState::Abandoned { .. } => "abandoned",
+    }
+}
+
+/// Input to `interaction.respond`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct InteractionRespondIn {
+    /// Which card.
+    pub interaction: String,
+    /// The chosen option, by the agent's own label — verbatim, so the recorded
+    /// answer can be compared against what was sent when confirming delivery.
+    pub option: String,
+    /// Free text, where the question allowed it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// What `interaction.respond` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct InteractionRespondOut {
+    /// Its state after the answer.
+    ///
+    /// `resolving`, not `confirmed`: omt has claimed the right to answer and
+    /// nothing more. For a synthetic responder the far side is a UI omt does
+    /// not own, and confirmation comes from observing it, never from the write
+    /// succeeding.
+    pub state: String,
+}
+
+capability! {
+    /// Answer a card.
+    pub struct InteractionRespond;
+    input  = InteractionRespondIn,
+    output = InteractionRespondOut,
+    decl = Decl {
+        name: "interaction.respond",
+        group: "interaction",
+        verb: "respond",
+        title: "Answer a question",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        // Compare-and-swap against the card's state, which is what makes two
+        // people answering the same card at once resolve to one answer and one
+        // loser who is told so — rather than two answers, both delivered.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state.",
+    },
+}
+
+struct InteractionRespondHandler(State);
+
+impl CapabilityHandler<InteractionRespond> for InteractionRespondHandler {
+    fn call(
+        &self,
+        ctx: &CallContext,
+        input: InteractionRespondIn,
+    ) -> Result<InteractionRespondOut, CapabilityError> {
+        let id = omt_types::InteractionId::from_wire(&input.interaction).ok_or_else(|| {
+            CapabilityError::invalid_input(format!(
+                "`{}` is not an interaction id",
+                input.interaction
+            ))
+        })?;
+        let mut instance = self.0.lock()?;
+
+        let response = match instance.ledger.get(id).map(|i| &i.kind) {
+            Some(omt_events::InteractionKind::Permission { .. }) => {
+                omt_events::InteractionResponse::Permission {
+                    option: input.option.clone(),
+                    updated_input: None,
+                }
+            }
+            Some(_) => omt_events::InteractionResponse::Choice {
+                answers: vec![omt_events::ChoiceAnswer {
+                    labels: vec![input.option.clone()],
+                    other: input.text.clone(),
+                    comment: None,
+                }],
+            },
+            None => {
+                return Err(CapabilityError::not_found(format!(
+                    "no interaction {}",
+                    input.interaction
+                )));
+            }
+        };
+
+        let interaction = instance
+            .ledger
+            .resolve(id, ctx.actor.clone(), omt_types::Timestamp::now(), response)
+            .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
+
+        Ok(InteractionRespondOut {
+            state: state_name(&interaction.state).to_owned(),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
@@ -1746,6 +2009,8 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<AgentInterrupt, _>(AgentInterruptHandler(state.clone()))?;
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
+    r.register::<InteractionList, _>(InteractionListHandler(state.clone()))?;
+    r.register::<InteractionRespond, _>(InteractionRespondHandler(state.clone()))?;
     r.register::<SessionCreate, _>(SessionCreateHandler(state.clone()))?;
     r.register::<SessionAcquire, _>(SessionAcquireHandler(state.clone()))?;
     r.register::<SessionRelease, _>(SessionReleaseHandler(state.clone()))?;

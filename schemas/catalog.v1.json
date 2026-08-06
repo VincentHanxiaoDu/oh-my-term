@@ -183,6 +183,44 @@
       "verb": "info"
     },
     {
+      "aliases": [],
+      "doc": "Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot.",
+      "effects": [],
+      "group": "interaction",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "interaction.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/interaction/list",
+      "since": "0.1.0",
+      "title": "List open questions",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state.",
+      "effects": [],
+      "group": "interaction",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "interaction.respond",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/interaction/respond",
+      "since": "0.1.0",
+      "title": "Answer a question",
+      "verb": "respond"
+    },
+    {
       "aliases": [
         "keys"
       ],

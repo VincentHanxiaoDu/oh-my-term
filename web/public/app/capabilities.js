@@ -56,6 +56,12 @@ export const HANDLERS = {
         cols,
         rows,
     }),
+    'interaction.list': (request, session) => call(request, 'interaction.list', session === undefined ? {} : { session }),
+    'interaction.respond': (request, interaction, option, text) => call(request, 'interaction.respond', {
+        interaction,
+        option,
+        ...(text === undefined ? {} : { text }),
+    }),
     'session.acquire': (request, session, force = false) => call(request, 'session.acquire', { session, force }),
     'session.release': (request, session) => call(request, 'session.release', { session }),
     'session.snapshot': (request, session) => call(request, 'session.snapshot', { session }),

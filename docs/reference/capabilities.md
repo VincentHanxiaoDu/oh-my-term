@@ -18,6 +18,8 @@ vanishing.
 | `git.status` | query | viewer | Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches. |
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
 | `instance.info` | query | viewer | Version and protocol of this instance. |
+| `interaction.list` | query | viewer | Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot. |
+| `interaction.respond` | command | operator | Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
 | `session.close` | command | operator | End a session and stop the process on it. Idempotent. |
@@ -31,4 +33,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-21 capabilities.
+23 capabilities.

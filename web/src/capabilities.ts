@@ -180,6 +180,16 @@ export const HANDLERS = {
       rows,
     }),
 
+  'interaction.list': (request: RequestId, session?: string) =>
+    call(request, 'interaction.list', session === undefined ? {} : { session }),
+
+  'interaction.respond': (request: RequestId, interaction: string, option: string, text?: string) =>
+    call(request, 'interaction.respond', {
+      interaction,
+      option,
+      ...(text === undefined ? {} : { text }),
+    }),
+
   'session.acquire': (request: RequestId, session: string, force = false) =>
     call(request, 'session.acquire', { session, force }),
 
