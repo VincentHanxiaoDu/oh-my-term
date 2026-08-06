@@ -180,6 +180,42 @@ export const HANDLERS = {
       rows,
     }),
 
+  'state.save': (request: RequestId, path?: string) =>
+    call(request, 'state.save', path === undefined ? {} : { path }),
+
+  'state.restore': (request: RequestId, path?: string) =>
+    call(request, 'state.restore', path === undefined ? {} : { path }),
+
+  'recall.suggest': (request: RequestId, prefix: string, workspace: string, limit = 10) =>
+    call(request, 'recall.suggest', { prefix, workspace, limit }),
+
+  'recall.record': (
+    request: RequestId,
+    command: string,
+    workspace: string,
+    session: string,
+    exitCode?: number,
+  ) =>
+    call(request, 'recall.record', {
+      command,
+      workspace,
+      session,
+      ...(exitCode === undefined ? {} : { exit_code: exitCode }),
+    }),
+
+  'plugin.list': (request: RequestId) => call(request, 'plugin.list', {}),
+
+  'plugin.enable': (request: RequestId, id: string, enabled: boolean) =>
+    call(request, 'plugin.enable', { id, enabled }),
+
+  'job.list': (request: RequestId) => call(request, 'job.list', {}),
+
+  'voice.append': (request: RequestId, session: string, text: string, finalChunk = false) =>
+    call(request, 'voice.append', { session, text, final_chunk: finalChunk }),
+
+  'voice.clear': (request: RequestId, session: string) =>
+    call(request, 'voice.clear', { session }),
+
   'theme.get': (request: RequestId) => call(request, 'theme.get', {}),
 
   'open.recognize': (request: RequestId, line: string) =>

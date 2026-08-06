@@ -2165,6 +2165,762 @@ impl CapabilityHandler<InteractionRespond> for InteractionRespondHandler {
 }
 
 // ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+
+/// What a restart needs to know about one workspace.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PersistedWorkspace {
+    /// Its canonical path, which is what the id is derived from — so restoring
+    /// it produces the same id rather than a new one pointing at the same
+    /// directory.
+    pub root: String,
+}
+
+/// The whole snapshot.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Persisted {
+    /// A version, so a future format can be recognised rather than
+    /// misinterpreted. A snapshot that cannot be understood is skipped, not
+    /// guessed at.
+    pub version: u32,
+    /// The workspaces that were open.
+    pub workspaces: Vec<PersistedWorkspace>,
+}
+
+/// The version this build writes.
+pub const SNAPSHOT_VERSION: u32 = 1;
+
+/// Input to `state.save`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct StateSaveIn {
+    /// Where to write it. Absent means omt's own state directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// What `state.save` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct StateSaveOut {
+    /// Where it was written.
+    pub path: String,
+    /// How many workspaces it holds.
+    pub workspaces: u32,
+}
+
+capability! {
+    /// Write what a restart would need.
+    pub struct StateSave;
+    input  = StateSaveIn,
+    output = StateSaveOut,
+    decl = Decl {
+        name: "state.save",
+        group: "state",
+        verb: "save",
+        title: "Save instance state",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::WRITES_FS,
+        // Writing the same state twice produces the same file, so a retry is
+        // free — which is exactly what a compare-and-swap intent describes.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one.",
+    },
+}
+
+struct StateSaveHandler(State);
+
+impl CapabilityHandler<StateSave> for StateSaveHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: StateSaveIn,
+    ) -> Result<StateSaveOut, CapabilityError> {
+        let path = snapshot_path(input.path)?;
+        let snapshot = {
+            let instance = self.0.lock()?;
+            Persisted {
+                version: SNAPSHOT_VERSION,
+                workspaces: instance
+                    .workspaces()
+                    .into_iter()
+                    .map(|w| PersistedWorkspace {
+                        root: w.root.clone(),
+                    })
+                    .collect(),
+            }
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| CapabilityError::internal(e.to_string()))?;
+        }
+        omt_store::write_snapshot(&path, &snapshot)
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+        Ok(StateSaveOut {
+            path: path.display().to_string(),
+            workspaces: snapshot.workspaces.len() as u32,
+        })
+    }
+}
+
+/// Input to `state.restore`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct StateRestoreIn {
+    /// Where to read it from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// What `state.restore` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct StateRestoreOut {
+    /// How many workspaces were reopened.
+    pub workspaces: u32,
+    /// Whether there was a snapshot at all.
+    pub found: bool,
+    /// Roots the snapshot named that are no longer there.
+    ///
+    /// Reported rather than dropped silently: a workspace that moved is
+    /// something the user can fix, and a restore that quietly opened four of
+    /// five looks like it worked.
+    pub missing: Vec<String>,
+}
+
+capability! {
+    /// Reopen what was saved.
+    pub struct StateRestore;
+    input  = StateRestoreIn,
+    output = StateRestoreOut,
+    decl = Decl {
+        name: "state.restore",
+        group: "state",
+        verb: "restore",
+        title: "Restore instance state",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        // Idempotent by construction: workspace ids are derived from their
+        // canonical paths, so restoring twice reopens the same ones.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently.",
+    },
+}
+
+struct StateRestoreHandler(State);
+
+impl CapabilityHandler<StateRestore> for StateRestoreHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: StateRestoreIn,
+    ) -> Result<StateRestoreOut, CapabilityError> {
+        let path = snapshot_path(input.path)?;
+        let Some(snapshot): Option<Persisted> = omt_store::load_snapshot(&path)
+            .map_err(|e| CapabilityError::internal(e.to_string()))?
+        else {
+            return Ok(StateRestoreOut {
+                workspaces: 0,
+                found: false,
+                missing: Vec::new(),
+            });
+        };
+        if snapshot.version != SNAPSHOT_VERSION {
+            return Err(CapabilityError::precondition_failed(format!(
+                "that snapshot is version {} and this build writes {SNAPSHOT_VERSION}",
+                snapshot.version
+            )));
+        }
+
+        let mut instance = self.0.lock()?;
+        let mut opened = 0u32;
+        let mut missing = Vec::new();
+        for w in snapshot.workspaces {
+            if !std::path::Path::new(&w.root).is_dir() {
+                missing.push(w.root);
+                continue;
+            }
+            if instance.open_workspace(&w.root).is_ok() {
+                opened += 1;
+            } else {
+                missing.push(w.root);
+            }
+        }
+        Ok(StateRestoreOut {
+            workspaces: opened,
+            found: true,
+            missing,
+        })
+    }
+}
+
+/// Where a snapshot lives when the caller did not say.
+fn snapshot_path(given: Option<String>) -> Result<std::path::PathBuf, CapabilityError> {
+    if let Some(path) = given {
+        return Ok(std::path::PathBuf::from(path));
+    }
+    let base = std::env::var("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|_| {
+            std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })
+        .map_err(|_| CapabilityError::internal("no HOME to keep state under"))?;
+    Ok(base.join("omt").join("session.json"))
+}
+
+// ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+
+/// Input to `recall.suggest`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RecallSuggestIn {
+    /// What has been typed so far.
+    pub prefix: String,
+    /// Which workspace is being typed in — suggestions are scored per
+    /// workspace, because the command you want in one repository is rarely the
+    /// command you want in another.
+    pub workspace: String,
+    /// How many to return.
+    #[serde(default = "ten")]
+    pub limit: u32,
+}
+
+fn ten() -> u32 {
+    10
+}
+
+/// One suggestion.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct RecallSuggestion {
+    /// The command.
+    pub command: String,
+    /// How strongly it is suggested.
+    pub score: f64,
+    /// How often it has been run in this workspace, which is what a UI shows to
+    /// explain why the suggestion is there.
+    pub uses_here: u32,
+}
+
+/// What `recall.suggest` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct RecallSuggestOut {
+    /// Best first.
+    pub suggestions: Vec<RecallSuggestion>,
+}
+
+capability! {
+    /// Suggest a command from history.
+    pub struct RecallSuggest;
+    input  = RecallSuggestIn,
+    output = RecallSuggestOut,
+    decl = Decl {
+        name: "recall.suggest",
+        group: "recall",
+        verb: "suggest",
+        title: "Suggest a command",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested.",
+    },
+}
+
+struct RecallSuggestHandler(State);
+
+impl CapabilityHandler<RecallSuggest> for RecallSuggestHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: RecallSuggestIn,
+    ) -> Result<RecallSuggestOut, CapabilityError> {
+        let workspace = WorkspaceId::from_wire(&input.workspace).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a workspace id", input.workspace))
+        })?;
+        let history = self.0.recall()?;
+        Ok(RecallSuggestOut {
+            suggestions: history
+                .suggest(&input.prefix, workspace, input.limit as usize)
+                .into_iter()
+                .map(|s| RecallSuggestion {
+                    command: s.command,
+                    score: s.score,
+                    uses_here: s.uses_here,
+                })
+                .collect(),
+        })
+    }
+}
+
+/// Input to `recall.record`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RecallRecordIn {
+    /// What was run.
+    pub command: String,
+    /// Where.
+    pub workspace: String,
+    /// In which session.
+    pub session: String,
+    /// The directory it ran in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// How it ended, where that is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// How long it took.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+}
+
+/// What `recall.record` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct RecallRecordOut {
+    /// How many commands are now held.
+    pub held: u32,
+}
+
+capability! {
+    /// Record a command that ran.
+    pub struct RecallRecord;
+    input  = RecallRecordIn,
+    output = RecallRecordOut,
+    decl = Decl {
+        name: "recall.record",
+        group: "recall",
+        verb: "record",
+        title: "Record a command",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        intent: Some(Intent::Append {
+            dedup: DedupKey::IntentId,
+            ttl_secs: 600,
+        }),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Add a command to the history that suggestions are drawn from.",
+    },
+}
+
+struct RecallRecordHandler(State);
+
+impl CapabilityHandler<RecallRecord> for RecallRecordHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: RecallRecordIn,
+    ) -> Result<RecallRecordOut, CapabilityError> {
+        let workspace = WorkspaceId::from_wire(&input.workspace).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a workspace id", input.workspace))
+        })?;
+        let session = session_id(&input.session)?;
+        let mut history = self.0.recall()?;
+        history.record(omt_recall::HistoryEntry {
+            command: input.command,
+            workspace,
+            session,
+            cwd: input.cwd,
+            at: omt_types::Timestamp::now(),
+            exit_code: input.exit_code,
+            duration_ms: input.duration_ms,
+        });
+        Ok(RecallRecordOut {
+            held: history.len() as u32,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Plugins
+// ---------------------------------------------------------------------------
+
+/// Input to `plugin.list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PluginListIn {}
+
+/// One installed plugin.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PluginSummary {
+    /// Its id.
+    pub id: String,
+    /// Its name.
+    pub name: String,
+    /// Its version.
+    pub version: String,
+    /// Whether it is switched on.
+    pub enabled: bool,
+    /// What it has been granted.
+    pub granted: Vec<String>,
+    /// The grants that can do real damage, separated so a settings screen can
+    /// lead with them rather than bury them in a list of twelve.
+    pub high_consequence: Vec<String>,
+}
+
+/// What `plugin.list` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PluginListOut {
+    /// The plugins.
+    pub plugins: Vec<PluginSummary>,
+}
+
+capability! {
+    /// Every installed plugin.
+    pub struct PluginList;
+    input  = PluginListIn,
+    output = PluginListOut,
+    decl = Decl {
+        name: "plugin.list",
+        group: "plugin",
+        verb: "list",
+        title: "List plugins",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Installed plugins with what each was granted, and which of those grants are high-consequence.",
+    },
+}
+
+struct PluginListHandler(State);
+
+impl CapabilityHandler<PluginList> for PluginListHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        _input: PluginListIn,
+    ) -> Result<PluginListOut, CapabilityError> {
+        let plugins = self.0.plugins()?;
+        Ok(PluginListOut {
+            plugins: plugins.iter().map(summarize_plugin).collect(),
+        })
+    }
+}
+
+fn summarize_plugin(p: &omt_plugin_host::Installed) -> PluginSummary {
+    PluginSummary {
+        id: p.manifest.id.clone(),
+        name: p.manifest.name.clone(),
+        version: p.manifest.version.clone(),
+        enabled: p.enabled,
+        granted: p.granted.iter().map(|g| format!("{g:?}")).collect(),
+        high_consequence: p
+            .manifest
+            .high_consequence()
+            .iter()
+            .map(|g| format!("{g:?}"))
+            .collect(),
+    }
+}
+
+/// Input to `plugin.enable`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PluginEnableIn {
+    /// Which plugin.
+    pub id: String,
+    /// On or off.
+    pub enabled: bool,
+}
+
+/// What `plugin.enable` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PluginEnableOut {
+    /// Its state afterwards.
+    pub enabled: bool,
+}
+
+capability! {
+    /// Switch a plugin on or off.
+    pub struct PluginEnable;
+    input  = PluginEnableIn,
+    output = PluginEnableOut,
+    decl = Decl {
+        name: "plugin.enable",
+        group: "plugin",
+        verb: "enable",
+        title: "Enable a plugin",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        // Compare-and-swap on the plugin's state: a repeat sets the same value
+        // and reports it, which is what makes a toggle safe to retry.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Switch a plugin on or off. Idempotent: setting the state it already has is not an error.",
+    },
+}
+
+struct PluginEnableHandler(State);
+
+impl CapabilityHandler<PluginEnable> for PluginEnableHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: PluginEnableIn,
+    ) -> Result<PluginEnableOut, CapabilityError> {
+        let mut plugins = self.0.plugins()?;
+        let plugin = plugins
+            .iter_mut()
+            .find(|p| p.manifest.id == input.id)
+            .ok_or_else(|| CapabilityError::not_found(format!("no plugin {}", input.id)))?;
+        plugin.enabled = input.enabled;
+        Ok(PluginEnableOut {
+            enabled: plugin.enabled,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled jobs
+// ---------------------------------------------------------------------------
+
+/// Input to `job.list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct JobListIn {}
+
+/// One scheduled job.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct JobSummary {
+    /// What it is called.
+    pub name: String,
+    /// Which workspace it runs in.
+    pub workspace: String,
+    /// What it runs.
+    pub run: String,
+    /// When it fires, in words.
+    pub trigger: String,
+    /// Whether it is switched on.
+    pub enabled: bool,
+    /// How many times it has failed in a row.
+    ///
+    /// Reported because a job that has failed six times running is one somebody
+    /// needs to be shown rather than one that keeps quietly retrying.
+    pub consecutive_failures: u32,
+}
+
+/// What `job.list` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct JobListOut {
+    /// The jobs.
+    pub jobs: Vec<JobSummary>,
+}
+
+capability! {
+    /// Every scheduled job.
+    pub struct JobList;
+    input  = JobListIn,
+    output = JobListOut,
+    decl = Decl {
+        name: "job.list",
+        group: "job",
+        verb: "list",
+        title: "List scheduled jobs",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Scheduled jobs with when they fire and how many times each has failed in a row.",
+    },
+}
+
+struct JobListHandler(State);
+
+impl CapabilityHandler<JobList> for JobListHandler {
+    fn call(&self, _ctx: &CallContext, _input: JobListIn) -> Result<JobListOut, CapabilityError> {
+        let jobs = self.0.jobs()?;
+        Ok(JobListOut {
+            jobs: jobs
+                .iter()
+                .map(|s| JobSummary {
+                    name: s.job.name.clone(),
+                    workspace: s.job.workspace.clone(),
+                    run: s.job.run.clone(),
+                    trigger: describe_trigger(&s.job.trigger),
+                    enabled: s.job.enabled,
+                    consecutive_failures: s.state.consecutive_failures,
+                })
+                .collect(),
+        })
+    }
+}
+
+fn describe_trigger(trigger: &omt_recall::Trigger) -> String {
+    match trigger {
+        omt_recall::Trigger::Every { seconds } => format!("every {seconds}s"),
+        omt_recall::Trigger::Daily { at_secs } => format!("daily at {at_secs}s"),
+        omt_recall::Trigger::Manual => "manually".to_owned(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dictation
+// ---------------------------------------------------------------------------
+
+/// Input to `voice.append`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct VoiceAppendIn {
+    /// Which session is being dictated into.
+    pub session: String,
+    /// What was heard.
+    pub text: String,
+    /// Whether this is settled or still being revised.
+    ///
+    /// The distinction is the whole design: a partial result is shown and then
+    /// replaced, and treating one as final puts a half-heard word into somebody's
+    /// command line permanently.
+    #[serde(default)]
+    pub final_chunk: bool,
+}
+
+/// What `voice.append` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct VoiceAppendOut {
+    /// Everything heard, settled and unsettled, for display.
+    pub display: String,
+    /// Only the settled part, which is what may be sent to a session.
+    pub committed: String,
+}
+
+capability! {
+    /// Add a piece of dictation.
+    pub struct VoiceAppend;
+    input  = VoiceAppendIn,
+    output = VoiceAppendOut,
+    decl = Decl {
+        name: "voice.append",
+        group: "voice",
+        verb: "append",
+        title: "Add dictated text",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        // Raw stream: dictation is never replayed. Re-sending a chunk after a
+        // reconnect would duplicate a word in the middle of a sentence, and
+        // the buffer's own revision handles the ordinary case.
+        intent: Some(Intent::RawStream),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending.",
+    },
+}
+
+struct VoiceAppendHandler(State);
+
+impl CapabilityHandler<VoiceAppend> for VoiceAppendHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: VoiceAppendIn,
+    ) -> Result<VoiceAppendOut, CapabilityError> {
+        // Validated even though the buffer is keyed by string: accepting a
+        // malformed id would silently create a buffer nothing ever reads.
+        let session = session_id(&input.session)?;
+        let mut voice = self.0.voice()?;
+        let buffer = voice.entry(session.to_wire()).or_default();
+        buffer.apply(&omt_stt::Transcript {
+            text: input.text,
+            is_final: input.final_chunk,
+            // Not carried over the wire: a client's confidence number means
+            // nothing without knowing which engine produced it, and omt has no
+            // decision that reads it.
+            confidence: None,
+        });
+        Ok(VoiceAppendOut {
+            display: buffer.display(),
+            committed: buffer.committed().to_owned(),
+        })
+    }
+}
+
+/// Input to `voice.clear`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct VoiceClearIn {
+    /// Which session's buffer.
+    pub session: String,
+}
+
+/// What `voice.clear` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct VoiceClearOut {
+    /// Whether there had been anything to clear.
+    pub had_text: bool,
+}
+
+capability! {
+    /// Throw away what was dictated.
+    pub struct VoiceClear;
+    input  = VoiceClearIn,
+    output = VoiceClearOut,
+    decl = Decl {
+        name: "voice.clear",
+        group: "voice",
+        verb: "clear",
+        title: "Clear dictation",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Discard a session's dictation buffer. Idempotent.",
+    },
+}
+
+struct VoiceClearHandler(State);
+
+impl CapabilityHandler<VoiceClear> for VoiceClearHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: VoiceClearIn,
+    ) -> Result<VoiceClearOut, CapabilityError> {
+        let session = session_id(&input.session)?;
+        let mut voice = self.0.voice()?;
+        let had_text = voice
+            .get(&session.to_wire())
+            .is_some_and(|b| !b.is_empty());
+        voice.remove(&session.to_wire());
+        Ok(VoiceClearOut { had_text })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Theme
 // ---------------------------------------------------------------------------
 
@@ -2521,6 +3277,15 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<AgentInterrupt, _>(AgentInterruptHandler(state.clone()))?;
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
+    r.register::<StateSave, _>(StateSaveHandler(state.clone()))?;
+    r.register::<StateRestore, _>(StateRestoreHandler(state.clone()))?;
+    r.register::<RecallSuggest, _>(RecallSuggestHandler(state.clone()))?;
+    r.register::<RecallRecord, _>(RecallRecordHandler(state.clone()))?;
+    r.register::<PluginList, _>(PluginListHandler(state.clone()))?;
+    r.register::<PluginEnable, _>(PluginEnableHandler(state.clone()))?;
+    r.register::<JobList, _>(JobListHandler(state.clone()))?;
+    r.register::<VoiceAppend, _>(VoiceAppendHandler(state.clone()))?;
+    r.register::<VoiceClear, _>(VoiceClearHandler(state.clone()))?;
     r.register::<ThemeGet, _>(ThemeGetHandler(state.clone()))?;
     r.register::<OpenRecognize, _>(OpenRecognizeHandler(state.clone()))?;
     r.register::<FsRead, _>(FsReadHandler(state.clone()))?;

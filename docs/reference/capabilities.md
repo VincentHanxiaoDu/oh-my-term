@@ -22,8 +22,13 @@ vanishing.
 | `instance.info` | query | viewer | Version and protocol of this instance. |
 | `interaction.list` | query | viewer | Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot. |
 | `interaction.respond` | command | operator | Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state. |
+| `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
+| `plugin.enable` | command | operator | Switch a plugin on or off. Idempotent: setting the state it already has is not an error. |
+| `plugin.list` | query | viewer | Installed plugins with what each was granted, and which of those grants are high-consequence. |
+| `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
+| `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
 | `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
 | `session.close` | command | operator | End a session and stop the process on it. Idempotent. |
 | `session.create` | command | operator | Start a session in a workspace, running a program on a pty. Deduplicated by intent id, so a reconnect retry does not start a second process. |
@@ -33,8 +38,12 @@ vanishing.
 | `session.resize` | command | operator | Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with. |
 | `session.snapshot` | query | viewer | The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
+| `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
+| `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
+| `voice.append` | command | operator | Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending. |
+| `voice.clear` | command | operator | Discard a session's dictation buffer. Idempotent. |
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-27 capabilities.
+36 capabilities.

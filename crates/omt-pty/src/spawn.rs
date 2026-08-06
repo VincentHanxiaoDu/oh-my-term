@@ -937,14 +937,19 @@ mod tests {
     #[test]
     fn dropping_a_pty_whose_child_already_exited_does_nothing() {
         // The common case, and it must not spend the grace period.
+        let mut pty = Pty::spawn(&sh("exit 0")).expect("spawn");
+        pty.wait().expect("wait");
+
+        // Only the drop is timed. Including the spawn would measure how long
+        // this machine takes to fork a shell, which under a loaded test run is
+        // easily longer than the grace period being asserted about — a test
+        // that fails on a busy laptop and passes on an idle one is worse than
+        // no test, because it teaches people to rerun until it is green.
         let started = Instant::now();
-        {
-            let mut pty = Pty::spawn(&sh("exit 0")).expect("spawn");
-            pty.wait().expect("wait");
-        }
+        drop(pty);
         assert!(
             started.elapsed() < Duration::from_millis(150),
-            "an already-reaped child cost {:?}",
+            "an already-reaped child cost {:?} to drop",
             started.elapsed()
         );
     }

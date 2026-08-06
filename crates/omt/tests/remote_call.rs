@@ -894,3 +894,390 @@ fn a_card_omt_cannot_deliver_is_refused_even_while_it_is_open() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn history_suggests_what_was_run_here_and_never_what_would_hurt() {
+    // Suggestions are scored per workspace because the command you want in one
+    // repository is rarely the one you want in another — and a destructive
+    // command must never be one keystroke away from being accepted.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let workspace = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    );
+    let ws = workspace["id"].clone();
+    let session = omt_types::SessionId::new().to_wire();
+
+    for (n, command) in ["cargo test --workspace", "cargo build", "rm -rf /"]
+        .iter()
+        .enumerate()
+    {
+        call_ok(
+            &mut client,
+            2 + n as u64,
+            "recall.record",
+            serde_json::json!({
+                "command": command,
+                "workspace": ws,
+                "session": session,
+                "exit_code": 0,
+            }),
+            true,
+        );
+    }
+
+    let out = call_ok(
+        &mut client,
+        10,
+        "recall.suggest",
+        serde_json::json!({ "prefix": "cargo", "workspace": ws, "limit": 5 }),
+        false,
+    );
+    let suggestions = out["suggestions"].as_array().expect("suggestions");
+    assert!(!suggestions.is_empty(), "nothing was suggested");
+    assert!(
+        suggestions
+            .iter()
+            .all(|s| s["command"].as_str().is_some_and(|c| c.starts_with("cargo"))),
+        "a suggestion did not match the prefix: {suggestions:?}"
+    );
+
+    // `rm -rf /` and nothing like it. The distinction the history layer draws
+    // is the target, not the prefix: `rm -rf build/` is an ordinary thing to
+    // run and suppressing it would make the feature useless.
+    let dangerous = call_ok(
+        &mut client,
+        11,
+        "recall.suggest",
+        serde_json::json!({ "prefix": "rm", "workspace": ws, "limit": 5 }),
+        false,
+    );
+    assert!(
+        dangerous["suggestions"]
+            .as_array()
+            .expect("suggestions")
+            .is_empty(),
+        "`rm -rf /` was offered as a suggestion: {dangerous:?}"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn dictation_offers_only_the_part_that_has_settled() {
+    // The whole design of dictation: a partial result is shown and then
+    // replaced. Treating one as settled puts a half-heard word into somebody's
+    // command line permanently.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let session = omt_types::SessionId::new().to_wire();
+
+    let partial = call_ok(
+        &mut client,
+        1,
+        "voice.append",
+        serde_json::json!({ "session": session, "text": "run the tes", "final_chunk": false }),
+        true,
+    );
+    assert_eq!(
+        partial["committed"], "",
+        "an unsettled fragment was offered for sending"
+    );
+    assert!(
+        partial["display"]
+            .as_str()
+            .is_some_and(|d| d.contains("run the tes")),
+        "the fragment was not shown at all, so dictation looks dead while it works"
+    );
+
+    let settled = call_ok(
+        &mut client,
+        2,
+        "voice.append",
+        serde_json::json!({ "session": session, "text": "run the tests", "final_chunk": true }),
+        true,
+    );
+    assert_eq!(
+        settled["committed"], "run the tests",
+        "the corrected text did not replace the fragment"
+    );
+
+    let cleared = call_ok(
+        &mut client,
+        3,
+        "voice.clear",
+        serde_json::json!({ "session": session }),
+        true,
+    );
+    assert_eq!(cleared["had_text"], true);
+
+    // Idempotent: clearing twice is what a client does when it is unsure, and
+    // it must not be an error.
+    let again = call_ok(
+        &mut client,
+        4,
+        "voice.clear",
+        serde_json::json!({ "session": session }),
+        true,
+    );
+    assert_eq!(again["had_text"], false);
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn plugins_and_jobs_are_reachable_and_answer_honestly_when_empty() {
+    // These exist so a settings screen can be built. An instance with none
+    // must answer an empty list rather than fail, or a client cannot tell
+    // "none installed" from "this build cannot do plugins".
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(welcome) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    for name in ["plugin.list", "plugin.enable", "job.list", "voice.append"] {
+        assert!(
+            welcome.capabilities.contains(&name.to_owned()),
+            "{name} is not advertised"
+        );
+    }
+
+    let plugins = call_ok(&mut client, 1, "plugin.list", serde_json::json!({}), false);
+    assert!(plugins["plugins"].as_array().expect("plugins").is_empty());
+
+    let jobs = call_ok(&mut client, 2, "job.list", serde_json::json!({}), false);
+    assert!(jobs["jobs"].as_array().expect("jobs").is_empty());
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn workspaces_survive_a_restart() {
+    // "Sessions do not survive a restart" was on the checklist. This is the
+    // half that can be honest: a process cannot be resurrected, but the
+    // workspaces that were open can be reopened — and because a workspace id
+    // is derived from its canonical path, restoring produces the same ids
+    // rather than a second set pointing at the same directories.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let snapshot = dir.path().join("state.json");
+    let work = dir.path().join("project");
+    std::fs::create_dir_all(&work).expect("mkdir");
+
+    let first = omt::state::State::default();
+    let id_before = {
+        let (mut client, server) = client_server_pair();
+        let served = first.clone();
+        let worker = std::thread::spawn(move || serve(server, served));
+        send(
+            &mut client,
+            &ProtoMessage::Hello(Hello {
+                proto: omt_proto::PROTO_VERSION,
+                client: "test".to_owned(),
+                token: None,
+            }),
+        );
+        let ProtoMessage::Welcome(_) = recv(&mut client) else {
+            panic!("expected a welcome");
+        };
+        let opened = call_ok(
+            &mut client,
+            1,
+            "workspace.open",
+            serde_json::json!({ "root": work.to_string_lossy() }),
+            true,
+        );
+        let saved = call_ok(
+            &mut client,
+            2,
+            "state.save",
+            serde_json::json!({ "path": snapshot.to_string_lossy() }),
+            true,
+        );
+        assert_eq!(saved["workspaces"], 1);
+        drop(client);
+        worker.join().expect("worker");
+        opened["id"].clone()
+    };
+
+    // A different instance entirely, as a restart is.
+    let second = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = second.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let restored = call_ok(
+        &mut client,
+        1,
+        "state.restore",
+        serde_json::json!({ "path": snapshot.to_string_lossy() }),
+        true,
+    );
+    assert_eq!(restored["found"], true);
+    assert_eq!(restored["workspaces"], 1);
+
+    let listed = call_ok(&mut client, 2, "workspace.list", serde_json::json!({}), false);
+    assert_eq!(
+        listed["workspaces"][0]["id"], id_before,
+        "the restored workspace got a new id, so anything referring to the old one is orphaned"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_workspace_whose_directory_is_gone_is_reported_not_dropped() {
+    // A restore that quietly opened four of five looks like it worked, and the
+    // missing one is something the user can actually fix.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let snapshot = dir.path().join("state.json");
+    std::fs::write(
+        &snapshot,
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "workspaces": [{ "root": "/definitely/not/here" }],
+        }))
+        .expect("encode"),
+    )
+    .expect("write");
+
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let restored = call_ok(
+        &mut client,
+        1,
+        "state.restore",
+        serde_json::json!({ "path": snapshot.to_string_lossy() }),
+        true,
+    );
+    assert_eq!(restored["workspaces"], 0);
+    assert_eq!(
+        restored["missing"],
+        serde_json::json!(["/definitely/not/here"])
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_snapshot_from_a_future_version_is_refused_rather_than_guessed_at() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let snapshot = dir.path().join("state.json");
+    std::fs::write(
+        &snapshot,
+        serde_json::to_vec(&serde_json::json!({ "version": 99, "workspaces": [] }))
+            .expect("encode"),
+    )
+    .expect("write");
+
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(1),
+            capability: "state.restore".to_owned(),
+            input: serde_json::json!({ "path": snapshot.to_string_lossy() }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(
+        matches!(result.outcome, CallOutcome::Err { .. }),
+        "a snapshot this build cannot read was interpreted anyway"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}

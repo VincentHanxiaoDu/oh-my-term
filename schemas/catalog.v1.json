@@ -263,6 +263,24 @@
       "verb": "respond"
     },
     {
+      "aliases": [],
+      "doc": "Scheduled jobs with when they fire and how many times each has failed in a row.",
+      "effects": [],
+      "group": "job",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "job.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/job/list",
+      "since": "0.1.0",
+      "title": "List scheduled jobs",
+      "verb": "list"
+    },
+    {
       "aliases": [
         "keys"
       ],
@@ -299,6 +317,84 @@
       "since": "0.1.0",
       "title": "Find links and paths",
       "verb": "recognize"
+    },
+    {
+      "aliases": [],
+      "doc": "Switch a plugin on or off. Idempotent: setting the state it already has is not an error.",
+      "effects": [],
+      "group": "plugin",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "plugin.enable",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/plugin/enable",
+      "since": "0.1.0",
+      "title": "Enable a plugin",
+      "verb": "enable"
+    },
+    {
+      "aliases": [],
+      "doc": "Installed plugins with what each was granted, and which of those grants are high-consequence.",
+      "effects": [],
+      "group": "plugin",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "plugin.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/plugin/list",
+      "since": "0.1.0",
+      "title": "List plugins",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Add a command to the history that suggestions are drawn from.",
+      "effects": [],
+      "group": "recall",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "recall.record",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/recall/record",
+      "since": "0.1.0",
+      "title": "Record a command",
+      "verb": "record"
+    },
+    {
+      "aliases": [],
+      "doc": "Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested.",
+      "effects": [],
+      "group": "recall",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "recall.suggest",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/recall/suggest",
+      "since": "0.1.0",
+      "title": "Suggest a command",
+      "verb": "suggest"
     },
     {
       "aliases": [],
@@ -488,6 +584,48 @@
     },
     {
       "aliases": [],
+      "doc": "Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently.",
+      "effects": [],
+      "group": "state",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "state.restore",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/state/restore",
+      "since": "0.1.0",
+      "title": "Restore instance state",
+      "verb": "restore"
+    },
+    {
+      "aliases": [],
+      "doc": "Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "state",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "state.save",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/state/save",
+      "since": "0.1.0",
+      "title": "Save instance state",
+      "verb": "save"
+    },
+    {
+      "aliases": [],
       "doc": "The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults.",
       "effects": [],
       "group": "theme",
@@ -503,6 +641,46 @@
       "since": "0.1.0",
       "title": "Read the theme",
       "verb": "get"
+    },
+    {
+      "aliases": [],
+      "doc": "Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending.",
+      "effects": [],
+      "group": "voice",
+      "hidden": false,
+      "intent": {
+        "class": "raw_stream"
+      },
+      "kind": "command",
+      "name": "voice.append",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/voice/append",
+      "since": "0.1.0",
+      "title": "Add dictated text",
+      "verb": "append"
+    },
+    {
+      "aliases": [],
+      "doc": "Discard a session's dictation buffer. Idempotent.",
+      "effects": [],
+      "group": "voice",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "voice.clear",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/voice/clear",
+      "since": "0.1.0",
+      "title": "Clear dictation",
+      "verb": "clear"
     },
     {
       "aliases": [],

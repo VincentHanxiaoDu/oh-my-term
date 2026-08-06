@@ -15,6 +15,22 @@ use omt_daemon::Instance;
 pub struct State {
     instance: Arc<Mutex<Instance>>,
     config: Arc<Mutex<Option<Arc<omt_config::Resolved>>>>,
+    /// Command history and its suggestions.
+    ///
+    /// Held here rather than in the instance because it is a surface concern:
+    /// the daemon does not need it to run a session, and putting it there would
+    /// push a dependency down a layer for nothing.
+    recall: Arc<Mutex<omt_recall::History>>,
+    /// Installed plugins.
+    ///
+    /// Here and not in the daemon for a harder reason: the plugin host is L5
+    /// and the daemon is L4, so the daemon *cannot* depend on it. Layering is
+    /// not a style rule — `cargo xtask layering` fails the build.
+    plugins: Arc<Mutex<Vec<omt_plugin_host::Installed>>>,
+    /// Scheduled jobs.
+    jobs: Arc<Mutex<Vec<omt_recall::Schedule>>>,
+    /// What voice dictation has heard so far, per session.
+    voice: Arc<Mutex<std::collections::BTreeMap<String, omt_stt::TranscriptBuffer>>>,
 }
 
 /// Where omt keeps its configuration.
@@ -41,6 +57,10 @@ impl State {
     pub fn new(instance: Instance) -> Self {
         Self {
             instance: Arc::new(Mutex::new(instance)),
+            recall: Arc::new(Mutex::new(omt_recall::History::new(HISTORY_LIMIT))),
+            plugins: Arc::new(Mutex::new(Vec::new())),
+            jobs: Arc::new(Mutex::new(Vec::new())),
+            voice: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             config: Arc::new(Mutex::new(None)),
         }
     }
@@ -79,5 +99,59 @@ impl State {
         self.instance
             .lock()
             .map_err(|_| CapabilityError::internal("the instance lock was poisoned"))
+    }
+}
+
+/// How many commands the history keeps.
+///
+/// Bounded because it is in memory and a long-lived instance would otherwise
+/// grow without limit. Large enough that a week of ordinary work still suggests
+/// what you ran on Monday.
+const HISTORY_LIMIT: usize = 10_000;
+
+impl State {
+    /// The command history.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn recall(&self) -> Result<MutexGuard<'_, omt_recall::History>, CapabilityError> {
+        self.recall
+            .lock()
+            .map_err(|_| CapabilityError::internal("the history lock was poisoned"))
+    }
+
+    /// The installed plugins.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn plugins(
+        &self,
+    ) -> Result<MutexGuard<'_, Vec<omt_plugin_host::Installed>>, CapabilityError> {
+        self.plugins
+            .lock()
+            .map_err(|_| CapabilityError::internal("the plugin lock was poisoned"))
+    }
+
+    /// The scheduled jobs.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn jobs(&self) -> Result<MutexGuard<'_, Vec<omt_recall::Schedule>>, CapabilityError> {
+        self.jobs
+            .lock()
+            .map_err(|_| CapabilityError::internal("the job lock was poisoned"))
+    }
+
+    /// Dictation buffers, keyed by session.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn voice(
+        &self,
+    ) -> Result<MutexGuard<'_, std::collections::BTreeMap<String, omt_stt::TranscriptBuffer>>, CapabilityError>
+    {
+        self.voice
+            .lock()
+            .map_err(|_| CapabilityError::internal("the dictation lock was poisoned"))
     }
 }
