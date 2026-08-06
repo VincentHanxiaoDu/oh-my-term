@@ -66,9 +66,10 @@ impl State {
             jobs: Arc::new(Mutex::new(Vec::new())),
             voice: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             credentials: Arc::new(Mutex::new(omt_auth::CredentialStore::new())),
-            // Empty on a fresh install, deliberately. omt ships no key and
-            // makes no network call until the user says where their audio goes.
-            stt: Arc::new(Mutex::new(omt_stt::ProviderSet::new())),
+            // Populated from the environment, and empty without it. omt ships
+            // no key: a provider appears only once the user has supplied one,
+            // which is the whole of BYOK.
+            stt: Arc::new(Mutex::new(providers_from_env())),
             config: Arc::new(Mutex::new(None)),
         }
     }
@@ -199,5 +200,101 @@ impl State {
         self.stt
             .lock()
             .map_err(|_| CapabilityError::internal("the speech provider lock was poisoned"))
+    }
+}
+
+/// The speech engines the user's environment configures.
+///
+/// Read from the environment rather than from a file omt writes, because a key
+/// omt persists is a key omt can leak. The user's own secret store, their
+/// shell profile or their password manager puts it here; omt reads it and
+/// forgets it.
+fn providers_from_env() -> omt_stt::ProviderSet {
+    providers_from(|name| std::env::var(name).ok())
+}
+
+/// Build the provider set from a lookup.
+///
+/// Takes the lookup rather than reading the environment directly so a test can
+/// supply values without setting a process-wide variable — which in Rust 2024
+/// is unsafe, and which this workspace refuses. The indirection is worth it for
+/// that alone, and it also means a future config file feeds the same function.
+#[must_use]
+pub fn providers_from(look: impl Fn(&str) -> Option<String>) -> omt_stt::ProviderSet {
+    let present = |names: [&str; 2]| -> Option<String> {
+        names
+            .iter()
+            .filter_map(|n| look(n))
+            .find(|v| !v.trim().is_empty())
+    };
+    let mut set = omt_stt::ProviderSet::new();
+
+    if let Some(key) = present(["DEEPGRAM_API_KEY", "OMT_DEEPGRAM_KEY"]) {
+        let provider = omt_stt::Deepgram::new(key);
+        // An endpoint override, so a company running its own Deepgram-shaped
+        // service does not have to fork omt to point at it.
+        set.insert(Box::new(match present(["OMT_DEEPGRAM_ENDPOINT", ""]) {
+            Some(url) => provider.at(url),
+            None => provider,
+        }));
+    }
+    if let Some(key) = present(["OPENAI_API_KEY", "OMT_OPENAI_KEY"]) {
+        let provider = omt_stt::OpenAi::new(key);
+        // The same override, which is also how a local whisper.cpp behind an
+        // OpenAI-shaped API is used — the private option should be the easy one.
+        set.insert(Box::new(match present(["OMT_OPENAI_ENDPOINT", ""]) {
+            Some(url) => provider.at(url),
+            None => provider,
+        }));
+    }
+    set
+}
+
+impl State {
+    /// An instance whose speech engines come from a supplied lookup.
+    ///
+    /// # Errors
+    /// Never — the signature matches the other constructors for consistency.
+    #[must_use]
+    pub fn with_providers(look: impl Fn(&str) -> Option<String>) -> Self {
+        let state = Self::default();
+        if let Ok(mut set) = state.stt.lock() {
+            *set = providers_from(look);
+        }
+        state
+    }
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+
+    #[test]
+    fn no_key_means_no_provider() {
+        // The shipped state: no key, no provider, no audio leaving the machine.
+        assert!(providers_from(|_| None).is_empty());
+    }
+
+    #[test]
+    fn a_key_registers_the_provider_it_belongs_to() {
+        let set = providers_from(|n| (n == "DEEPGRAM_API_KEY").then(|| "k".to_owned()));
+        assert_eq!(set.all().len(), 1);
+        assert_eq!(set.all()[0].id(), "deepgram");
+    }
+
+    #[test]
+    fn an_empty_key_is_the_same_as_no_key() {
+        // An exported-but-blank variable is the commonest way a shell profile
+        // half-configures something, and treating it as present produces a
+        // provider that fails on every request.
+        assert!(providers_from(|_| Some("   ".to_owned())).is_empty());
+    }
+
+    #[test]
+    fn both_providers_can_be_configured_at_once() {
+        let set = providers_from(|n| {
+            matches!(n, "DEEPGRAM_API_KEY" | "OPENAI_API_KEY").then(|| "k".to_owned())
+        });
+        assert_eq!(set.all().len(), 2);
     }
 }

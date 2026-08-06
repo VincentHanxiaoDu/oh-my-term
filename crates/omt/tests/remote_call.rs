@@ -1824,3 +1824,88 @@ fn a_session_survives_the_daemon_restarting_as_a_readable_orphan() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_configured_speech_provider_becomes_usable_and_its_key_never_leaves() {
+    // BYOK, end to end: with no key there is no provider and dictation says so;
+    // with one the provider appears — and what comes back over the wire is that
+    // a key is present, never the key.
+    //
+    // The key is supplied through a lookup rather than the environment: setting
+    // a process-wide variable is unsafe in this edition, and a test that has to
+    // run alone is a test that will eventually run alongside something.
+    let state = omt::state::State::with_providers(|name| {
+        (name == "OMT_DEEPGRAM_KEY").then(|| "super-secret-value".to_owned())
+    });
+
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let out = call_ok(
+        &mut client,
+        1,
+        "voice.providers",
+        serde_json::json!({}),
+        false,
+    );
+    assert_eq!(out["usable"], true, "a configured key did not enable anything");
+    assert_eq!(out["providers"][0]["id"], "deepgram");
+    assert_eq!(out["providers"][0]["key_present"], true);
+
+    // The key itself must not be anywhere in the answer. A capability that
+    // returned one would put it in the first log somebody captured.
+    let text = out.to_string();
+    assert!(
+        !text.contains("super-secret-value"),
+        "the key came back over the wire: {text}"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn an_instance_with_no_key_offers_no_speech_provider() {
+    // The shipped state, and it says so rather than pretending: no key, no
+    // provider, and no audio leaving the machine.
+    // No key at all, whatever this machine's environment happens to hold.
+    let state = omt::state::State::with_providers(|_| None);
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let out = call_ok(
+        &mut client,
+        1,
+        "voice.providers",
+        serde_json::json!({}),
+        false,
+    );
+    assert!(out["providers"].as_array().expect("providers").is_empty());
+    assert_eq!(out["usable"], false);
+
+    drop(client);
+    worker.join().expect("worker");
+}

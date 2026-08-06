@@ -3673,11 +3673,10 @@ impl CapabilityHandler<VoiceProviders> for VoiceProvidersHandler {
                 id: p.id().to_owned(),
                 label: p.label().to_owned(),
                 needs_key: p.needs_key(),
-                // omt holds no keys of its own. A provider that needs one is
-                // configured by the user, and until then it is listed and
-                // unusable rather than hidden — hiding it would leave somebody
-                // wondering why dictation does nothing.
-                key_present: !p.needs_key(),
+                // A provider is only registered once its key was found, so a
+                // registered one that needs a key has it. Reported rather than
+                // inferred by the client, and never the value itself.
+                key_present: true,
             })
             .collect();
         Ok(VoiceProvidersOut {

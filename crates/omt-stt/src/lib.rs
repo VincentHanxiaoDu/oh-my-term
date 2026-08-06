@@ -6,6 +6,9 @@
 //! would show text the user never said and then leave it there. Every partial
 //! replaces the last; only a final is committed.
 
+pub mod providers;
+pub use providers::{Deepgram, OpenAi};
+
 use serde::{Deserialize, Serialize};
 
 /// A piece of transcript.
