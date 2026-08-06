@@ -12,6 +12,7 @@
   "instance.info",
   "interaction.list",
   "interaction.respond",
+  "job.create",
   "job.list",
   "keys.cheatsheet",
   "open.recognize",

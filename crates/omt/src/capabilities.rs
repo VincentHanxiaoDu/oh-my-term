@@ -2699,6 +2699,111 @@ impl CapabilityHandler<PluginEnable> for PluginEnableHandler {
 // Scheduled jobs
 // ---------------------------------------------------------------------------
 
+/// Input to `job.create`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct JobCreateIn {
+    /// What to call it. Also its identity: creating one with a name already in
+    /// use replaces it, which is what makes editing a job possible without a
+    /// separate update call.
+    pub name: String,
+    /// The directory it runs in.
+    pub workspace: String,
+    /// The command line.
+    pub run: String,
+    /// Fire every this many seconds. Zero or absent means manual.
+    #[serde(default)]
+    pub every_seconds: u64,
+    /// Or fire daily, this many seconds past midnight.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daily_at_secs: Option<u32>,
+    /// Whether it is on.
+    #[serde(default = "yes")]
+    pub enabled: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// What `job.create` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct JobCreateOut {
+    /// Its name.
+    pub name: String,
+    /// Whether an existing job of the same name was replaced.
+    pub replaced: bool,
+}
+
+capability! {
+    /// Create or replace a scheduled job.
+    pub struct JobCreate;
+    input  = JobCreateIn,
+    output = JobCreateOut,
+    decl = Decl {
+        name: "job.create",
+        group: "job",
+        verb: "create",
+        title: "Schedule a job",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        // A job runs a command line through a shell, so creating one is
+        // creating the ability to run anything. Declared as spawning a process
+        // because that is what it eventually does.
+        effects: Effects::SPAWNS_PROCESS,
+        // Keyed by name, so a retry after a dropped acknowledgement replaces
+        // the job it already created rather than adding a second copy that
+        // fires alongside it.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Create a scheduled job, replacing any job of the same name. A missed window is skipped rather than caught up.",
+    },
+}
+
+struct JobCreateHandler(State);
+
+impl CapabilityHandler<JobCreate> for JobCreateHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: JobCreateIn,
+    ) -> Result<JobCreateOut, CapabilityError> {
+        if input.name.trim().is_empty() {
+            return Err(CapabilityError::invalid_input("a job needs a name"));
+        }
+        if !std::path::Path::new(&input.workspace).is_dir() {
+            return Err(CapabilityError::invalid_input(format!(
+                "`{}` is not a directory",
+                input.workspace
+            )));
+        }
+        let trigger = match (input.every_seconds, input.daily_at_secs) {
+            (_, Some(at_secs)) => omt_recall::Trigger::Daily { at_secs },
+            (0, None) => omt_recall::Trigger::Manual,
+            (seconds, None) => omt_recall::Trigger::Every { seconds },
+        };
+        let job = omt_recall::Job {
+            name: input.name.clone(),
+            workspace: input.workspace,
+            run: input.run,
+            trigger,
+            enabled: input.enabled,
+        };
+
+        let mut jobs = self.0.jobs()?;
+        let replaced = jobs.iter().any(|s| s.job.name == job.name);
+        jobs.retain(|s| s.job.name != job.name);
+        jobs.push(omt_recall::Schedule::new(job));
+        Ok(JobCreateOut {
+            name: input.name,
+            replaced,
+        })
+    }
+}
+
 /// Input to `job.list`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JobListIn {}
@@ -3283,6 +3388,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<RecallRecord, _>(RecallRecordHandler(state.clone()))?;
     r.register::<PluginList, _>(PluginListHandler(state.clone()))?;
     r.register::<PluginEnable, _>(PluginEnableHandler(state.clone()))?;
+    r.register::<JobCreate, _>(JobCreateHandler(state.clone()))?;
     r.register::<JobList, _>(JobListHandler(state.clone()))?;
     r.register::<VoiceAppend, _>(VoiceAppendHandler(state.clone()))?;
     r.register::<VoiceClear, _>(VoiceClearHandler(state.clone()))?;

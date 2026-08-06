@@ -264,6 +264,28 @@
     },
     {
       "aliases": [],
+      "doc": "Create a scheduled job, replacing any job of the same name. A missed window is skipped rather than caught up.",
+      "effects": [
+        "spawns_process"
+      ],
+      "group": "job",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "job.create",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/job/create",
+      "since": "0.1.0",
+      "title": "Schedule a job",
+      "verb": "create"
+    },
+    {
+      "aliases": [],
       "doc": "Scheduled jobs with when they fire and how many times each has failed in a row.",
       "effects": [],
       "group": "job",

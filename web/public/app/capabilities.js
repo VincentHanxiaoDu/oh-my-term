@@ -67,6 +67,7 @@ export const HANDLERS = {
     }),
     'plugin.list': (request) => call(request, 'plugin.list', {}),
     'plugin.enable': (request, id, enabled) => call(request, 'plugin.enable', { id, enabled }),
+    'job.create': (request, name, workspace, run, everySeconds = 0) => call(request, 'job.create', { name, workspace, run, every_seconds: everySeconds }),
     'job.list': (request) => call(request, 'job.list', {}),
     'voice.append': (request, session, text, finalChunk = false) => call(request, 'voice.append', { session, text, final_chunk: finalChunk }),
     'voice.clear': (request, session) => call(request, 'voice.clear', { session }),

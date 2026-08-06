@@ -208,6 +208,14 @@ export const HANDLERS = {
   'plugin.enable': (request: RequestId, id: string, enabled: boolean) =>
     call(request, 'plugin.enable', { id, enabled }),
 
+  'job.create': (
+    request: RequestId,
+    name: string,
+    workspace: string,
+    run: string,
+    everySeconds = 0,
+  ) => call(request, 'job.create', { name, workspace, run, every_seconds: everySeconds }),
+
   'job.list': (request: RequestId) => call(request, 'job.list', {}),
 
   'voice.append': (request: RequestId, session: string, text: string, finalChunk = false) =>

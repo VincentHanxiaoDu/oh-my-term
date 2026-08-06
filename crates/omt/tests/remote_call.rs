@@ -1281,3 +1281,127 @@ fn a_snapshot_from_a_future_version_is_refused_rather_than_guessed_at() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_job_can_be_scheduled_and_fires_once_it_is_due() {
+    // `job.list` reported schedules that nothing ever fired. This drives the
+    // decision the scheduler makes, without waiting on wall-clock time — the
+    // schedule is a pure function over a timestamp, which is exactly why it is
+    // separated from the thread that spawns processes.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let created = call_ok(
+        &mut client,
+        1,
+        "job.create",
+        serde_json::json!({
+            "name": "tests",
+            "workspace": dir.path().to_string_lossy(),
+            "run": "true",
+            "every_seconds": 60,
+        }),
+        true,
+    );
+    assert_eq!(created["replaced"], false);
+
+    let listed = call_ok(&mut client, 2, "job.list", serde_json::json!({}), false);
+    assert_eq!(listed["jobs"][0]["name"], "tests");
+    assert_eq!(listed["jobs"][0]["trigger"], "every 60s");
+
+    // Due immediately, because a job that appears to do nothing for an hour
+    // after you enable it is one people conclude is broken.
+    let due = omt::scheduler::due_now(&state, 1_000);
+    assert_eq!(due.len(), 1, "a new job was not due");
+    assert!(
+        omt::scheduler::due_now(&state, 1_001).is_empty(),
+        "it fired twice"
+    );
+
+    omt::scheduler::finished(&state, "tests", false);
+    let after = call_ok(&mut client, 3, "job.list", serde_json::json!({}), false);
+    assert_eq!(
+        after["jobs"][0]["consecutive_failures"], 1,
+        "a failure was not visible to a client, so nobody would know it is broken"
+    );
+
+    // Same name replaces rather than adding a second copy that fires alongside
+    // the first — which is what a retry after a dropped acknowledgement does.
+    let again = call_ok(
+        &mut client,
+        4,
+        "job.create",
+        serde_json::json!({
+            "name": "tests",
+            "workspace": dir.path().to_string_lossy(),
+            "run": "true",
+            "every_seconds": 30,
+        }),
+        true,
+    );
+    assert_eq!(again["replaced"], true);
+    let final_list = call_ok(&mut client, 5, "job.list", serde_json::json!({}), false);
+    assert_eq!(final_list["jobs"].as_array().expect("jobs").len(), 1);
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_job_pointing_at_a_directory_that_is_not_there_is_refused() {
+    // Refused at creation, because the alternative is a job that fails every
+    // minute forever and reports it only through a counter.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(1),
+            capability: "job.create".to_owned(),
+            input: serde_json::json!({
+                "name": "bad",
+                "workspace": "/definitely/not/here",
+                "run": "true",
+                "every_seconds": 60,
+            }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(matches!(result.outcome, CallOutcome::Err { .. }));
+
+    drop(client);
+    worker.join().expect("worker");
+}

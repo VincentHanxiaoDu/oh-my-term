@@ -22,6 +22,9 @@ pub fn run(bind: &str) -> Result<()> {
     // it, and watch a screen that never changes — every byte sits in the pty
     // buffer with nobody reading it.
     spawn_pump(state.clone());
+    // Scheduled jobs fire from here too. A job that only runs when a TUI is
+    // open is not a scheduled job.
+    crate::scheduler::spawn(state.clone());
     // The directory `omt web` was started in, opened before anything is served.
     // A browser has no filesystem of its own to point at, so an instance with
     // no workspace gives it a session-creation form it cannot fill in — and the
