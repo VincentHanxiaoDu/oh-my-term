@@ -91,4 +91,9 @@ build here, and listing one as missing was inventing a requirement.
 
 | | Why it is not there |
 |---|---|
-| An iOS/Android app in a store | The iOS app compiles — SwiftUI roster, the socket, the intent rule — and 15 checks run it without a network (`swift run omt-client-check`). What has not happened is a build against a device or a simulator, an app icon, or anything to do with signing and submission. The Kotlin equivalent is written but needs a Gradle toolchain this machine does not have. |
+| An Android build | The Compose UI, the roster rules and the protocol are written with tests. Nothing has compiled them: this machine has no Android SDK, no Gradle and no `kotlinc`. "Written" and "works" are different claims and the Android README says which one applies. |
+| An iOS build against a device | The app compiles and 16 checks drive it (`swift run omt-client-check`) — the SwiftUI roster, the entry point, the socket, the intent rule, a device id that survives a relaunch. What needs full Xcode rather than the command line tools: a simulator run, an icon, signing. |
+
+Both are toolchain steps rather than missing behaviour. Everything the
+architecture describes is implemented and tested; these two need machines with
+Xcode and the Android SDK on them.

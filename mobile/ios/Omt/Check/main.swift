@@ -97,8 +97,15 @@ check(listed.first?.title == "zzz", "the app orders what needs a human first")
 let liveHeader = await client.header
 check(liveHeader == "1 of 2 need you", "the header counts what needs you")
 
+// The app's entry point exists and can be constructed. It does nothing
+// interesting on purpose — an entry point that does is one that cannot be
+// tested — but "the app type compiles" is worth one check, because it is the
+// piece a library target would otherwise never touch.
+_ = await OmtApplication()
+check(true, "the application type builds")
+
 if failures.isEmpty {
-    print("omt swift client: \(15) checks passed")
+    print("omt swift client: \(16) checks passed")
 } else {
     for f in failures { print("FAILED: \(f)") }
     exit(1)

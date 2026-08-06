@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; this exists so the window has a theme before
+         the first frame and does not flash white on a dark phone. -->
+    <style name="Theme.Omt" parent="android:Theme.Material.NoActionBar" />
+</resources>
