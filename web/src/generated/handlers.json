@@ -33,6 +33,7 @@
   "session.read",
   "session.release",
   "session.resize",
+  "session.restart",
   "session.snapshot",
   "session.write",
   "state.restore",

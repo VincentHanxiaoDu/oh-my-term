@@ -43,6 +43,7 @@ vanishing.
 | `session.read` | query | viewer | The visible screen as text, optionally with scrollback. |
 | `session.release` | command | operator | Give up the writer token. Idempotent: releasing one you do not hold is not an error. |
 | `session.resize` | command | operator | Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with. |
+| `session.restart` | command | operator | Respawn the command behind a session restored from a snapshot, keeping the old output above a separator. |
 | `session.snapshot` | query | viewer | The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
@@ -54,4 +55,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-44 capabilities.
+45 capabilities.

@@ -90,6 +90,10 @@ export const HANDLERS = {
     }),
     'session.acquire': (request, session, force = false) => call(request, 'session.acquire', { session, force }),
     'session.release': (request, session) => call(request, 'session.release', { session }),
+    'session.restart': (request, session, program) => call(request, 'session.restart', {
+        session,
+        ...(program === undefined ? {} : { program }),
+    }),
     'session.snapshot': (request, session) => call(request, 'session.snapshot', { session }),
     'config.get': (request, key) => call(request, 'config.get', key === undefined ? {} : { key }),
     'keys.cheatsheet': (request) => call(request, 'keys.cheatsheet', {}),

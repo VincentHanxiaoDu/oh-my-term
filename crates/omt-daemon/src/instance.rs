@@ -48,6 +48,8 @@ pub struct Instance {
     merges: BTreeMap<BindingId, MergeMachine>,
     runtimes: BTreeMap<SessionId, crate::SessionRuntime>,
     rosters: BTreeMap<SessionId, omt_agent::ThreadRoster>,
+    /// Terminals for sessions restored from a snapshot, which have no pty.
+    orphans: BTreeMap<SessionId, omt_term::Terminal>,
 }
 
 impl Default for Instance {
@@ -68,6 +70,7 @@ impl Instance {
             merges: BTreeMap::new(),
             runtimes: BTreeMap::new(),
             rosters: BTreeMap::new(),
+            orphans: BTreeMap::new(),
         }
     }
 
@@ -287,6 +290,103 @@ impl Instance {
         self.tree
             .session_mut(id)
             .is_some_and(|s| s.writer.release(by))
+    }
+
+    /// Bring a session back from a snapshot, with nothing behind it.
+    ///
+    /// Its pty is gone — one does not survive the process that opened it — so
+    /// this restores everything that did: the title, the directory, and the
+    /// screen as it stood. The result is readable, searchable and copyable, and
+    /// refuses writes rather than accepting bytes nothing will ever read.
+    pub fn restore_orphan(
+        &mut self,
+        workspace: WorkspaceId,
+        title: &str,
+        cwd: Option<&str>,
+        screen: &[String],
+    ) -> Option<SessionId> {
+        let id = self
+            .tree
+            .create_session(workspace, omt_session::SessionKind::Shell, SessionMode::Pty)
+            .ok()?;
+        self.streams.insert(id, Stream::new());
+
+        // A terminal with no pty behind it, holding what the session last
+        // showed. Sized to the content rather than to a default, so a restored
+        // screen is not padded out to eighty columns of nothing.
+        let cols = screen
+            .iter()
+            .map(|l| u16::try_from(l.chars().count()).unwrap_or(u16::MAX))
+            .max()
+            .unwrap_or(80)
+            .max(1);
+        let rows = u16::try_from(screen.len()).unwrap_or(u16::MAX).max(1);
+        let mut terminal = omt_term::Terminal::new(omt_term::TermConfig {
+            size: omt_term::GridSize::new(cols, rows),
+            ..omt_term::TermConfig::default()
+        });
+        for (i, line) in screen.iter().enumerate() {
+            if i > 0 {
+                terminal.advance(b"\r\n");
+            }
+            terminal.advance(line.as_bytes());
+        }
+        self.orphans.insert(id, terminal);
+
+        if let Some(session) = self.tree.session_mut(id) {
+            session.title = title.to_owned();
+            session.cwd = cwd.map(str::to_owned);
+            session.state = omt_session::SessionState::Orphaned;
+        }
+        Some(id)
+    }
+
+    /// Put a process behind a session that has none.
+    ///
+    /// The id is kept, so every pane, every card and every client still
+    /// referring to this session keeps working. The old screen is written into
+    /// the new terminal above a separator: what you were looking at when the
+    /// daemon went down is usually why you are restarting it.
+    ///
+    /// # Errors
+    /// Fails if the process cannot be started.
+    pub fn respawn(
+        &mut self,
+        id: SessionId,
+        config: &omt_pty::PtyConfig,
+    ) -> Result<(), crate::RuntimeError> {
+        let previous = self
+            .orphans
+            .remove(&id)
+            .map(|t| t.screen_text())
+            .unwrap_or_default();
+
+        let runtime = crate::SessionRuntime::spawn(id, config, omt_term::ScrollbackLimits::default())
+            .map_err(|e| crate::RuntimeError::Io(e.to_string()))?;
+        self.runtimes.insert(id, runtime);
+        if let Some(session) = self.tree.session_mut(id) {
+            session.state = omt_session::SessionState::Starting;
+        }
+
+        if let Some(rt) = self.runtimes.get_mut(&id) {
+            for line in previous.iter().filter(|l| !l.trim().is_empty()) {
+                rt.terminal_mut().advance(line.as_bytes());
+                rt.terminal_mut().advance(b"\r\n");
+            }
+            if !previous.is_empty() {
+                // A visible break, because output from before a restart mixed
+                // into output from after it is worse than losing it.
+                rt.terminal_mut()
+                    .advance("\r\n\u{2500}\u{2500} restarted \u{2500}\u{2500}\r\n".as_bytes());
+            }
+        }
+        Ok(())
+    }
+
+    /// The terminal of a restored session, which has no runtime.
+    #[must_use]
+    pub fn orphan_terminal(&self, id: SessionId) -> Option<&omt_term::Terminal> {
+        self.orphans.get(&id)
     }
 
     /// Put a pane in a workspace's primary view.

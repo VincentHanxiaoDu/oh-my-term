@@ -1685,3 +1685,142 @@ fn a_permission_omt_does_not_know_is_refused_rather_than_ignored() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_session_survives_the_daemon_restarting_as_a_readable_orphan() {
+    // What the architecture actually specifies, which is not "the pty
+    // survives": a pty dies with the process that opened it. What survives is
+    // everything else — the screen, the directory, the command — so the session
+    // comes back readable, refuses writes, and offers a restart.
+    //
+    // The snapshot is written directly rather than produced by running a shell
+    // and waiting for its output. Racing a real process to make a fixture is
+    // how a test passes alone and hangs in a parallel run, which is what the
+    // first version of this did.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let work = dir.path().join("project");
+    std::fs::create_dir_all(&work).expect("mkdir");
+    let snapshot = dir.path().join("state.json");
+    std::fs::write(
+        &snapshot,
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "workspaces": [{ "root": work.to_string_lossy() }],
+            "sessions": [{
+                "workspace_root": work.to_string_lossy(),
+                "title": "shell",
+                "program": "/bin/sh",
+                "cwd": work.to_string_lossy(),
+                "screen": ["before-the-restart", "$ "],
+            }],
+        }))
+        .expect("encode"),
+    )
+    .expect("write");
+
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let restored = call_ok(
+        &mut client,
+        1,
+        "state.restore",
+        serde_json::json!({ "path": snapshot.to_string_lossy() }),
+        true,
+    );
+    assert_eq!(restored["sessions"], 1, "the session did not come back");
+
+    let listed = call_ok(&mut client, 2, "session.list", serde_json::json!({}), false);
+    let session = listed["sessions"][0]["id"]
+        .as_str()
+        .expect("session")
+        .to_owned();
+    // Named, not folded into "exited": a client has to tell "the program
+    // finished" from "this can be brought back".
+    assert_eq!(listed["sessions"][0]["state"], "orphaned");
+
+    // Readable, which is the whole point of restoring one.
+    let read = call_ok(
+        &mut client,
+        3,
+        "session.read",
+        serde_json::json!({ "session": session, "history": 0 }),
+        false,
+    );
+    assert!(
+        read["screen"].to_string().contains("before-the-restart"),
+        "the restored session lost what was on it: {}",
+        read["screen"]
+    );
+
+    // And refuses writes by name, because bytes accepted into a session with
+    // nothing behind it look exactly like typing that worked.
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(4),
+            capability: "session.write".to_owned(),
+            input: serde_json::json!({ "session": session, "text": "ls\n", "epoch": 1 }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    let CallOutcome::Err { error } = result.outcome else {
+        panic!("a write to an orphan was accepted");
+    };
+    assert!(
+        error.message.contains("restart"),
+        "the refusal does not say what to do: {}",
+        error.message
+    );
+
+    // Restarted: same id, old output kept above a separator.
+    let restarted = call_ok(
+        &mut client,
+        5,
+        "session.restart",
+        serde_json::json!({ "session": session, "program": "/bin/sh" }),
+        true,
+    );
+    assert_eq!(
+        restarted["session"], session,
+        "the id changed, so every pane and card referring to it is orphaned"
+    );
+    assert!(restarted["kept_lines"].as_u64().is_some_and(|n| n > 0));
+
+    let after = call_ok(&mut client, 6, "session.list", serde_json::json!({}), false);
+    assert_ne!(after["sessions"][0]["state"], "orphaned");
+
+    // A second restart is refused rather than putting two processes on one pty.
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(7),
+            capability: "session.restart".to_owned(),
+            input: serde_json::json!({ "session": session }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(second) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(matches!(second.outcome, CallOutcome::Err { .. }));
+
+    drop(client);
+    worker.join().expect("worker");
+}

@@ -417,6 +417,10 @@ fn describe_state(state: omt_session::SessionState) -> String {
             Some(c) => format!("exited:{c}"),
             None => "exited".to_owned(),
         },
+        // Named rather than folded into "exited": a client has to be able to
+        // tell "the program finished" from "the daemon restarted and this can
+        // be brought back".
+        omt_session::SessionState::Orphaned => "orphaned".to_owned(),
     }
 }
 
@@ -1004,6 +1008,16 @@ impl CapabilityHandler<SessionWrite> for SessionWriteHandler {
     ) -> Result<SessionWriteOut, CapabilityError> {
         let id = session_id(&input.session)?;
         let mut instance = self.0.lock()?;
+        // Refused by name, because bytes accepted into a session with nothing
+        // behind it would look exactly like typing that worked.
+        if instance
+            .session(id)
+            .is_some_and(|s| !s.state.accepts_input())
+        {
+            return Err(CapabilityError::precondition_failed(
+                "that session was restored from a snapshot and has no process — restart it first",
+            ));
+        }
         let bytes = instance
             .write_session_input(id, omt_session::Epoch(input.epoch), input.text.as_bytes())
             .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
@@ -1136,10 +1150,11 @@ impl CapabilityHandler<SessionRead> for SessionReadHandler {
     ) -> Result<SessionReadOut, CapabilityError> {
         let id = session_id(&input.session)?;
         let instance = self.0.lock()?;
-        let runtime = instance
+        let terminal = instance
             .runtime(id)
+            .map(omt_daemon::SessionRuntime::terminal)
+            .or_else(|| instance.orphan_terminal(id))
             .ok_or_else(|| CapabilityError::not_found("no such session"))?;
-        let terminal = runtime.terminal();
 
         // Bounded rather than "all of it": a client asking for a million lines
         // over a phone link would be answered, slowly, and time out.
@@ -1392,6 +1407,110 @@ impl CapabilityHandler<SessionCreate> for SessionCreateHandler {
     }
 }
 
+/// Input to `session.restart`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionRestartIn {
+    /// Which session.
+    pub session: String,
+    /// What to run. Absent means what it was running before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    /// Columns to start at.
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+    /// Rows.
+    #[serde(default = "default_rows")]
+    pub rows: u16,
+}
+
+/// What `session.restart` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionRestartOut {
+    /// The session, which keeps its id — anything referring to it still does.
+    pub session: String,
+    /// How many lines of the old screen were kept above the separator.
+    pub kept_lines: u32,
+}
+
+capability! {
+    /// Put a process back behind a restored session.
+    pub struct SessionRestart;
+    input  = SessionRestartIn,
+    output = SessionRestartOut,
+    decl = Decl {
+        name: "session.restart",
+        group: "session",
+        verb: "restart",
+        title: "Restart a session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::SPAWNS_PROCESS,
+        // Compare-and-swap on the session's state: a repeat while it is already
+        // running is refused rather than spawning a second process behind the
+        // same session.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Respawn the command behind a session restored from a snapshot, keeping the old output above a separator.",
+    },
+}
+
+struct SessionRestartHandler(State);
+
+impl CapabilityHandler<SessionRestart> for SessionRestartHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: SessionRestartIn,
+    ) -> Result<SessionRestartOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let mut instance = self.0.lock()?;
+
+        let session = instance
+            .session(id)
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?;
+        // Only an orphan. Restarting a live session would leave two processes
+        // on one pty, which is a mess nobody can untangle from the outside.
+        if session.state != omt_session::SessionState::Orphaned {
+            return Err(CapabilityError::precondition_failed(
+                "that session already has a process",
+            ));
+        }
+        let cwd = session.cwd.clone();
+        let program = input
+            .program
+            .or_else(|| std::env::var("SHELL").ok())
+            .unwrap_or_else(|| "/bin/sh".to_owned());
+
+        let kept = instance
+            .orphan_terminal(id)
+            .map(|t| t.screen_text().iter().filter(|l| !l.trim().is_empty()).count())
+            .unwrap_or(0);
+
+        instance
+            .respawn(
+                id,
+                &omt_pty::PtyConfig {
+                    program: program.into(),
+                    args: Vec::new(),
+                    cwd: cwd.map(Into::into),
+                    size: omt_pty::PtySize::new(input.cols, input.rows),
+                    env: vec![("OMT_SESSION".to_owned(), id.to_wire())],
+                    ..omt_pty::PtyConfig::default()
+                },
+            )
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+
+        Ok(SessionRestartOut {
+            session: input.session,
+            kept_lines: kept as u32,
+        })
+    }
+}
+
 /// Input to `session.snapshot`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SessionSnapshotIn {
@@ -1480,10 +1599,14 @@ impl CapabilityHandler<SessionSnapshot> for SessionSnapshotHandler {
     ) -> Result<SessionSnapshotOut, CapabilityError> {
         let id = session_id(&input.session)?;
         let instance = self.0.lock()?;
-        let runtime = instance
+        // An orphan has no runtime and is still readable. That is the whole
+        // point of restoring one: content you can read, search and copy, with
+        // nothing behind it.
+        let terminal = instance
             .runtime(id)
+            .map(omt_daemon::SessionRuntime::terminal)
+            .or_else(|| instance.orphan_terminal(id))
             .ok_or_else(|| CapabilityError::not_found("no such session"))?;
-        let terminal = runtime.terminal();
         let grid = terminal.grid();
         let size = grid.size();
 
@@ -2448,6 +2571,25 @@ pub struct PersistedWorkspace {
     pub root: String,
 }
 
+/// What a restart needs to know about one session.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PersistedSession {
+    /// Its workspace's canonical path, which is what the id derives from.
+    pub workspace_root: String,
+    /// Its title.
+    pub title: String,
+    /// What it was running, so "restart" respawns the same thing rather than a
+    /// default shell somebody has to reconfigure.
+    pub program: String,
+    /// Where it was running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// The screen as it stood, so a restored session is readable, searchable
+    /// and copyable even though nothing is behind it.
+    #[serde(default)]
+    pub screen: Vec<String>,
+}
+
 /// The whole snapshot.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Persisted {
@@ -2457,6 +2599,12 @@ pub struct Persisted {
     pub version: u32,
     /// The workspaces that were open.
     pub workspaces: Vec<PersistedWorkspace>,
+    /// The sessions that were open.
+    ///
+    /// Their processes do not survive — a pty dies with the daemon that opened
+    /// it — so these come back orphaned: readable, with a restart offered.
+    #[serde(default)]
+    pub sessions: Vec<PersistedSession>,
 }
 
 /// The version this build writes.
@@ -2515,15 +2663,51 @@ impl CapabilityHandler<StateSave> for StateSaveHandler {
         let path = snapshot_path(input.path)?;
         let snapshot = {
             let instance = self.0.lock()?;
+            let roots: std::collections::BTreeMap<_, _> = instance
+                .workspaces()
+                .into_iter()
+                .map(|w| (w.id, w.root.clone()))
+                .collect();
+            let sessions = instance
+                .sessions()
+                .iter()
+                .filter_map(|s| {
+                    Some(PersistedSession {
+                        workspace_root: roots.get(&s.workspace)?.clone(),
+                        title: s.title.clone(),
+                        program: match &s.kind {
+                            omt_session::SessionKind::Command { argv } => argv
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| "/bin/sh".to_owned()),
+                            _ => std::env::var("SHELL")
+                                .unwrap_or_else(|_| "/bin/sh".to_owned()),
+                        },
+                        cwd: s.cwd.clone(),
+                        screen: Vec::new(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let sessions = sessions
+                .into_iter()
+                .zip(instance.sessions().iter().map(|s| s.id))
+                .map(|(mut p, id)| {
+                    // The screen, so a restored session can be read. Taken here
+                    // rather than in the loop above because the runtime lookup
+                    // needs the id and the session borrow is already held.
+                    if let Some(rt) = instance.runtime(id) {
+                        p.screen = rt.terminal().screen_text();
+                    }
+                    p
+                })
+                .collect();
             Persisted {
                 version: SNAPSHOT_VERSION,
-                workspaces: instance
-                    .workspaces()
-                    .into_iter()
-                    .map(|w| PersistedWorkspace {
-                        root: w.root.clone(),
-                    })
+                workspaces: roots
+                    .values()
+                    .map(|root| PersistedWorkspace { root: root.clone() })
                     .collect(),
+                sessions,
             }
         };
         if let Some(parent) = path.parent() {
@@ -2551,6 +2735,8 @@ pub struct StateRestoreIn {
 pub struct StateRestoreOut {
     /// How many workspaces were reopened.
     pub workspaces: u32,
+    /// How many sessions came back, orphaned.
+    pub sessions: u32,
     /// Whether there was a snapshot at all.
     pub found: bool,
     /// Roots the snapshot named that are no longer there.
@@ -2600,6 +2786,7 @@ impl CapabilityHandler<StateRestore> for StateRestoreHandler {
         else {
             return Ok(StateRestoreOut {
                 workspaces: 0,
+                sessions: 0,
                 found: false,
                 missing: Vec::new(),
             });
@@ -2625,8 +2812,27 @@ impl CapabilityHandler<StateRestore> for StateRestoreHandler {
                 missing.push(w.root);
             }
         }
+
+        // Sessions come back orphaned. Their processes are gone — a pty dies
+        // with the daemon that opened it — but everything else survived, so
+        // they are readable and offer a restart rather than vanishing.
+        let mut orphaned = 0u32;
+        for p in snapshot.sessions {
+            if !std::path::Path::new(&p.workspace_root).is_dir() {
+                continue;
+            }
+            let workspace = omt_types::WorkspaceId::from_canonical_path(&p.workspace_root);
+            if instance
+                .restore_orphan(workspace, &p.title, p.cwd.as_deref(), &p.screen)
+                .is_some()
+            {
+                orphaned += 1;
+            }
+        }
+
         Ok(StateRestoreOut {
             workspaces: opened,
+            sessions: orphaned,
             found: true,
             missing,
         })
@@ -3995,6 +4201,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<FsWrite, _>(FsWriteHandler(state.clone()))?;
     r.register::<InteractionList, _>(InteractionListHandler(state.clone()))?;
     r.register::<InteractionRespond, _>(InteractionRespondHandler(state.clone()))?;
+    r.register::<SessionRestart, _>(SessionRestartHandler(state.clone()))?;
     r.register::<SessionCreate, _>(SessionCreateHandler(state.clone()))?;
     r.register::<SessionAcquire, _>(SessionAcquireHandler(state.clone()))?;
     r.register::<SessionRelease, _>(SessionReleaseHandler(state.clone()))?;

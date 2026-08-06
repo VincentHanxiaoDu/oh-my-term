@@ -692,6 +692,28 @@
     },
     {
       "aliases": [],
+      "doc": "Respawn the command behind a session restored from a snapshot, keeping the old output above a separator.",
+      "effects": [
+        "spawns_process"
+      ],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "session.restart",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/restart",
+      "since": "0.1.0",
+      "title": "Restart a session",
+      "verb": "restart"
+    },
+    {
+      "aliases": [],
       "doc": "The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one.",
       "effects": [],
       "group": "session",

@@ -284,6 +284,12 @@ export const HANDLERS = {
   'session.release': (request: RequestId, session: string) =>
     call(request, 'session.release', { session }),
 
+  'session.restart': (request: RequestId, session: string, program?: string) =>
+    call(request, 'session.restart', {
+      session,
+      ...(program === undefined ? {} : { program }),
+    }),
+
   'session.snapshot': (request: RequestId, session: string) =>
     call(request, 'session.snapshot', { session }),
 

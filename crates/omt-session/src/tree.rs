@@ -24,6 +24,27 @@ pub enum SessionState {
         /// Its exit code, where one was observed.
         code: Option<i32>,
     },
+    /// Restored from a snapshot, with no process behind it.
+    ///
+    /// A pty does not survive the daemon that opened it. What survives is
+    /// everything else — the scrollback, the cwd, the argv — so the session
+    /// comes back readable, searchable and copyable, and writes are refused
+    /// rather than silently going nowhere. The surface offers to restart it,
+    /// which respawns the same command and keeps the old output above a
+    /// separator.
+    Orphaned,
+}
+
+impl SessionState {
+    /// Whether input may be written to this session.
+    ///
+    /// The distinction that makes an orphan useful rather than confusing: you
+    /// can read it and copy from it, and typing tells you plainly that there is
+    /// nothing on the other end.
+    #[must_use]
+    pub const fn accepts_input(self) -> bool {
+        matches!(self, Self::Starting | Self::Running)
+    }
 }
 
 /// What a session is running.
