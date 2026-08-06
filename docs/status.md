@@ -72,7 +72,6 @@ Listed because a checklist that only lists what exists is marketing.
 |---|---|
 | A speech engine in the box | The `SttProvider` trait, the registry and `voice.providers` are there, and a third party can add an engine without editing omt. **omt ships none.** That is the design rather than a gap: BYOK means the user's audio goes where the user said, on the user's own account, and omt makes no network call until somebody configures one. |
 | Sessions surviving the *daemon* restarting | A session outlives any terminal attached to it, but not `omt serve` itself: a pty's child dies with the process that opened it. Surviving that needs a supervisor that re-parents the child, which is a different piece of work from this one. |
-| Codex `app-server` client | Would raise Codex from hook to protocol tier. |
-| opencode HTTP (REST + SSE) source | Generic ACP covers opencode today. |
+| Codex / opencode protocol sources *connected to a live agent* | The transports are built and tested: `appserver.rs` reads newline-delimited JSON-RPC from a real subprocess, `sse.rs` decodes server-sent events including the cases implementations get wrong. What is not done is registering them as running sources against an installed Codex or opencode and checking the result against those agents' actual output — which needs the agents, not more code. Until that is verified, both stay at the tier their hook path reaches. |
 | Native iOS / Android | Scaffold only — `mobile/README.md`. |
 | Desktop app | Does not exist. No Electron, no Tauri, nothing. |

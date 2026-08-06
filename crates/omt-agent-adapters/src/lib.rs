@@ -31,4 +31,7 @@ pub use install::{
     INSTALL_VERSION, InstallError, Plan, STAMP_KEY, events_for, is_stale, plan_install,
     plan_uninstall,
 };
+pub mod appserver;
+pub mod sse;
+pub use appserver::{AppServer, ServerLine, decode_line};
 pub use registry::{AdapterSet, builtin};
