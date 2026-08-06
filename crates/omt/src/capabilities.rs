@@ -2796,6 +2796,60 @@ capability! {
     },
 }
 
+/// The context the daemon's own bookkeeping runs under.
+///
+/// `Actor::Local` with the operator role, because this *is* the machine acting
+/// on its own behalf. Given a name rather than constructed inline so the two
+/// callers below cannot drift into claiming different authority.
+fn daemon_context() -> CallContext {
+    CallContext {
+        actor: omt_types::Actor::Local,
+        role: Role::Operator,
+        request: omt_catalog::RequestId {
+            device: omt_types::DeviceId::new(),
+            n: 0,
+        },
+        // No intent: nothing retries this. The timer fires again in thirty
+        // seconds, which is a better answer than a dedup entry that has to be
+        // kept for as long as a retry is plausible.
+        intent: None,
+    }
+}
+
+/// Write a snapshot, without going through a capability call.
+///
+/// The daemon's own autosave uses this. Sharing the body rather than
+/// duplicating it means the file the timer writes is byte-identical to the one
+/// `state.save` writes — two writers with two formats is a snapshot that only
+/// one of them can read.
+///
+/// # Errors
+/// Fails if the file cannot be written.
+pub fn save_to(state: &State, path: &std::path::Path) -> Result<StateSaveOut, CapabilityError> {
+    StateSaveHandler(state.clone()).call(
+        &daemon_context(),
+        StateSaveIn {
+            path: Some(path.display().to_string()),
+        },
+    )
+}
+
+/// Read a snapshot back, without going through a capability call.
+///
+/// # Errors
+/// Fails if the file exists and cannot be understood.
+pub fn restore_from(
+    state: &State,
+    path: &std::path::Path,
+) -> Result<StateRestoreOut, CapabilityError> {
+    StateRestoreHandler(state.clone()).call(
+        &daemon_context(),
+        StateRestoreIn {
+            path: Some(path.display().to_string()),
+        },
+    )
+}
+
 struct StateSaveHandler(State);
 
 impl CapabilityHandler<StateSave> for StateSaveHandler {

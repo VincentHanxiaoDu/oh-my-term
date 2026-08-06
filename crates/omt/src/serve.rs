@@ -43,6 +43,12 @@ pub fn serve(path: &Path, state: State) -> Result<()> {
     crate::web::spawn_pump(state.clone());
     crate::scheduler::spawn(state.clone());
 
+    // What was open last time, before anything new is served. A restore that
+    // ran after the first client connected would show it an empty instance and
+    // then change it underneath — worse than being slightly slower to start.
+    crate::persist::restore_on_start(&state);
+    crate::persist::spawn_autosave(state.clone());
+
     // A socket left behind by a daemon that died is a file that exists and
     // refuses every connection. Removing it here means a crash does not
     // require a manual cleanup before omt will start again.

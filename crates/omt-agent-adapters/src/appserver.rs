@@ -137,7 +137,7 @@ mod tests {
     fn a_notification_becomes_omt_payloads() {
         let out = decode_line(
             &Codex,
-            r#"{"jsonrpc":"2.0","method":"task_started","params":{"turn_id":"t1"}}"#,
+            r#"{"jsonrpc":"2.0","method":"turn/started","params":{"turn":{"id":"t1"}}}"#,
         );
         let ServerLine::Payloads(payloads) = out else {
             panic!("expected payloads, got {out:?}");
@@ -185,7 +185,7 @@ mod tests {
             "/bin/sh",
             &[
                 "-c".to_owned(),
-                r#"printf '%s\n' '{"jsonrpc":"2.0","method":"task_started","params":{}}' '' '{"jsonrpc":"2.0","method":"task_complete","params":{"status":"error"}}'"#
+                r#"printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"turn":{"id":"t1"}}}' '' '{"jsonrpc":"2.0","method":"turn/completed","params":{"turn":{"status":"failed"}}}'"#
                     .to_owned(),
             ],
         )

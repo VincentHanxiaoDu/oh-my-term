@@ -1957,12 +1957,12 @@ fn a_protocol_agent_is_driven_and_its_events_reach_the_session() {
     // An agent that speaks the protocol: a turn, a command it wants to run,
     // the result, and one notification omt has never heard of.
     let script = r#"printf '%s\n' \
-'{"jsonrpc":"2.0","method":"task_started","params":{"turn_id":"t1"}}' \
-'{"jsonrpc":"2.0","method":"exec-command-begin","params":{"call_id":"c1","command":["cargo","test"]}}' \
-'{"jsonrpc":"2.0","method":"exec-command-end","params":{"call_id":"c1","output":"ok"}}' \
+'{"jsonrpc":"2.0","method":"turn/started","params":{"turn":{"id":"t1"}}}' \
+'{"jsonrpc":"2.0","method":"item/started","params":{"item":{"type":"commandExecution","id":"c1","command":"cargo test"}}}' \
+'{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"commandExecution","id":"c1","aggregatedOutput":"ok"}}}' \
 '{"jsonrpc":"2.0","id":7,"result":{"this":"is a reply, not an event"}}' \
-'{"jsonrpc":"2.0","method":"something_omt_has_never_heard_of","params":{}}' \
-'{"jsonrpc":"2.0","method":"task_complete","params":{"status":"ok"}}'"#;
+'{"jsonrpc":"2.0","method":"something/omt/has-never-heard-of","params":{}}' \
+'{"jsonrpc":"2.0","method":"turn/completed","params":{"turn":{"status":"completed"}}}'"#;
 
     let out = call_ok(
         &mut client,
@@ -1984,7 +1984,7 @@ fn a_protocol_agent_is_driven_and_its_events_reach_the_session() {
     // And the one nobody has a mapping for is named rather than dropped.
     assert_eq!(
         out["unmapped"],
-        serde_json::json!(["something_omt_has_never_heard_of"]),
+        serde_json::json!(["something/omt/has-never-heard-of"]),
         "an unmapped method was swallowed: {out}"
     );
 

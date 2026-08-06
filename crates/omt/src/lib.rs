@@ -7,6 +7,7 @@
 pub mod capabilities;
 
 pub mod attach;
+pub mod persist;
 pub mod run;
 pub mod scheduler;
 
