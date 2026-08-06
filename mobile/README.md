@@ -1,11 +1,17 @@
 # Native clients
 
-**Status: a client library each, and no app.** The Swift package compiles and
-its assertions run — `cd ios && swift run omt-client-check` — and the Kotlin
-equivalent is written with its own tests. What does not exist is either
-*application*: no UI, no socket lifecycle, no push registration, nothing built
-against a device. The web client is the one that works, and it is what you
-should use today.
+**Status: an iOS app that compiles, and no app in a store.** The Swift package
+builds a SwiftUI roster over a real WebSocket, and 15 checks drive it without a
+network — `cd ios && swift run omt-client-check`. The views live in a library
+target rather than an `.iOSApplication` product on purpose: a library is
+compiled by `swift build` on any machine, and that is where the mistakes
+actually are. What has not happened is a build against a device, an icon, or
+anything to do with signing.
+
+The Kotlin equivalent is written and needs a Gradle toolchain to compile.
+
+The web client is the one that works today, and on a phone it is genuinely
+good — it installs, it takes touch, it receives push.
 
 ## Why these exist at all
 

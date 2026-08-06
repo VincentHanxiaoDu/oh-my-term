@@ -6,6 +6,7 @@
 
 import Foundation
 import OmtClient
+import OmtApp
 
 var failures: [String] = []
 
@@ -63,8 +64,41 @@ check(
     "a refusal is said out loud rather than shown as an empty list"
 )
 
+// The app's own message building and message handling, driven without a
+// socket. What a message means does not need a network to be tested.
+let defaults = UserDefaults(suiteName: "omt.check") ?? .standard
+defaults.removePersistentDomain(forName: "omt.check")
+let client = await Client(defaults: defaults)
+
+let appCommand = await client.message(for: "session.close", input: ["session": "s1"])
+check(appCommand["intent"] != nil, "the app puts an intent id on a command")
+let appQuery = await client.message(for: "session.list", input: [:])
+check(appQuery["intent"] == nil, "the app leaves a query without one")
+
+// A device id that survives a launch. A fresh one every start makes every
+// reconnect look like a second person answering the same card.
+let first = await client.message(for: "session.list", input: [:])["request"] as? [String: Any]
+let again = await Client(defaults: defaults)
+let second = await again.message(for: "session.list", input: [:])["request"] as? [String: Any]
+check(
+    (first?["device"] as? String) == (second?["device"] as? String),
+    "the device id survives a relaunch"
+)
+
+await client.apply(#"{"t":"welcome","proto":1,"role":"operator","capabilities":[]}"#)
+let connected = await client.connection
+check(connected == "connected", "a welcome connects the client")
+
+await client.apply(
+    #"{"t":"result","output":{"sessions":[{"id":"1","title":"aaa","state":"idle"},{"id":"2","title":"zzz","state":"blocked"}]}}"#
+)
+let listed = await client.rows
+check(listed.first?.title == "zzz", "the app orders what needs a human first")
+let liveHeader = await client.header
+check(liveHeader == "1 of 2 need you", "the header counts what needs you")
+
 if failures.isEmpty {
-    print("omt swift client: \(9) checks passed")
+    print("omt swift client: \(15) checks passed")
 } else {
     for f in failures { print("FAILED: \(f)") }
     exit(1)
