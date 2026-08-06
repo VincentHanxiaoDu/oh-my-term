@@ -93,6 +93,97 @@ pub struct Manifest {
     pub permissions: BTreeSet<Permission>,
     /// What it says it does.
     pub description: String,
+    /// The program omt runs, with its arguments.
+    ///
+    /// Empty means a plugin that declares behaviour but has nothing to run —
+    /// a theme, a keymap. Those are real plugins and must not be forced to
+    /// invent an executable, which is why this is a list rather than a
+    /// required string.
+    #[serde(default)]
+    pub entry: Vec<String>,
+}
+
+/// How a plugin should be started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Launch {
+    /// The program.
+    pub program: String,
+    /// Its arguments.
+    pub args: Vec<String>,
+    /// Environment omt sets, including where to reach it.
+    pub env: Vec<(String, String)>,
+}
+
+impl Installed {
+    /// How to start this plugin, or why it cannot be started.
+    ///
+    /// The token omt hands over is the plugin's whole authority: it carries a
+    /// role, and the role is derived from what the plugin was *granted* rather
+    /// than from what it asked for. A plugin that requested `WriteInput` and
+    /// was not granted it must not receive a token that can type.
+    ///
+    /// # Errors
+    /// Fails if the plugin is disabled or declares nothing to run.
+    pub fn launch(&self, socket: &str, token: &str) -> Result<Launch, LaunchError> {
+        if !self.enabled {
+            return Err(LaunchError::Disabled {
+                plugin: self.manifest.id.clone(),
+            });
+        }
+        let (program, args) = self
+            .manifest
+            .entry
+            .split_first()
+            .ok_or_else(|| LaunchError::NothingToRun {
+                plugin: self.manifest.id.clone(),
+            })?;
+        Ok(Launch {
+            program: program.clone(),
+            args: args.to_vec(),
+            env: vec![
+                ("OMT_SOCK".to_owned(), socket.to_owned()),
+                ("OMT_TOKEN".to_owned(), token.to_owned()),
+                ("OMT_PLUGIN".to_owned(), self.manifest.id.clone()),
+            ],
+        })
+    }
+
+    /// The role a token for this plugin should carry.
+    ///
+    /// Derived from the grants, not the request. Anything that can change the
+    /// world needs operator; everything else is a viewer, and a plugin that
+    /// only reads should not hold a credential that could write.
+    #[must_use]
+    pub fn role(&self) -> omt_types::Role {
+        let writes = self.granted.iter().any(|p| {
+            matches!(
+                p,
+                Permission::WriteInput | Permission::WriteWorkspace | Permission::SpawnProcess
+            )
+        });
+        if writes {
+            omt_types::Role::Operator
+        } else {
+            omt_types::Role::Viewer
+        }
+    }
+}
+
+/// Why a plugin could not be started.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LaunchError {
+    /// It is switched off.
+    #[error("`{plugin}` is disabled")]
+    Disabled {
+        /// Which plugin.
+        plugin: String,
+    },
+    /// It declares no entry point.
+    #[error("`{plugin}` declares nothing to run")]
+    NothingToRun {
+        /// Which plugin.
+        plugin: String,
+    },
 }
 
 /// Why a manifest was refused.
@@ -229,6 +320,105 @@ impl Installed {
     reason = "in a test, expect() is the assertion"
 )]
 mod tests {
+
+    #[test]
+    fn a_plugin_is_handed_the_socket_and_a_token_and_its_own_id() {
+        // Its whole authority. Without the id it cannot namespace what it
+        // registers; without the token it cannot call anything at all.
+        let p = Installed::new(
+            Manifest {
+                id: "demo".into(),
+                name: "Demo".into(),
+                version: "1.0".into(),
+                permissions: [Permission::ReadSessions].into_iter().collect(),
+                description: "d".into(),
+                entry: vec!["/usr/bin/demo".into(), "--serve".into()],
+            },
+            [Permission::ReadSessions].into_iter().collect(),
+        );
+        let launch = p.launch("/tmp/omt.sock", "tok").expect("launch");
+        assert_eq!(launch.program, "/usr/bin/demo");
+        assert_eq!(launch.args, vec!["--serve".to_owned()]);
+        assert!(launch.env.iter().any(|(k, v)| k == "OMT_SOCK" && v == "/tmp/omt.sock"));
+        assert!(launch.env.iter().any(|(k, v)| k == "OMT_TOKEN" && v == "tok"));
+        assert!(launch.env.iter().any(|(k, v)| k == "OMT_PLUGIN" && v == "demo"));
+    }
+
+    #[test]
+    fn a_disabled_plugin_is_not_started() {
+        let mut p = Installed::new(
+            Manifest {
+                id: "demo".into(),
+                name: "Demo".into(),
+                version: "1.0".into(),
+                permissions: [Permission::ReadSessions].into_iter().collect(),
+                description: "d".into(),
+                entry: vec!["/usr/bin/demo".into()],
+            },
+            [Permission::ReadSessions].into_iter().collect(),
+        );
+        p.enabled = false;
+        assert!(matches!(
+            p.launch("s", "t"),
+            Err(LaunchError::Disabled { .. })
+        ));
+    }
+
+    #[test]
+    fn a_plugin_with_nothing_to_run_says_so_rather_than_failing_obscurely() {
+        // A theme or a keymap is a real plugin with no executable, and it must
+        // not be forced to invent one.
+        let p = Installed::new(
+            Manifest {
+                id: "theme".into(),
+                name: "Theme".into(),
+                version: "1.0".into(),
+                permissions: [Permission::ReadSessions].into_iter().collect(),
+                description: "d".into(),
+                entry: Vec::new(),
+            },
+            [Permission::ReadSessions].into_iter().collect(),
+        );
+        assert!(matches!(
+            p.launch("s", "t"),
+            Err(LaunchError::NothingToRun { .. })
+        ));
+    }
+
+    #[test]
+    fn the_token_role_comes_from_what_was_granted_not_what_was_asked_for() {
+        // The bug this prevents is the one that matters: a plugin that asked
+        // for WriteInput and was refused must not be handed a token that can
+        // type into somebody's shell.
+        let p = Installed::new(
+            Manifest {
+                id: "greedy".into(),
+                name: "Greedy".into(),
+                version: "1.0".into(),
+                permissions: [Permission::WriteInput].into_iter().collect(),
+                description: "d".into(),
+                entry: vec!["/bin/true".into()],
+            },
+            [Permission::ReadSessions].into_iter().collect(),
+        );
+        assert_eq!(p.role(), omt_types::Role::Viewer);
+    }
+
+    #[test]
+    fn a_plugin_granted_a_writing_permission_gets_an_operator_token() {
+        let p = Installed::new(
+            Manifest {
+                id: "typer".into(),
+                name: "Typer".into(),
+                version: "1.0".into(),
+                permissions: [Permission::WriteInput].into_iter().collect(),
+                description: "d".into(),
+                entry: vec!["/bin/true".into()],
+            },
+            [Permission::WriteInput].into_iter().collect(),
+        );
+        assert_eq!(p.role(), omt_types::Role::Operator);
+    }
     use super::*;
 
     fn manifest(id: &str, permissions: &[Permission]) -> Manifest {
@@ -238,6 +428,7 @@ mod tests {
             version: "1.0.0".to_owned(),
             permissions: permissions.iter().copied().collect(),
             description: "does a thing".to_owned(),
+            entry: Vec::new(),
         }
     }
 

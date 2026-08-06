@@ -442,6 +442,28 @@
     },
     {
       "aliases": [],
+      "doc": "Install a plugin with an explicit grant. What it asks for and what it receives are separate, and what was refused is reported.",
+      "effects": [
+        "spawns_process"
+      ],
+      "group": "plugin",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "plugin.install",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/plugin/install",
+      "since": "0.1.0",
+      "title": "Install a plugin",
+      "verb": "install"
+    },
+    {
+      "aliases": [],
       "doc": "Installed plugins with what each was granted, and which of those grants are high-consequence.",
       "effects": [],
       "group": "plugin",
@@ -457,6 +479,30 @@
       "since": "0.1.0",
       "title": "List plugins",
       "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Run a plugin, handing it a socket and a token whose role comes from what it was granted. A plugin reaches omt through the same capability surface as any other client — there is no second API.",
+      "effects": [
+        "spawns_process"
+      ],
+      "group": "plugin",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id_and_target",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "plugin.start",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/plugin/start",
+      "since": "0.1.0",
+      "title": "Start a plugin",
+      "verb": "start"
     },
     {
       "aliases": [],

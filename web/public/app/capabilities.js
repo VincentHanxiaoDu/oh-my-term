@@ -69,6 +69,8 @@ export const HANDLERS = {
         session,
         ...(exitCode === undefined ? {} : { exit_code: exitCode }),
     }),
+    'plugin.install': (request, id, name, version, permissions, grant, entry = []) => call(request, 'plugin.install', { id, name, version, permissions, grant, entry }),
+    'plugin.start': (request, id) => call(request, 'plugin.start', { id }),
     'plugin.list': (request) => call(request, 'plugin.list', {}),
     'plugin.enable': (request, id, enabled) => call(request, 'plugin.enable', { id, enabled }),
     'job.create': (request, name, workspace, run, everySeconds = 0) => call(request, 'job.create', { name, workspace, run, every_seconds: everySeconds }),

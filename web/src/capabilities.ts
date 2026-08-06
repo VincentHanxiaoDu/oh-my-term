@@ -215,6 +215,19 @@ export const HANDLERS = {
       ...(exitCode === undefined ? {} : { exit_code: exitCode }),
     }),
 
+  'plugin.install': (
+    request: RequestId,
+    id: string,
+    name: string,
+    version: string,
+    permissions: string[],
+    grant: string[],
+    entry: string[] = [],
+  ) => call(request, 'plugin.install', { id, name, version, permissions, grant, entry }),
+
+  'plugin.start': (request: RequestId, id: string) =>
+    call(request, 'plugin.start', { id }),
+
   'plugin.list': (request: RequestId) => call(request, 'plugin.list', {}),
 
   'plugin.enable': (request: RequestId, id: string, enabled: boolean) =>

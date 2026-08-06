@@ -365,6 +365,7 @@ fn a_plugin_cannot_read_outside_the_workspace_it_was_granted() {
             version: "1".to_owned(),
             permissions: permissions.clone(),
             description: String::new(),
+            entry: Vec::new(),
         },
         permissions,
     );

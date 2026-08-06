@@ -219,6 +219,7 @@ mod tests {
                 version: "1".to_owned(),
                 permissions: set.clone(),
                 description: String::new(),
+                entry: Vec::new(),
             },
             set,
         )

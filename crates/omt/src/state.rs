@@ -31,6 +31,8 @@ pub struct State {
     jobs: Arc<Mutex<Vec<omt_recall::Schedule>>>,
     /// What voice dictation has heard so far, per session.
     voice: Arc<Mutex<std::collections::BTreeMap<String, omt_stt::TranscriptBuffer>>>,
+    /// Credentials minted for plugins.
+    credentials: Arc<Mutex<omt_auth::CredentialStore>>,
 }
 
 /// Where omt keeps its configuration.
@@ -61,6 +63,7 @@ impl State {
             plugins: Arc::new(Mutex::new(Vec::new())),
             jobs: Arc::new(Mutex::new(Vec::new())),
             voice: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
+            credentials: Arc::new(Mutex::new(omt_auth::CredentialStore::new())),
             config: Arc::new(Mutex::new(None)),
         }
     }
@@ -153,5 +156,31 @@ impl State {
         self.voice
             .lock()
             .map_err(|_| CapabilityError::internal("the dictation lock was poisoned"))
+    }
+}
+
+impl State {
+    /// Mint a credential for a plugin about to be started.
+    ///
+    /// Held nowhere: it goes into the child's environment and is forgotten
+    /// here, so a leaked state directory does not leak a plugin's authority.
+    /// The role is the caller's to decide — this function does not look at the
+    /// plugin, because the rule "grants decide the role, not requests" belongs
+    /// with the plugin and not with the credential store.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the credential lock.
+    pub fn mint_plugin_token(
+        &self,
+        role: omt_types::Role,
+        plugin: &str,
+    ) -> Result<String, CapabilityError> {
+        let mut store = self
+            .credentials
+            .lock()
+            .map_err(|_| CapabilityError::internal("the credential lock was poisoned"))?;
+        Ok(store
+            .mint(role, &format!("plugin:{plugin}"), None, None)
+            .token)
     }
 }

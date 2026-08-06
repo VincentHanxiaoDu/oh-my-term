@@ -31,7 +31,9 @@ vanishing.
 | `pane.list` | query | viewer | Panes in a workspace's primary view, which one has focus, and how many fit on a standard terminal. |
 | `pane.open` | command | operator | Open a pane onto an existing session. Presentation only: no process is started and none is stopped. |
 | `plugin.enable` | command | operator | Switch a plugin on or off. Idempotent: setting the state it already has is not an error. |
+| `plugin.install` | command | operator | Install a plugin with an explicit grant. What it asks for and what it receives are separate, and what was refused is reported. |
 | `plugin.list` | query | viewer | Installed plugins with what each was granted, and which of those grants are high-consequence. |
+| `plugin.start` | command | operator | Run a plugin, handing it a socket and a token whose role comes from what it was granted. A plugin reaches omt through the same capability surface as any other client — there is no second API. |
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
 | `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
 | `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
@@ -51,4 +53,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-41 capabilities.
+43 capabilities.

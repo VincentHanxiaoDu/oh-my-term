@@ -2822,6 +2822,238 @@ impl CapabilityHandler<RecallRecord> for RecallRecordHandler {
 // Plugins
 // ---------------------------------------------------------------------------
 
+/// Input to `plugin.install`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PluginInstallIn {
+    /// Its stable id.
+    pub id: String,
+    /// Its display name.
+    pub name: String,
+    /// Its version.
+    pub version: String,
+    /// What it says it does.
+    #[serde(default)]
+    pub description: String,
+    /// What it is asking for.
+    pub permissions: Vec<String>,
+    /// The program to run, with arguments. Empty for a plugin with nothing to
+    /// run — a theme or a keymap is a real plugin and must not be made to
+    /// invent an executable.
+    #[serde(default)]
+    pub entry: Vec<String>,
+    /// What is actually granted.
+    ///
+    /// Separate from `permissions` on purpose: what a plugin asks for and what
+    /// it is allowed are different things, and collapsing them would make every
+    /// install a grant of everything requested.
+    #[serde(default)]
+    pub grant: Vec<String>,
+}
+
+/// What `plugin.install` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PluginInstallOut {
+    /// The plugin.
+    pub id: String,
+    /// What it was granted.
+    pub granted: Vec<String>,
+    /// What it asked for and did not get, so a UI can say so rather than
+    /// leaving the user to compare two lists.
+    pub refused: Vec<String>,
+}
+
+capability! {
+    /// Install a plugin.
+    pub struct PluginInstall;
+    input  = PluginInstallIn,
+    output = PluginInstallOut,
+    decl = Decl {
+        name: "plugin.install",
+        group: "plugin",
+        verb: "install",
+        title: "Install a plugin",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::SPAWNS_PROCESS,
+        // Keyed by the plugin id: installing the same plugin twice replaces it
+        // rather than running two copies with the same namespace.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Install a plugin with an explicit grant. What it asks for and what it receives are separate, and what was refused is reported.",
+    },
+}
+
+struct PluginInstallHandler(State);
+
+impl CapabilityHandler<PluginInstall> for PluginInstallHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: PluginInstallIn,
+    ) -> Result<PluginInstallOut, CapabilityError> {
+        let asked = parse_permissions(&input.permissions)?;
+        let granted = parse_permissions(&input.grant)?;
+        // Nothing may be granted that was not declared. A plugin that receives
+        // a permission it never asked for is one whose manifest no longer
+        // describes what it can do, which is the document a user reads before
+        // trusting it.
+        if let Some(extra) = granted.difference(&asked).next() {
+            return Err(CapabilityError::invalid_input(format!(
+                "{extra:?} was granted but never declared"
+            )));
+        }
+
+        let manifest = omt_plugin_host::Manifest {
+            id: input.id.clone(),
+            name: input.name,
+            version: input.version,
+            permissions: asked.clone(),
+            description: input.description,
+            entry: input.entry,
+        };
+        manifest
+            .validate()
+            .map_err(|e| CapabilityError::invalid_input(e.to_string()))?;
+
+        let refused: Vec<String> = asked
+            .difference(&granted)
+            .map(|p| format!("{p:?}"))
+            .collect();
+        let installed = omt_plugin_host::Installed::new(manifest, granted.clone());
+
+        let mut plugins = self.0.plugins()?;
+        plugins.retain(|p| p.manifest.id != input.id);
+        plugins.push(installed);
+
+        Ok(PluginInstallOut {
+            id: input.id,
+            granted: granted.iter().map(|p| format!("{p:?}")).collect(),
+            refused,
+        })
+    }
+}
+
+/// Turn permission names on the wire into the real thing.
+fn parse_permissions(
+    names: &[String],
+) -> Result<std::collections::BTreeSet<omt_plugin_host::Permission>, CapabilityError> {
+    names
+        .iter()
+        .map(|n| match n.as_str() {
+            "read_sessions" => Ok(omt_plugin_host::Permission::ReadSessions),
+            "write_input" => Ok(omt_plugin_host::Permission::WriteInput),
+            "read_workspace" => Ok(omt_plugin_host::Permission::ReadWorkspace),
+            "write_workspace" => Ok(omt_plugin_host::Permission::WriteWorkspace),
+            "network" => Ok(omt_plugin_host::Permission::Network),
+            "spawn_process" => Ok(omt_plugin_host::Permission::SpawnProcess),
+            // Refused rather than ignored: silently dropping a permission omt
+            // does not recognise would install a plugin with less authority
+            // than its manifest claims, and the mismatch surfaces later as a
+            // capability that mysteriously fails.
+            other => Err(CapabilityError::invalid_input(format!(
+                "`{other}` is not a permission omt knows"
+            ))),
+        })
+        .collect()
+}
+
+/// Input to `plugin.start`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PluginStartIn {
+    /// Which plugin.
+    pub id: String,
+    /// The socket to hand it. Absent means omt's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub socket: Option<String>,
+}
+
+/// What `plugin.start` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PluginStartOut {
+    /// The process id, so it can be found and stopped.
+    pub pid: u32,
+    /// The role its token carries — derived from what it was granted, never
+    /// from what it asked for.
+    pub role: String,
+}
+
+capability! {
+    /// Start a plugin's process.
+    pub struct PluginStart;
+    input  = PluginStartIn,
+    output = PluginStartOut,
+    decl = Decl {
+        name: "plugin.start",
+        group: "plugin",
+        verb: "start",
+        title: "Start a plugin",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::SPAWNS_PROCESS,
+        intent: Some(Intent::Append {
+            dedup: DedupKey::IntentIdAndTarget,
+            ttl_secs: 600,
+        }),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Run a plugin, handing it a socket and a token whose role comes from what it was granted. A plugin reaches omt through the same capability surface as any other client — there is no second API.",
+    },
+}
+
+struct PluginStartHandler(State);
+
+impl CapabilityHandler<PluginStart> for PluginStartHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: PluginStartIn,
+    ) -> Result<PluginStartOut, CapabilityError> {
+        let (launch, role) = {
+            let plugins = self.0.plugins()?;
+            let plugin = plugins
+                .iter()
+                .find(|p| p.manifest.id == input.id)
+                .ok_or_else(|| CapabilityError::not_found(format!("no plugin {}", input.id)))?;
+            let role = plugin.role();
+            // The token is minted here and never stored: it is handed to the
+            // process and nowhere else, so a state directory that leaks does
+            // not leak a plugin's authority.
+            let token = self.0.mint_plugin_token(role, &input.id)?;
+            let socket = input
+                .socket
+                .clone()
+                .unwrap_or_else(|| crate::serve::default_socket_path().display().to_string());
+            (
+                plugin
+                    .launch(&socket, &token)
+                    .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?,
+                role,
+            )
+        };
+
+        let child = std::process::Command::new(&launch.program)
+            .args(&launch.args)
+            .envs(launch.env.iter().map(|(k, v)| (k.clone(), v.clone())))
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| {
+                CapabilityError::internal(format!("could not start {}: {e}", launch.program))
+            })?;
+
+        Ok(PluginStartOut {
+            pid: child.id(),
+            role: format!("{role:?}").to_lowercase(),
+        })
+    }
+}
+
 /// Input to `plugin.list`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PluginListIn {}
@@ -3661,6 +3893,8 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<StateRestore, _>(StateRestoreHandler(state.clone()))?;
     r.register::<RecallSuggest, _>(RecallSuggestHandler(state.clone()))?;
     r.register::<RecallRecord, _>(RecallRecordHandler(state.clone()))?;
+    r.register::<PluginInstall, _>(PluginInstallHandler(state.clone()))?;
+    r.register::<PluginStart, _>(PluginStartHandler(state.clone()))?;
     r.register::<PluginList, _>(PluginListHandler(state.clone()))?;
     r.register::<PluginEnable, _>(PluginEnableHandler(state.clone()))?;
     r.register::<JobCreate, _>(JobCreateHandler(state.clone()))?;

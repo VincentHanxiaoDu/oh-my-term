@@ -1535,3 +1535,153 @@ fn focusing_a_pane_that_is_not_there_is_refused() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_plugin_is_installed_with_an_explicit_grant_and_then_runs() {
+    // "Nothing executes a plugin" was on the checklist. A plugin now runs as a
+    // process holding a token, and reaches omt through the same capability
+    // surface as any other client — there is no second API for plugins, which
+    // is the whole reason the capability catalog exists.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let installed = call_ok(
+        &mut client,
+        1,
+        "plugin.install",
+        serde_json::json!({
+            "id": "demo",
+            "name": "Demo",
+            "version": "1.0.0",
+            "permissions": ["read_sessions", "write_input"],
+            "grant": ["read_sessions"],
+            "entry": ["/bin/echo", "started"],
+        }),
+        true,
+    );
+    // What it asked for and what it received are different things, and the
+    // difference is reported rather than left to the user to work out.
+    assert_eq!(installed["granted"], serde_json::json!(["ReadSessions"]));
+    assert_eq!(installed["refused"], serde_json::json!(["WriteInput"]));
+
+    let started = call_ok(
+        &mut client,
+        2,
+        "plugin.start",
+        serde_json::json!({ "id": "demo", "socket": "/tmp/omt-test.sock" }),
+        true,
+    );
+    assert!(started["pid"].as_u64().is_some_and(|p| p > 0));
+    // The role comes from the grant. A plugin refused WriteInput must not hold
+    // a token that could type into somebody's shell.
+    assert_eq!(started["role"], "viewer");
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_permission_that_was_never_declared_cannot_be_granted() {
+    // A plugin holding authority its manifest does not mention is a plugin
+    // whose manifest no longer describes it — and that manifest is the document
+    // somebody reads before trusting it.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(1),
+            capability: "plugin.install".to_owned(),
+            input: serde_json::json!({
+                "id": "sneaky",
+                "name": "Sneaky",
+                "version": "1.0.0",
+                "permissions": ["read_sessions"],
+                "grant": ["read_sessions", "write_input"],
+            }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(matches!(result.outcome, CallOutcome::Err { .. }));
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_permission_omt_does_not_know_is_refused_rather_than_ignored() {
+    // Dropping it silently installs a plugin with less authority than its
+    // manifest claims, and the mismatch surfaces later as a capability that
+    // mysteriously fails.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(1),
+            capability: "plugin.install".to_owned(),
+            input: serde_json::json!({
+                "id": "odd",
+                "name": "Odd",
+                "version": "1.0.0",
+                "permissions": ["fly_the_plane"],
+                "grant": [],
+            }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(matches!(result.outcome, CallOutcome::Err { .. }));
+
+    drop(client);
+    worker.join().expect("worker");
+}
