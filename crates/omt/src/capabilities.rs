@@ -2165,6 +2165,277 @@ impl CapabilityHandler<InteractionRespond> for InteractionRespondHandler {
 }
 
 // ---------------------------------------------------------------------------
+// Panes
+// ---------------------------------------------------------------------------
+
+/// Input to `pane.list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneListIn {
+    /// Which workspace's primary view.
+    pub workspace: String,
+}
+
+/// One pane.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PaneSummary {
+    /// Its id.
+    pub id: String,
+    /// The session it is looking at.
+    pub session: String,
+    /// Whether it has focus — which is where typing goes.
+    pub focused: bool,
+}
+
+/// What `pane.list` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PaneListOut {
+    /// The panes, in order.
+    pub panes: Vec<PaneSummary>,
+    /// How many of them actually fit at the given size.
+    ///
+    /// Reported so a client does not have to reimplement the rule: a pane too
+    /// small to use is worse than a pane that is not shown.
+    pub fit: u32,
+}
+
+capability! {
+    /// The panes of a workspace's view.
+    pub struct PaneList;
+    input  = PaneListIn,
+    output = PaneListOut,
+    decl = Decl {
+        name: "pane.list",
+        group: "pane",
+        verb: "list",
+        title: "List panes",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Panes in a workspace's primary view, which one has focus, and how many fit on a standard terminal.",
+    },
+}
+
+struct PaneListHandler(State);
+
+impl CapabilityHandler<PaneList> for PaneListHandler {
+    fn call(&self, _ctx: &CallContext, input: PaneListIn) -> Result<PaneListOut, CapabilityError> {
+        let id = workspace_id(&input.workspace)?;
+        let instance = self.0.lock()?;
+        let (panes, focus) = instance
+            .panes(id)
+            .ok_or_else(|| CapabilityError::not_found("no such workspace"))?;
+        let fit = omt_tui::how_many_fit(80, 24, omt_tui::Split::Vertical, panes.len()) as u32;
+        Ok(PaneListOut {
+            panes: panes
+                .into_iter()
+                .map(|p| PaneSummary {
+                    id: p.id.to_wire(),
+                    session: p.session.to_wire(),
+                    focused: focus == Some(p.id),
+                })
+                .collect(),
+            fit,
+        })
+    }
+}
+
+/// Input to `pane.open`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneOpenIn {
+    /// Which workspace.
+    pub workspace: String,
+    /// Which session to look at.
+    pub session: String,
+}
+
+/// What `pane.open` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PaneOpenOut {
+    /// The new pane.
+    pub pane: String,
+}
+
+capability! {
+    /// Show a session in a new pane.
+    pub struct PaneOpen;
+    input  = PaneOpenIn,
+    output = PaneOpenOut,
+    decl = Decl {
+        name: "pane.open",
+        group: "pane",
+        verb: "open",
+        title: "Open a pane",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        intent: Some(Intent::Append {
+            dedup: DedupKey::IntentIdAndTarget,
+            ttl_secs: 600,
+        }),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Open a pane onto an existing session. Presentation only: no process is started and none is stopped.",
+    },
+}
+
+struct PaneOpenHandler(State);
+
+impl CapabilityHandler<PaneOpen> for PaneOpenHandler {
+    fn call(&self, _ctx: &CallContext, input: PaneOpenIn) -> Result<PaneOpenOut, CapabilityError> {
+        let workspace = workspace_id(&input.workspace)?;
+        let session = session_id(&input.session)?;
+        let mut instance = self.0.lock()?;
+        if instance.session(session).is_none() {
+            return Err(CapabilityError::not_found(format!(
+                "no session {}",
+                input.session
+            )));
+        }
+        let pane = instance
+            .add_pane(workspace, session)
+            .ok_or_else(|| CapabilityError::not_found("no such workspace"))?;
+        Ok(PaneOpenOut {
+            pane: pane.to_wire(),
+        })
+    }
+}
+
+/// Input to `pane.close`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneCloseIn {
+    /// Which workspace.
+    pub workspace: String,
+    /// Which pane.
+    pub pane: String,
+}
+
+/// What `pane.close` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PaneCloseOut {
+    /// Whether there had been such a pane.
+    pub closed: bool,
+}
+
+capability! {
+    /// Close a pane, leaving its session running.
+    pub struct PaneClose;
+    input  = PaneCloseIn,
+    output = PaneCloseOut,
+    decl = Decl {
+        name: "pane.close",
+        group: "pane",
+        verb: "close",
+        title: "Close a pane",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Close a pane. The session it showed keeps running — closing a view of something is not ending it.",
+    },
+}
+
+struct PaneCloseHandler(State);
+
+impl CapabilityHandler<PaneClose> for PaneCloseHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: PaneCloseIn,
+    ) -> Result<PaneCloseOut, CapabilityError> {
+        let workspace = workspace_id(&input.workspace)?;
+        let pane = omt_types::PaneId::from_wire(&input.pane)
+            .ok_or_else(|| CapabilityError::invalid_input(format!("`{}` is not a pane id", input.pane)))?;
+        let mut instance = self.0.lock()?;
+        Ok(PaneCloseOut {
+            closed: instance.remove_pane(workspace, pane),
+        })
+    }
+}
+
+/// Input to `pane.focus`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneFocusIn {
+    /// Which workspace.
+    pub workspace: String,
+    /// Which pane.
+    pub pane: String,
+}
+
+/// What `pane.focus` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PaneFocusOut {
+    /// Whether focus moved.
+    pub focused: bool,
+}
+
+capability! {
+    /// Move focus to a pane.
+    pub struct PaneFocus;
+    input  = PaneFocusIn,
+    output = PaneFocusOut,
+    decl = Decl {
+        name: "pane.focus",
+        group: "pane",
+        verb: "focus",
+        title: "Focus a pane",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored.",
+    },
+}
+
+struct PaneFocusHandler(State);
+
+impl CapabilityHandler<PaneFocus> for PaneFocusHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: PaneFocusIn,
+    ) -> Result<PaneFocusOut, CapabilityError> {
+        let workspace = workspace_id(&input.workspace)?;
+        let pane = omt_types::PaneId::from_wire(&input.pane)
+            .ok_or_else(|| CapabilityError::invalid_input(format!("`{}` is not a pane id", input.pane)))?;
+        let mut instance = self.0.lock()?;
+        if !instance.focus_pane(workspace, pane) {
+            // Refused rather than ignored: silently keeping focus where it was
+            // means the next keystroke goes somewhere the user is not looking.
+            return Err(CapabilityError::not_found(format!(
+                "no pane {} in that workspace",
+                input.pane
+            )));
+        }
+        Ok(PaneFocusOut { focused: true })
+    }
+}
+
+/// Parse a workspace id, or say what was wrong with it.
+fn workspace_id(raw: &str) -> Result<WorkspaceId, CapabilityError> {
+    WorkspaceId::from_wire(raw)
+        .ok_or_else(|| CapabilityError::invalid_input(format!("`{raw}` is not a workspace id")))
+}
+
+// ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
 
@@ -3382,6 +3653,10 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<AgentInterrupt, _>(AgentInterruptHandler(state.clone()))?;
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
+    r.register::<PaneList, _>(PaneListHandler(state.clone()))?;
+    r.register::<PaneOpen, _>(PaneOpenHandler(state.clone()))?;
+    r.register::<PaneClose, _>(PaneCloseHandler(state.clone()))?;
+    r.register::<PaneFocus, _>(PaneFocusHandler(state.clone()))?;
     r.register::<StateSave, _>(StateSaveHandler(state.clone()))?;
     r.register::<StateRestore, _>(StateRestoreHandler(state.clone()))?;
     r.register::<RecallSuggest, _>(RecallSuggestHandler(state.clone()))?;

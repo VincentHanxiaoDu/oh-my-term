@@ -289,6 +289,59 @@ impl Instance {
             .is_some_and(|s| s.writer.release(by))
     }
 
+    /// Put a pane in a workspace's primary view.
+    ///
+    /// The pane holds the session's id rather than the session, which is what
+    /// makes "closing a pane never kills a session" structural instead of a
+    /// rule somebody has to remember.
+    pub fn add_pane(
+        &mut self,
+        workspace: WorkspaceId,
+        session: SessionId,
+    ) -> Option<omt_types::PaneId> {
+        let ws = self.tree.workspace_mut(workspace)?;
+        let primary = ws.primary;
+        ws.views.get_mut(&primary).map(|v| v.add_pane(session))
+    }
+
+    /// Remove a pane. The session it showed keeps running.
+    pub fn remove_pane(&mut self, workspace: WorkspaceId, pane: omt_types::PaneId) -> bool {
+        let Some(ws) = self.tree.workspace_mut(workspace) else {
+            return false;
+        };
+        let primary = ws.primary;
+        ws.views
+            .get_mut(&primary)
+            .is_some_and(|v| v.remove_pane(pane))
+    }
+
+    /// Move focus to a pane.
+    pub fn focus_pane(&mut self, workspace: WorkspaceId, pane: omt_types::PaneId) -> bool {
+        let Some(ws) = self.tree.workspace_mut(workspace) else {
+            return false;
+        };
+        let primary = ws.primary;
+        ws.views.get_mut(&primary).is_some_and(|v| {
+            if v.panes.iter().any(|p| p.id == pane) {
+                v.focus = Some(pane);
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    /// The panes of a workspace's primary view, in order, with the focused one.
+    #[must_use]
+    pub fn panes(
+        &self,
+        workspace: WorkspaceId,
+    ) -> Option<(Vec<omt_session::Pane>, Option<omt_types::PaneId>)> {
+        let ws = self.tree.workspace(workspace)?;
+        let view = ws.views.get(&ws.primary)?;
+        Some((view.panes.clone(), view.focus))
+    }
+
     /// A workspace's canonical root.
     #[must_use]
     pub fn workspace_root(&self, id: WorkspaceId) -> Option<String> {

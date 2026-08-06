@@ -180,6 +180,18 @@ export const HANDLERS = {
       rows,
     }),
 
+  'pane.list': (request: RequestId, workspace: string) =>
+    call(request, 'pane.list', { workspace }),
+
+  'pane.open': (request: RequestId, workspace: string, session: string) =>
+    call(request, 'pane.open', { workspace, session }),
+
+  'pane.close': (request: RequestId, workspace: string, pane: string) =>
+    call(request, 'pane.close', { workspace, pane }),
+
+  'pane.focus': (request: RequestId, workspace: string, pane: string) =>
+    call(request, 'pane.focus', { workspace, pane }),
+
   'state.save': (request: RequestId, path?: string) =>
     call(request, 'state.save', path === undefined ? {} : { path }),
 

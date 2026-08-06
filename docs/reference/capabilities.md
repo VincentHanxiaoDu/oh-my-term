@@ -26,6 +26,10 @@ vanishing.
 | `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
+| `pane.close` | command | operator | Close a pane. The session it showed keeps running — closing a view of something is not ending it. |
+| `pane.focus` | command | operator | Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored. |
+| `pane.list` | query | viewer | Panes in a workspace's primary view, which one has focus, and how many fit on a standard terminal. |
+| `pane.open` | command | operator | Open a pane onto an existing session. Presentation only: no process is started and none is stopped. |
 | `plugin.enable` | command | operator | Switch a plugin on or off. Idempotent: setting the state it already has is not an error. |
 | `plugin.list` | query | viewer | Installed plugins with what each was granted, and which of those grants are high-consequence. |
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
@@ -47,4 +51,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-37 capabilities.
+41 capabilities.

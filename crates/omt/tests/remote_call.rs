@@ -1405,3 +1405,133 @@ fn a_job_pointing_at_a_directory_that_is_not_there_is_refused() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_pane_is_a_view_of_a_session_and_closing_one_leaves_it_running() {
+    // The property the whole pane model is built around, and the one a user
+    // finds out about the hard way if it is wrong: closing a view of something
+    // is not ending it.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let workspace = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    );
+    let ws = workspace["id"].clone();
+    let session = call_ok(
+        &mut client,
+        2,
+        "session.create",
+        serde_json::json!({ "workspace": ws, "program": "/bin/sh", "cols": 40, "rows": 10 }),
+        true,
+    );
+    let sid = session["session"].clone();
+
+    let pane = call_ok(
+        &mut client,
+        3,
+        "pane.open",
+        serde_json::json!({ "workspace": ws, "session": sid }),
+        true,
+    );
+    let pid = pane["pane"].as_str().expect("pane id").to_owned();
+
+    let listed = call_ok(
+        &mut client,
+        4,
+        "pane.list",
+        serde_json::json!({ "workspace": ws }),
+        false,
+    );
+    assert_eq!(listed["panes"].as_array().expect("panes").len(), 1);
+    assert_eq!(listed["panes"][0]["focused"], true, "the first pane took focus");
+
+    call_ok(
+        &mut client,
+        5,
+        "pane.close",
+        serde_json::json!({ "workspace": ws, "pane": pid }),
+        true,
+    );
+
+    // The session is still there. If closing a pane killed it, somebody
+    // tidying their screen would lose a running agent.
+    let sessions = call_ok(&mut client, 6, "session.list", serde_json::json!({}), false);
+    assert_eq!(
+        sessions["sessions"].as_array().expect("sessions").len(),
+        1,
+        "closing a pane killed the session it was showing"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn focusing_a_pane_that_is_not_there_is_refused() {
+    // Silently keeping focus where it was means the next keystroke goes
+    // somewhere the user is not looking.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let workspace = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    );
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(2),
+            capability: "pane.focus".to_owned(),
+            input: serde_json::json!({
+                "workspace": workspace["id"],
+                "pane": omt_types::PaneId::new().to_wire(),
+            }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(matches!(result.outcome, CallOutcome::Err { .. }));
+
+    drop(client);
+    worker.join().expect("worker");
+}

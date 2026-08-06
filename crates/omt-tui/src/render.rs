@@ -41,6 +41,25 @@ impl Screen {
     /// # Errors
     /// Fails if the write does.
     pub fn draw(&mut self, out: &mut impl Write, grid: &Grid) -> io::Result<usize> {
+        self.draw_at(out, grid, 0, 0)
+    }
+
+    /// Draw a grid with its top-left corner at an offset.
+    ///
+    /// For panes. The diff still works because the offset only changes where
+    /// the cursor is parked before each run — what is compared is this screen's
+    /// own memory of the same region, which is why one `Screen` belongs to one
+    /// pane rather than to the whole terminal.
+    ///
+    /// # Errors
+    /// Fails if the write does.
+    pub fn draw_at(
+        &mut self,
+        out: &mut impl Write,
+        grid: &Grid,
+        at_col: u16,
+        at_row: u16,
+    ) -> io::Result<usize> {
         let size = grid.size();
         if self.cols != size.cols || self.rows.len() != size.rows as usize {
             self.rows = vec![Vec::new(); size.rows as usize];
@@ -72,7 +91,12 @@ impl Screen {
                 .find(|i| prev.get(*i) != Some(&next[*i]))
                 .unwrap_or(first);
 
-            write!(buf, "\x1b[{};{}H", row + 1, first + 1)?;
+            write!(
+                buf,
+                "\x1b[{};{}H",
+                at_row + row + 1,
+                at_col + first as u16 + 1
+            )?;
             let mut style = Style::UNSET;
             for cell in &next[first..=last] {
                 // Skipped *before* the style is considered. A spacer's flags
@@ -102,7 +126,12 @@ impl Screen {
 
         let cursor = (grid.cursor.row, grid.cursor.col);
         if self.cursor != Some(cursor) || written > 0 {
-            write!(buf, "\x1b[{};{}H", cursor.0 + 1, cursor.1 + 1)?;
+            write!(
+                buf,
+                "\x1b[{};{}H",
+                at_row + cursor.0 + 1,
+                at_col + cursor.1 + 1
+            )?;
             self.cursor = Some(cursor);
         }
         // Only when it changed. Re-asserting visibility every frame costs six
@@ -330,6 +359,46 @@ mod tests {
         let t = terminal(20, 2, "\x1b[38;2;10;20;30mX");
         let (bytes, _) = draw(&mut s, &t);
         assert!(bytes.contains(";38;2;10;20;30"), "{bytes:?}");
+    }
+
+    #[test]
+    fn a_pane_draws_where_it_was_put_and_not_at_the_origin() {
+        // The whole point of panes: a second pane writing at column one would
+        // paint over the first, which reads as corruption rather than as a
+        // layout bug.
+        let mut s = Screen::new();
+        let t = terminal(20, 3, "hello");
+        let mut out = Vec::new();
+        s.draw_at(&mut out, t.grid(), 40, 5).expect("draw");
+        let bytes = String::from_utf8_lossy(&out);
+        assert!(bytes.contains("\u{1b}[6;41H"), "{bytes:?}");
+        assert!(!bytes.contains("\u{1b}[1;1H"), "it drew at the origin");
+    }
+
+    #[test]
+    fn a_panes_cursor_is_placed_inside_that_pane() {
+        // Otherwise the cursor sits in whichever pane happens to be at the
+        // origin, and typing appears to go to the wrong place.
+        let mut s = Screen::new();
+        let t = terminal(20, 5, "\x1b[2;3Hx");
+        let mut out = Vec::new();
+        s.draw_at(&mut out, t.grid(), 10, 10).expect("draw");
+        let bytes = String::from_utf8_lossy(&out);
+        assert!(bytes.contains("\u{1b}[12;14H"), "{bytes:?}");
+    }
+
+    #[test]
+    fn an_offset_pane_still_writes_nothing_when_nothing_changed() {
+        // The diff has to survive the offset, or every pane repaints every
+        // frame and the whole thing is unusable over ssh.
+        let mut s = Screen::new();
+        let t = terminal(20, 3, "hello");
+        let mut first = Vec::new();
+        s.draw_at(&mut first, t.grid(), 40, 5).expect("draw");
+        let mut second = Vec::new();
+        let n = s.draw_at(&mut second, t.grid(), 40, 5).expect("draw");
+        assert_eq!(n, 0);
+        assert!(second.is_empty(), "an idle pane wrote {second:?}");
     }
 
     #[test]

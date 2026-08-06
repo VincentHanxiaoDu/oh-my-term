@@ -342,6 +342,86 @@
     },
     {
       "aliases": [],
+      "doc": "Close a pane. The session it showed keeps running — closing a view of something is not ending it.",
+      "effects": [],
+      "group": "pane",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "pane.close",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/pane/close",
+      "since": "0.1.0",
+      "title": "Close a pane",
+      "verb": "close"
+    },
+    {
+      "aliases": [],
+      "doc": "Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored.",
+      "effects": [],
+      "group": "pane",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "pane.focus",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/pane/focus",
+      "since": "0.1.0",
+      "title": "Focus a pane",
+      "verb": "focus"
+    },
+    {
+      "aliases": [],
+      "doc": "Panes in a workspace's primary view, which one has focus, and how many fit on a standard terminal.",
+      "effects": [],
+      "group": "pane",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "pane.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/pane/list",
+      "since": "0.1.0",
+      "title": "List panes",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Open a pane onto an existing session. Presentation only: no process is started and none is stopped.",
+      "effects": [],
+      "group": "pane",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id_and_target",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "pane.open",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/pane/open",
+      "since": "0.1.0",
+      "title": "Open a pane",
+      "verb": "open"
+    },
+    {
+      "aliases": [],
       "doc": "Switch a plugin on or off. Idempotent: setting the state it already has is not an error.",
       "effects": [],
       "group": "plugin",
