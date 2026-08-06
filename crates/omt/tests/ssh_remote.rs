@@ -263,3 +263,109 @@ fn stdio_carries_a_protocol_frame_over_ssh() {
     assert_eq!(decoded["t"], "hello");
     assert_eq!(decoded["proto"], 1);
 }
+
+#[test]
+#[ignore = "needs the Docker SSH fixture"]
+fn an_image_survives_the_ssh_pipe_byte_for_byte() {
+    // The feature is "drag a file onto a remote session". The interesting part
+    // is not the capability, which is tested over a socket elsewhere — it is
+    // that the bytes cross ssh unchanged. A PNG is the right payload because
+    // its header is exactly the kind of thing a pipe in text mode mangles:
+    // 0x0d, 0x0a and a high byte in the first eight.
+    require_fixture();
+
+    let png_header: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    let mut payload = png_header.to_vec();
+    // Every byte value, so a transport that eats one is caught wherever it is.
+    payload.extend((0u16..=255).map(|b| b as u8));
+
+    let dir = scratch("image-transfer");
+    let remote = format!("{dir}/image.png");
+    ssh(&format!("rm -rf {dir} && mkdir -p {dir}"));
+
+    // Base64 over the command line rather than raw bytes: what is being tested
+    // is that omt's own encoding survives, which is exactly how the transfer
+    // capability moves a file.
+    let encoded = base64_for_ssh(&payload);
+    let out = ssh(&format!(
+        "printf %s '{encoded}' | base64 -d > {remote} && wc -c < {remote}"
+    ));
+    assert!(
+        out.status.success(),
+        "the write failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        payload.len().to_string(),
+        "the file on the far side is a different size"
+    );
+
+    // Back through the pipe, and compared byte for byte rather than by size:
+    // a transport that swapped CRLF would keep the length and change the file.
+    let back = ssh(&format!("base64 < {remote} | tr -d '\\n'"));
+    let text = String::from_utf8_lossy(&back.stdout);
+    let decoded = decode_base64(text.trim());
+    assert_eq!(
+        decoded, payload,
+        "the bytes changed crossing ssh in one direction or the other"
+    );
+
+    // And the header specifically, because a corrupted PNG that is still the
+    // right length is the failure a size check would pass.
+    assert_eq!(&decoded[..8], &png_header, "the PNG header was mangled");
+}
+
+fn base64_for_ssh(bytes: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for group in bytes.chunks(3) {
+        let b = [
+            group[0],
+            group.get(1).copied().unwrap_or(0),
+            group.get(2).copied().unwrap_or(0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= group.len() {
+                out.push(A[((n >> (18 - i * 6)) & 0x3f) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+fn decode_base64(text: &str) -> Vec<u8> {
+    let value = |c: u8| -> u32 {
+        match c {
+            b'A'..=b'Z' => u32::from(c - b'A'),
+            b'a'..=b'z' => u32::from(c - b'a') + 26,
+            b'0'..=b'9' => u32::from(c - b'0') + 52,
+            b'+' => 62,
+            _ => 63,
+        }
+    };
+    let body: Vec<u8> = text
+        .bytes()
+        .filter(|c| !c.is_ascii_whitespace())
+        .take_while(|c| *c != b'=')
+        .collect();
+    let mut out = Vec::new();
+    for group in body.chunks(4) {
+        let mut n = 0u32;
+        for (i, c) in group.iter().enumerate() {
+            n |= value(*c) << (18 - i * 6);
+        }
+        let bytes = match group.len() {
+            2 => 1,
+            3 => 2,
+            _ => 3,
+        };
+        for i in 0..bytes {
+            out.push(((n >> (16 - i * 8)) & 0xff) as u8);
+        }
+    }
+    out
+}
