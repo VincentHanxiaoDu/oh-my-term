@@ -42,6 +42,7 @@ function stubDom(hash: string) {
     getElementById: (id: string) => (id === 'app' ? app : null),
     createElement: element,
     body: { append() {} },
+    addEventListener() {},
   })
   vi.stubGlobal('window', win)
   vi.stubGlobal('location', win.location)

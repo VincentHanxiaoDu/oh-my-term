@@ -74,6 +74,30 @@
            the cursor, which is the one character being typed. */
         mix-blend-mode: difference;
       }
+      .prompt { font-size: 17px; line-height: 1.35; margin: 12px 0 20px; }
+      .option, .card-row, .create, .row {
+        display: block;
+        width: 100%;
+        /* 44pt is the smallest target that is not a mis-tap. */
+        min-height: 44px;
+        margin: 8px 0;
+        padding: 12px 14px;
+        text-align: left;
+        font: inherit;
+        color: var(--fg);
+        background: color-mix(in srgb, var(--fg) 8%, transparent);
+        border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+        border-radius: 10px;
+      }
+      /* A hold reads as heavier before it is pressed, not after — the
+         difference is otherwise invisible until you have already failed. */
+      .option.hold {
+        border-color: var(--blocked);
+        border-width: 2px;
+      }
+      .card-row { border-left: 3px solid var(--blocked); }
+      .readonly { color: var(--dim); }
+      .problem { color: var(--blocked); }
       .keybar {
         position: fixed;
         left: 0; right: 0;

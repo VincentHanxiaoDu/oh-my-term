@@ -95,6 +95,28 @@ export interface Interaction {
   opened_at: string
 }
 
+/**
+ * A card as `interaction.list` reports it.
+ *
+ * Flattened by the instance rather than sent raw, so a small screen does not
+ * have to understand every interaction kind to draw one — and so the rule about
+ * what may be answered lives in one place instead of in each client.
+ */
+export interface InteractionCard {
+  id: string
+  session: string
+  kind: string
+  /** Whether omt can deliver an answer at all, and over what channel. */
+  deliverable: 'native' | 'synthetic' | 'none'
+  /** Why not, when it cannot be answered from here. */
+  not_deliverable_because?: string
+  state: string
+  /** The question, or the command being approved. */
+  prompt: string
+  /** The agent's own options, verbatim and in its order. */
+  options: string[]
+}
+
 /** One event off the stream. */
 export interface OmtEvent {
   scope: SeqScope

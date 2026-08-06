@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cardOffer,
   cardStatus,
   layOutCard,
   orderRoster,
@@ -11,7 +12,7 @@ import {
   widthOf,
 } from '../src/index.js'
 import type { Snapshot, StyledRun } from '../src/index.js'
-import type { Interaction } from '../src/index.js'
+import type { Interaction, InteractionCard } from '../src/index.js'
 
 describe('the roster', () => {
   it('puts what needs a human first, whatever it is called', () => {
@@ -186,5 +187,52 @@ describe('the terminal screen', () => {
   it('repaints when a style changed but the text did not', () => {
     const a = screen([[run('hi')]])
     expect(changed(a, screen([[run('hi', { bold: true })]]))).toBe(true)
+  })
+})
+
+describe('what a card offers', () => {
+  const card = (over: Partial<InteractionCard> = {}): InteractionCard => ({
+    id: 'i1',
+    session: 's1',
+    kind: 'choice',
+    deliverable: 'native',
+    state: 'open',
+    prompt: 'Which database?',
+    options: ['Postgres', 'SQLite'],
+    ...over,
+  })
+
+  it('offers the agent options verbatim and in its order', () => {
+    expect(cardOffer(card()).options.map((o) => o.label)).toEqual(['Postgres', 'SQLite'])
+  })
+
+  it('offers nothing when omt has no channel, and says why', () => {
+    // A button that silently does nothing is worse than no button: somebody
+    // presses it and believes the agent was answered.
+    const offer = cardOffer(
+      card({ deliverable: 'none', not_deliverable_because: 'this agent has no responder' }),
+    )
+    expect(offer.answerable).toBe(false)
+    expect(offer.options).toEqual([])
+    expect(offer.why).toContain('no responder')
+  })
+
+  it('refuses a card somebody has already answered', () => {
+    expect(cardOffer(card({ state: 'resolving' })).answerable).toBe(false)
+  })
+
+  it('makes an irreversible approval hard to press', () => {
+    const offer = cardOffer(
+      card({ kind: 'permission', prompt: 'rm -rf /srv/data', options: ['Yes', 'No'] }),
+    )
+    expect(offer.options[0]?.confirm).toBe('hold')
+    expect(offer.options[1]?.confirm).toBe('tap')
+  })
+
+  it('does not read a choice question as a shell command', () => {
+    // The prompt of a choice card is a question. Treating it as a command
+    // would have the risk heuristic firing on the word "delete" in prose.
+    const offer = cardOffer(card({ prompt: 'Should I delete the old rows?' }))
+    expect(offer.options.every((o) => o.confirm === 'tap')).toBe(true)
   })
 })

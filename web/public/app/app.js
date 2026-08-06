@@ -62,6 +62,23 @@ export function layOutCard(options, command) {
         isDefault: index === 0,
     }));
 }
+/** Whether a card can be acted on here, and why not if not. */
+export function cardOffer(card) {
+    if (card.deliverable === 'none') {
+        return {
+            answerable: false,
+            why: card.not_deliverable_because ?? 'omt has no channel to answer this one',
+            options: [],
+        };
+    }
+    if (card.state !== 'open') {
+        return { answerable: false, why: 'it has already been answered', options: [] };
+    }
+    // A permission card's prompt is the command, and the command is what sets
+    // how hard "yes" is to press.
+    const command = card.kind === 'permission' ? card.prompt : undefined;
+    return { answerable: true, options: layOutCard(card.options, command) };
+}
 function isAffirmative(label) {
     return /^(yes|allow|approve|ok|confirm|proceed|continue)/i.test(label.trim());
 }
@@ -90,12 +107,22 @@ export class App {
     #route = { screen: 'roster' };
     #latched = null;
     #screen = null;
+    #cards = [];
+    #askedForCards = false;
     #epoch = 0;
     #poll = null;
     constructor(store, root) {
         this.#store = store;
         this.#root = root;
         store.subscribe(() => this.render());
+        // Loaded once the instance says what it holds. A roster without the cards
+        // on it is a roster that hides the only reason to open the app.
+        store.subscribe((state) => {
+            if (state.connection === 'connected' && !this.#askedForCards) {
+                this.#askedForCards = true;
+                void this.loadCards();
+            }
+        });
     }
     /** Go somewhere. */
     go(route) {
@@ -202,6 +229,14 @@ export class App {
             });
             box.append(create);
         }
+        for (const card of this.#cards) {
+            const button = document.createElement('button');
+            button.className = 'card-row';
+            button.textContent = card.prompt;
+            button.setAttribute('aria-label', `needs you: ${card.prompt}`);
+            button.addEventListener('click', () => this.go({ screen: 'card', interaction: card.id }));
+            box.append(button);
+        }
         const list = document.createElement('ul');
         for (const session of orderRoster(state.sessions.map((s) => ({ ...s, title: s.title })))) {
             const row = renderSessionRow(session);
@@ -296,22 +331,75 @@ export class App {
             // same failure twice is not more informative.
         }
     }
-    #card(state, id) {
+    /**
+     * Answer a card.
+     *
+     * The label, not an index: the agent's own spelling is what the ledger
+     * records and what delivery is later confirmed against, and an index means
+     * something different the moment anything reorders.
+     */
+    async answer(interaction, option) {
+        try {
+            await this.#store.call('interaction.respond', interaction, option);
+            await this.#store.refresh();
+            this.go({ screen: 'roster' });
+        }
+        catch {
+            // The store already surfaced it. A card that failed to send must not
+            // look answered, so the screen deliberately stays where it is.
+        }
+    }
+    #card(_state, id) {
         const box = document.createElement('div');
-        const interaction = state.open.find((i) => i.id === id);
-        if (!interaction) {
+        const card = this.#cards.find((c) => c.id === id);
+        if (card === undefined) {
             box.textContent = 'that card is no longer open';
+            void this.loadCards();
             return box;
         }
-        const status = cardStatus(interaction);
-        if (!status.answerable) {
-            // Shown read-only with the reason and a route to the terminal, rather
-            // than a button that silently does nothing.
+        const prompt = document.createElement('p');
+        prompt.className = 'prompt';
+        prompt.textContent = card.prompt;
+        box.append(prompt);
+        const offer = cardOffer(card);
+        if (!offer.answerable) {
+            // Read-only, with the reason and a route to the terminal — rather than a
+            // button that silently does nothing.
             const why = document.createElement('p');
             why.className = 'readonly';
-            why.textContent = `omt cannot answer this here: ${status.why ?? 'unknown'}`;
+            why.textContent = `omt cannot answer this here: ${offer.why ?? 'unknown'}`;
             box.append(why);
+            const open = document.createElement('button');
+            open.textContent = 'Open the terminal';
+            open.addEventListener('click', () => this.go({ screen: 'terminal', session: card.session }));
+            box.append(open);
+            return box;
+        }
+        for (const option of offer.options) {
+            const button = document.createElement('button');
+            button.className = option.confirm === 'hold' ? 'option hold' : 'option';
+            button.textContent = option.label;
+            // Said out loud: the difference between a tap and a hold is invisible
+            // until you have already failed to press it once.
+            button.setAttribute('aria-label', option.confirm === 'hold' ? `${option.label} — press and hold` : option.label);
+            button.addEventListener('click', () => void this.answer(card.id, option.label));
+            box.append(button);
         }
         return box;
+    }
+    /** Re-read the cards waiting across every session. */
+    async loadCards() {
+        try {
+            const out = (await this.#store.call('interaction.list'));
+            this.#cards = out.interactions;
+            this.render();
+        }
+        catch {
+            // On the store's problem list already.
+        }
+    }
+    /** The cards this client knows about. */
+    get cards() {
+        return this.#cards;
     }
 }

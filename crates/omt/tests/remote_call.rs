@@ -732,3 +732,165 @@ fn decode64(text: &str) -> Vec<u8> {
     }
     out
 }
+
+/// Put a card in the ledger, as an adapter would.
+fn raise_card(
+    state: &omt::state::State,
+    deliverable: omt_events::Deliverable,
+) -> omt_types::InteractionId {
+    let id = omt_types::InteractionId::new();
+    let interaction = omt_events::Interaction {
+        id,
+        session: omt_types::SessionId::new(),
+        binding: omt_types::BindingId::new(),
+        kind: omt_events::InteractionKind::Permission {
+            tool: "Bash".to_owned(),
+            input: serde_json::json!({ "command": "rm -rf /srv/data" }),
+            command: Some("rm -rf /srv/data".to_owned()),
+            options: vec![
+                omt_events::PermissionOption {
+                    id: "allow".to_owned(),
+                    label: "Yes".to_owned(),
+                    kind: omt_events::PermissionOptionKind::AllowOnce,
+                },
+                omt_events::PermissionOption {
+                    id: "deny".to_owned(),
+                    label: "No".to_owned(),
+                    kind: omt_events::PermissionOptionKind::DenyOnce,
+                },
+            ],
+        },
+        deliverable,
+        state: omt_events::InteractionState::Open,
+        opened_at: omt_types::Timestamp::now(),
+        expires_at: None,
+    };
+    state.lock().expect("lock").ledger.open(interaction, None);
+    id
+}
+
+#[test]
+fn a_remote_client_answers_a_card_and_the_second_answer_is_refused() {
+    // The product's whole promise: something needs you, and you answer it from
+    // wherever you are. Exactly once, because two people looking at the same
+    // notification is the normal case rather than the exotic one.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let id = raise_card(&state, omt_events::Deliverable::Native);
+
+    let listed = call_ok(&mut client, 1, "interaction.list", serde_json::json!({}), false);
+    let cards = listed["interactions"].as_array().expect("interactions");
+    assert_eq!(cards.len(), 1);
+    // The command, not the tool name: "Bash" is not enough to decide on.
+    assert_eq!(cards[0]["prompt"], "rm -rf /srv/data");
+    assert_eq!(cards[0]["deliverable"], "native");
+    assert_eq!(
+        cards[0]["options"],
+        serde_json::json!(["Yes", "No"]),
+        "the options must be the agent's own, in its order"
+    );
+
+    let answered = call_ok(
+        &mut client,
+        2,
+        "interaction.respond",
+        serde_json::json!({ "interaction": id.to_wire(), "option": "No" }),
+        true,
+    );
+    // Resolving, not resolved: omt has claimed the right to answer. For a
+    // synthetic responder the far side is a UI omt does not own.
+    assert_eq!(answered["state"], "resolving");
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(3),
+            capability: "interaction.respond".to_owned(),
+            input: serde_json::json!({ "interaction": id.to_wire(), "option": "Yes" }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(
+        matches!(result.outcome, CallOutcome::Err { .. }),
+        "a second answer was accepted, so the agent would receive two"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_card_omt_cannot_deliver_is_refused_even_while_it_is_open() {
+    // Answerability is a property of the deliverable, never of the state. A
+    // surface that reads `open` and offers a button lets somebody believe they
+    // answered something that was never sent.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let id = raise_card(
+        &state,
+        omt_events::Deliverable::None {
+            reason: omt_events::NotDeliverableReason::NoResponder,
+        },
+    );
+
+    let listed = call_ok(&mut client, 1, "interaction.list", serde_json::json!({}), false);
+    let card = &listed["interactions"][0];
+    assert_eq!(card["deliverable"], "none");
+    assert!(
+        card["not_deliverable_because"].is_string(),
+        "a surface must be able to say why, not just that it cannot"
+    );
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(2),
+            capability: "interaction.respond".to_owned(),
+            input: serde_json::json!({ "interaction": id.to_wire(), "option": "Yes" }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(
+        matches!(result.outcome, CallOutcome::Err { .. }),
+        "omt offered to deliver an answer it has no channel for"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
