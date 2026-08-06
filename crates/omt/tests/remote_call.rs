@@ -1909,3 +1909,128 @@ fn an_instance_with_no_key_offers_no_speech_provider() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_protocol_agent_is_driven_and_its_events_reach_the_session() {
+    // The source, connected: a process speaking Codex's app-server protocol,
+    // its notifications decoded by the adapter and folded into the session's
+    // event stream. The agent here is a script rather than the vendor's binary
+    // — what that leaves unverified is whether Codex spells its notifications
+    // the way this adapter expects, which needs Codex and not more code.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+    let session = call_ok(
+        &mut client,
+        2,
+        "session.create",
+        serde_json::json!({ "workspace": ws, "program": "/bin/sh", "cols": 40, "rows": 10 }),
+        true,
+    )["session"]
+        .as_str()
+        .expect("session")
+        .to_owned();
+
+    // An agent that speaks the protocol: a turn, a command it wants to run,
+    // the result, and one notification omt has never heard of.
+    let script = r#"printf '%s\n' \
+'{"jsonrpc":"2.0","method":"task_started","params":{"turn_id":"t1"}}' \
+'{"jsonrpc":"2.0","method":"exec-command-begin","params":{"call_id":"c1","command":["cargo","test"]}}' \
+'{"jsonrpc":"2.0","method":"exec-command-end","params":{"call_id":"c1","output":"ok"}}' \
+'{"jsonrpc":"2.0","id":7,"result":{"this":"is a reply, not an event"}}' \
+'{"jsonrpc":"2.0","method":"something_omt_has_never_heard_of","params":{}}' \
+'{"jsonrpc":"2.0","method":"task_complete","params":{"status":"ok"}}'"#;
+
+    let out = call_ok(
+        &mut client,
+        3,
+        "agent.connect",
+        serde_json::json!({
+            "session": session,
+            "agent": "codex",
+            "command": ["/bin/sh", "-c", script],
+        }),
+        true,
+    );
+
+    // Four notifications carried payloads; the reply carried none.
+    assert!(
+        out["events"].as_u64().is_some_and(|n| n >= 4),
+        "too few events decoded: {out}"
+    );
+    // And the one nobody has a mapping for is named rather than dropped.
+    assert_eq!(
+        out["unmapped"],
+        serde_json::json!(["something_omt_has_never_heard_of"]),
+        "an unmapped method was swallowed: {out}"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn an_agent_omt_cannot_drive_over_a_protocol_is_refused_by_name() {
+    // Connecting the wrong adapter would decode one agent's notifications with
+    // another's vocabulary — a transcript that is subtly wrong rather than
+    // obviously broken, which is far harder to notice.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(1),
+            capability: "agent.connect".to_owned(),
+            input: serde_json::json!({
+                "session": omt_types::SessionId::new().to_wire(),
+                "agent": "aider",
+                "command": ["/bin/true"],
+            }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(matches!(result.outcome, CallOutcome::Err { .. }));
+
+    drop(client);
+    worker.join().expect("worker");
+}

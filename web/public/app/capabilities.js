@@ -39,6 +39,7 @@ export const HANDLERS = {
     'workspace.open': (request, root) => call(request, 'workspace.open', { root }),
     'session.list': (request, workspace) => call(request, 'session.list', workspace === undefined ? {} : { workspace }),
     'session.close': (request, session) => call(request, 'session.close', { session }),
+    'agent.connect': (request, session, agent, command) => call(request, 'agent.connect', { session, agent, command }),
     'agent.threads': (request, session) => call(request, 'agent.threads', { session }),
     'agent.interrupt': (request, session) => call(request, 'agent.interrupt', { session }),
     'fs.list': (request, workspace, path = '') => call(request, 'fs.list', { workspace, path }),

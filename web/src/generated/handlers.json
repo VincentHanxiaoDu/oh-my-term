@@ -1,4 +1,5 @@
 [
+  "agent.connect",
   "agent.interrupt",
   "agent.threads",
   "config.get",

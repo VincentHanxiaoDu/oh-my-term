@@ -2288,6 +2288,150 @@ impl CapabilityHandler<InteractionRespond> for InteractionRespondHandler {
 }
 
 // ---------------------------------------------------------------------------
+// Protocol agents
+// ---------------------------------------------------------------------------
+
+/// Input to `agent.connect`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AgentConnectIn {
+    /// Which session the agent belongs to.
+    pub session: String,
+    /// Which agent, by the name the catalog uses — `codex`, `opencode`.
+    pub agent: String,
+    /// The program to run, with arguments.
+    pub command: Vec<String>,
+}
+
+/// What `agent.connect` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct AgentConnectOut {
+    /// How many notifications it produced before ending.
+    pub events: u32,
+    /// Methods the adapter had no mapping for, verbatim.
+    ///
+    /// Reported rather than dropped, because a protocol source that silently
+    /// ignores what it does not understand degrades into a worse one while
+    /// still claiming its tier — and this is the list that says which.
+    pub unmapped: Vec<String>,
+}
+
+capability! {
+    /// Drive an agent over its own protocol.
+    pub struct AgentConnect;
+    input  = AgentConnectIn,
+    output = AgentConnectOut,
+    decl = Decl {
+        name: "agent.connect",
+        group: "agent",
+        verb: "connect",
+        title: "Connect a protocol agent",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::SPAWNS_PROCESS,
+        intent: Some(Intent::Append {
+            dedup: DedupKey::IntentIdAndTarget,
+            ttl_secs: 600,
+        }),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped.",
+    },
+}
+
+struct AgentConnectHandler(State);
+
+impl CapabilityHandler<AgentConnect> for AgentConnectHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: AgentConnectIn,
+    ) -> Result<AgentConnectOut, CapabilityError> {
+        let session = session_id(&input.session)?;
+        let kind = match input.agent.as_str() {
+            "codex" => omt_types::AgentKind::Codex,
+            "opencode" => omt_types::AgentKind::Opencode,
+            "gemini" => omt_types::AgentKind::GeminiCli,
+            "qwen" => omt_types::AgentKind::QwenCode,
+            "goose" => omt_types::AgentKind::Goose,
+            // Refused rather than guessed: connecting the wrong adapter would
+            // decode one agent's notifications with another's vocabulary, and
+            // the result is a transcript that is subtly wrong rather than
+            // obviously broken.
+            other => {
+                return Err(CapabilityError::invalid_input(format!(
+                    "`{other}` is not an agent omt can drive over a protocol"
+                )));
+            }
+        };
+        let adapters = omt_agent_adapters::builtin();
+        let adapter = adapters
+            .get(kind)
+            .ok_or_else(|| CapabilityError::not_found("no adapter for that agent"))?;
+
+        let (program, args) = input
+            .command
+            .split_first()
+            .ok_or_else(|| CapabilityError::invalid_input("no command to run"))?;
+        let mut server = omt_agent_adapters::AppServer::spawn(program, args)
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+
+        let mut events = 0u32;
+        let mut unmapped = Vec::new();
+        let mut payloads = Vec::new();
+        server
+            .drive(adapter, |line| match line {
+                omt_agent_adapters::ServerLine::Payloads(p) => {
+                    events += p.len() as u32;
+                    payloads.extend(p);
+                }
+                omt_agent_adapters::ServerLine::Unknown { method } => unmapped.push(method),
+                // A line that is not JSON is the agent's own diagnostics on the
+                // wrong stream. Counted with the unmapped rather than dropped,
+                // because it means the two sides disagree about the channel.
+                omt_agent_adapters::ServerLine::Unparseable { line } => {
+                    unmapped.push(format!("<not json> {line}"));
+                }
+            })
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+        server.stop().ok();
+
+        // Folded into the session's stream, which is what makes them reach
+        // every surface: there is one event path and this is it.
+        let mut instance = self.0.lock()?;
+        let binding = omt_types::BindingId::new();
+        for payload in payloads {
+            instance.emit(
+                session,
+                omt_events::EventSourceTag::Protocol,
+                omt_events::EventPayload::Agent {
+                    event: Box::new(omt_events::AgentEvent {
+                        session,
+                        binding,
+                        agent: kind,
+                        agent_version: None,
+                        agent_session: None,
+                        thread: None,
+                        seq: omt_types::Seq::new(0),
+                        ts: omt_types::Timestamp::now(),
+                        tier: omt_types::Tier::Protocol,
+                        payload,
+                    }),
+                },
+            );
+        }
+
+        Ok(AgentConnectOut { events, unmapped })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Protocol agents
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Panes
 // ---------------------------------------------------------------------------
 
@@ -4177,6 +4321,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<AgentInterrupt, _>(AgentInterruptHandler(state.clone()))?;
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
+    r.register::<AgentConnect, _>(AgentConnectHandler(state.clone()))?;
     r.register::<PaneList, _>(PaneListHandler(state.clone()))?;
     r.register::<PaneOpen, _>(PaneOpenHandler(state.clone()))?;
     r.register::<PaneClose, _>(PaneCloseHandler(state.clone()))?;

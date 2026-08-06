@@ -139,6 +139,9 @@ export const HANDLERS = {
   'session.close': (request: RequestId, session: string) =>
     call(request, 'session.close', { session }),
 
+  'agent.connect': (request: RequestId, session: string, agent: string, command: string[]) =>
+    call(request, 'agent.connect', { session, agent, command }),
+
   'agent.threads': (request: RequestId, session: string) =>
     call(request, 'agent.threads', { session }),
 

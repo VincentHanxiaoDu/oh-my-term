@@ -1,6 +1,30 @@
 {
   "capabilities": [
     {
+      "aliases": [],
+      "doc": "Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped.",
+      "effects": [
+        "spawns_process"
+      ],
+      "group": "agent",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id_and_target",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "agent.connect",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent/connect",
+      "since": "0.1.0",
+      "title": "Connect a protocol agent",
+      "verb": "connect"
+    },
+    {
       "aliases": [
         "stop"
       ],

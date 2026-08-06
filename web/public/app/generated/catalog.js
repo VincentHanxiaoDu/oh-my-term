@@ -6,6 +6,7 @@
 // than as a build failure.
 /** Every capability this build declares. */
 export const CAPABILITIES = [
+    'agent.connect',
     'agent.interrupt',
     'agent.threads',
     'config.get',
@@ -54,6 +55,7 @@ export const CAPABILITIES = [
 ];
 /** What each capability is, for a palette or a settings screen. */
 export const CAPABILITY_INFO = {
+    'agent.connect': { title: "Connect a protocol agent", group: 'agent', kind: 'command', role: 'operator', doc: "Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped." },
     'agent.interrupt': { title: "Interrupt an agent", group: 'agent', kind: 'command', role: 'operator', doc: "Stop an agent. For an agent with no protocol of its own this is the entire remote control surface." },
     'agent.threads': { title: "List agent threads", group: 'agent', kind: 'query', role: 'viewer', doc: "Every thread in a session — the main one and each subagent — with what it is doing and any card it raised." },
     'config.get': { title: "Read configuration", group: 'config', kind: 'query', role: 'viewer', doc: "Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable." },
