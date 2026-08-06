@@ -63,6 +63,14 @@ pub enum Input {
     },
     /// Detach and leave the session running.
     Detach,
+    /// Split: put a new session beside this one.
+    Split,
+    /// Move focus to the next pane.
+    NextPane,
+    /// Close the focused pane, leaving its session running.
+    ClosePane,
+    /// Show every binding.
+    Help,
     /// Nothing to do.
     Ignore,
 }
@@ -102,6 +110,12 @@ fn translate_key(key: &KeyEvent, armed: bool, mode: EncodeMode) -> (Input, bool)
         // The prefix consumed the last key, so this one is a command.
         return match key.code {
             KeyCode::Char('d') => (Input::Detach, false),
+            // The three tmux users already have in their fingers, spelled the
+            // same way: splitting, cycling and closing.
+            KeyCode::Char('s' | 'c') => (Input::Split, false),
+            KeyCode::Char('o' | 'n') => (Input::NextPane, false),
+            KeyCode::Char('x') => (Input::ClosePane, false),
+            KeyCode::Char('?') => (Input::Help, false),
             // The prefix twice sends a literal prefix, which is how a user
             // types the chord the multiplexer took.
             KeyCode::Char(c) if c == PREFIX_KEY && key.modifiers.contains(PREFIX) => (
@@ -175,6 +189,35 @@ pub fn to_chord(key: &KeyEvent) -> Option<Chord> {
     reason = "in a test, expect() is the assertion"
 )]
 mod tests {
+
+    #[test]
+    fn the_prefix_commands_are_the_ones_people_already_know() {
+        // Spelled the same way tmux spells them, because the muscle memory is
+        // the whole reason a prefix works at all.
+        let mode = EncodeMode::default();
+        for (key, expected) in [
+            ('d', Input::Detach),
+            ('s', Input::Split),
+            ('o', Input::NextPane),
+            ('x', Input::ClosePane),
+            ('?', Input::Help),
+        ] {
+            let event = Event::Key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
+            let (input, armed) = translate(&event, true, mode);
+            assert_eq!(input, expected, "prefix {key}");
+            assert!(!armed, "the prefix stayed armed after {key}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_prefix_command_does_nothing_at_all() {
+        // A mistyped chord that silently ran something is worse than one that
+        // did not, and it must not reach the program either.
+        let event = Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        let (input, armed) = translate(&event, true, EncodeMode::default());
+        assert_eq!(input, Input::Ignore);
+        assert!(!armed);
+    }
     use super::*;
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> Event {

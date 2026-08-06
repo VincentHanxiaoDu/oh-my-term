@@ -48,38 +48,23 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let workspace = instance
         .open_workspace(&cwd)
         .context("opening a workspace")?;
-    let id = instance
-        .create_session(workspace, SessionKind::Shell, SessionMode::Pty)
-        .context("creating a session")?;
 
-    let runtime = SessionRuntime::spawn(
-        id,
-        &PtyConfig {
-            program: shell.into(),
-            args: Vec::new(),
-            cwd: Some(cwd.into()),
-            // One row short of the terminal, because the bottom line belongs to
-            // the hint. Taking it from the program rather than drawing over it
-            // is the only version that works: a program that believes it owns
-            // the last row will draw there, and the hint would flicker against
-            // it forever.
-            size: PtySize::new(cols, rows.saturating_sub(1).max(1)),
-            env: vec![
-                // What lets a hook this shell spawns know which pane it belongs
-                // to, rather than having to guess.
-                ("OMT_SESSION".to_owned(), id.to_wire()),
-            ],
-            ..PtyConfig::default()
-        },
-        omt_term::ScrollbackLimits::default(),
-    )
-    .context("starting the shell")?;
-    instance.attach(runtime).context("attaching")?;
+    // One row is the hint's, so every pane is sized one short of the terminal.
+    // Taking it rather than drawing over it is the only version that works: a
+    // program that believes it owns the last row will draw there.
+    let usable_rows = rows.saturating_sub(1).max(1);
+    let mut panes = vec![LocalPane::open(
+        &mut instance,
+        workspace,
+        &shell,
+        &cwd,
+        PtySize::new(cols, usable_rows),
+    )?];
+    let mut focus = 0usize;
 
     // Entered last, so anything that fails above reports on a working terminal
     // rather than into raw mode.
     let _guard = RawGuard::enter().context("entering raw mode")?;
-    let mut screen = Screen::new();
     let mut out = io::stdout();
     let mut armed = false;
     let started = std::time::Instant::now();
@@ -87,50 +72,103 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let mut shown_hint: Option<Option<&'static str>> = None;
     let mut term_rows = rows;
     let mut term_cols = cols;
-
-    // The local terminal holds the token like any other actor, rather than
-    // writing around it. Auto-acquire is what makes that invisible to somebody
-    // alone at their own keyboard — and it means the epoch check on every
-    // keystroke is the real path, exercised every time omt runs, instead of a
-    // branch only remote clients take.
-    let mut writer = WriterState::new(WriterPolicy::default());
-    let epoch = writer
-        .acquire(omt_types::Actor::Local, monotonic_ms(), false, true)
-        .context("acquiring the writer token")?;
+    let mut layout_dirty = true;
 
     loop {
-        instance.pump_session(id).context("pumping the session")?;
+        for pane in &panes {
+            instance
+                .pump_session(pane.session)
+                .context("pumping the session")?;
+        }
 
-        let Some(runtime) = instance.runtime(id) else {
+        // Panes whose process ended stop being drawn. The session stays in the
+        // tree — it is finished, not forgotten — but a dead pane holding screen
+        // space is space the live ones need.
+        let before = panes.len();
+        panes.retain(|p| {
+            !instance
+                .session(p.session)
+                .is_some_and(omt_session::Session::is_finished)
+        });
+        if panes.len() != before {
+            layout_dirty = true;
+            focus = focus.min(panes.len().saturating_sub(1));
+        }
+        if panes.is_empty() {
             break;
-        };
-        let mode = EncodeMode {
-            application_cursor: runtime
-                .terminal()
-                .modes()
-                .contains(TermMode::ApplicationCursor),
-        };
-        screen
-            .draw(&mut out, runtime.terminal().grid())
-            .context("drawing")?;
+        }
 
+        let rects = omt_tui::tile(
+            term_cols,
+            term_rows.saturating_sub(1).max(1),
+            omt_tui::Split::Vertical,
+            panes.len(),
+        );
+        if layout_dirty {
+            // Everything moved. Diffing against where a pane used to be paints
+            // its old contents into its neighbour.
+            write!(out, "\x1b[2J").context("clearing")?;
+            for pane in &mut panes {
+                pane.screen.invalidate();
+            }
+            for (pane, rect) in panes.iter().zip(&rects) {
+                if let Some(rt) = instance.runtime_mut(pane.session) {
+                    rt.resize(rect.cols, rect.rows).context("resizing")?;
+                }
+            }
+            draw_separators(&mut out, &rects).context("drawing separators")?;
+            layout_dirty = false;
+        }
+
+        let mut mode = EncodeMode::default();
+        for (i, (pane, rect)) in panes.iter_mut().zip(&rects).enumerate() {
+            let Some(runtime) = instance.runtime(pane.session) else {
+                continue;
+            };
+            if i == focus {
+                mode = EncodeMode {
+                    application_cursor: runtime
+                        .terminal()
+                        .modes()
+                        .contains(TermMode::ApplicationCursor),
+                };
+            }
+            pane.screen
+                .draw_at(&mut out, runtime.terminal().grid(), rect.col, rect.row)
+                .context("drawing")?;
+        }
+
+        // Drawn last so the cursor ends inside the pane that has focus —
+        // otherwise it sits wherever the final pane left it and typing looks
+        // like it is going somewhere else.
+        if let (Some(pane), Some(rect)) = (panes.get(focus), rects.get(focus))
+            && let Some(runtime) = instance.runtime(pane.session)
+        {
+            let cursor = runtime.terminal().grid().cursor;
+            write!(
+                out,
+                "\x1b[{};{}H",
+                rect.row + cursor.row + 1,
+                rect.col + cursor.col + 1
+            )
+            .context("placing the cursor")?;
+        }
+
+        let focused_session = panes[focus].session;
         let situation = omt_tui::Situation {
             prefix_armed: armed,
             blocked: instance
-                .threads(id)
+                .threads(focused_session)
                 .map_or(0, |roster| roster.summary().blocked),
-            agent_running: instance.threads(id).is_some(),
+            agent_running: instance.threads(focused_session).is_some(),
             age_secs: started.elapsed().as_secs(),
             remote_clients: 0,
             has_used_prefix,
         };
         let hint = omt_tui::hint_for(&situation);
-        // Only when it changed. Rewriting an unchanged line every tick is bytes
-        // on the wire for a screen where nothing happened, which over ssh is
-        // exactly the frame that has to be free.
         if shown_hint != Some(hint) {
-            // Saved and restored around the write, or the cursor ends up parked
-            // on the hint row and the program's own cursor appears to vanish.
+            // Saved and restored around the write, or the cursor ends parked on
+            // the hint row and the program's own cursor appears to vanish.
             write!(
                 out,
                 "\x1b7\x1b[{};1H{}\x1b8",
@@ -138,16 +176,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 omt_tui::render_hint(hint, term_cols)
             )
             .context("drawing the hint")?;
-            out.flush().context("flushing the hint")?;
             shown_hint = Some(hint);
         }
-
-        if instance
-            .session(id)
-            .is_some_and(omt_session::Session::is_finished)
-        {
-            break;
-        }
+        out.flush().context("flushing")?;
 
         if crossterm::event::poll(TICK).context("polling for input")? {
             let event = crossterm::event::read().context("reading input")?;
@@ -158,23 +189,58 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             armed = next;
             match input {
                 Input::Bytes(bytes) => {
-                    if let Some(rt) = instance.runtime_mut(id) {
-                        rt.write_input(&mut writer, epoch, monotonic_ms(), &bytes)
+                    let pane = &mut panes[focus];
+                    let session = pane.session;
+                    if let Some(rt) = instance.runtime_mut(session) {
+                        rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &bytes)
                             .context("writing input")?;
                     }
                 }
                 Input::Resize { cols, rows } => {
                     term_rows = rows;
                     term_cols = cols;
-                    // The hint keeps its row across a resize, so the program is
-                    // told about one row fewer here too.
-                    if let Some(rt) = instance.runtime_mut(id) {
-                        rt.resize(cols, rows.saturating_sub(1).max(1))
-                            .context("resizing")?;
-                    }
+                    layout_dirty = true;
                     shown_hint = None;
-                    // The real terminal's contents are no longer what we drew.
-                    screen.invalidate();
+                }
+                Input::Split => {
+                    // Refused rather than attempted when there is no room. Two
+                    // unusable panes are worse than one usable one, and the
+                    // user cannot see why nothing is legible.
+                    let wanted = panes.len() + 1;
+                    if omt_tui::how_many_fit(term_cols, term_rows, omt_tui::Split::Vertical, wanted)
+                        == wanted
+                    {
+                        let size = PtySize::new(term_cols, term_rows.saturating_sub(1).max(1));
+                        if let Ok(pane) =
+                            LocalPane::open(&mut instance, workspace, &shell, &cwd, size)
+                        {
+                            panes.push(pane);
+                            focus = panes.len() - 1;
+                            layout_dirty = true;
+                        }
+                    }
+                }
+                Input::NextPane => {
+                    focus = (focus + 1) % panes.len();
+                    shown_hint = None;
+                }
+                Input::ClosePane => {
+                    // The pane goes; the session does not. Closing a view of
+                    // something is not ending it.
+                    let closed = panes.remove(focus);
+                    if let Some(pane) = closed.pane {
+                        instance.remove_pane(workspace, pane);
+                    }
+                    if panes.is_empty() {
+                        break;
+                    }
+                    focus = focus.min(panes.len() - 1);
+                    layout_dirty = true;
+                }
+                Input::Help => {
+                    // The cheat sheet is a capability, and duplicating it here
+                    // would be a second list to keep in step with the keymap.
+                    shown_hint = None;
                 }
                 Input::Detach => break,
                 Input::Ignore => {}
@@ -183,6 +249,81 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     }
 
     out.flush().ok();
+    Ok(())
+}
+
+/// One pane the local TUI is drawing.
+///
+/// Each carries its own `Screen`, because the damage tracking is per region:
+/// one screen for the whole terminal would diff a pane's output against its
+/// neighbour's and repaint both.
+struct LocalPane {
+    session: omt_types::SessionId,
+    /// Its identity in the workspace's view, so closing it here closes the same
+    /// pane a remote client sees.
+    pane: Option<omt_types::PaneId>,
+    screen: Screen,
+    writer: WriterState,
+    epoch: omt_session::Epoch,
+}
+
+impl LocalPane {
+    /// Start a session and take its writer token.
+    fn open(
+        instance: &mut Instance,
+        workspace: omt_types::WorkspaceId,
+        program: &str,
+        cwd: &str,
+        size: PtySize,
+    ) -> Result<Self> {
+        let session = instance
+            .create_session(workspace, SessionKind::Shell, SessionMode::Pty)
+            .context("creating a session")?;
+        let runtime = SessionRuntime::spawn(
+            session,
+            &PtyConfig {
+                program: program.into(),
+                args: Vec::new(),
+                cwd: Some(cwd.into()),
+                size,
+                env: vec![("OMT_SESSION".to_owned(), session.to_wire())],
+                ..PtyConfig::default()
+            },
+            omt_term::ScrollbackLimits::default(),
+        )
+        .context("starting the shell")?;
+        instance.attach(runtime).context("attaching")?;
+        let pane = instance.add_pane(workspace, session);
+
+        // The local terminal holds the token like any other actor rather than
+        // writing around it. Auto-acquire makes that invisible to somebody
+        // alone at their keyboard, and it means the epoch check on every
+        // keystroke is the real path rather than a branch only remotes take.
+        let mut writer = WriterState::new(WriterPolicy::default());
+        let epoch = writer
+            .acquire(omt_types::Actor::Local, monotonic_ms(), false, true)
+            .context("acquiring the writer token")?;
+        Ok(Self {
+            session,
+            pane,
+            screen: Screen::new(),
+            writer,
+            epoch,
+        })
+    }
+}
+
+/// Draw the separator between panes.
+///
+/// A vertical rule rather than a blank column: two shells side by side with
+/// nothing between them read as one shell with very strange output.
+fn draw_separators(out: &mut impl Write, rects: &[omt_tui::Rect]) -> io::Result<()> {
+    for pair in rects.windows(2) {
+        let col = pair[0].col + pair[0].cols + 1;
+        for row in 0..pair[0].rows {
+            write!(out, "\x1b[{};{col}H\x1b[2m│\x1b[0m", row + 1)?;
+        }
+    }
     Ok(())
 }
 

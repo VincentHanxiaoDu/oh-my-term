@@ -45,7 +45,7 @@ Working, and honest about what is not:
 - ✅ Worktree fan-out, scheduled runs, git status and diff, file transfer
 - ⚠️ No TLS — `omt web` binds loopback; use `omt ssh` or your own reverse proxy
 - ⚠️ Hook installation reformats JSON configs (content is preserved exactly)
-- ⚠️ Panes and layout exist in the model but the TUI renders one session
+- ✅ Panes: `Ctrl-A s` splits, `Ctrl-A o` cycles, `Ctrl-A x` closes
 
 ## Install
 
