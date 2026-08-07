@@ -1,0 +1,26 @@
+{
+  "" : {
+    "const-values" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary.swiftconstvalues",
+    "dependencies" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary.d",
+    "diagnostics" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary.dia",
+    "emit-module-dependencies" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary-emit-module.dia",
+    "pch" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary.swiftdeps"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/App.swift" : {
+    "index-unit-output-path" : "/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/App.o",
+    "llvm-bc" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/App.bc",
+    "object" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/App.o"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Client.swift" : {
+    "index-unit-output-path" : "/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/Client.o",
+    "llvm-bc" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/Client.bc",
+    "object" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/Client.o"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Screens.swift" : {
+    "index-unit-output-path" : "/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/Screens.o",
+    "llvm-bc" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/Screens.bc",
+    "object" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/Screens.o"
+  }
+}

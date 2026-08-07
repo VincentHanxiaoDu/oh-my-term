@@ -1,0 +1,12 @@
+{
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/App.swift" : {
+    "abi-baseline-json" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp.abi.json",
+    "const-values" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary.swiftconstvalues",
+    "dependencies" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary.d",
+    "diagnostics" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-primary.dia",
+    "objc-header" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp-Swift.h",
+    "swiftdoc" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp.swiftdoc",
+    "swiftmodule" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp.swiftmodule",
+    "swiftsourceinfo" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtApp.build/Objects-normal/arm64/OmtApp.swiftsourceinfo"
+  }
+}

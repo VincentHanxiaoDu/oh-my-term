@@ -590,6 +590,24 @@
     },
     {
       "aliases": [],
+      "doc": "Commands run in a session with their output ranges and exit codes, from OSC 133. A shell that emits no marks reports none rather than guesses.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.blocks",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/blocks",
+      "since": "0.1.0",
+      "title": "List command blocks",
+      "verb": "blocks"
+    },
+    {
+      "aliases": [],
       "doc": "End a session and stop the process on it. Idempotent.",
       "effects": [
         "destructive"

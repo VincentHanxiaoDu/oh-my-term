@@ -1,0 +1,19 @@
+{
+  "": {
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/primary.swiftdeps"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Protocol.swift": {
+    "dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.d",
+    "object": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.swift.o",
+    "swiftmodule": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol~partial.swiftmodule",
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.swiftdeps",
+    "diagnostics": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.dia"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Roster.swift": {
+    "dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.d",
+    "object": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.swift.o",
+    "swiftmodule": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster~partial.swiftmodule",
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.swiftdeps",
+    "diagnostics": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.dia"
+  }
+}

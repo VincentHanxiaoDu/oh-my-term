@@ -1,9 +1,10 @@
 // The application's entry point.
 //
-// A file of its own so `@main` lives in exactly one place: the app target has
-// it, and `OmtApp` stays a library that compiles anywhere — including on a
-// machine with no Xcode, which is where the sixteen checks run.
+// The app target compiles the library sources directly, so there is no module
+// to import — `OmtApplication` is in this target. `swift build` still compiles
+// the same files as a library, which is what keeps the sixteen checks runnable
+// on a machine with no Xcode at all.
 
-import OmtApp
+import SwiftUI
 
 OmtApplication.main()

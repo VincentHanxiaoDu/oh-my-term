@@ -1,0 +1,51 @@
+# The iOS app target, as a spec rather than a project file.
+#
+# `.xcodeproj` is generated from this and not committed: a pbxproj is 800 lines
+# of machine-ordered references that nobody can review and every merge
+# conflicts on. This file is 30 lines and says the same thing.
+#
+#   xcodegen generate && xcodebuild -scheme Omt -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+name: Omt
+options:
+  bundleIdPrefix: dev.ohmyterm
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+targets:
+  Omt:
+    type: application
+    platform: iOS
+    # The same sources the package builds, compiled directly rather than through
+    # a package dependency. Resolving a local package inside a bare xcodeproj is
+    # fragile — it failed here with "unable to resolve module dependency", which
+    # reads like a missing dependency rather than a layout problem — and there
+    # is nothing to gain from the indirection when the code is in this repo.
+    #
+    # `swift build` still builds the same files as a library, which is what
+    # keeps the checks runnable on a machine with no Xcode.
+    sources:
+      - path: Omt/Main
+      - path: OmtKit/Sources/Omt
+      - path: OmtKit/Sources/OmtApp
+      - path: OmtKit/Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ohmyterm.omt
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        # Portrait only for now. A terminal that rotates needs the reflow story
+        # settled first, and a half-done rotation is worse than none.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Unsigned, so a simulator build needs no developer account. Signing is
+        # a release decision and belongs to whoever ships it.
+        CODE_SIGNING_ALLOWED: NO
+        # Stated explicitly. Without these the generated target resolves to no
+        # supported platform at all and xcodebuild reports "found no
+        # destinations", which sounds like a missing simulator rather than a
+        # missing setting.
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        TARGETED_DEVICE_FAMILY: "1,2"

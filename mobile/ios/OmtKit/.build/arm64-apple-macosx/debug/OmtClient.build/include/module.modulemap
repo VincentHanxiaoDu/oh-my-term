@@ -1,0 +1,3 @@
+module OmtClient {
+    header "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/include/OmtClient-Swift.h"
+}

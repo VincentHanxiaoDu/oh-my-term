@@ -6,12 +6,14 @@
 //! coordinating.
 
 pub mod action;
+pub mod block;
 pub mod cell;
 pub mod grid;
 pub mod line;
 pub mod scrollback;
 pub mod terminal;
 
+pub use block::{Block, BlockTracker, Outcome};
 pub use action::{
     ActionQueue, Backpressure, BlockEvent, ClipboardSelection, ColorSlot, HostAction,
     HyperlinkEvent, TermMode, Warning, WindowOp,

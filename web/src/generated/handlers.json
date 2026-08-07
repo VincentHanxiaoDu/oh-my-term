@@ -28,6 +28,7 @@
   "recall.record",
   "recall.suggest",
   "session.acquire",
+  "session.blocks",
   "session.close",
   "session.create",
   "session.list",

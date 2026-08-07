@@ -45,6 +45,11 @@ pub enum Which {
 pub struct Terminal {
     parser: vte::Parser,
     state: State,
+    /// Command blocks, positioned in absolute rows.
+    ///
+    /// Here rather than in `State` because a block's position depends on how
+    /// much has scrolled off, and the parser has no idea.
+    blocks: crate::block::BlockTracker,
 }
 
 /// Everything the parser mutates.
@@ -65,6 +70,8 @@ struct State {
     /// Set when the action queue refused an undroppable action, so the caller
     /// is told to drain before feeding more bytes.
     stalled: Option<HostAction>,
+    /// Shell-integration transitions the terminal has not positioned yet.
+    pending_blocks: Vec<crate::action::BlockEvent>,
 }
 
 /// The DEC private modes that are on.
@@ -100,7 +107,9 @@ impl Terminal {
                 tab_stops: default_tab_stops(size.cols),
                 title: None,
                 stalled: None,
+                pending_blocks: Vec::new(),
             },
+            blocks: crate::block::BlockTracker::new(),
         }
     }
 
@@ -115,8 +124,60 @@ impl Terminal {
                 return i;
             }
             self.parser.advance(&mut self.state, &[*b]);
+            // Blocks are tracked here rather than in the parser because a block
+            // is positioned in *absolute* rows, and only this level knows how
+            // much has scrolled off. Peeked rather than drained: the host still
+            // receives every action it would have.
+            self.track_blocks();
         }
         bytes.len()
+    }
+
+    /// The command blocks this session has produced.
+    ///
+    /// Empty for a shell that emits no OSC 133, which is the honest answer: a
+    /// tracker that guessed at command boundaries from prompt shapes would be
+    /// wrong on every shell whose prompt it did not recognise.
+    #[must_use]
+    pub fn blocks(&self) -> &[crate::block::Block] {
+        self.blocks.blocks()
+    }
+
+    /// The block still running, if one is.
+    #[must_use]
+    pub fn active_block(&self) -> Option<&crate::block::Block> {
+        self.blocks.active()
+    }
+
+    /// The most recent command that failed.
+    #[must_use]
+    pub fn last_failed_block(&self) -> Option<&crate::block::Block> {
+        self.blocks.last_failure()
+    }
+
+    /// The row the cursor is on, counting from the first line ever written.
+    ///
+    /// Absolute rather than screen-relative, because a block outlives the
+    /// screen it started on: a command whose output has scrolled past would
+    /// otherwise appear to start wherever the screen happens to be now.
+    #[must_use]
+    pub fn absolute_row(&self) -> u64 {
+        self.state.scrollback.len() as u64 + u64::from(self.grid().cursor.row)
+    }
+
+    /// Feed any new shell-integration transitions to the block tracker.
+    ///
+    /// Through a small queue of its own rather than by inspecting the action
+    /// queue: the host drains that one, and two consumers of a queue with one
+    /// cursor is how one of them silently stops seeing things.
+    fn track_blocks(&mut self) {
+        if self.state.pending_blocks.is_empty() {
+            return;
+        }
+        let row = self.state.scrollback.len() as u64 + u64::from(self.grid().cursor.row);
+        for event in std::mem::take(&mut self.state.pending_blocks) {
+            self.blocks.apply(event, row);
+        }
     }
 
     /// Take everything the host must do or be told.
@@ -764,6 +825,7 @@ impl Perform for State {
                     _ => None,
                 };
                 if let Some(e) = event {
+                    self.pending_blocks.push(e);
                     self.emit(HostAction::Block(e));
                 }
             }
@@ -910,6 +972,48 @@ fn parse_x_color(s: &str) -> Option<Color> {
     reason = "in a test, expect() is the assertion"
 )]
 mod tests {
+
+    #[test]
+    fn real_shell_integration_bytes_produce_a_block() {
+        // End to end from the wire: OSC 133 A/B/C/D through the parser, out as
+        // a block with its command and its exit code. Everything else about
+        // the tracker is tested against transitions; this is the part that
+        // proves the transitions arrive at all.
+        let mut t = Terminal::new(TermConfig::default());
+        t.advance(b"\x1b]133;A\x07$ \x1b]133;B\x07cargo test\x1b]133;C\x07");
+        t.advance(b"ok\r\n");
+        t.advance(b"\x1b]133;D;0\x07");
+
+        let blocks = t.blocks();
+        assert_eq!(blocks.len(), 1, "{blocks:?}");
+        assert_eq!(blocks[0].outcome, crate::block::Outcome::Exited { code: 0 });
+        assert!(t.active_block().is_none(), "the block never closed");
+    }
+
+    #[test]
+    fn a_failing_command_is_visible_as_one() {
+        let mut t = Terminal::new(TermConfig::default());
+        t.advance(b"\x1b]133;A\x07\x1b]133;C\x07");
+        t.advance(b"\x1b]133;D;101\x07");
+        assert!(t.blocks()[0].outcome.is_failure());
+    }
+
+    #[test]
+    fn a_shell_without_marks_produces_no_blocks() {
+        // The property that makes this safe against every shell: no OSC 133,
+        // no guessing at where a command began.
+        let mut t = Terminal::new(TermConfig::default());
+        t.advance(b"$ ls\r\nfile\r\n$ ");
+        assert!(t.blocks().is_empty());
+    }
+
+    #[test]
+    fn a_running_command_is_reported_as_running() {
+        let mut t = Terminal::new(TermConfig::default());
+        t.advance(b"\x1b]133;A\x07\x1b]133;C\x07");
+        assert!(t.active_block().is_some(), "nothing was running");
+    }
+
     use super::*;
 
     fn term(cols: u16, rows: u16) -> Terminal {

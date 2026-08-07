@@ -1,0 +1,125 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "OmtApp-arm64-apple-macosx-debug.module": ["<OmtApp-arm64-apple-macosx-debug.module>"]
+  "OmtClient-arm64-apple-macosx-debug.module": ["<OmtClient-arm64-apple-macosx-debug.module>"]
+  "OmtClientCheck-arm64-apple-macosx-debug.module": ["<OmtClientCheck-arm64-apple-macosx-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<OmtApp-arm64-apple-macosx-debug.module>","<OmtClient-arm64-apple-macosx-debug.module>","<OmtClientCheck-arm64-apple-macosx-debug.module>","<omt-client-check-arm64-apple-macosx-debug.exe>"]
+  "omt-client-check-arm64-apple-macosx-debug.exe": ["<omt-client-check-arm64-apple-macosx-debug.exe>"]
+  "test": ["<OmtApp-arm64-apple-macosx-debug.module>","<OmtClient-arm64-apple-macosx-debug.module>","<OmtClientCheck-arm64-apple-macosx-debug.module>","<omt-client-check-arm64-apple-macosx-debug.exe>"]
+default: "main"
+nodes:
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Check/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check":
+    is-mutated: true
+commands:
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/App.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Client.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Screens.swift"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/sources"]
+    description: "Write auxiliary file /Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/sources"
+
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Protocol.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Roster.swift"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/sources"]
+    description: "Write auxiliary file /Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/sources"
+
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Check/main.swift"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/sources"]
+    description: "Write auxiliary file /Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/sources"
+
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check-entitlement.plist"]
+    description: "Write auxiliary file /Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check-entitlement.plist"
+
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.swift.o"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check.product/Objects.LinkFileList"
+
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/swift-version-3CD7052B146186F2.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/swift-version-3CD7052B146186F2.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/swift-version-3CD7052B146186F2.txt"
+
+  "<OmtApp-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtApp.swiftmodule"]
+    outputs: ["<OmtApp-arm64-apple-macosx-debug.module>"]
+
+  "<OmtClient-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClient.swiftmodule"]
+    outputs: ["<OmtClient-arm64-apple-macosx-debug.module>"]
+
+  "<OmtClientCheck-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClientCheck.swiftmodule"]
+    outputs: ["<OmtClientCheck-arm64-apple-macosx-debug.module>"]
+
+  "<omt-client-check-arm64-apple-macosx-debug.exe>":
+    tool: phony
+    inputs: ["<omt-client-check-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    outputs: ["<omt-client-check-arm64-apple-macosx-debug.exe>"]
+
+  "C.OmtApp-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/App.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Client.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Screens.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/swift-version-3CD7052B146186F2.txt","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClient.swiftmodule","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/sources"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtApp.swiftmodule"]
+    description: "Compiling Swift Module 'OmtApp' (3 sources)"
+    args: ["/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","OmtApp","-emit-dependencies","-emit-module","-emit-module-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtApp.swiftmodule","-output-file-map","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/sources","-I","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j14","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/include/OmtApp-Swift.h","-swift-version","5","-plugin-path","/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-Xcc","-F","-Xcc","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","omtkit"]
+
+  "C.OmtClient-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Protocol.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Roster.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/swift-version-3CD7052B146186F2.txt","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/sources"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClient.swiftmodule"]
+    description: "Compiling Swift Module 'OmtClient' (2 sources)"
+    args: ["/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","OmtClient","-emit-dependencies","-emit-module","-emit-module-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClient.swiftmodule","-output-file-map","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/sources","-I","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j14","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/include/OmtClient-Swift.h","-swift-version","5","-plugin-path","/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-Xcc","-F","-Xcc","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","omtkit"]
+
+  "C.OmtClientCheck-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Check/main.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/swift-version-3CD7052B146186F2.txt","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClient.swiftmodule","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtApp.swiftmodule","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/sources"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClientCheck.swiftmodule"]
+    description: "Compiling Swift Module 'OmtClientCheck' (1 sources)"
+    args: ["/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","OmtClientCheck","-emit-dependencies","-emit-module","-emit-module-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClientCheck.swiftmodule","-output-file-map","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/output-file-map.json","-incremental","-c","@/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/sources","-I","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j14","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","OmtClientCheck_main","-swift-version","5","-plugin-path","/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-Xcc","-F","-Xcc","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","omtkit"]
+
+  "C.omt-client-check-arm64-apple-macosx-debug.exe":
+    tool: shell
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Protocol.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClient.build/Roster.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.swift.o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check.product/Objects.LinkFileList"]
+    outputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/omt-client-check"
+    args: ["/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug","-o","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check","-module-name","omt_client_check","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_OmtClientCheck_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx14.0","-Xlinker","-add_ast_path","-Xlinker","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtApp.swiftmodule","-Xlinker","-add_ast_path","-Xlinker","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClient.swiftmodule","-Xlinker","-add_ast_path","-Xlinker","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/Modules/OmtClientCheck.swiftmodule","-plugin-path","/Applications/Xcode-26.6.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk","-F","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode-26.6.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.omt-client-check-arm64-apple-macosx-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check-entitlement.plist"]
+    outputs: ["<omt-client-check-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/omt-client-check"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check-entitlement.plist","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/omt-client-check"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Check/","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Package.swift","/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

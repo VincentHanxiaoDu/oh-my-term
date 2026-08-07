@@ -38,6 +38,7 @@ vanishing.
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
 | `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
 | `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
+| `session.blocks` | query | viewer | Commands run in a session with their output ranges and exit codes, from OSC 133. A shell that emits no marks reports none rather than guesses. |
 | `session.close` | command | operator | End a session and stop the process on it. Idempotent. |
 | `session.create` | command | operator | Start a session in a workspace, running a program on a pty. Deduplicated by intent id, so a reconnect retry does not start a second process. |
 | `session.list` | query | viewer | Every session this instance holds, optionally filtered to one workspace. |
@@ -56,4 +57,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-46 capabilities.
+47 capabilities.

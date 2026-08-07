@@ -1407,6 +1407,127 @@ impl CapabilityHandler<SessionCreate> for SessionCreateHandler {
     }
 }
 
+/// Input to `session.blocks`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SessionBlocksIn {
+    /// Which session.
+    pub session: String,
+    /// Only the ones that failed.
+    ///
+    /// The filter a "jump to the last error" needs. 130 and 141 are not
+    /// failures — the first is Ctrl-C and the second is what `… | head` does to
+    /// everything upstream of it — so this is narrower than "non-zero".
+    #[serde(default)]
+    pub failed_only: bool,
+}
+
+/// One command and what came of it.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct BlockSummary {
+    /// Its id, which is what a client refers to when it asks to re-run one.
+    pub id: String,
+    /// The command as the shell marked it.
+    pub command: String,
+    /// Where its output starts, counting from the first line ever written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_row: Option<u64>,
+    /// Where it ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_row: Option<u64>,
+    /// `running`, `exited`, or `unknown` — the last meaning the shell said the
+    /// command ended and did not say how, which is not the same as success.
+    pub outcome: String,
+    /// The exit code, where the shell reported one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Whether a surface should show this as a failure.
+    pub failed: bool,
+}
+
+/// What `session.blocks` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SessionBlocksOut {
+    /// Oldest first.
+    pub blocks: Vec<BlockSummary>,
+    /// Whether this shell emits the marks at all.
+    ///
+    /// False means no blocks will ever appear, which a UI should say rather
+    /// than showing an empty list that looks like "you have run nothing".
+    pub shell_integration: bool,
+}
+
+capability! {
+    /// The commands run in a session.
+    pub struct SessionBlocks;
+    input  = SessionBlocksIn,
+    output = SessionBlocksOut,
+    decl = Decl {
+        name: "session.blocks",
+        group: "session",
+        verb: "blocks",
+        title: "List command blocks",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Commands run in a session with their output ranges and exit codes, from OSC 133. A shell that emits no marks reports none rather than guesses.",
+    },
+}
+
+struct SessionBlocksHandler(State);
+
+impl CapabilityHandler<SessionBlocks> for SessionBlocksHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: SessionBlocksIn,
+    ) -> Result<SessionBlocksOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let instance = self.0.lock()?;
+        let terminal = instance
+            .runtime(id)
+            .map(omt_daemon::SessionRuntime::terminal)
+            .or_else(|| instance.orphan_terminal(id))
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?;
+
+        let blocks: Vec<BlockSummary> = terminal
+            .blocks()
+            .iter()
+            .filter(|b| !input.failed_only || b.outcome.is_failure())
+            .map(|b| BlockSummary {
+                id: b.id.to_wire(),
+                command: b.command.clone(),
+                output_row: b.output_row,
+                end_row: b.end_row,
+                outcome: match b.outcome {
+                    omt_term::Outcome::Running => "running",
+                    omt_term::Outcome::Exited { .. } => "exited",
+                    omt_term::Outcome::Unknown => "unknown",
+                }
+                .to_owned(),
+                exit_code: match b.outcome {
+                    omt_term::Outcome::Exited { code } => Some(code),
+                    _ => None,
+                },
+                failed: b.outcome.is_failure(),
+            })
+            .collect();
+
+        Ok(SessionBlocksOut {
+            // Whether any block has ever been seen. A shell with no integration
+            // never produces one, and a UI showing an empty list without saying
+            // why looks like "you have run nothing".
+            shell_integration: !terminal.blocks().is_empty(),
+            blocks,
+        })
+    }
+}
+
 /// Input to `session.restart`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SessionRestartIn {
@@ -4399,6 +4520,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<FsWrite, _>(FsWriteHandler(state.clone()))?;
     r.register::<InteractionList, _>(InteractionListHandler(state.clone()))?;
     r.register::<InteractionRespond, _>(InteractionRespondHandler(state.clone()))?;
+    r.register::<SessionBlocks, _>(SessionBlocksHandler(state.clone()))?;
     r.register::<SessionRestart, _>(SessionRestartHandler(state.clone()))?;
     r.register::<SessionCreate, _>(SessionCreateHandler(state.clone()))?;
     r.register::<SessionAcquire, _>(SessionAcquireHandler(state.clone()))?;

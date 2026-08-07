@@ -1,0 +1,4 @@
+module OmtClient {
+header "OmtClient-Swift.h"
+export *
+}

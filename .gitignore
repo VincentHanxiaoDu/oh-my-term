@@ -20,3 +20,8 @@ mobile/android/build/
 mobile/android/app/build/
 mobile/android/.gradle/
 mobile/android/local.properties
+
+# Generated from project.yml by xcodegen; regenerate rather than commit.
+mobile/ios/Omt.xcodeproj/
+mobile/ios/build/
+mobile/ios/.build/

@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/primary.swiftdeps"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Check/main.swift": {
+    "dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.d",
+    "object": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.swift.o",
+    "swiftmodule": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.swiftdeps",
+    "diagnostics": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtClientCheck.build/main.dia"
+  }
+}

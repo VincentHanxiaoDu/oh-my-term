@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/primary.swiftdeps"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/App.swift": {
+    "dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.d",
+    "object": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.swift.o",
+    "swiftmodule": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App~partial.swiftmodule",
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.swiftdeps",
+    "diagnostics": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/App.dia"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Client.swift": {
+    "dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.d",
+    "object": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.swift.o",
+    "swiftmodule": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client~partial.swiftmodule",
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.swiftdeps",
+    "diagnostics": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Client.dia"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/OmtApp/Screens.swift": {
+    "dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.d",
+    "object": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.swift.o",
+    "swiftmodule": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens~partial.swiftmodule",
+    "swift-dependencies": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.swiftdeps",
+    "diagnostics": "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/.build/arm64-apple-macosx/debug/OmtApp.build/Screens.dia"
+  }
+}

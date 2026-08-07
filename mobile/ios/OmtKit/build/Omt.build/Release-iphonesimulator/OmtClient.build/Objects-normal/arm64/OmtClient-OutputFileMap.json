@@ -1,0 +1,21 @@
+{
+  "" : {
+    "const-values" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/OmtClient-primary.swiftconstvalues",
+    "dependencies" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/OmtClient-primary.d",
+    "diagnostics" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/OmtClient-primary.dia",
+    "emit-module-dependencies" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/OmtClient-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/OmtClient-primary-emit-module.dia",
+    "pch" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/OmtClient-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/OmtClient-primary.swiftdeps"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Protocol.swift" : {
+    "index-unit-output-path" : "/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/Protocol.o",
+    "llvm-bc" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/Protocol.bc",
+    "object" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/Protocol.o"
+  },
+  "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/Sources/Omt/Roster.swift" : {
+    "index-unit-output-path" : "/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/Roster.o",
+    "llvm-bc" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/Roster.bc",
+    "object" : "/Users/hanxiao.du/Desktop/vincent/projects/oh-my-term/mobile/ios/OmtKit/build/Omt.build/Release-iphonesimulator/OmtClient.build/Objects-normal/arm64/Roster.o"
+  }
+}

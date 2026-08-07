@@ -293,6 +293,9 @@ export const HANDLERS = {
       ...(program === undefined ? {} : { program }),
     }),
 
+  'session.blocks': (request: RequestId, session: string, failedOnly = false) =>
+    call(request, 'session.blocks', { session, failed_only: failedOnly }),
+
   'session.snapshot': (request: RequestId, session: string) =>
     call(request, 'session.snapshot', { session }),
 

@@ -95,6 +95,7 @@ export const HANDLERS = {
         session,
         ...(program === undefined ? {} : { program }),
     }),
+    'session.blocks': (request, session, failedOnly = false) => call(request, 'session.blocks', { session, failed_only: failedOnly }),
     'session.snapshot': (request, session) => call(request, 'session.snapshot', { session }),
     'config.get': (request, key) => call(request, 'config.get', key === undefined ? {} : { key }),
     'keys.cheatsheet': (request) => call(request, 'keys.cheatsheet', {}),
