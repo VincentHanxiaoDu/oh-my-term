@@ -13,6 +13,7 @@ vanishing.
 | `agent.interrupt` | command | operator | Stop an agent. For an agent with no protocol of its own this is the entire remote control surface. |
 | `agent.threads` | query | viewer | Every thread in a session — the main one and each subagent — with what it is doing and any card it raised. |
 | `config.get` | query | viewer | Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable. |
+| `config.schema` | query | viewer | Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be. |
 | `events.subscribe` | query | viewer | Subscribe to the event stream. |
 | `fs.list` | query | viewer | List a directory inside a workspace. Paths are workspace-relative and cannot escape it. |
 | `fs.read` | query | viewer | Read one chunk of a file. Chunked so a large file over a slow link can show progress and resume rather than restarting. |
@@ -49,6 +50,7 @@ vanishing.
 | `session.restart` | command | operator | Respawn the command behind a session restored from a snapshot, keeping the old output above a separator. |
 | `session.snapshot` | query | viewer | The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
+| `shell.integration` | query | viewer | Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself. |
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
 | `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
@@ -58,4 +60,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-48 capabilities.
+50 capabilities.

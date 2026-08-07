@@ -202,3 +202,33 @@ adapted, or translated. See [14 — Licensing and provenance](14-licensing.md).
 
 Code, comments, docs, specs, commit messages, issues and pull requests. No
 exceptions, so that any contributor can read any part of the project.
+
+---
+
+## P11 — Minimal to use, complete to configure
+
+**Every feature works before it is configured.** Blocks appear without a
+setting, layouts have a default, highlighting is on, the theme ships. Somebody
+who installs omt and types `omt` gets all of it without reading anything.
+
+**Every feature is also a setting.** Nothing is an opinion the user cannot
+change, and nothing is behind a flag they have to find first.
+
+Those two are the whole rule, and they pull in opposite directions on purpose:
+
+| | The failure it prevents |
+|---|---|
+| A feature that needs a setting before it does anything | Shipped switched off. Most people never find it, and the ones who do resent the step |
+| A feature with no setting at all | Somebody else's opinion, permanently |
+| A feature that asks a question at first run | A wizard. Every question is a step, and a step is where people stop |
+
+**Customisation beyond configuration is a plugin.** The line is deliberate: a
+setting changes a value omt already understands; a plugin adds behaviour omt
+does not have. Growing the settings schema to cover what a plugin should do
+produces a configuration file nobody can read, and the second failure above at
+scale.
+
+Degrade rather than switch off. A shell that emits no shell-integration marks
+still gets blocks — fewer of them, with less known about each, and marked as
+such. The alternative is a feature that silently does nothing on half the
+machines it runs on, which is indistinguishable from a bug.

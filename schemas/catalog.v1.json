@@ -92,6 +92,24 @@
     },
     {
       "aliases": [],
+      "doc": "Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be.",
+      "effects": [],
+      "group": "config",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "config.schema",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/config/schema",
+      "since": "0.1.0",
+      "title": "List every setting",
+      "verb": "schema"
+    },
+    {
+      "aliases": [],
       "doc": "Subscribe to the event stream.",
       "effects": [],
       "group": "events",
@@ -817,6 +835,24 @@
       "since": "0.1.0",
       "title": "Type into a session",
       "verb": "write"
+    },
+    {
+      "aliases": [],
+      "doc": "Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself.",
+      "effects": [],
+      "group": "shell",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "shell.integration",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/shell/integration",
+      "since": "0.1.0",
+      "title": "Shell integration status",
+      "verb": "integration"
     },
     {
       "aliases": [],

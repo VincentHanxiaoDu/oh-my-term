@@ -1411,6 +1411,10 @@ fn a_pane_is_a_view_of_a_session_and_closing_one_leaves_it_running() {
     // The property the whole pane model is built around, and the one a user
     // finds out about the hard way if it is wrong: closing a view of something
     // is not ending it.
+    //
+    // `date` rather than a shell: what is being tested is that the session
+    // outlives its pane, and a program that exits proves that just as well as
+    // one that does not — while leaving no process behind for the next run.
     let dir = tempfile::tempdir().expect("tempdir");
     let state = omt::state::State::default();
     let (mut client, server) = client_server_pair();
@@ -1441,7 +1445,7 @@ fn a_pane_is_a_view_of_a_session_and_closing_one_leaves_it_running() {
         &mut client,
         2,
         "session.create",
-        serde_json::json!({ "workspace": ws, "program": "/bin/sh", "cols": 40, "rows": 10 }),
+        serde_json::json!({ "workspace": ws, "program": "/bin/date", "cols": 40, "rows": 10 }),
         true,
     );
     let sid = session["session"].clone();
@@ -1709,7 +1713,7 @@ fn a_session_survives_the_daemon_restarting_as_a_readable_orphan() {
             "sessions": [{
                 "workspace_root": work.to_string_lossy(),
                 "title": "shell",
-                "program": "/bin/sh",
+                "program": "/bin/date",
                 "cwd": work.to_string_lossy(),
                 "screen": ["before-the-restart", "$ "],
             }],
@@ -1947,7 +1951,7 @@ fn a_protocol_agent_is_driven_and_its_events_reach_the_session() {
         &mut client,
         2,
         "session.create",
-        serde_json::json!({ "workspace": ws, "program": "/bin/sh", "cols": 40, "rows": 10 }),
+        serde_json::json!({ "workspace": ws, "program": "/bin/date", "cols": 40, "rows": 10 }),
         true,
     )["session"]
         .as_str()
@@ -2237,6 +2241,107 @@ fn a_session_with_no_shell_integration_still_reports_blocks() {
         out["shell_integration"], false,
         "a shell with no marks was reported as having integration"
     );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_shell_with_no_marks_is_offered_the_line_that_adds_them() {
+    // P11: a feature works before it is configured, and is also discoverable.
+    // Blocks work without shell integration; the *good* version needs a line in
+    // a shell rc, and a line nobody is ever shown is a feature shipped off.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let out = call_ok(
+        &mut client,
+        1,
+        "shell.integration",
+        serde_json::json!({}),
+        false,
+    );
+    assert_eq!(
+        out["active"], false,
+        "nothing has run, so nothing can have marked anything"
+    );
+    // A snippet, or an honest absence for a shell omt does not know. Returning
+    // one shell's line for another puts an error in a terminal on every login.
+    if let Some(snippet) = out["snippet"].as_object() {
+        assert!(snippet.contains_key("file"), "a snippet with no file: {out}");
+        assert!(
+            snippet["line"].as_str().is_some_and(|l| l.contains("133")),
+            "the snippet does not emit the marks omt reads: {out}"
+        );
+    }
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn every_setting_is_listed_whether_or_not_anyone_set_it() {
+    // The other half of P11. `config.get` reports what is set; a settings
+    // screen built from that alone shows only what somebody already changed,
+    // which makes every other key discoverable only by being told its name.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let out = call_ok(&mut client, 1, "config.schema", serde_json::json!({}), false);
+    let settings = out["settings"].as_array().expect("settings");
+    assert!(!settings.is_empty(), "no settings were reported");
+
+    for setting in settings {
+        assert!(
+            setting["default"] != serde_json::Value::Null,
+            "{} has no default, so it must be set before it does anything",
+            setting["key"]
+        );
+        assert!(
+            setting["doc"].as_str().is_some_and(|d| d.len() > 10),
+            "{} has no description, so a settings screen lists a name to guess at",
+            setting["key"]
+        );
+    }
+
+    // An enumerated setting carries its choices, or a client cannot offer them.
+    let enums: Vec<_> = settings.iter().filter(|s| s["kind"] == "enum").collect();
+    assert!(!enums.is_empty(), "no enumerated setting to check");
+    for setting in enums {
+        assert!(
+            !setting["choices"].as_array().is_none_or(std::vec::Vec::is_empty),
+            "{} is an enum with no choices",
+            setting["key"]
+        );
+    }
 
     drop(client);
     worker.join().expect("worker");

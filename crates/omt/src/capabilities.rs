@@ -4535,6 +4535,251 @@ fn describe_target(target: &omt_open::Target) -> (String, String, Option<u32>) {
 // Configuration
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Shell integration
+// ---------------------------------------------------------------------------
+
+/// Input to `shell.integration`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ShellIntegrationIn {
+    /// Which session to judge by. Absent asks about the shell omt was started
+    /// from, which is what a fresh client with no session wants to know.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+/// What `shell.integration` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct ShellIntegrationOut {
+    /// The shell, as far as omt can tell.
+    pub shell: String,
+    /// Whether marks have actually been seen.
+    ///
+    /// Observed rather than configured: a block with a command attributed to it
+    /// is proof that OSC 133 arrived. A setting could be wrong; this cannot.
+    pub active: bool,
+    /// How many blocks have been seen at all.
+    ///
+    /// Reported so a caller can tell "no integration" from "nothing has
+    /// happened yet" — a brand-new session has seen nothing either way, and
+    /// telling somebody to install a snippet they already have is worse than
+    /// saying nothing.
+    pub blocks_seen: u32,
+    /// The line to add, and where.
+    ///
+    /// Absent when integration is already active, and absent for a shell omt
+    /// has no snippet for — returning bash's line for fish puts an error in
+    /// somebody's terminal on every login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<ShellSnippet>,
+}
+
+/// What to add to a shell's configuration.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct ShellSnippet {
+    /// The file it belongs in.
+    pub file: String,
+    /// The line itself.
+    pub line: String,
+}
+
+capability! {
+    /// Whether this shell marks its commands.
+    pub struct ShellIntegration;
+    input  = ShellIntegrationIn,
+    output = ShellIntegrationOut,
+    decl = Decl {
+        name: "shell.integration",
+        group: "shell",
+        verb: "integration",
+        title: "Shell integration status",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself.",
+    },
+}
+
+struct ShellIntegrationHandler(State);
+
+impl CapabilityHandler<ShellIntegration> for ShellIntegrationHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: ShellIntegrationIn,
+    ) -> Result<ShellIntegrationOut, CapabilityError> {
+        let shell = current_shell();
+        let instance = self.0.lock()?;
+
+        // Judged over the named session, or over every session when none was
+        // named: a client asking in general wants to know whether *anything*
+        // here marks its commands.
+        let blocks: Vec<&omt_term::Block> = match input.session.as_deref() {
+            Some(raw) => {
+                let id = session_id(raw)?;
+                instance
+                    .runtime(id)
+                    .map(omt_daemon::SessionRuntime::terminal)
+                    .or_else(|| instance.orphan_terminal(id))
+                    .ok_or_else(|| CapabilityError::not_found("no such session"))?
+                    .blocks()
+                    .iter()
+                    .collect()
+            }
+            None => instance
+                .sessions()
+                .iter()
+                .filter_map(|s| instance.runtime(s.id))
+                .flat_map(|r| r.terminal().blocks().iter())
+                .collect(),
+        };
+
+        let active = blocks.iter().any(|b| b.attributed);
+        Ok(ShellIntegrationOut {
+            snippet: if active { None } else { snippet_for(&shell) },
+            shell,
+            active,
+            blocks_seen: blocks.len() as u32,
+        })
+    }
+}
+
+/// The shell omt was started from.
+fn current_shell() -> String {
+    std::env::var("SHELL")
+        .ok()
+        .and_then(|p| {
+            std::path::Path::new(&p)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "unknown".to_owned())
+}
+
+/// The line that turns on command marks, for a shell omt knows.
+///
+/// `None` for anything else, on purpose. A snippet for the wrong shell puts an
+/// error in somebody's terminal on every login, which is worse than no snippet.
+fn snippet_for(shell: &str) -> Option<ShellSnippet> {
+    // One line each, self-contained, and emitting the marks the block tracker
+    // reads. Deliberately not a script omt installs: a line somebody can read
+    // before pasting is a line they will paste.
+    let (file, line) = match shell {
+        "bash" => (
+            "~/.bashrc",
+            r#"PROMPT_COMMAND='printf "\033]133;D;$?\007\033]133;A\007"'"#,
+        ),
+        "zsh" => (
+            "~/.zshrc",
+            r#"precmd() { print -Pn "\e]133;D;$?\a\e]133;A\a" }"#,
+        ),
+        "fish" => (
+            "~/.config/fish/config.fish",
+            r#"function omt_prompt --on-event fish_prompt; printf "\033]133;D;$status\007\033]133;A\007"; end"#,
+        ),
+        _ => return None,
+    };
+    Some(ShellSnippet {
+        file: file.to_owned(),
+        line: line.to_owned(),
+    })
+}
+
+/// Input to `config.schema`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ConfigSchemaIn {}
+
+/// One thing a user can set.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct SettingSchema {
+    /// Its dotted key.
+    pub key: String,
+    /// What it holds.
+    pub kind: String,
+    /// What it is when nobody has set it.
+    pub default: serde_json::Value,
+    /// One line about what it does.
+    pub doc: String,
+    /// The permitted values, where there is a fixed set.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<String>,
+    /// What it currently resolves to, and where that came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current: Option<serde_json::Value>,
+    /// Which layer supplied the current value, absent when it is the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+}
+
+/// What `config.schema` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct ConfigSchemaOut {
+    /// Every setting omt understands.
+    pub settings: Vec<SettingSchema>,
+}
+
+capability! {
+    /// Every setting, whether or not anyone has set it.
+    pub struct ConfigSchema;
+    input  = ConfigSchemaIn,
+    output = ConfigSchemaOut,
+    decl = Decl {
+        name: "config.schema",
+        group: "config",
+        verb: "schema",
+        title: "List every setting",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be.",
+    },
+}
+
+struct ConfigSchemaHandler(State);
+
+impl CapabilityHandler<ConfigSchema> for ConfigSchemaHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        _input: ConfigSchemaIn,
+    ) -> Result<ConfigSchemaOut, CapabilityError> {
+        let resolved = self.0.config()?;
+        Ok(ConfigSchemaOut {
+            settings: omt_config::SETTINGS
+                .iter()
+                .map(|s| {
+                    let provenance = resolved.source(s.key);
+                    SettingSchema {
+                        key: s.key.to_owned(),
+                        kind: s.kind.as_str().to_owned(),
+                        // Parsed rather than passed through as text: a client
+                        // comparing the default against the current value would
+                        // otherwise be comparing a string to a number.
+                        default: serde_json::from_str(s.default)
+                            .unwrap_or(serde_json::Value::Null),
+                        doc: s.doc.to_owned(),
+                        choices: s.choices.iter().map(|c| (*c).to_owned()).collect(),
+                        current: resolved.get(s.key).cloned(),
+                        layer: provenance.map(|p| format!("{:?}", p.layer)),
+                    }
+                })
+                .collect(),
+        })
+    }
+}
+
 /// Input to `config.get`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConfigGetIn {
@@ -4731,6 +4976,8 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<VoiceProviders, _>(VoiceProvidersHandler(state.clone()))?;
     r.register::<VoiceAppend, _>(VoiceAppendHandler(state.clone()))?;
     r.register::<VoiceClear, _>(VoiceClearHandler(state.clone()))?;
+    r.register::<ConfigSchema, _>(ConfigSchemaHandler(state.clone()))?;
+    r.register::<ShellIntegration, _>(ShellIntegrationHandler(state.clone()))?;
     r.register::<ThemeGet, _>(ThemeGetHandler(state.clone()))?;
     r.register::<OpenRecognize, _>(OpenRecognizeHandler(state.clone()))?;
     r.register::<FsRead, _>(FsReadHandler(state.clone()))?;

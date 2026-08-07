@@ -41,6 +41,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         .or_else(|| std::env::var("SHELL").ok())
         .unwrap_or_else(|| "/bin/sh".to_owned());
 
+    // Printed before anything else, so it is above the session rather than
+    // interleaved with it. Prints and continues — no question, no wait. Every
+    // question is a step, and a step is where people stop.
+    first_run_summary();
+
     let mut instance = Instance::new();
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
@@ -325,6 +330,76 @@ fn draw_separators(out: &mut impl Write, rects: &[omt_tui::Rect]) -> io::Result<
         }
     }
     Ok(())
+}
+
+/// Say what omt found, once, on a machine that has never run it.
+///
+/// The trigger is the absence of a configuration directory, because that is
+/// what "first run" means and it needs no state of its own. The directory is
+/// created here, so a second run says nothing — including a second run that
+/// changes nothing else.
+fn first_run_summary() {
+    let Some(home) = config_home() else {
+        return;
+    };
+    if home.exists() {
+        return;
+    }
+    // Created before printing. If creating it fails the summary is skipped
+    // rather than printed on every start, which would be worse than never.
+    if std::fs::create_dir_all(&home).is_err() {
+        return;
+    }
+
+    let shell = std::env::var("SHELL")
+        .ok()
+        .and_then(|p| {
+            std::path::Path::new(&p)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "your shell".to_owned());
+
+    let agents = detected_agents();
+
+    println!("omt {}", env!("CARGO_PKG_VERSION"));
+    println!("  shell: {shell}");
+    if agents.is_empty() {
+        println!("  agents: none on PATH — omt runs anything, and detects these when present");
+    } else {
+        println!("  agents: {}", agents.join(", "));
+    }
+    println!("  Ctrl-A ? for every key · Ctrl-A d to detach · `omt web` for a phone");
+    println!();
+}
+
+/// Which agent CLIs are on PATH.
+///
+/// Named rather than counted: "3 agents detected" tells somebody nothing they
+/// can act on, and the list is what makes it obvious omt already knows about
+/// the one they use.
+fn detected_agents() -> Vec<String> {
+    ["claude", "codex", "copilot", "gemini", "cursor-agent", "opencode"]
+        .iter()
+        .filter(|name| which(name))
+        .map(|name| (*name).to_owned())
+        .collect()
+}
+
+/// Whether a program is on PATH.
+fn which(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
+    })
+}
+
+/// Where omt keeps its configuration.
+fn config_home() -> Option<std::path::PathBuf> {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|_| std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+        .ok()
+        .map(|base| base.join("omt"))
 }
 
 /// Milliseconds since the process started.
