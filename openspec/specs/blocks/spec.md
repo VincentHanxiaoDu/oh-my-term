@@ -1,7 +1,7 @@
 # blocks Specification
 
 ## Purpose
-TBD - created by archiving change another terminal-parity-blocks. Update Purpose after archive.
+TBD - created by archiving change other terminals-parity-blocks. Update Purpose after archive.
 ## Requirements
 ### Requirement: Output with no open block still produces one
 

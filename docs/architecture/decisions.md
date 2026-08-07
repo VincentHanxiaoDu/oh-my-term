@@ -26,10 +26,10 @@ protecting them in cases it cannot see.
 **Consequences.**
 - The `Interaction` ledger has no notion of "too dangerous to show remotely".
 - There is no omt-side allow-list, deny-list, or auto-approve. Those features
-  belong to the agent CLI, and omt surfaces the agent's own configuration
-  read-only so the user can see which mode a session is in.
+ belong to the agent CLI, and omt surfaces the agent's own configuration
+ read-only so the user can see which mode a session is in.
 - `effects` on capabilities remains, but it drives UI affordances and the audit
-  log, not permission decisions.
+ log, not permission decisions.
 
 ---
 
@@ -48,12 +48,12 @@ avoid.
 
 **Consequences.**
 - Roles (`Viewer`/`Operator`/`Admin`) exist for *sharing* — minting a read-only
-  link for someone else to watch — not for degrading the owner's own devices.
+ link for someone else to watch — not for degrading the owner's own devices.
 - All the security effort goes into the connection boundary: bind policy,
-  credential strength, expiry, revocation, transport. See
-  [13 — Security](13-security.md).
+ credential strength, expiry, revocation, transport. See
+ [13 — Security](13-security.md).
 - The audit log records actor and device for every capability call, because
-  attribution is still valuable even when authority is uniform.
+ attribution is still valuable even when authority is uniform.
 
 ---
 
@@ -65,14 +65,14 @@ producing it does not require omt to have guessed the agent's internal UI state.
 
 Allowed:
 - Line-oriented CLIs where stdin *is* the documented input channel (Aider's
-  confirm prompts are `input()` reads; writing `y\n` is not a hack).
+ confirm prompts are `input` reads; writing `y\n` is not a hack).
 - Full-screen TUIs that accept a direct, position-independent selection —
-  typing `1`/`2`/`3`, `y`/`n`, or free text.
+ typing `1`/`2`/`3`, `y`/`n`, or free text.
 - Submitting typed text to a prompt box.
 
 Forbidden by default:
 - Any answer that requires counting arrow keys relative to a cursor position omt
-  inferred from the screen.
+ inferred from the screen.
 
 **Reasoning.** The original framing ("don't synthesize for dangerous tools") was
 wrong, because it measured the *consequence* rather than the *failure mode*.
@@ -86,13 +86,13 @@ than a gamble.
 
 **Consequences.**
 - The `Responder` trait reports `fidelity: Native | Synthetic`, and synthetic
-  responders additionally declare `state_dependence: Independent | Inferred`.
-  Only `Independent` is enabled by default; `Inferred` requires explicit opt-in
-  per agent and is labelled as experimental wherever it appears.
+ responders additionally declare `state_dependence: Independent | Inferred`.
+ Only `Independent` is enabled by default; `Inferred` requires explicit opt-in
+ per agent and is labelled as experimental wherever it appears.
 - Adapters are responsible for discovering whether an agent's prompt offers a
-  position-independent form, and preferring it.
+ position-independent form, and preferring it.
 - Every synthetic response is tagged in the event stream and visibly attributed
-  in the UI as omt-typed, on every surface.
+ in the UI as omt-typed, on every surface.
 
 ---
 
@@ -110,9 +110,9 @@ body of work with no user for it yet.
 
 **Consequences.**
 - `Actor` carries an identity from the start, even though every identity is the
-  same person today. Nothing in the protocol assumes a single actor.
+ same person today. Nothing in the protocol assumes a single actor.
 - `AuthBackend` is a trait, so an organizational backend is an addition, not a
-  refactor. See [11 — Plugins](11-plugins.md) and [13 — Security](13-security.md).
+ refactor. See [11 — Plugins](11-plugins.md) and [13 — Security](13-security.md).
 
 ---
 
@@ -121,14 +121,14 @@ body of work with no user for it yet.
 **Decision.** Ship with four tracks, in this order:
 
 1. **Claude Code — full depth.** Hooks (30 events), `AskUserQuestion` cards,
-   the message queue, transcript tailing, slash commands. The only agent where
-   every flagship feature is achievable, so it defines the ceiling.
+ the message queue, transcript tailing, slash commands. The only agent where
+ every flagship feature is achievable, so it defines the ceiling.
 2. **A generic ACP adapter.** One implementation covering opencode, Gemini CLI,
-   Goose and Qwen Code, delivering native permission interactions and slash
-   command discovery across all four. The best coverage-per-unit-work available.
+ Goose and Qwen Code, delivering native permission interactions and slash
+ command discovery across all four. The best coverage-per-unit-work available.
 3. **Codex CLI.** Hooks plus an `app-server` client.
 4. **The heuristic floor.** Every other agent gets `busy | idle | needs you`,
-   so nothing is completely invisible.
+ so nothing is completely invisible.
 
 **Reasoning.** Depth on one agent proves the architecture and delivers the
 differentiator; ACP buys breadth cheaply; the heuristic floor guarantees the
@@ -168,13 +168,13 @@ alternative is a better product than an unreliable feature.
 **Decision.** omt supports two ways to run an agent, chosen per session:
 
 - **`pty` — the default.** omt spawns the user's real CLI in a real PTY. The
-  agent draws its own TUI; omt observes it through the tiered source model of
-  [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting). This is the
-  product premise and stays the default everywhere.
+ agent draws its own TUI; omt observes it through the tiered source model of
+ [06 §4](06-agent-layer.md#4-merging-confidence-tiers-not-voting). This is the
+ product premise and stays the default everywhere.
 - **`native` — opt-in.** omt spawns the agent in ACP mode
-  (`opencode acp`, `gemini --acp`, `cursor-agent acp`, the official Claude and
-  Codex adapters, …) and speaks JSON-RPC to it. The agent has **no TUI**; omt
-  renders the whole session itself from typed events.
+ (`opencode acp`, `gemini --acp`, `cursor-agent acp`, the official Claude and
+ Codex adapters, …) and speaks JSON-RPC to it. The agent has **no TUI**; omt
+ renders the whole session itself from typed events.
 
 Invoked as `omt claude` versus `omt claude --native`, and settable per workspace
 in config.
@@ -200,17 +200,17 @@ Claude Code at all. That must be a deliberate, informed choice, never a default.
 
 **Consequences.**
 - `SessionMode` is part of the session model, visible on every surface. A
-  `native` session is always labelled as such — the user must never be confused
-  about which product they are talking to.
+ `native` session is always labelled as such — the user must never be confused
+ about which product they are talking to.
 - The `AgentAdapter` trait must express both modes; adapters declare which they
-  support. The tiered `EventSource` model applies to `pty` only.
+ support. The tiered `EventSource` model applies to `pty` only.
 - In `native` mode omt owns the rendering, which makes the block view, the
-  interaction cards and the mobile experience strictly better. That is the
-  honest selling point, and the honest cost is stated next to it.
+ interaction cards and the mobile experience strictly better. That is the
+ honest selling point, and the honest cost is stated next to it.
 - ACP v1 is the build target; v2 (Draft, with a `state_update` notification that
-  maps directly onto `AgentState`) is negotiated where offered.
+ maps directly onto `AgentState`) is negotiated where offered.
 - `native` mode does not weaken [D1](#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics):
-  omt still surfaces exactly the agent's own permission requests.
+ omt still surfaces exactly the agent's own permission requests.
 
 ---
 
@@ -232,23 +232,23 @@ change what omt says about itself and what it builds first.
 **Consequences.**
 
 1. **The defer spike is promoted to the single highest-priority risk.** It is
-   not one risk among many: it is the load-bearing assumption for the only
-   differentiated part of the question-card feature. If `permissionDecision:
-   "defer"` does not park a tool call long enough for a phone round-trip, that
-   feature degrades to a worse copy of an existing free product. It runs before
-   anything is built on it, and [D8](#d8--two-session-modes-pty-default-and-native-acp)'s
-   `native` mode is the designed fallback (ACP's `session/request_permission` is
-   verified, blocking, and has no timeout).
+ not one risk among many: it is the load-bearing assumption for the only
+ differentiated part of the question-card feature. If `permissionDecision:
+ "defer"` does not park a tool call long enough for a phone round-trip, that
+ feature degrades to a worse copy of an existing free product. It runs before
+ anything is built on it, and [D8](#d8--two-session-modes-pty-default-and-native-acp)'s
+ `native` mode is the designed fallback (ACP's `session/request_permission` is
+ verified, blocking, and has no timeout).
 2. **The block model is promoted from a terminal-core feature to a product
-   differentiator**, and is scheduled accordingly — with eyes open that a
-   correct VT parser with grid, scrollback and reflow is the most expensive item
-   on the roadmap and competes with iTerm2 and another terminal on their own ground.
+ differentiator**, and is scheduled accordingly — with eyes open that a
+ correct VT parser with grid, scrollback and reflow is the most expensive item
+ on the roadmap and competes with iTerm2 and other terminals on their own ground.
 3. **Add argument editing before approval** to the interaction model. A
-   competitor has it, users value it, and omt's `Interaction` shape already
-   carries the tool input — it is a small addition that closes a real gap.
-   (It stays inside [D1](#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics):
-   editing an argument is answering the agent's own prompt with a modified
-   input, exactly as the agent's own UI allows, not omt adding a policy.)
+ competitor has it, users value it, and omt's `Interaction` shape already
+ carries the tool input — it is a small addition that closes a real gap.
+ (It stays inside [D1](#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics):
+ editing an argument is answering the agent's own prompt with a modified
+ input, exactly as the agent's own UI allows, not omt adding a policy.)
 4. Marketing copy and the README are held to this table.
 
 ---
@@ -272,12 +272,12 @@ as contracts nobody had agreed to.
 
 **Consequences.**
 - Those incidental commitments are qualified or removed. Where a design leaves
-  a Windows seam open at no cost (a `WatchDriver` trait, a `PtyHandle`
-  abstraction), the seam stays — it is cheap and honest.
+ a Windows seam open at no cost (a `WatchDriver` trait, a `PtyHandle`
+ abstraction), the seam stays — it is cheap and honest.
 - `omt-pty` is scoped to Unix for v1. Native Windows becomes a future change
-  with its own decision, not an assumed obligation.
+ with its own decision, not an assumed obligation.
 - The README states the support matrix plainly, so no one discovers it by
-  failing to build.
+ failing to build.
 
 ---
 
@@ -291,9 +291,9 @@ payload), mirrors it to every remote surface, and synchronizes the resolution in
 whichever direction it happens:
 
 - answered **locally** in the CLI → omt observes the resolution and every remote
-  surface updates to "already answered";
+ surface updates to "already answered";
 - answered **remotely** → omt delivers the answer to the agent, and the CLI's
-  own card resolves.
+ own card resolves.
 
 **Reasoning.** This is [P4](01-principles.md#p4--native-semantics-observe-never-re-implement)
 taken literally, and it corrects a design that had drifted. The earlier plan
@@ -301,32 +301,32 @@ leaned on `permissionDecision: "defer"` to park the tool call for a phone
 round-trip — but parking means the CLI never draws its card, so the local user
 loses the native experience omt exists to preserve, and omt inherits the job of
 drawing an overlay on a live TUI and reconciling it with the agent's redraws.
-another tool's instinct here is right: never render a replacement for the agent's own
+the instinct here is right: never render a replacement for the agent's own
 UI. omt's addition is not a better card, it is *reach*.
 
 **Consequences.**
 - **The defer spike is demoted.** It was [D9](#d9--positioning-what-omt-may-and-may-not-claim)'s
-  load-bearing unverified assumption; it is now an optional optimization. The
-  hook payload alone supplies everything needed to render remotely.
+ load-bearing unverified assumption; it is now an optional optimization. The
+ hook payload alone supplies everything needed to render remotely.
 - **The risk moves, it does not vanish.** The remote-answer path now delivers
-  the answer through the agent's own card, which for agents with no native
-  response channel means synthetic input, governed by
-  [D3](#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger).
-  The spike's question changes to: **does Claude Code's `AskUserQuestion` card
-  accept a position-independent selection (typing a number or letter), or does
-  it require counting arrow keys?** That experiment is cheaper than the defer
-  one and its answer is needed either way.
+ the answer through the agent's own card, which for agents with no native
+ response channel means synthetic input, governed by
+ [D3](#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger).
+ The spike's question changes to: **does Claude Code's `AskUserQuestion` card
+ accept a position-independent selection (typing a number or letter), or does
+ it require counting arrow keys?** That experiment is cheaper than the defer
+ one and its answer is needed either way.
 - Where a *native* response channel exists (ACP `session/request_permission`,
-  the opencode plugin, Codex app-server), it is used and no synthetic input is
-  involved. `native` sessions ([D8](#d8--two-session-modes-pty-default-and-native-acp))
-  are unaffected — omt owns the rendering there by construction.
+ the opencode plugin, Codex app-server), it is used and no synthetic input is
+ involved. `native` sessions ([D8](#d8--two-session-modes-pty-default-and-native-acp))
+ are unaffected — omt owns the rendering there by construction.
 - D9's differentiated claim survives and gets sharper: *answer the agent's own
-  card from your phone while the real TUI is on screen, with both sides in
-  sync.*
+ card from your phone while the real TUI is on screen, with both sides in
+ sync.*
 - The local user is never shown an omt-drawn card in `pty` mode. If omt cannot
-  mirror an interaction, the remote surface says "needs you" and offers the
-  terminal view — the honest degradation already specified in
-  [06 §4](06-agent-layer.md).
+ mirror an interaction, the remote surface says "needs you" and offers the
+ terminal view — the honest degradation already specified in
+ [06 §4](06-agent-layer.md).
 
 ---
 
@@ -351,22 +351,22 @@ and a deployment step to onboarding.
 
 **Consequences.**
 - **omt makes no outbound network connections at all.** This becomes a plain,
-  checkable property rather than a caveated one.
+ checkable property rather than a caveated one.
 - **A real capability is given up**, and the docs say so: the "agent blocks, the
-  phone buzzes in your pocket" journey is not in v1. Users learn an agent needs
-  them when they next open a client.
+ phone buzzes in your pocket" journey is not in v1. Users learn an agent needs
+ them when they next open a client.
 - **Open-and-replay becomes the load-bearing path and must be excellent.** Cold
-  start to a useful screen, the continuity ranking that decides what to show
-  first, and complete recovery of everything missed while disconnected are now
-  primary features, not conveniences. See
-  [`../design/remote-continuity.md`](../design/remote-continuity.md).
+ start to a useful screen, the continuity ranking that decides what to show
+ first, and complete recovery of everything missed while disconnected are now
+ primary features, not conveniences. See
+ [`../design/remote-continuity.md`](../design/remote-continuity.md).
 - The iOS Web Push reliability experiment is cancelled; that risk is retired.
 - **The extension point stays open on purpose.** A future native iOS/Android
-  app has a first-party push channel that does not route through a browser
-  vendor, and a user or third party can ship a `Notifier` plugin (ntfy,
-  Telegram, Bark, webhook) without touching core — per
-  [P2](01-principles.md#p2--pluggable-extension-without-modification). Nothing
-  in the design may assume notifications never exist.
+ app has a first-party push channel that does not route through a browser
+ vendor, and a user or third party can ship a `Notifier` plugin (ntfy,
+ Telegram, Bark, webhook) without touching core — per
+ [P2](01-principles.md#p2--pluggable-extension-without-modification). Nothing
+ in the design may assume notifications never exist.
 
 ---
 
@@ -379,7 +379,7 @@ gated PTY transaction**, never a bare write:
 1. acquire the session's writer token;
 2. verify **input quiescence** — no human bytes for a quiet period;
 3. **re-verify against the freshest source** that the agent is still in the same
-   interaction;
+ interaction;
 4. write the answer as one unit;
 5. release.
 
@@ -408,26 +408,26 @@ precondition that is checked rather than hoped for.
 
 **Consequences.**
 - The local TUI's passthrough bytes into a session with an open interaction must
-  pass through the same serialization point; that is the only place the two
-  writers can be ordered.
+ pass through the same serialization point; that is the only place the two
+ writers can be ordered.
 - The writer token is a **lease**, and auto-acquisition must key on "no other
-  client has written recently" rather than "exactly one client is attached" —
-  the latter never fires in [D4](#d4--single-user-many-devices--with-the-interfaces-left-open-for-many-users)'s
-  own primary two-device scenario.
+ client has written recently" rather than "exactly one client is attached" —
+ the latter never fires in [D4](#d4--single-user-many-devices--with-the-interfaces-left-open-for-many-users)'s
+ own primary two-device scenario.
 - Interactions are modelled as **observed, not owned**:
-  `Open { deliverable: Native | Synthetic { requires_token } | None }`. Remote
-  answerability renders from `deliverable`, never from mere openness — so a card
-  omt cannot safely answer is never shown as answerable.
+ `Open { deliverable: Native | Synthetic { requires_token } | None }`. Remote
+ answerability renders from `deliverable`, never from mere openness — so a card
+ omt cannot safely answer is never shown as answerable.
 - Per-agent coverage for observing a **resolution** (not just for raising one)
-  belongs in [06 §7.3](06-agent-layer.md)'s matrix. Where it is absent — a
-  denied permission may emit no `PostToolUse` at all — the card must expire
-  rather than linger, or a late remote answer lands in whatever the agent is
-  doing *now*.
+ belongs in [06 §7.3](06-agent-layer.md)'s matrix. Where it is absent — a
+ denied permission may emit no `PostToolUse` at all — the card must expire
+ rather than linger, or a late remote answer lands in whatever the agent is
+ doing *now*.
 - **`native` mode has no such race**, because ACP supplies a real response
-  channel and no synthetic input is involved. This partially inverts
-  [D5](#d5--initial-agent-coverage)'s ordering rationale: Claude Code is the
-  depth ceiling but also the *least safe* delivery path, so the ACP adapter's
-  priority rises.
+ channel and no synthetic input is involved. This partially inverts
+ [D5](#d5--initial-agent-coverage)'s ordering rationale: Claude Code is the
+ depth ceiling but also the *least safe* delivery path, so the ACP adapter's
+ priority rises.
 
 ---
 
@@ -448,19 +448,19 @@ view for an agent, terminal view one tap away from either.
 made to. Two independent reasons:
 
 - An alt-screen TUI produces no command boundaries at all — [04 §6.3](04-terminal-core.md)
-  correctly suspends segmentation there.
+ correctly suspends segmentation there.
 - **Worse, and less obvious: there is no shell in the loop.** An agent CLI is
-  the foreground process for the whole session, so no OSC 133 ever arrives —
-  whether or not it uses the alternate screen. (Claude Code does use the
-  alternate screen for some full-screen views; verified in
-  [`spike-card-answering.md` §5](../research/spike-card-answering.md). That only
-  adds intervals where segmentation is suspended outright.) So the
-  heuristic segmenter runs — and its close conditions are "PTY quiet **and the
-  foreground pgid returned to the shell**" or "a real OSC 133 `A`". In a
-  long-lived agent session the foreground pgid is the agent for the whole
-  session and no `A` ever arrives, so **neither close condition can ever fire**.
-  The result is one unbounded block, open forever, whose contents are a
-  cursor-addressed redraw stream flattened to lines — incoherent at 40 columns.
+ the foreground process for the whole session, so no OSC 133 ever arrives —
+ whether or not it uses the alternate screen. (Claude Code does use the
+ alternate screen for some full-screen views; verified in
+ [`spike-card-answering.md` §5](../research/spike-card-answering.md). That only
+ adds intervals where segmentation is suspended outright.) So the
+ heuristic segmenter runs — and its close conditions are "PTY quiet **and the
+ foreground pgid returned to the shell**" or "a real OSC 133 `A`". In a
+ long-lived agent session the foreground pgid is the agent for the whole
+ session and no `A` ever arrives, so **neither close condition can ever fire**.
+ The result is one unbounded block, open forever, whose contents are a
+ cursor-addressed redraw stream flattened to lines — incoherent at 40 columns.
 
 So on a phone, the flagship use case would have shown an empty list or one card
 of garbage, falling back to a letterboxed 200-column grid — precisely what the
@@ -472,20 +472,20 @@ already displays exactly this. It was reserved for `native` sessions only.
 
 **Consequences.**
 - **[D9](#d9--positioning-what-omt-may-and-may-not-claim) is corrected.** The
-  honest claim is two sentences, both true: *the block model makes ordinary
-  shell work first-class on a phone — genuinely unclaimed; agent sessions are
-  made first-class by the observed-transcript view plus interaction cards,
-  derived from the agent's own structured sources.* The previous single claim
-  was not true for the primary use case.
+ honest claim is two sentences, both true: *the block model makes ordinary
+ shell work first-class on a phone — genuinely unclaimed; agent sessions are
+ made first-class by the observed-transcript view plus interaction cards,
+ derived from the agent's own structured sources.* The previous single claim
+ was not true for the primary use case.
 - The heuristic segmenter must never open a block it cannot close: block view is
-  suppressed for a session with an agent binding and no OSC 133, and the UI says
-  why. [04 §6.4](04-terminal-core.md) must state that its first close condition
-  is unreachable when the foreground process never returns to the shell.
+ suppressed for a session with an agent binding and no OSC 133, and the UI says
+ why. [04 §6.4](04-terminal-core.md) must state that its first close condition
+ is unreachable when the foreground process never returns to the shell.
 - **State the floor honestly.** A heuristic-tier agent (Aider, Amp, Crush in TUI
-  mode — [D5](#d5--initial-agent-coverage) track 4) gets neither blocks nor a
-  transcript: only busy/idle/needs-you and a letterboxed grid.
-  [06 §7.3](06-agent-layer.md)'s coverage matrix gains a "mobile surface"
-  column, so this is visible rather than discovered.
+ mode — [D5](#d5--initial-agent-coverage) track 4) gets neither blocks nor a
+ transcript: only busy/idle/needs-you and a letterboxed grid.
+ [06 §7.3](06-agent-layer.md)'s coverage matrix gains a "mobile surface"
+ column, so this is visible rather than discovered.
 
 ---
 
@@ -520,59 +520,59 @@ for the synthetic responder. After D11 it is the entire remote-answer path.
 **Consequences.**
 
 1. **Split the interaction state machine.** `Submitted { by, response, at }` when
-   the bytes are written; `Resolved` **only when omt observes the agent record
-   the answer** (hook `PostToolUse`, a transcript entry, a tool result) inside a
-   bounded window; `Undelivered { reason, response }` otherwise, with the text
-   preserved and surfaced everywhere as *"your answer may not have reached the
-   agent — check the terminal"*. Today the ledger `fsync`s `Resolved` and
-   asserts a success it cannot verify.
+ the bytes are written; `Resolved` **only when omt observes the agent record
+ the answer** (hook `PostToolUse`, a transcript entry, a tool result) inside a
+ bounded window; `Undelivered { reason, response }` otherwise, with the text
+ preserved and surfaced everywhere as *"your answer may not have reached the
+ agent — check the terminal"*. Today the ledger `fsync`s `Resolved` and
+ asserts a success it cannot verify.
 2. **Never retry an injection** — not on reconnect, not on restart, not by any
-   actor except a human who can see the screen. A crash between CAS and
-   injection goes to `Undelivered`, never to a replay. This also requires
-   `Resolving` to carry the **response**, which it currently does not, so today
-   a crash cannot even report what was lost.
+ actor except a human who can see the screen. A crash between CAS and
+ injection goes to `Undelivered`, never to a replay. This also requires
+ `Resolving` to carry the **response**, which it currently does not, so today
+ a crash cannot even report what was lost.
 3. **`agent.queue.enqueue` carries a `BindingId` and requires
-   `AgentState::Working`.** Without it, a replayed enqueue against a session
-   whose agent has exited lands **in the shell prompt and is executed as a
-   command**. [D3](#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
-   does not protect here — it governs answers, and "submitting typed text to a
-   prompt box" is on its allowed list. The failure is target identity, not state
-   inference. Queued mutations also carry `valid_until` and require
-   re-confirmation rather than silent replay after a long offline period.
+ `AgentState::Working`.** Without it, a replayed enqueue against a session
+ whose agent has exited lands **in the shell prompt and is executed as a
+ command**. [D3](#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+ does not protect here — it governs answers, and "submitting typed text to a
+ prompt box" is on its allowed list. The failure is target identity, not state
+ inference. Queued mutations also carry `valid_until` and require
+ re-confirmation rather than silent replay after a long offline period.
 4. **Confirmation signals already exist and must be used.** Claude Code's
-   `queue-operation` line *is* an enqueue receipt; a transcript entry *is* an
-   answer receipt. The design read them as mirror data and never as delivery
-   confirmation.
+ `queue-operation` line *is* an enqueue receipt; a transcript entry *is* an
+ answer receipt. The design read them as mirror data and never as delivery
+ confirmation.
 5. **Stable request identity.** `RequestId` becomes `(DeviceId, monotonic u64)`
-   persisted client-side, with a bounded recent-results cache in dispatch that
-   replays the stored result on a repeat. Today `RequestId` is *"unique per
-   connection"*, so a client whose socket dies mid-call can never learn whether
-   the call applied. This one mechanism makes the first two classes work.
+ persisted client-side, with a bounded recent-results cache in dispatch that
+ replays the stored result on a repeat. Today `RequestId` is *"unique per
+ connection"*, so a client whose socket dies mid-call can never learn whether
+ the call applied. This one mechanism makes the first two classes work.
 6. **Fix the idempotency key.** `(interaction_id, actor, response)` breaks on
-   exactly the retry it was written for: a reconnecting device gets a new
-   `ActorId`, so its own retry reads as a stranger overriding it. Key on
-   `(interaction_id, identity_or_device, intent_id)`.
+ exactly the retry it was written for: a reconnecting device gets a new
+ `ActorId`, so its own retry reads as a stranger overriding it. Key on
+ `(interaction_id, identity_or_device, intent_id)`.
 7. **Reserve `ack: u64` in the terminal frame header before the wire freezes.**
-   It was already required for mosh-style predictive echo; it is *also* the only
-   safe resumption mechanism for the byte-stream class. Recording both rationales
-   so it cannot be value-engineered out as "a v2 feature".
+ It was already required for mosh-style predictive echo; it is *also* the only
+ safe resumption mechanism for the byte-stream class. Recording both rationales
+ so it cannot be value-engineered out as "a v2 feature".
 8. **Durable intent log for the omt-managed queue** (`Ordered` class), and a row
-   in [21 §6.2](21-data-lifecycle.md)'s loss table. It is memory-only today, so
-   every non-Claude agent's queued text dies unrecorded on `kill -9`. Add a CI
-   check that every persisted type has a loss-table row — the same trick
-   [03 §5](03-capability-catalog.md)'s parity test plays.
+ in [21 §6.2](21-data-lifecycle.md)'s loss table. It is memory-only today, so
+ every non-Claude agent's queued text dies unrecorded on `kill -9`. Add a CI
+ check that every persisted type has a loss-table row — the same trick
+ [03 §5](03-capability-catalog.md)'s parity test plays.
 9. **A durable attention log**, required by [D12](#d12--no-push-notifications-in-v1-open-and-replay-instead).
-   Open-and-replay discovers only *live* state plus a 4 MiB window, so an
-   interaction that opened **and went terminal** inside an offline gap appears
-   nowhere: the user opens the app to an idle session, never learning their agent
-   asked and gave up. Per `(identity, session)`, every interaction reaching a
-   terminal state since the actor's read mark, queryable as
-   `interaction.list { since_read_mark, include_terminal }` and rendered first on
-   reconnect.
+ Open-and-replay discovers only *live* state plus a 4 MiB window, so an
+ interaction that opened **and went terminal** inside an offline gap appears
+ nowhere: the user opens the app to an idle session, never learning their agent
+ asked and gave up. Per `(identity, session)`, every interaction reaching a
+ terminal state since the actor's read mark, queryable as
+ `interaction.list { since_read_mark, include_terminal }` and rendered first on
+ reconnect.
 10. **Distinguish the failure modes.** `LedgerError`'s `AlreadyResolved`,
-    `Cancelled` and `Abandoned` currently collapse onto one `conflict` code, so a
-    phone cannot tell "someone else answered" from "the agent gave up". Add a
-    discriminating `detail.state` and three renderings.
+ `Cancelled` and `Abandoned` currently collapse onto one `conflict` code, so a
+ phone cannot tell "someone else answered" from "the agent gave up". Add a
+ discriminating `detail.state` and three renderings.
 
 **The spike this creates.** Whether Claude Code's `AskUserQuestion` card accepts
 a **position-independent** selection decides whether the flagship path is on by
@@ -610,20 +610,20 @@ anything remotely" would silently mis-answer three of the four card types.
 **Consequences — additional preconditions on [D13](#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s gated transaction.**
 
 1. **Never bracket the write.** Claude Code enables `ESC[?2004h`; a digit wrapped
-   in `ESC[200~ … ESC[201~` does **nothing** while a bare digit resolves. omt's
-   remote-input path bracket-wraps client text — correct for pasted prose — so
-   synthetic answers must bypass that path entirely. This is a silent failure
-   mode, not a loud one.
+ in `ESC[200~ … ESC[201~` does **nothing** while a bare digit resolves. omt's
+ remote-input path bracket-wraps client text — correct for pasted prose — so
+ synthetic answers must bypass that path entirely. This is a silent failure
+ mode, not a loud one.
 2. **One key per write.** Coalesced bytes arriving in a single read are not
-   decoded as separate key events (`b"13"` toggled nothing; `b"1"` then `b"3"`
-   toggled both). Multi-byte answers are separate ordered writes, still inside
-   one token-held transaction.
+ decoded as separate key events (`b"13"` toggled nothing; `b"1"` then `b"3"`
+ toggled both). Multi-byte answers are separate ordered writes, still inside
+ one token-held transaction.
 3. **Check the row numbers.** Numeric selection is disabled exactly when the
-   printed `1.` `2.` prefixes are suppressed — both are the same `hideIndexes`
-   flag. *"Is a number rendered on the row?"* is therefore a cheap, reliable
-   runtime precondition, and omt should use it.
+ printed `1.` `2.` prefixes are suppressed — both are the same `hideIndexes`
+ flag. *"Is a number rendered on the row?"* is therefore a cheap, reliable
+ runtime precondition, and omt should use it.
 4. **`Esc` is the universal safe negative**; `y`/`n` do nothing on any of these
-   cards.
+ cards.
 
 **Also settled:** digits are not in Claude Code's keybinding registry, so a
 user's `keybindings.json` cannot rebind them away — the accelerator is stable
@@ -666,19 +666,19 @@ designed anywhere.
 
 **Consequences.**
 - [03 §5.1](03-capability-catalog.md#51-what-artifact-2-actually-asserts-and-what-it-does-not)
-  states what artifact 2 asserts: reachability, the reverse direction (every
-  bound action names a real capability — the half that catches drift), and the
-  rule that a `hidden` capability has no palette entry and therefore needs a real
-  binding or a surface exemption.
+ states what artifact 2 asserts: reachability, the reverse direction (every
+ bound action names a real capability — the half that catches drift), and the
+ rule that a `hidden` capability has no palette entry and therefore needs a real
+ binding or a surface exemption.
 - **Surface-local UI verbs do not belong in the catalog.** A capability is a
-  cross-surface operation. `tui.zoom_font` was already demoted to a client
-  preference on this reasoning; the rest of the `tui.*` family follows, so that
-  no surface is obliged to implement another surface's metaphor.
+ cross-surface operation. `tui.zoom_font` was already demoted to a client
+ preference on this reasoning; the rest of the `tui.*` family follows, so that
+ no surface is obliged to implement another surface's metaphor.
 - **Two things the test cannot see are called out where they occur**: per-agent
-  degradation ([06 §7.3](06-agent-layer.md)'s matrix, which is per-agent while
-  the test is per-capability) and per-card answerability
-  ([D16](#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical),
-  where one `Parity::Full` capability succeeds for one card type and not another).
-  Both are honest designs; neither is checkable by enumerating the registry.
+ degradation ([06 §7.3](06-agent-layer.md)'s matrix, which is per-agent while
+ the test is per-capability) and per-card answerability
+ ([D16](#d16--remote-answering-is-per-card-type-and-the-preconditions-are-empirical),
+ where one `Parity::Full` capability succeeds for one card type and not another).
+ Both are honest designs; neither is checkable by enumerating the registry.
 - Review asks a question CI cannot: *would a user reach for this under pressure,
-  and can they?*
+ and can they?*

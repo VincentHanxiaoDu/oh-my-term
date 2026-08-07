@@ -24,41 +24,41 @@ revoked*.
 ### 1.1 The shape
 
 ```
-   phone (web client)                         laptop (web client / TUI)
-        │  │  │                                       │
-        │  │  └────── wss ───────► instance C (cloud dev box)
-        │  └───────── wss ───────► instance B (workstation, via tailnet)
-        └──────────── wss ───────► instance A (laptop, via tailnet)
-                                        ▲
-                                   unix socket
-                                        │
-                                  omt CLI, omt-hook, local TUI
+ phone (web client) laptop (web client / TUI)
+ │ │ │ │
+ │ │ └────── wss ───────► instance C (cloud dev box)
+ │ └───────── wss ───────► instance B (workstation, via tailnet)
+ └──────────── wss ───────► instance A (laptop, via tailnet)
+ ▲
+ unix socket
+ │
+ omt CLI, omt-hook, local TUI
 ```
 
 Two facts define everything else:
 
 - **Each instance is authoritative for its own sessions.** No instance proxies,
-  mirrors or depends on another instance for **session or terminal state**.
-  There is no cluster, no leader election, no shared store for the work itself,
-  and that is precisely what makes the federation client-side. An instance that
-  is offline simply contributes nothing.
+ mirrors or depends on another instance for **session or terminal state**.
+ There is no cluster, no leader election, no shared store for the work itself,
+ and that is precisely what makes the federation client-side. An instance that
+ is offline simply contributes nothing.
 
-  **The one exception, stated precisely.** Instances that share an owner's
-  identity registry replicate **revocations and registry epochs only**
-  ([23 §3.2](23-identity-and-devices.md#32-how-other-instances-learn-about-it),
-  [23 §6.1](23-identity-and-devices.md#61-revoking-one-device)) — a small,
-  signed, monotonic, best-effort channel. No session operation depends on it: an
-  instance that never syncs still serves every session it owns, and still
-  verifies device grants offline against the enrolled identity root key. When
-  the channel fails, the failure is reported as *partial*
-  (`applied_on` / `pending_on` on `device.revoke`), never hidden. Nothing else
-  crosses instance boundaries.
+ **The one exception, stated precisely.** Instances that share an owner's
+ identity registry replicate **revocations and registry epochs only**
+ ([23 §3.2](23-identity-and-devices.md#32-how-other-instances-learn-about-it),
+ [23 §6.1](23-identity-and-devices.md#61-revoking-one-device)) — a small,
+ signed, monotonic, best-effort channel. No session operation depends on it: an
+ instance that never syncs still serves every session it owns, and still
+ verifies device grants offline against the enrolled identity root key. When
+ the channel fails, the failure is reported as *partial*
+ (`applied_on` / `pending_on` on `device.revoke`), never hidden. Nothing else
+ crosses instance boundaries.
 - **The client federates.** The web client holds a list of *instance
-  connections*, each with its own credential, its own connection state, its own
-  event sequence space, and its own catalog. The unified session list is a
-  client-side merge.
+ connections*, each with its own credential, its own connection state, its own
+ event sequence space, and its own catalog. The unified session list is a
+ client-side merge.
 
-This is the opposite of another tool's model, where the first client to attach becomes
+This is the opposite of the model, where the first client to attach becomes
 the store owner. It costs the client some complexity and buys: no single point
 of failure, no cross-machine trust requirement, and a natural Tailscale story
 (each machine publishes itself; the phone collects them).
@@ -70,13 +70,13 @@ of failure, no cross-machine trust requirement, and a natural Tailscale story
 pub struct InstanceId(Uuid);
 
 pub struct InstanceDescriptor {
-    pub id: InstanceId,
-    pub name: String,             // user-editable, defaults to hostname
-    pub version: semver::Version, // omt build version
-    pub proto: ProtoVersion,      // wire protocol version
-    pub catalog_hash: [u8; 32],   // blake3 of the sorted capability name+schema list
-    pub platform: Platform,       // os, arch
-    pub started_at: OffsetDateTime,
+ pub id: InstanceId,
+ pub name: String, // user-editable, defaults to hostname
+ pub version: semver::Version, // omt build version
+ pub proto: ProtoVersion, // wire protocol version
+ pub catalog_hash: [u8; 32], // blake3 of the sorted capability name+schema list
+ pub platform: Platform, // os, arch
+ pub started_at: OffsetDateTime,
 }
 ```
 
@@ -103,23 +103,23 @@ mechanics in [13 §3](13-security.md).
 
 ```json
 {
-  "t": "join.exchange",
-  "id": "req_1",
-  "invite": "eyJ2IjoxLCJpbnN0Ijoi…",
-  "device": {
-    "name": "Vincent's iPhone",
-    "pubkey": "ed25519:9f3a…",
-    "platform": "ios/safari"
-  }
+ "t": "join.exchange",
+ "id": "req_1",
+ "invite": "eyJ2IjoxLCJpbnN0Ijoi…",
+ "device": {
+ "name": "Vincent's iPhone",
+ "pubkey": "ed25519:9f3a…",
+ "platform": "ios/safari"
+ }
 }
 ```
 
 ```json
 {
-  "t": "join.credential",
-  "id": "req_1",
-  "instance": { "id": "3f2a…", "name": "workstation", "version": "0.4.1", "proto": 1 },
-  "credential": { "kind": "bearer", "token": "omt_c_9K3…", "role": "operator", "expires_at": null }
+ "t": "join.credential",
+ "id": "req_1",
+ "instance": { "id": "3f2a…", "name": "workstation", "version": "0.4.1", "proto": 1 },
+ "credential": { "kind": "bearer", "token": "omt_c_9K3…", "role": "operator", "expires_at": null }
 }
 ```
 
@@ -131,13 +131,13 @@ constantly.
 
 ```
 Unconfigured → Connecting → Handshaking → Authenticating
-                   ▲                            │
-                   │                            ▼
-              Backoff ◄── Disconnected ◄─── Ready ──► Degraded (resynced / partial)
-                                  ▲                       │
-                                  └───────────────────────┘
-   terminal states: Unauthorized (credential rejected/revoked),
-                    Incompatible (proto version unsupported)
+ ▲ │
+ │ ▼
+ Backoff ◄── Disconnected ◄─── Ready ──► Degraded (resynced / partial)
+ ▲ │
+ └───────────────────────┘
+ terminal states: Unauthorized (credential rejected/revoked),
+ Incompatible (proto version unsupported)
 ```
 
 `Unauthorized` and `Incompatible` do **not** retry; everything else backs off.
@@ -151,15 +151,15 @@ instance's actual capability list. The client keeps a per-instance
 `Set<CapabilityName>` and computes:
 
 - **Per-session actions** are gated on *that session's instance* — not on the
-  intersection. A session on a new instance keeps its new buttons.
+ intersection. A session on a new instance keeps its new buttons.
 - **Multi-select / bulk actions** across sessions from several instances are
-  gated on the **intersection** of the selected instances' catalogs. Actions
-  outside the intersection are shown disabled with "not supported on
-  `workstation` (0.3.2)".
+ gated on the **intersection** of the selected instances' catalogs. Actions
+ outside the intersection are shown disabled with "not supported on
+ `workstation` (0.3.2)".
 - **Unknown event payload variants** are ignored by the client (all `Payload`
-  enums are `#[serde(other)]`-tolerant and the TS types carry a catch-all), so a
-  newer instance can emit events an older client cannot render without breaking
-  the stream.
+ enums are `#[serde(other)]`-tolerant and the TS types carry a catch-all), so a
+ newer instance can emit events an older client cannot render without breaking
+ the stream.
 
 Rendering the intersection and greying out the rest is the rule; failing is
 never the rule.
@@ -171,7 +171,7 @@ The client merges per-instance session lists into one view sorted by
 
 1. sessions with an open `Interaction` (blocked agent — needs a human),
 2. sessions in `AgentState::Blocked` with no interaction id (omt can see the
-   block but cannot render it),
+ block but cannot render it),
 3. `Working`,
 4. `Idle`, most recently active first.
 
@@ -196,27 +196,27 @@ those live in `omt-proto` and `omt-server` respectively (P1).
 /// A bidirectional, ordered, reliable message pipe carrying `Frame`s.
 #[async_trait]
 pub trait Transport: Send + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
+ type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Receive the next frame. `Ok(None)` means the peer closed cleanly.
-    async fn recv(&mut self) -> Result<Option<Frame>, Self::Error>;
+ /// Receive the next frame. `Ok(None)` means the peer closed cleanly.
+ async fn recv(&mut self) -> Result<Option<Frame>, Self::Error>;
 
-    /// Send one frame. Implementations must be cancel-safe.
-    async fn send(&mut self, frame: Frame) -> Result<(), Self::Error>;
+ /// Send one frame. Implementations must be cancel-safe.
+ async fn send(&mut self, frame: Frame) -> Result<, Self::Error>;
 
-    /// Best-effort flush; used before a deliberate close.
-    async fn flush(&mut self) -> Result<(), Self::Error>;
+ /// Best-effort flush; used before a deliberate close.
+ async fn flush(&mut self) -> Result<, Self::Error>;
 
-    fn peer(&self) -> PeerInfo;      // socket addr, uid for unix, tailnet identity if any
-    fn kind(&self) -> TransportKind; // WebSocket | UnixSocket | SshStdio
+ fn peer(&self) -> PeerInfo; // socket addr, uid for unix, tailnet identity if any
+ fn kind(&self) -> TransportKind; // WebSocket | UnixSocket | SshStdio
 }
 
 /// Exactly two frame kinds. Everything above is built on this.
 pub enum Frame {
-    /// UTF-8 JSON control message (`ProtoMessage`).
-    Text(Bytes),
-    /// Length-delimited binary payload with a 24-byte header (see §3.6).
-    Binary(Bytes),
+ /// UTF-8 JSON control message (`ProtoMessage`).
+ Text(Bytes),
+ /// Length-delimited binary payload with a 24-byte header (see §3.6).
+ Binary(Bytes),
 }
 ```
 
@@ -245,7 +245,7 @@ the payload. Identical `ProtoMessage` catalogue — this is the point: the local
 CLI exercises the same protocol the phone does, so a bug in the remote path
 shows up in `omt session list`.
 
-Unlike another tool, the socket is **not** implicitly trusted. `SO_PEERCRED`
+the socket is **not** implicitly trusted. `SO_PEERCRED`
 (Linux) / `LOCAL_PEERCRED` (macOS) is checked, and a peer whose uid differs from
 the daemon's uid is rejected before the handshake. Same-uid peers get the
 `Local` actor and `Admin` role by default, configurable down. See
@@ -274,16 +274,16 @@ stdin/stdout. This gives, for free: existing SSH auth and host-key trust,
 jump hosts, agent forwarding, and corporate policy compliance. Concretely:
 
 - omt generates a temporary SSH config that includes the user's config first,
-  then adds `ServerAliveInterval 15`, `ServerAliveCountMax 4`, and a private
-  `ControlPath` so a second `omt ssh` to the same host reuses the connection.
-  `[remote].manage_ssh_config = false` opts out entirely.
+ then adds `ServerAliveInterval 15`, `ServerAliveCountMax 4`, and a private
+ `ControlPath` so a second `omt ssh` to the same host reuses the connection.
+ `[remote].manage_ssh_config = false` opts out entirely.
 - Remote binary resolution: `PATH` → known install prefixes → prompt to install
-  a version-matched binary to `~/.local/bin/omt`. `OMT_REMOTE_BINARY` overrides
-  for development.
+ a version-matched binary to `~/.local/bin/omt`. `OMT_REMOTE_BINARY` overrides
+ for development.
 - Version skew is handled by the same catalog-intersection rule as §1.5, so a
-  slightly older remote is usable, not fatal.
+ slightly older remote is usable, not fatal.
 - stderr from the remote process is captured and surfaced as diagnostics; it is
-  never interleaved into the frame stream (a classic stdio-bridge bug).
+ never interleaved into the frame stream (a classic stdio-bridge bug).
 
 Authentication over the stdio bridge is transport-level: the peer already proved
 SSH access to the account that owns the daemon. The bridge therefore skips the
@@ -292,19 +292,19 @@ SSH access to the account that owns the daemon. The bridge therefore skips the
 ### 2.5 Keepalive, reconnect, backoff
 
 - **Keepalive**: the server sends a `ping` control message every 20 s if the
-  connection has been idle; the client must answer `pong` within 10 s. WebSocket
-  protocol-level pings are also used where available, but the application-level
-  ping is authoritative because intermediaries answer protocol pings.
+ connection has been idle; the client must answer `pong` within 10 s. WebSocket
+ protocol-level pings are also used where available, but the application-level
+ ping is authoritative because intermediaries answer protocol pings.
 - **Death detection**: 2 missed pongs, or a transport error, closes the
-  connection. On mobile this is deliberately generous — radios sleep.
+ connection. On mobile this is deliberately generous — radios sleep.
 - **Reconnect** (client side) uses full-jitter exponential backoff:
 
 ```rust
 fn backoff(attempt: u32) -> Duration {
-    let base = Duration::from_millis(250);
-    let cap  = Duration::from_secs(30);
-    let exp  = cap.min(base * 2u32.saturating_pow(attempt.min(10)));
-    Duration::from_millis(rand::thread_rng().gen_range(0..=exp.as_millis() as u64))
+ let base = Duration::from_millis(250);
+ let cap = Duration::from_secs(30);
+ let exp = cap.min(base * 2u32.saturating_pow(attempt.min(10)));
+ Duration::from_millis(rand::thread_rng.gen_range(0..=exp.as_millis as u64))
 }
 ```
 
@@ -314,9 +314,9 @@ Attempt counter resets after 60 s of a healthy connection, not on connect, so a
 flapping link does not reset into a hot loop.
 
 - **Foreground override**: when the tab becomes visible or the network changes
-  (`online` event / `navigator.connection` change), the client resets the
-  attempt counter and reconnects immediately. Users tapping into an app expect
-  it to try *now*.
+ (`online` event / `navigator.connection` change), the client resets the
+ attempt counter and reconnects immediately. Users tapping into an app expect
+ it to try *now*.
 
 ---
 
@@ -331,7 +331,7 @@ flapping link does not reset into a hot loop.
 | audio (STT upload) | **binary** frames, Opus | obvious |
 | images / files | **binary** frames, chunked | ditto |
 
-Rejected: a single binary encoding (bincode/msgpack) for everything, as another tool
+Rejected: a single binary encoding (bincode/msgpack) for everything, as other terminals
 does. It saves a few percent on a channel that is not the bottleneck, and costs
 the ability to read the wire in a browser devtools panel — which for a product
 whose primary client is a browser is a bad trade. The terminal and media paths,
@@ -343,44 +343,44 @@ where it actually matters, *are* binary.
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum ProtoMessage {
-    // ---- connection lifecycle ----
-    Hello(Hello),                       // C→S, first message
-    Welcome(Welcome),                   // S→C
-    AuthChallenge(AuthChallenge),       // S→C
-    Auth(Auth),                         // C→S
-    AuthOk(AuthOk),                     // S→C
-    Error(ProtoError),                  // either direction, may be unsolicited
-    Ping { nonce: u64 },
-    Pong { nonce: u64 },
-    Close { code: CloseCode, reason: String },
+ // ---- connection lifecycle ----
+ Hello(Hello), // C→S, first message
+ Welcome(Welcome), // S→C
+ AuthChallenge(AuthChallenge), // S→C
+ Auth(Auth), // C→S
+ AuthOk(AuthOk), // S→C
+ Error(ProtoError), // either direction, may be unsolicited
+ Ping { nonce: u64 },
+ Pong { nonce: u64 },
+ Close { code: CloseCode, reason: String },
 
-    // ---- capability RPC ----
-    Call(Call),                         // C→S
-    Result(CallResult),                 // S→C
-    Cancel { id: RequestId },           // C→S
+ // ---- capability RPC ----
+ Call(Call), // C→S
+ Result(CallResult), // S→C
+ Cancel { id: RequestId }, // C→S
 
-    // ---- events ----
-    Subscribe(Subscribe),               // C→S
-    Unsubscribe { sub: SubId },         // C→S
-    Event(EventFrame),                  // S→C
-    Resync(Resync),                     // S→C, unsolicited
-    Lagged(Lagged),                     // S→C, unsolicited
+ // ---- events ----
+ Subscribe(Subscribe), // C→S
+ Unsubscribe { sub: SubId }, // C→S
+ Event(EventFrame), // S→C
+ Resync(Resync), // S→C, unsolicited
+ Lagged(Lagged), // S→C, unsolicited
 
-    // ---- terminal ----
-    TermAttach(TermAttach),             // C→S
-    TermDetach { session: SessionId },  // C→S
-    TermInput(TermInput),               // C→S (small inputs; large paste uses binary)
-    TermResize(TermResize),             // C→S
-    TermSnapshotMeta(TermSnapshotMeta), // S→C, precedes a binary snapshot payload
+ // ---- terminal ----
+ TermAttach(TermAttach), // C→S
+ TermDetach { session: SessionId }, // C→S
+ TermInput(TermInput), // C→S (small inputs; large paste uses binary)
+ TermResize(TermResize), // C→S
+ TermSnapshotMeta(TermSnapshotMeta), // S→C, precedes a binary snapshot payload
 
-    // ---- binary channel bookkeeping ----
-    BlobBegin(BlobBegin),               // either direction
-    BlobAbort { blob: BlobId, reason: String },
-    BlobDone { blob: BlobId, sha256: String },
+ // ---- binary channel bookkeeping ----
+ BlobBegin(BlobBegin), // either direction
+ BlobAbort { blob: BlobId, reason: String },
+ BlobDone { blob: BlobId, sha256: String },
 
-    // ---- agent hook ingress (unix socket only, §3.8) ----
-    HookEvent(HookEvent),               // omt-hook → daemon
-    HookAck(HookAck),                   // daemon → omt-hook
+ // ---- agent hook ingress (unix socket only, §3.8) ----
+ HookEvent(HookEvent), // omt-hook → daemon
+ HookAck(HookAck), // daemon → omt-hook
 }
 ```
 
@@ -392,24 +392,24 @@ connections** — see §3.5.
 
 ```json
 { "t": "hello", "id": "req_0",
-  "proto": [1],
-  "client": { "name": "omt-web", "version": "0.4.1", "kind": "web" },
-  "device": { "id": "dev_7Qa…", "name": "iPhone", "platform": "ios/safari" },
-  "features": ["term.binary", "blob.chunked", "stt.opus"],
-  "resume": { "session_token": "omt_s_5tR…" }
+ "proto": [1],
+ "client": { "name": "omt-web", "version": "0.4.1", "kind": "web" },
+ "device": { "id": "dev_7Qa…", "name": "iPhone", "platform": "ios/safari" },
+ "features": ["term.binary", "blob.chunked", "stt.opus"],
+ "resume": { "session_token": "omt_s_5tR…" }
 }
 ```
 
 ```json
 { "t": "welcome", "id": "req_0",
-  "proto": 1,
-  "instance": { "id": "3f2a…", "name": "workstation", "version": "0.4.1",
-                "platform": { "os": "linux", "arch": "aarch64" },
-                "catalog_hash": "b3:7c1e…" },
-  "auth": { "required": true, "methods": ["bearer", "password", "invite", "tailnet", "device_grant"] },
-  "features": ["term.binary", "blob.chunked", "stt.opus", "term.ack"],
-  "limits": { "max_control_frame": 1048576, "max_binary_frame": 8388608,
-              "replay_window_bytes": 4194304, "replay_window_events": 4096 }
+ "proto": 1,
+ "instance": { "id": "3f2a…", "name": "workstation", "version": "0.4.1",
+ "platform": { "os": "linux", "arch": "aarch64" },
+ "catalog_hash": "b3:7c1e…" },
+ "auth": { "required": true, "methods": ["bearer", "password", "invite", "tailnet", "device_grant"] },
+ "features": ["term.binary", "blob.chunked", "stt.opus", "term.ack"],
+ "limits": { "max_control_frame": 1048576, "max_binary_frame": 8388608,
+ "replay_window_bytes": 4194304, "replay_window_events": 4096 }
 }
 ```
 
@@ -425,35 +425,35 @@ reconnects and across sessions:
 
 ```json
 { "t": "call", "id": "req_2", "name": "instance.catalog",
-  "input": { "known_hash": "b3:7c1e…" } }
+ "input": { "known_hash": "b3:7c1e…" } }
 ```
 
 ```json
 { "t": "result", "id": "req_2", "ok": true,
-  "output": { "unchanged": true } }
+ "output": { "unchanged": true } }
 ```
 
 ### 3.4 Auth
 
 ```json
 { "t": "auth_challenge", "id": null,
-  "methods": ["bearer", "password", "invite", "tailnet", "device_grant"],
-  "nonce": "n_9f2c…" }
+ "methods": ["bearer", "password", "invite", "tailnet", "device_grant"],
+ "nonce": "n_9f2c…" }
 ```
 
 ```json
 { "t": "auth", "id": "req_1", "method": "bearer",
-  "bearer": { "token": "omt_c_9K3…" },
-  "device_sig": "ed25519:5b7e…" }
+ "bearer": { "token": "omt_c_9K3…" },
+ "device_sig": "ed25519:5b7e…" }
 ```
 
 ```json
 { "t": "auth_ok", "id": "req_1",
-  "actor": { "id": "act_12", "label": "iPhone (Vincent)", "kind": "remote" },
-  "role": "operator",
-  "scope": { "visibility": { "kind": "all_sessions" }, "capabilities": null },
-  "session_token": "omt_s_5tR…",
-  "expires_at": "2026-08-04T09:11:00Z" }
+ "actor": { "id": "act_12", "label": "iPhone (Vincent)", "kind": "remote" },
+ "role": "operator",
+ "scope": { "visibility": { "kind": "all_sessions" }, "capabilities": null },
+ "session_token": "omt_s_5tR…",
+ "expires_at": "2026-08-04T09:11:00Z" }
 ```
 
 `session_token` is a short-lived resume token (default 12 h) so a reconnect can
@@ -478,25 +478,25 @@ no capability knowledge; it forwards `(name, input_json)` to
 
 ```json
 { "t": "call", "id": "req_31", "name": "interaction.resolve",
-  "input": {
-    "interaction": "int_88",
-    "response": { "type": "choices",
-                  "answers": [ { "labels": ["Use Postgres"],
-                                 "other": null, "comment": null } ] }
-  },
-  "deadline_ms": 10000 }
+ "input": {
+ "interaction": "int_88",
+ "response": { "type": "choices",
+ "answers": [ { "labels": ["Use Postgres"],
+ "other": null, "comment": null } ] }
+ },
+ "deadline_ms": 10000 }
 ```
 
 ```json
 { "t": "result", "id": "req_31", "ok": true,
-  "output": { "resolved_by": "act_12", "seq": 91422 } }
+ "output": { "resolved_by": "act_12", "seq": 91422 } }
 ```
 
 ```json
 { "t": "result", "id": "req_31", "ok": false,
-  "error": { "code": "conflict",
-             "message": "Interaction int_88 was already resolved by the local TUI",
-             "detail": { "resolved_by": "local", "at": "2026-08-03T18:22:04.113Z" } } }
+ "error": { "code": "conflict",
+ "message": "Interaction int_88 was already resolved by the local TUI",
+ "detail": { "resolved_by": "local", "at": "2026-08-03T18:22:04.113Z" } } }
 ```
 
 Error codes are exactly the closed catalog enum (`not_found`, `conflict`,
@@ -511,7 +511,7 @@ effect.
 #### `RequestId` is stable across connections, and dispatch caches results
 
 ```rust
-pub struct RequestId { pub device: DeviceId, pub n: u64 }   // wire: "dev_9a:41827"
+pub struct RequestId { pub device: DeviceId, pub n: u64 } // wire: "dev_9a:41827"
 ```
 
 `n` is a **monotonic counter persisted client-side**, not a per-connection
@@ -546,12 +546,12 @@ write is resumed by `ack`, not repeated (§3.6).
 A binary frame is a 24-byte header followed by the payload:
 
 ```
- 0        1        2                4                8                          16                          24
+ 0 1 2 4 8 16 24
  +--------+--------+----------------+----------------+---------------------------+---------------------------+
- | ver(1) | kind(1)|   stream(u16)  |  reserved(u32) |      seq_or_off(u64)      |          ack(u64)         | payload…
+ | ver(1) | kind(1)| stream(u16) | reserved(u32) | seq_or_off(u64) | ack(u64) | payload…
  +--------+--------+----------------+----------------+---------------------------+---------------------------+
- kind: 1 = terminal output   2 = terminal input   3 = blob chunk
-       4 = audio chunk       5 = terminal snapshot
+ kind: 1 = terminal output 2 = terminal input 3 = blob chunk
+ 4 = audio chunk 5 = terminal snapshot
  all integers little-endian; `reserved` MUST be zero and is rejected otherwise
 ```
 
@@ -613,19 +613,19 @@ consumed** into the PTY. It has two independent rationales and both are recorded
 here so it cannot be value-engineered out as "a v2 feature":
 
 1. **Predictive echo.** [`remote-continuity §10.3`](../design/remote-continuity.md#103-model-additions)
-   already requires it: mosh-style local echo cannot confirm or revert a
-   prediction without knowing which of its own keystrokes the far end has
-   actually consumed.
+ already requires it: mosh-style local echo cannot confirm or revert a
+ prediction without knowing which of its own keystrokes the far end has
+ actually consumed.
 2. **Durability — the load-bearing one.** `session.write_bytes` is
-   [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
-   **raw byte stream** class, which **must never be replayed**: re-sending
-   keystrokes into whatever the terminal is doing now is arbitrary damage, not a
-   retry. A consumed-offset ack is therefore the *only* safe resumption
-   mechanism available to that class. On reconnect the client resumes from
-   `ack`, sends nothing that was already consumed, and reports the ambiguous tail
-   (written but unacknowledged) to the user rather than silently re-sending it.
-   Without `ack` in the header, the byte-stream class has no correct recovery at
-   all, and a reconnect after a dropped link either loses input or duplicates it.
+ [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
+ **raw byte stream** class, which **must never be replayed**: re-sending
+ keystrokes into whatever the terminal is doing now is arbitrary damage, not a
+ retry. A consumed-offset ack is therefore the *only* safe resumption
+ mechanism available to that class. On reconnect the client resumes from
+ `ack`, sends nothing that was already consumed, and reports the ambiguous tail
+ (written but unacknowledged) to the user rather than silently re-sending it.
+ Without `ack` in the header, the byte-stream class has no correct recovery at
+ all, and a reconnect after a dropped link either loses input or duplicates it.
 
 Zero is the "no information" value; a client that sees only zeros disables
 prediction and treats every reconnect tail as ambiguous. This costs 8 bytes per
@@ -637,8 +637,8 @@ binary:
 
 ```json
 { "t": "blob_begin", "id": "req_44", "blob": "blob_7", "stream": 12,
-  "purpose": "image_paste", "session": "s_4b2f",
-  "mime": "image/png", "bytes": 481203, "sha256": "9c1f…" }
+ "purpose": "image_paste", "session": "s_4b2f",
+ "mime": "image/png", "bytes": 481203, "sha256": "9c1f…" }
 ```
 
 then N `kind=3` binary frames with ascending offsets, then
@@ -650,10 +650,10 @@ and digest, and rejects on mismatch. Quotas and temp-file lifecycle are
 
 ```json
 { "t": "subscribe", "id": "req_5", "sub": "sub_1",
-  "filter": { "sessions": ["s_4b2f", "s_9de1"], "workspaces": ["w_9f3c"],
-              "kinds": ["agent", "interaction", "presence"] },
-  "since_seq": { "s_4b2f": 91380, "s_9de1": 4021, "w_9f3c": 41208 },
-  "policy": { "on_lag": "resync", "max_buffered_events": 2048 } }
+ "filter": { "sessions": ["s_4b2f", "s_9de1"], "workspaces": ["w_9f3c"],
+ "kinds": ["agent", "interaction", "presence"] },
+ "since_seq": { "s_4b2f": 91380, "s_9de1": 4021, "w_9f3c": 41208 },
+ "policy": { "on_lag": "resync", "max_buffered_events": 2048 } }
 ```
 
 Filters are coarse on purpose (session set × event-kind set). Fine-grained
@@ -674,8 +674,8 @@ Subscribing to `workspace_fs` does **not** by itself create a watcher — that i
 ```rust
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
-    Terminal, Agent, Interaction, SessionTree, Presence,
-    Config, Plugin, Audit, WorkspaceFs, Instance,
+ Terminal, Agent, Interaction, SessionTree, Presence,
+ Config, Plugin, Audit, WorkspaceFs, Instance,
 }
 ```
 
@@ -714,98 +714,98 @@ key across all three scopes rather than a union. [§5.1](#51-sequence-spaces) an
 /// switches on `payload.type`, and the server uses the group to filter.
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventPayload {
-    // ============ kind: terminal — session-scoped ============
-    // Block, cwd, title and bell facts from `omt-term` (05 §10.4).
-    BlockOpened   { block: BlockId, origin: BlockOrigin, at: Position },
-    BlockClosed   { block: BlockId, state: BlockState, exit: Option<i32>,
-                    duration_ms: Option<u64>, attribution: Attribution },
-    BlockUpdated  { block: BlockId, state: BlockState },
-    CwdChanged    { cwd: PathBuf },
-    TitleChanged  { title: String },
-    Bell          {},
-    /// 05 §9. Emitted on block closure, so it belongs with the block events.
-    HistoryAppended { entry: HistoryEntry },
-    /// 05 §10.4 / 17 §3.4. The negotiated size changed, and why.
-    SessionResized  { size: GridSize, policy: SizePolicy, reason: ResizeReason },
+ // ============ kind: terminal — session-scoped ============
+ // Block, cwd, title and bell facts from `omt-term` (05 §10.4).
+ BlockOpened { block: BlockId, origin: BlockOrigin, at: Position },
+ BlockClosed { block: BlockId, state: BlockState, exit: Option<i32>,
+ duration_ms: Option<u64>, attribution: Attribution },
+ BlockUpdated { block: BlockId, state: BlockState },
+ CwdChanged { cwd: PathBuf },
+ TitleChanged { title: String },
+ Bell {},
+ /// 05 §9. Emitted on block closure, so it belongs with the block events.
+ HistoryAppended { entry: HistoryEntry },
+ /// 05 §10.4 / 17 §3.4. The negotiated size changed, and why.
+ SessionResized { size: GridSize, policy: SizePolicy, reason: ResizeReason },
 
-    // ============ kind: agent — session-scoped ============
-    /// The whole of [06 §8.1](06-agent-layer.md#81-agentevent--the-envelope).
-    /// The envelope's `session`, `seq`, `ts` and `source` are copies of the
-    /// inner event's, never independently computed (06 §8.1).
-    AgentEvent    { event: AgentEvent },
-    BindingStarted { binding: AgentBinding },
-    BindingEnded   { binding: BindingId, at: Timestamp, reason: String },
-    /// 06 §4. Carried separately from `AgentEvent` because state is a *merge
-    /// result* over several sources, not something any one source emits.
-    AgentStateChanged { binding: BindingId, from: AgentState, to: AgentState,
-                        deciding_tier: Tier },
+ // ============ kind: agent — session-scoped ============
+ /// The whole of [06 §8.1](06-agent-layer.md#81-agentevent--the-envelope).
+ /// The envelope's `session`, `seq`, `ts` and `source` are copies of the
+ /// inner event's, never independently computed (06 §8.1).
+ AgentEvent { event: AgentEvent },
+ BindingStarted { binding: AgentBinding },
+ BindingEnded { binding: BindingId, at: Timestamp, reason: String },
+ /// 06 §4. Carried separately from `AgentEvent` because state is a *merge
+ /// result* over several sources, not something any one source emits.
+ AgentStateChanged { binding: BindingId, from: AgentState, to: AgentState,
+ deciding_tier: Tier },
 
-    // ============ kind: interaction — session-scoped ============
-    /// The full [06 §5](06-agent-layer.md#5-interactions--the-flagship-path)
-    /// object, including `state`, `responder` and `viewers`.
-    InteractionOpened { interaction: Interaction },
-    /// Every transition after the open, including the terminal ones. Clients
-    /// switch on `state.type` — see the note below.
-    InteractionStateChanged { interaction: InteractionId, state: InteractionState },
-    /// Advisory only; the ledger still decides (12 §4.4).
-    InteractionViewersChanged { interaction: InteractionId, viewers: Vec<ActorId> },
+ // ============ kind: interaction — session-scoped ============
+ /// The full [06 §5](06-agent-layer.md#5-interactions--the-flagship-path)
+ /// object, including `state`, `responder` and `viewers`.
+ InteractionOpened { interaction: Interaction },
+ /// Every transition after the open, including the terminal ones. Clients
+ /// switch on `state.type` — see the note below.
+ InteractionStateChanged { interaction: InteractionId, state: InteractionState },
+ /// Advisory only; the ledger still decides (12 §4.4).
+ InteractionViewersChanged { interaction: InteractionId, viewers: Vec<ActorId> },
 
-    // ============ kind: session_tree ============
-    WorkspaceOpened   { workspace: Workspace },                 // workspace-scoped
-    WorkspaceClosed   {},                                       // workspace-scoped
-    WorkspaceRenamed  { name: String },                         // workspace-scoped
-    ViewCreated       { view: LayoutView },                     // workspace-scoped
-    ViewClosed        { view: ViewId },                         // workspace-scoped
-    ViewSelected      { view: ViewId, by: Actor },              // workspace-scoped
-    /// 05 §10.4 / 17. Workspace-scoped because a `Layout` belongs to a
-    /// `LayoutView`, which belongs to a workspace — not to a session.
-    LayoutChanged     { view: ViewId, layout: Layout, geometry_hint: Option<Geometry> },
-    SessionCreated    { session: Session },                     // workspace-scoped
-    SessionClosed     { session: SessionId },                   // workspace-scoped
-    SessionRenamed    { name: String },                         // session-scoped
-    SessionStateChanged { from: SessionState, to: SessionState }, // session-scoped
-    FocusChanged      { view: ViewId, pane: Option<PaneId>, by: Actor }, // workspace-scoped
+ // ============ kind: session_tree ============
+ WorkspaceOpened { workspace: Workspace }, // workspace-scoped
+ WorkspaceClosed {}, // workspace-scoped
+ WorkspaceRenamed { name: String }, // workspace-scoped
+ ViewCreated { view: LayoutView }, // workspace-scoped
+ ViewClosed { view: ViewId }, // workspace-scoped
+ ViewSelected { view: ViewId, by: Actor }, // workspace-scoped
+ /// 05 §10.4 / 17. Workspace-scoped because a `Layout` belongs to a
+ /// `LayoutView`, which belongs to a workspace — not to a session.
+ LayoutChanged { view: ViewId, layout: Layout, geometry_hint: Option<Geometry> },
+ SessionCreated { session: Session }, // workspace-scoped
+ SessionClosed { session: SessionId }, // workspace-scoped
+ SessionRenamed { name: String }, // session-scoped
+ SessionStateChanged { from: SessionState, to: SessionState }, // session-scoped
+ FocusChanged { view: ViewId, pane: Option<PaneId>, by: Actor }, // workspace-scoped
 
-    // ============ kind: presence — session-scoped ============
-    PresenceChanged   { presence: Presence },
-    /// 05 §10.4, semantics in 12 §3. Grouped with presence rather than with
-    /// session_tree: "who may type" is the same question as "who is here", and
-    /// a client that renders one always renders the other.
-    WriterChanged             { token: Option<WriterToken>, reason: WriterChangeReason },
-    WriterTakeoverRequested   { by: Actor, expires_at: Timestamp },
-    WriterTakeoverResolved    { by: Actor, granted: bool },
+ // ============ kind: presence — session-scoped ============
+ PresenceChanged { presence: Presence },
+ /// 05 §10.4, semantics in 12 §3. Grouped with presence rather than with
+ /// session_tree: "who may type" is the same question as "who is here", and
+ /// a client that renders one always renders the other.
+ WriterChanged { token: Option<WriterToken>, reason: WriterChangeReason },
+ WriterTakeoverRequested { by: Actor, expires_at: Timestamp },
+ WriterTakeoverResolved { by: Actor, granted: bool },
 
-    // ============ kind: config — instance- or workspace-scoped ============
-    /// 10 §4. `keys` are setting paths, never values — a value may be a secret.
-    ConfigChanged { keys: Vec<String>, scope: ConfigScope, source: ConfigSource,
-                    by: Actor, reload: ReloadKind },
-    /// 10 §5.3. A reload that failed validation; the old config stays live.
-    ConfigInvalid { diagnostics: Vec<Diagnostic> },
+ // ============ kind: config — instance- or workspace-scoped ============
+ /// 10 §4. `keys` are setting paths, never values — a value may be a secret.
+ ConfigChanged { keys: Vec<String>, scope: ConfigScope, source: ConfigSource,
+ by: Actor, reload: ReloadKind },
+ /// 10 §5.3. A reload that failed validation; the old config stays live.
+ ConfigInvalid { diagnostics: Vec<Diagnostic> },
 
-    // ============ kind: plugin — instance-scoped ============
-    PluginLoaded   { plugin: PluginId, version: String, granted: Vec<CapabilityPattern> },
-    PluginUnloaded { plugin: PluginId, reason: String },
-    PluginFailed   { plugin: PluginId, diagnostic: Diagnostic },
+ // ============ kind: plugin — instance-scoped ============
+ PluginLoaded { plugin: PluginId, version: String, granted: Vec<CapabilityPattern> },
+ PluginUnloaded { plugin: PluginId, reason: String },
+ PluginFailed { plugin: PluginId, diagnostic: Diagnostic },
 
-    // ============ kind: audit — instance-scoped, Admin only ============
-    /// 13 §6. Subscribing requires `Admin`; the bus filters per subscription,
-    /// so a non-admin subscription to `audit` yields nothing rather than an
-    /// error, exactly as a filtered-out session does.
-    AuditAppended { entry: AuditEntry },
+ // ============ kind: audit — instance-scoped, Admin only ============
+ /// 13 §6. Subscribing requires `Admin`; the bus filters per subscription,
+ /// so a non-admin subscription to `audit` yields nothing rather than an
+ /// error, exactly as a filtered-out session does.
+ AuditAppended { entry: AuditEntry },
 
-    // ============ kind: workspace_fs — workspace-scoped ============
-    /// 15 §4.6. Coalesced by the watcher; `truncated` says so honestly.
-    FilesChanged { changes: Vec<FileEvent>, truncated: bool },
-    VcsChanged   { summary: VcsSummary },
-    /// The watcher stopped (descriptor exhaustion, a rescan, an unmount).
-    /// A dropped watch is reported, never silently mistaken for "no changes".
-    WatchDropped { reason: String, rescan_required: bool },
+ // ============ kind: workspace_fs — workspace-scoped ============
+ /// 15 §4.6. Coalesced by the watcher; `truncated` says so honestly.
+ FilesChanged { changes: Vec<FileEvent>, truncated: bool },
+ VcsChanged { summary: VcsSummary },
+ /// The watcher stopped (descriptor exhaustion, a rescan, an unmount).
+ /// A dropped watch is reported, never silently mistaken for "no changes".
+ WatchDropped { reason: String, rescan_required: bool },
 
-    // ============ kind: instance — instance-scoped ============
-    /// 22 §4.4. Added or cleared as instance-level capability degrades.
-    InstanceDegraded  { degradation: InstanceDegradation },
-    InstanceRecovered { kind: String },
-    InstanceShuttingDown { reason: String, grace_ms: u32 },
+ // ============ kind: instance — instance-scoped ============
+ /// 22 §4.4. Added or cleared as instance-level capability degrades.
+ InstanceDegraded { degradation: InstanceDegradation },
+ InstanceRecovered { kind: String },
+ InstanceShuttingDown { reason: String, grace_ms: u32 },
 }
 ```
 
@@ -840,118 +840,118 @@ here alone: it carries the whole `Interaction`, including the `state`,
 
 ```json
 { "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
-  "seq": 91380, "ts": "2026-08-03T18:21:58.400Z", "source": "core",
-  "caused_by": null,
-  "payload": { "type": "block_closed", "block": "blk_31",
-               "state": "finished", "exit": 0, "duration_ms": 812,
-               "attribution": "agent" } }
+ "seq": 91380, "ts": "2026-08-03T18:21:58.400Z", "source": "core",
+ "caused_by": null,
+ "payload": { "type": "block_closed", "block": "blk_31",
+ "state": "finished", "exit": 0, "duration_ms": 812,
+ "attribution": "agent" } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
-  "seq": 91381, "ts": "2026-08-03T18:21:59.100Z", "source": "hook",
-  "caused_by": null,
-  "payload": { "type": "agent_event",
-               "event": { "session": "s_4b2f", "binding": "bnd_5",
-                          "agent": "claude_code", "agent_version": "2.1.4",
-                          "agent_session": "1f0c…", 
-                          "thread": { "id": "th_0", "parent": null,
-                                      "is_subagent": false, "label": null },
-                          "seq": 91381, "ts": "2026-08-03T18:21:59.100Z",
-                          "tier": "hook", "source": "hook_bridge",
-                          "cwd": "/home/v/src/omt", "git_branch": "main",
-                          "payload": { "type": "tool_call", "turn": "t_12",
-                                       "call": "toolu_01A…", "name": "Edit",
-                                       "input": { "file_path": "…" },
-                                       "status": "running", "parent": null } } } }
+ "seq": 91381, "ts": "2026-08-03T18:21:59.100Z", "source": "hook",
+ "caused_by": null,
+ "payload": { "type": "agent_event",
+ "event": { "session": "s_4b2f", "binding": "bnd_5",
+ "agent": "claude_code", "agent_version": "2.1.4",
+ "agent_session": "1f0c…", 
+ "thread": { "id": "th_0", "parent": null,
+ "is_subagent": false, "label": null },
+ "seq": 91381, "ts": "2026-08-03T18:21:59.100Z",
+ "tier": "hook", "source": "hook_bridge",
+ "cwd": "/home/v/src/omt", "git_branch": "main",
+ "payload": { "type": "tool_call", "turn": "t_12",
+ "call": "toolu_01A…", "name": "Edit",
+ "input": { "file_path": "…" },
+ "status": "running", "parent": null } } } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
-  "seq": 91382, "ts": "2026-08-03T18:21:59.882Z", "source": "hook",
-  "caused_by": null,
-  "payload": { "type": "interaction_opened",
-               "interaction": {
-                 "id": "int_88", "session": "s_4b2f", "binding": "bnd_5",
-                 "kind": { "type": "choice",
-                           "questions": [{ "question": "Which database should I use?",
-                                           "header": "Database",
-                                           "multi_select": false,
-                                           "allow_free_text": true,
-                                           "options": [{ "label": "Postgres", "description": "…" },
-                                                       { "label": "SQLite",   "description": "…" }] }] },
-                 "opened_at": "2026-08-03T18:21:59.882Z",
-                 "timeout_at": "2026-08-03T18:31:59.882Z",
-                 "state": { "type": "open" },
-                 "responder": { "fidelity": "synthetic",
-                                "state_dependence": "independent",
-                                "supports_edit": false },
-                 "viewers": [] } } }
+ "seq": 91382, "ts": "2026-08-03T18:21:59.882Z", "source": "hook",
+ "caused_by": null,
+ "payload": { "type": "interaction_opened",
+ "interaction": {
+ "id": "int_88", "session": "s_4b2f", "binding": "bnd_5",
+ "kind": { "type": "choice",
+ "questions": [{ "question": "Which database should I use?",
+ "header": "Database",
+ "multi_select": false,
+ "allow_free_text": true,
+ "options": [{ "label": "Postgres", "description": "…" },
+ { "label": "SQLite", "description": "…" }] }] },
+ "opened_at": "2026-08-03T18:21:59.882Z",
+ "timeout_at": "2026-08-03T18:31:59.882Z",
+ "state": { "type": "open" },
+ "responder": { "fidelity": "synthetic",
+ "state_dependence": "independent",
+ "supports_edit": false },
+ "viewers": [] } } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_1", "session": null, "workspace": "w_9f3c",
-  "seq": 41209, "ts": "2026-08-03T18:22:03.010Z", "source": "core",
-  "caused_by": "dev_9a:41827",
-  "payload": { "type": "layout_changed", "view": "vw_1",
-               "layout": { "…": "17 §1.3" }, "geometry_hint": null } }
+ "seq": 41209, "ts": "2026-08-03T18:22:03.010Z", "source": "core",
+ "caused_by": "dev_9a:41827",
+ "payload": { "type": "layout_changed", "view": "vw_1",
+ "layout": { "…": "17 §1.3" }, "geometry_hint": null } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_1", "session": "s_4b2f", "workspace": null,
-  "seq": 91383, "ts": "2026-08-03T18:22:04.113Z", "source": "core",
-  "caused_by": "dev_9a:41828",
-  "payload": { "type": "writer_changed",
-               "token": { "holder": { "id": "act_12", "kind": "remote" },
-                          "acquired_at": "2026-08-03T18:22:04.113Z",
-                          "epoch": 7 },
-               "reason": "auto_acquired" } }
+ "seq": 91383, "ts": "2026-08-03T18:22:04.113Z", "source": "core",
+ "caused_by": "dev_9a:41828",
+ "payload": { "type": "writer_changed",
+ "token": { "holder": { "id": "act_12", "kind": "remote" },
+ "acquired_at": "2026-08-03T18:22:04.113Z",
+ "epoch": 7 },
+ "reason": "auto_acquired" } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_2", "session": null, "workspace": null,
-  "seq": 5512, "ts": "2026-08-03T18:22:10.000Z", "source": "core",
-  "caused_by": "dev_9a:41830",
-  "payload": { "type": "config_changed", "keys": ["agent.confirm_window_ms"],
-               "scope": "instance", "source": "user_file", 
-               "by": { "id": "act_12", "kind": "remote" }, "reload": "live" } }
+ "seq": 5512, "ts": "2026-08-03T18:22:10.000Z", "source": "core",
+ "caused_by": "dev_9a:41830",
+ "payload": { "type": "config_changed", "keys": ["agent.confirm_window_ms"],
+ "scope": "instance", "source": "user_file", 
+ "by": { "id": "act_12", "kind": "remote" }, "reload": "live" } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_2", "session": null, "workspace": null,
-  "seq": 5513, "ts": "2026-08-03T18:22:11.400Z", "source": "plugin",
-  "caused_by": null,
-  "payload": { "type": "plugin_failed", "plugin": "ntfy-notifier",
-               "diagnostic": { "code": "OMT-P012", "message": "…" } } }
+ "seq": 5513, "ts": "2026-08-03T18:22:11.400Z", "source": "plugin",
+ "caused_by": null,
+ "payload": { "type": "plugin_failed", "plugin": "ntfy-notifier",
+ "diagnostic": { "code": "OMT-P012", "message": "…" } } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_3", "session": null, "workspace": null,
-  "seq": 5514, "ts": "2026-08-03T18:22:12.900Z", "source": "core",
-  "caused_by": "dev_9a:41831",
-  "payload": { "type": "audit_appended",
-               "entry": { "at": "…", "actor": "act_12", "device": "dev_9a",
-                          "capability": "interaction.resolve",
-                          "effects": [], "outcome": "ok" } } }
+ "seq": 5514, "ts": "2026-08-03T18:22:12.900Z", "source": "core",
+ "caused_by": "dev_9a:41831",
+ "payload": { "type": "audit_appended",
+ "entry": { "at": "…", "actor": "act_12", "device": "dev_9a",
+ "capability": "interaction.resolve",
+ "effects": [], "outcome": "ok" } } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_4", "session": null, "workspace": "w_9f3c",
-  "seq": 41210, "ts": "2026-08-03T18:22:14.220Z", "source": "fs",
-  "caused_by": null,
-  "payload": { "type": "files_changed", "truncated": false,
-               "changes": [{ "rel": "crates/omt-agent/src/lib.rs", "change": "modified" }] } }
+ "seq": 41210, "ts": "2026-08-03T18:22:14.220Z", "source": "fs",
+ "caused_by": null,
+ "payload": { "type": "files_changed", "truncated": false,
+ "changes": [{ "rel": "crates/omt-agent/src/lib.rs", "change": "modified" }] } }
 ```
 
 ```json
 { "t": "event", "sub": "sub_2", "session": null, "workspace": null,
-  "seq": 5515, "ts": "2026-08-03T18:22:20.000Z", "source": "core",
-  "caused_by": null,
-  "payload": { "type": "instance_degraded",
-               "degradation": { "kind": "not_persisting",
-                                "since": "2026-08-03T18:22:19.980Z",
-                                "detail": "store: no space left on device",
-                                "remedy": "free space under $XDG_STATE_HOME/omt" } } }
+ "seq": 5515, "ts": "2026-08-03T18:22:20.000Z", "source": "core",
+ "caused_by": null,
+ "payload": { "type": "instance_degraded",
+ "degradation": { "kind": "not_persisting",
+ "since": "2026-08-03T18:22:19.980Z",
+ "detail": "store: no space left on device",
+ "remedy": "free space under $XDG_STATE_HOME/omt" } } }
 ```
 
 #### 3.7.3 The `source` vocabulary — one closed set
@@ -976,30 +976,30 @@ to:
 ```rust
 #[serde(rename_all = "snake_case")]
 pub enum EventSourceTag {
-    // the six agent-observation tiers, spelled exactly as `Tier`'s variants
-    Heuristic, Process, Marker, Transcript, Hook, Protocol,
-    // producers that are not agent observations and have no tier
-    Core,    // the daemon's own state machines: session tree, terminal,
-             // presence, writer token, config, instance health
-    Fs,      // the filesystem watcher (15 §4.6)
-    Plugin,  // a plugin, via the plugin host (11)
+ // the six agent-observation tiers, spelled exactly as `Tier`'s variants
+ Heuristic, Process, Marker, Transcript, Hook, Protocol,
+ // producers that are not agent observations and have no tier
+ Core, // the daemon's own state machines: session tree, terminal,
+ // presence, writer token, config, instance health
+ Fs, // the filesystem watcher (15 §4.6)
+ Plugin, // a plugin, via the plugin host (11)
 }
 ```
 
 Rules:
 
 1. For `kind: agent`, `source` **is** the inner `AgentEvent::tier`, lower-cased.
-   It is one of the first six, always, and codegen asserts the equality
-   (06 §8.1).
+ It is one of the first six, always, and codegen asserts the equality
+ (06 §8.1).
 2. For every other kind, `source` is one of `core`, `fs`, `plugin` — never a
-   tier name. An `interaction` event is the exception that proves the rule: it
-   carries the tier that observed the interaction, because it *is* an agent
-   observation, merely on its own kind.
+ tier name. An `interaction` event is the exception that proves the rule: it
+ carries the tier that observed the interaction, because it *is* an agent
+ observation, merely on its own kind.
 3. `pty` is **not** in the set. It was 08's rename of `heuristic`, and the tier
-   is named for what it is (a guess) rather than for where the bytes came from.
-   `Tier::Heuristic` in 06 is the owner; 08 regenerates.
+ is named for what it is (a guess) rather than for where the bytes came from.
+ `Tier::Heuristic` in 06 is the owner; 08 regenerates.
 4. `workspace_fs` and `system` are **not** in the set as sources. `workspace_fs`
-   is an `EventKind`; `system` was standing in for what is now `core`.
+ is an `EventKind`; `system` was standing in for what is now `core`.
 
 ### 3.8 The `omt-hook` wire messages
 
@@ -1022,22 +1022,22 @@ attractive because dispatch is where authorization and auditing live
 ([03 §3](03-capability-catalog.md#35-the-dispatch-path)). It is wrong for three reasons:
 
 1. **A hook is not an actor requesting a mutation.** The capability catalog is
-   the surface through which an *actor* changes state, and every entry carries a
-   `Role`, an `Effects` set and an `Intent` class. A hook has no role, requests
-   no mutation and has no intent to deliver — it reports an observation, exactly
-   as `TranscriptTail` and `AcpClient` do, and neither of those is a capability
-   call either. Making one observation source RPC-shaped because it happens to
-   arrive over a socket would put the tier ladder on two different footings.
+ the surface through which an *actor* changes state, and every entry carries a
+ `Role`, an `Effects` set and an `Intent` class. A hook has no role, requests
+ no mutation and has no intent to deliver — it reports an observation, exactly
+ as `TranscriptTail` and `AcpClient` do, and neither of those is a capability
+ call either. Making one observation source RPC-shaped because it happens to
+ arrive over a socket would put the tier ladder on two different footings.
 2. **The authorization that matters already happened, at the right layer.** §2.3
-   checks `SO_PEERCRED`/`LOCAL_PEERCRED` and rejects any peer whose uid differs
-   from the daemon's before the handshake. That is precisely the right check for
-   a local process the agent spawned as the daemon's user. Dispatch would add a
-   role check with no meaningful answer.
+ checks `SO_PEERCRED`/`LOCAL_PEERCRED` and rejects any peer whose uid differs
+ from the daemon's before the handshake. That is precisely the right check for
+ a local process the agent spawned as the daemon's user. Dispatch would add a
+ role check with no meaningful answer.
 3. **Latency.** Claude Code alone has 30 hook events, several per tool call, on
-   a single-digit-millisecond budget (§3.8.4). Dispatch's per-call machinery —
-   the recent-results cache keyed by `RequestId`, effects refinement, the audit
-   append — is the wrong cost on that path, and the `RequestId` it is keyed by
-   is `(DeviceId, u64)`, which a hook does not have.
+ a single-digit-millisecond budget (§3.8.4). Dispatch's per-call machinery —
+ the recent-results cache keyed by `RequestId`, effects refinement, the audit
+ append — is the wrong cost on that path, and the `RequestId` it is keyed by
+ is `(DeviceId, u64)`, which a hook does not have.
 
 **Auditing is preserved, in the right log.** [13 §6](13-security.md)'s audit log
 records actor-initiated capability calls; a hook event is not one. What it *is*
@@ -1051,86 +1051,86 @@ not an audit question.
 
 ```rust
 pub struct HookEvent {
-    /// Per-hook-process nonce, not a `RequestId` — a hook has no `DeviceId`
-    /// and lives for milliseconds. Echoed on the ack; the hook makes exactly
-    /// one call in its life, so uniqueness within the connection suffices.
-    pub nonce: u64,
-    /// Version of *this* message pair, negotiated separately from `proto`
-    /// because the hook binary is installed into the agent's config and may
-    /// be older or newer than the daemon (22 reports the skew).
-    pub hook_proto: u16,
+ /// Per-hook-process nonce, not a `RequestId` — a hook has no `DeviceId`
+ /// and lives for milliseconds. Echoed on the ack; the hook makes exactly
+ /// one call in its life, so uniqueness within the connection suffices.
+ pub nonce: u64,
+ /// Version of *this* message pair, negotiated separately from `proto`
+ /// because the hook binary is installed into the agent's config and may
+ /// be older or newer than the daemon (22 reports the skew).
+ pub hook_proto: u16,
 
-    // ---- who ----
-    pub agent: AgentKind,
-    pub agent_version: Option<String>,
-    /// The agent's own session id, when the payload or environ carries one.
-    pub agent_session: Option<AgentSessionId>,
+ // ---- who ----
+ pub agent: AgentKind,
+ pub agent_version: Option<String>,
+ /// The agent's own session id, when the payload or environ carries one.
+ pub agent_session: Option<AgentSessionId>,
 
-    // ---- what ----
-    /// The agent's own hook event name, **verbatim and un-normalized**:
-    /// `"PreToolUse"`, `"beforeShellExecution"`, `"AfterTool"`. The hook does
-    /// not map it; the daemon's per-agent normalizer does, and keeping the raw
-    /// name means an unrecognized event is loggable rather than lost.
-    pub event: String,
-    pub tool_name: Option<String>,
-    /// The agent's own id for this tool invocation, when it supplies one.
-    /// This is what correlates a `PreToolUse` with its `PostToolUse`, and
-    /// therefore what makes D15's confirm-by-observation possible.
-    pub tool_use_id: Option<String>,
-    /// **Verbatim.** The exact `tool_input` document, unmodified and
-    /// unredacted on the wire (the socket is local, same-uid, 0600).
-    /// Redaction happens on the daemon side before any write
-    /// ([21 §2.1](21-data-lifecycle.md#21-the-placement-rule)).
-    pub tool_input: Option<serde_json::Value>,
-    pub tool_response: Option<serde_json::Value>,
-    /// The whole stdin document, verbatim, for fields this schema does not
-    /// name. Bounded (§3.8.3); a hook never truncates silently.
-    pub raw: serde_json::Value,
+ // ---- what ----
+ /// The agent's own hook event name, **verbatim and un-normalized**:
+ /// `"PreToolUse"`, `"beforeShellExecution"`, `"AfterTool"`. The hook does
+ /// not map it; the daemon's per-agent normalizer does, and keeping the raw
+ /// name means an unrecognized event is loggable rather than lost.
+ pub event: String,
+ pub tool_name: Option<String>,
+ /// The agent's own id for this tool invocation, when it supplies one.
+ /// This is what correlates a `PreToolUse` with its `PostToolUse`, and
+ /// therefore what makes D15's confirm-by-observation possible.
+ pub tool_use_id: Option<String>,
+ /// **Verbatim.** The exact `tool_input` document, unmodified and
+ /// unredacted on the wire (the socket is local, same-uid, 0600).
+ /// Redaction happens on the daemon side before any write
+ /// ([21 §2.1](21-data-lifecycle.md#21-the-placement-rule)).
+ pub tool_input: Option<serde_json::Value>,
+ pub tool_response: Option<serde_json::Value>,
+ /// The whole stdin document, verbatim, for fields this schema does not
+ /// name. Bounded (§3.8.3); a hook never truncates silently.
+ pub raw: serde_json::Value,
 
-    // ---- where ----
-    pub correlation: HookCorrelation,
+ // ---- where ----
+ pub correlation: HookCorrelation,
 
-    /// How long the hook is willing to wait for the ack before it fails open
-    /// (§3.8.4). Advisory: it tells the daemon whether a slow path is worth
-    /// starting, and the hook enforces it regardless of the answer.
-    pub deadline_ms: u32,
+ /// How long the hook is willing to wait for the ack before it fails open
+ /// (§3.8.4). Advisory: it tells the daemon whether a slow path is worth
+ /// starting, and the hook enforces it regardless of the answer.
+ pub deadline_ms: u32,
 }
 
 /// 06 §7.2. `OMT_SESSION` and `OMT_INSTANCE` are injected into every PTY omt
 /// spawns, so a hook already knows which pane it belongs to and no
 /// "match the transcript to the pane" heuristic runs.
 pub struct HookCorrelation {
-    pub instance: Option<InstanceId>,   // $OMT_INSTANCE
-    pub session: Option<SessionId>,     // $OMT_SESSION
-    pub pid: u32,                       // the agent process, = the hook's ppid
-    pub ppid: u32,
-    pub cwd: PathBuf,
+ pub instance: Option<InstanceId>, // $OMT_INSTANCE
+ pub session: Option<SessionId>, // $OMT_SESSION
+ pub pid: u32, // the agent process, = the hook's ppid
+ pub ppid: u32,
+ pub cwd: PathBuf,
 }
 
 pub struct HookAck {
-    pub nonce: u64,
-    /// The daemon recorded the event. `false` means it could not (unknown
-    /// agent, malformed payload) and is informational only — the hook's
-    /// behaviour is identical either way.
-    pub recorded: bool,
-    pub directive: HookDirective,
+ pub nonce: u64,
+ /// The daemon recorded the event. `false` means it could not (unknown
+ /// agent, malformed payload) and is informational only — the hook's
+ /// behaviour is identical either way.
+ pub recorded: bool,
+ pub directive: HookDirective,
 }
 
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HookDirective {
-    /// The only value sent in v1. D11: omt observes and gets out of the way.
-    Proceed,
-    /// **Reserved, never sent in v1.** The opt-in deferral path of
-    /// [06 §5.3](06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization),
-    /// which takes the local user's native card away and is therefore
-    /// per-agent opt-in if it ever ships.
-    Defer { budget_ms: u32 },
-    /// **Reserved, never sent in v1.** Would be omt denying a tool call, which
-    /// [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
-    /// forbids: omt adds no policy layer over the agent's own permission
-    /// semantics. Present so the wire does not have to change if a *user*
-    /// ever configures a deny that the agent itself would have offered.
-    Deny { reason: String },
+ /// The only value sent in v1. D11: omt observes and gets out of the way.
+ Proceed,
+ /// **Reserved, never sent in v1.** The opt-in deferral path of
+ /// [06 §5.3](06-agent-layer.md#53-the-deferral-mechanism--demoted-to-an-optional-optimization),
+ /// which takes the local user's native card away and is therefore
+ /// per-agent opt-in if it ever ships.
+ Defer { budget_ms: u32 },
+ /// **Reserved, never sent in v1.** Would be omt denying a tool call, which
+ /// [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
+ /// forbids: omt adds no policy layer over the agent's own permission
+ /// semantics. Present so the wire does not have to change if a *user*
+ /// ever configures a deny that the agent itself would have offered.
+ Deny { reason: String },
 }
 ```
 
@@ -1167,10 +1167,10 @@ it was installed for (`omt-hook --agent claude-code`, with `OMT_HOOK_AGENT` as a
 fallback):
 
 ```
-Proceed  →  claude-code : {}
-            codex       : {}
-            cursor      : {"permission": "allow"}      ← per-agent, in the hook
-            gemini/qwen : {}
+Proceed → claude-code : {}
+ codex : {}
+ cursor : {"permission": "allow"} ← per-agent, in the hook
+ gemini/qwen : {}
 ```
 
 > **Choice made here.** The alternative — the daemon returns the literal stdout
@@ -1219,15 +1219,15 @@ that as a failure is correct behaviour, not a false positive.
 Two consequences worth stating:
 
 - **Doctor must measure a real round trip, not a synthetic one.** Its check
-  spawns the installed `omt-hook` binary against the live socket with a
-  synthetic `SessionStart` event, so it measures the path the agent uses,
-  including the binary's startup. Measuring only the socket round trip would
-  miss the failure 02's budget exists to prevent (a hook that got slow to
-  start).
+ spawns the installed `omt-hook` binary against the live socket with a
+ synthetic `SessionStart` event, so it measures the path the agent uses,
+ including the binary's startup. Measuring only the socket round trip would
+ miss the failure 02's budget exists to prevent (a hook that got slow to
+ start).
 - **`deadline_ms` is never raised to accommodate a slow daemon.** If the daemon
-  cannot ack inside 250 ms it is unhealthy, and the honest outcome is a
-  degraded tier-4 source reported by `agent.explain` — not an agent that
-  stutters on every tool call.
+ cannot ack inside 250 ms it is unhealthy, and the honest outcome is a
+ degraded tier-4 source reported by `agent.explain` — not an agent that
+ stutters on every tool call.
 
 ---
 
@@ -1255,16 +1255,16 @@ watching an agent scroll text).
 **Snapshots are grid state.** On attach, on resume outside the replay window,
 and after any resync, the server sends a *snapshot*: the authoritative grid from
 `omt-term`, serialized, followed by byte frames from the snapshot's sequence
-onward. The snapshot is exactly what another tool's `RenderEncoding::TerminalAnsi`
+onward. The snapshot is exactly what the `RenderEncoding::TerminalAnsi`
 almost is, but explicit and typed rather than pre-diffed ANSI:
 
 ```json
 { "t": "term_snapshot_meta", "session": "s_4b2f", "stream": 12,
-  "seq": 91422, "cols": 120, "rows": 40,
-  "encoding": "grid_v1", "bytes": 24816,
-  "cursor": { "row": 12, "col": 4, "visible": true, "shape": "block" },
-  "modes": { "alt_screen": true, "bracketed_paste": true, "app_cursor": false },
-  "scrollback_available": 12000 }
+ "seq": 91422, "cols": 120, "rows": 40,
+ "encoding": "grid_v1", "bytes": 24816,
+ "cursor": { "row": 12, "col": 4, "visible": true, "shape": "block" },
+ "modes": { "alt_screen": true, "bracketed_paste": true, "app_cursor": false },
+ "scrollback_available": 12000 }
 ```
 
 followed by one `kind=5` binary frame. `grid_v1` is a compact run-length
@@ -1296,19 +1296,19 @@ fit-to-view for everyone else, plus an explicit resize handoff.**
 
 ```rust
 pub struct ViewportPolicy {
-    /// The size actually applied to the PTY. Set by the writer's viewport,
-    /// or pinned by the user.
-    pub authoritative: TermSize,
-    pub owner: SizeOwner,     // Writer | Pinned { by: ActorId, size: TermSize } | Smallest
+ /// The size actually applied to the PTY. Set by the writer's viewport,
+ /// or pinned by the user.
+ pub authoritative: TermSize,
+ pub owner: SizeOwner, // Writer | Pinned { by: ActorId, size: TermSize } | Smallest
 }
 
 pub enum SizeOwner {
-    /// Default. The current writer's viewport drives the PTY.
-    Writer,
-    /// A client explicitly pinned a size ("keep this session at 120x40").
-    Pinned { by: ActorId, size: TermSize },
-    /// Opt-in: PTY is set to the smallest attached viewport, so nobody is cropped.
-    Smallest,
+ /// Default. The current writer's viewport drives the PTY.
+ Writer,
+ /// A client explicitly pinned a size ("keep this session at 120x40").
+ Pinned { by: ActorId, size: TermSize },
+ /// Opt-in: PTY is set to the smallest attached viewport, so nobody is cropped.
+ Smallest,
 }
 ```
 
@@ -1321,27 +1321,27 @@ a reflow that mangles a TUI.
 Consequences, stated plainly because they are user-visible:
 
 - Taking the writer token *may resize the PTY*, which for a full-screen agent
-  causes a redraw. The client warns before the first takeover of a session whose
-  size would change by more than 20 %, and offers "take input without resizing"
-  (which acquires the writer token with `keep_size: true`, leaving
-  `authoritative` pinned).
+ causes a redraw. The client warns before the first takeover of a session whose
+ size would change by more than 20 %, and offers "take input without resizing"
+ (which acquires the writer token with `keep_size: true`, leaving
+ `authoritative` pinned).
 - `Smallest` exists for genuine pair-programming, where a resize storm is worse
-  than a small terminal.
+ than a small terminal.
 - The phone can always *read* at full fidelity; the letterbox affects legibility,
-  not correctness. Combined with the block view (§4.2) as the default mobile
-  surface, the small-text case is the exception rather than the norm.
+ not correctness. Combined with the block view (§4.2) as the default mobile
+ surface, the small-text case is the exception rather than the norm.
 
 ```json
 { "t": "term_attach", "id": "req_9", "session": "s_4b2f",
-  "viewport": { "cols": 52, "rows": 24, "dpr": 3 },
-  "want": "grid_then_bytes",
-  "since_seq": 91380 }
+ "viewport": { "cols": 52, "rows": 24, "dpr": 3 },
+ "want": "grid_then_bytes",
+ "since_seq": 91380 }
 ```
 
 ```json
 { "t": "term_resize", "id": "req_12", "session": "s_4b2f",
-  "viewport": { "cols": 60, "rows": 30 },
-  "request_authoritative": false }
+ "viewport": { "cols": 60, "rows": 30 },
+ "request_authoritative": false }
 ```
 
 A client always reports its viewport (used for presence, for `Smallest`, and to
@@ -1356,34 +1356,34 @@ no PTY and no terminal at all, and the protocol says so rather than degrading
 quietly.
 
 - **The mode is on the wire, before attach.** A session's `SessionMode`
-  ([05 §1.5](05-session-model.md#1-the-object-model)) is carried in
-  `session.get`, in `session.list` (and therefore in every row of the unified
-  session list, §1.6), and in the `TermAttach` reply. It is **not** in
-  `Welcome`: `Welcome` is per-*connection* and carries no session data at all
-  (§3.3), so a document claiming otherwise gives clients a field that does not
-  exist. A client therefore knows whether a grid exists
-  *before* it decides how to render the session, and never has to infer it from
-  the absence of bytes.
+ ([05 §1.5](05-session-model.md#1-the-object-model)) is carried in
+ `session.get`, in `session.list` (and therefore in every row of the unified
+ session list, §1.6), and in the `TermAttach` reply. It is **not** in
+ `Welcome`: `Welcome` is per-*connection* and carries no session data at all
+ (§3.3), so a document claiming otherwise gives clients a field that does not
+ exist. A client therefore knows whether a grid exists
+ *before* it decides how to render the session, and never has to infer it from
+ the absence of bytes.
 - **No terminal surface exists.** For a `native` session there are no terminal
-  byte frames (`kind=1`/`kind=2`), no grid snapshot (`kind=5`,
-  `TermSnapshotMeta`), and no `ViewportPolicy` — there is no PTY to size.
-  `TermAttach` and `TermResize` return `unsupported`. Clients still report a
-  viewport, for presence only ([12 §2](12-collaboration.md#2-presence-is-first-class-state)).
+ byte frames (`kind=1`/`kind=2`), no grid snapshot (`kind=5`,
+ `TermSnapshotMeta`), and no `ViewportPolicy` — there is no PTY to size.
+ `TermAttach` and `TermResize` return `unsupported`. Clients still report a
+ viewport, for presence only ([12 §2](12-collaboration.md#2-presence-is-first-class-state)).
 - **§6's lossy/lossless split degenerates.** A native session's stream is
-  entirely lossless, so `LagPolicy::Strict` (never drop; close the connection on
-  overflow) is the **only legal policy** for it. This is not a preference: §6.2's
-  fallback is "collapse to state", and a grid *is* a lossless summary of
-  arbitrary byte history, whereas a list of tool calls and messages is not.
-  There is nothing structured agent events can be collapsed into, so they must
-  not be dropped.
+ entirely lossless, so `LagPolicy::Strict` (never drop; close the connection on
+ overflow) is the **only legal policy** for it. This is not a preference: §6.2's
+ fallback is "collapse to state", and a grid *is* a lossless summary of
+ arbitrary byte history, whereas a list of tool calls and messages is not.
+ There is nothing structured agent events can be collapsed into, so they must
+ not be dropped.
 - **§7's latency budget does not apply.** It measures a keystroke round trip,
-  and a native session has no keystrokes — the unit is a submitted prompt or a
-  permission answer, whose budget is dominated by the agent. Local echo is
-  disabled for the same reason.
+ and a native session has no keystrokes — the unit is a submitted prompt or a
+ permission answer, whose budget is dominated by the agent. Local echo is
+ disabled for the same reason.
 - **JSON only.** The binary frame `kind` set (§3.6) stays closed; native
-  sessions introduce no new binary kinds and are carried entirely as typed
-  events on the control channel. Blobs (images in a prompt) use the existing
-  `kind=3` path unchanged.
+ sessions introduce no new binary kinds and are carried entirely as typed
+ events on the control channel. Blobs (images in a prompt) use the existing
+ `kind=3` path unchanged.
 
 ---
 
@@ -1392,20 +1392,20 @@ quietly.
 ### 5.1 Sequence spaces
 
 - Every event carries `(session_id, seq)`, `seq` strictly monotonic per session,
-  assigned by the state layer at mutation time (never by the transport).
+ assigned by the state layer at mutation time (never by the transport).
 - Terminal byte frames carry their own per-stream `seq` in the binary header,
-  in the **same sequence space** as that session's events. This is the key
-  design point: a client that resumes at `seq = N` gets both events and terminal
-  bytes from `N` onward, correctly interleaved, so a `Interaction` event and the
-  PTY bytes that drew its box cannot cross.
+ in the **same sequence space** as that session's events. This is the key
+ design point: a client that resumes at `seq = N` gets both events and terminal
+ bytes from `N` onward, correctly interleaved, so a `Interaction` event and the
+ PTY bytes that drew its box cannot cross.
 - Instance-scoped events (config, plugin, peers) use the reserved session id
-  `s_instance` with its own sequence.
+ `s_instance` with its own sequence.
 - **Workspace-scoped events** (`workspace_fs` and anything else keyed to a
-  workspace rather than a session, §3.7) carry `workspace` instead of `session`
-  in the envelope and have their own per-workspace `Seq` space. So there are
-  exactly three sequence spaces — per session, per workspace, and the single
-  `s_instance` space — and `since_seq` is keyed uniformly by whichever id the
-  event carries.
+ workspace rather than a session, §3.7) carry `workspace` instead of `session`
+ in the envelope and have their own per-workspace `Seq` space. So there are
+ exactly three sequence spaces — per session, per workspace, and the single
+ `s_instance` space — and `since_seq` is keyed uniformly by whichever id the
+ event carries.
 
 ### 5.2 Replay window
 
@@ -1436,10 +1436,10 @@ ignored field.
 
 ```json
 { "t": "resync", "sub": "sub_1", "session": "s_4b2f",
-  "reason": "window_exceeded",
-  "from_seq": 91380, "now_seq": 104882,
-  "dropped_events": 8213,
-  "snapshot_follows": true }
+ "reason": "window_exceeded",
+ "from_seq": 91380, "now_seq": 104882,
+ "dropped_events": 8213,
+ "snapshot_follows": true }
 ```
 
 The client **must** treat `Resync` as "discard local state for this session and
@@ -1456,11 +1456,11 @@ session and the user never learns their agent asked and gave up. Therefore,
 after any `Resync`, before it ranks its home screen, the client **must** refetch:
 
 1. `interaction.list { since_read_mark: true, include_terminal: true }` — the
-   durable attention log ([20 §12.5](20-recall-and-usage.md#125-attention-and-the-durable-attention-log)),
-   which is the only source for interactions that came and went while
-   disconnected;
+ durable attention log ([20 §12.5](20-recall-and-usage.md#125-attention-and-the-durable-attention-log)),
+ which is the only source for interactions that came and went while
+ disconnected;
 2. the current attention state for every session (`attention.get` / the
-   session-list attention fields, §1.6).
+ session-list attention fields, §1.6).
 
 Only then does [`remote-continuity §2.3`](../design/remote-continuity.md#23-the-continuity-ranking)'s
 ranking run. Ranking on live state alone silently drops exactly the events the
@@ -1484,7 +1484,7 @@ always a resync. The client is told explicitly:
 
 ```json
 { "t": "welcome", "instance": { "started_at": "2026-08-03T18:40:11Z", "…": "…" },
-  "restart": { "since_last_seen": true, "reason": "process_restart" } }
+ "restart": { "since_last_seen": true, "reason": "process_restart" } }
 ```
 
 **PTYs themselves do not survive a daemon restart in v1.** Per
@@ -1524,22 +1524,22 @@ those are the product.
 
 ```rust
 pub struct SubscriptionPolicy {
-    /// What to do when this subscription's buffer is full.
-    pub on_lag: LagPolicy,
-    pub max_buffered_events: usize,   // default 2048
-    pub max_buffered_bytes: usize,    // default 1 MiB of terminal payload
+ /// What to do when this subscription's buffer is full.
+ pub on_lag: LagPolicy,
+ pub max_buffered_events: usize, // default 2048
+ pub max_buffered_bytes: usize, // default 1 MiB of terminal payload
 }
 
 pub enum LagPolicy {
-    /// Default. Drop the oldest terminal frames first, then coalesce, then —
-    /// only if still behind — drop everything for the session and send `Resync`.
-    Resync,
-    /// Never drop; apply flow control upstream. Only legal for local transports,
-    /// because a slow remote peer would otherwise stall the PTY reader.
-    Block,
-    /// Drop terminal frames, never drop non-terminal events; if non-terminal
-    /// buffer overflows, close the connection with `overloaded`.
-    Strict,
+ /// Default. Drop the oldest terminal frames first, then coalesce, then —
+ /// only if still behind — drop everything for the session and send `Resync`.
+ Resync,
+ /// Never drop; apply flow control upstream. Only legal for local transports,
+ /// because a slow remote peer would otherwise stall the PTY reader.
+ Block,
+ /// Drop terminal frames, never drop non-terminal events; if non-terminal
+ /// buffer overflows, close the connection with `overloaded`.
+ Strict,
 }
 ```
 
@@ -1556,12 +1556,12 @@ misses an `Interaction` and does not know it.
 The terminal fan-out task per subscription:
 
 1. accumulates PTY output in a per-subscription buffer with a **flush timer of
-   16 ms** (one display frame),
+ 16 ms** (one display frame),
 2. flushes early if the buffer exceeds 32 KiB,
 3. if the buffer exceeds `max_buffered_bytes` before the socket drains, feeds
-   the accumulated bytes through `omt-term` for that session's grid state and
-   replaces the whole buffer with a **snapshot** — which is strictly smaller
-   than a screenful of redraws and is exactly correct.
+ the accumulated bytes through `omt-term` for that session's grid state and
+ replaces the whole buffer with a **snapshot** — which is strictly smaller
+ than a screenful of redraws and is exactly correct.
 
 Step 3 is the elegant part: the fallback under load is not "drop and hope" but
 "collapse to state", which is the one thing a terminal stream can always be
@@ -1579,12 +1579,12 @@ states, all visible:
 - `live` — receiving bytes continuously,
 - `coalesced` — receiving snapshots under load (badge: "catching up"),
 - `resynced` — state was rebuilt from a snapshot, scrollback before the snapshot
-  came from `session.scrollback.get`, not from the stream.
+ came from `session.scrollback.get`, not from the stream.
 
 ```json
 { "t": "lagged", "sub": "sub_1", "session": "s_4b2f",
-  "class": "terminal", "dropped_bytes": 1841200,
-  "action": "snapshot_sent", "seq": 104901 }
+ "class": "terminal", "dropped_bytes": 1841200,
+ "action": "snapshot_sent", "seq": 104901 }
 ```
 
 ---
@@ -1609,25 +1609,25 @@ Tailscale DERP-less direct path → laptop:
 Optimizations that matter, in order of impact:
 
 1. **Flush immediately when the coalescing buffer was empty.** The 16 ms timer
-   applies to the *second* byte onward. This alone is most of the perceived
-   difference.
+ applies to the *second* byte onward. This alone is most of the perceived
+ difference.
 2. **No permessage-deflate on the terminal path** (§2.2) — deflate adds a
-   context-flush per message and CPU on both ends for output that is already
-   sparse when typing.
+ context-flush per message and CPU on both ends for output that is already
+ sparse when typing.
 3. **Local echo for plain printable keys when the session is not in alt-screen
-   and bracketed-paste is off.** xterm.js renders the character optimistically
-   and reconciles against the server byte stream; a mismatch within 250 ms
-   reverts. This is the single largest perceived win on a relayed link, and it
-   is safe precisely because it is bounded to the case where the remote program
-   is known to be a line-oriented shell. See
-   [12 §7](12-collaboration.md#7-optimistic-ui) for the optimistic-UI rules.
+ and bracketed-paste is off.** xterm.js renders the character optimistically
+ and reconciles against the server byte stream; a mismatch within 250 ms
+ reverts. This is the single largest perceived win on a relayed link, and it
+ is safe precisely because it is bounded to the case where the remote program
+ is known to be a line-oriented shell. See
+ [12 §7](12-collaboration.md#7-optimistic-ui) for the optimistic-UI rules.
 4. **Prefer direct WireGuard over DERP**: the client surfaces relay status,
-   because a relayed tailnet path roughly doubles the budget and users can
-   usually fix it.
+ because a relayed tailnet path roughly doubles the budget and users can
+ usually fix it.
 5. **Coalesce input on paste only**: a paste becomes one binary frame with
-   bracketed-paste markers, not 4000 keystroke frames.
+ bracketed-paste markers, not 4000 keystroke frames.
 6. **Never block the PTY reader on a slow client** (§6.1 — `Block` is
-   local-only).
+ local-only).
 
 ---
 
@@ -1684,20 +1684,20 @@ implementations in tree:
 ```rust
 #[async_trait]
 pub trait Notifier: Send + Sync {
-    fn id(&self) -> &str;
-    /// An addressable pointer plus a short, non-secret title and body derived
-    /// from the session and the interaction kind. Never the question text,
-    /// the agent's output, tool arguments, or scrollback.
-    async fn notify(&self, n: &NotificationPointer) -> Result<(), NotifyError>;
+ fn id(&self) -> &str;
+ /// An addressable pointer plus a short, non-secret title and body derived
+ /// from the session and the interaction kind. Never the question text,
+ /// the agent's output, tool arguments, or scrollback.
+ async fn notify(&self, n: &NotificationPointer) -> Result<, NotifyError>;
 }
 
 pub struct NotificationPointer {
-    pub instance: InstanceId,
-    pub session: SessionId,
-    pub kind: NotificationKind,          // interaction | turn_ended | error | session_died
-    pub interaction: Option<InteractionId>,
-    pub title: String,                   // "claude · api-gateway"
-    pub body: String,                    // "Needs a decision"
+ pub instance: InstanceId,
+ pub session: SessionId,
+ pub kind: NotificationKind, // interaction | turn_ended | error | session_died
+ pub interaction: Option<InteractionId>,
+ pub title: String, // "claude · api-gateway"
+ pub body: String, // "Needs a decision"
 }
 ```
 
@@ -1707,11 +1707,11 @@ takeover requested), and with no backend registered they are no-ops. Two future
 consumers are anticipated and neither is core's to build:
 
 - a **native iOS/Android app**, which has a first-party push channel that does
-  not route through a browser vendor;
+ not route through a browser vendor;
 - a **user or third-party plugin** ([11 — Plugins](11-plugins.md)) — ntfy,
-  Telegram, Bark, a webhook — shipped without touching core. A plugin that makes
-  an outbound connection is the *user's* choice and is disclosed as such; it does
-  not change what omt itself does.
+ Telegram, Bark, a webhook — shipped without touching core. A plugin that makes
+ an outbound connection is the *user's* choice and is disclosed as such; it does
+ not change what omt itself does.
 
 `notification.push.subscribe` is **not** a v1 capability and does not appear in
 the catalog. The coalescing rule a future backend will need (at most one per
@@ -1723,33 +1723,33 @@ here so it is not rediscovered.
 ## 9. OPEN QUESTIONS
 
 1. **Grid snapshot format.** `grid_v1` needs a concrete encoding and a
-   round-trip fuzz test against `omt-term`. Open: whether to encode styles as a
-   per-snapshot table (smaller) or as an interned global table shared across
-   snapshots on a connection (smaller still, but stateful and therefore harder
-   to resume). Owner: `omt-term` + `omt-proto`.
+ round-trip fuzz test against `omt-term`. Open: whether to encode styles as a
+ per-snapshot table (smaller) or as an interned global table shared across
+ snapshots on a connection (smaller still, but stateful and therefore harder
+ to resume). Owner: `omt-term` + `omt-proto`.
 2. **Does `since_seq` for terminal bytes hold up in practice?** Putting PTY
-   bytes and events in one sequence space is elegant but means the sequence
-   allocator is on the PTY hot path. Needs a benchmark at 10 MB/s of output
-   before it is committed to.
+ bytes and events in one sequence space is elegant but means the sequence
+ allocator is on the PTY hot path. Needs a benchmark at 10 MB/s of output
+ before it is committed to.
 3. **Writer-token resize warning threshold** (20 %) is a guess. Needs user
-   testing; may need to be per-agent (a full-screen TUI cares, a shell does not).
+ testing; may need to be per-agent (a full-screen TUI cares, a shell does not).
 4. **`Smallest` size policy vs. agents that refuse to render below 80 columns.**
-   Several agent TUIs degrade badly under ~80 cols. Do we clamp the authoritative
-   size to a per-agent minimum reported by the adapter? Coordinate with
-   [06 — Agent layer](06-agent-layer.md).
+ Several agent TUIs degrade badly under ~80 cols. Do we clamp the authoritative
+ size to a per-agent minimum reported by the adapter? Coordinate with
+ [06 — Agent layer](06-agent-layer.md).
 5. ~~**iOS PWA push reliability.**~~ **Retired.** [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
-   ships no notification backend, so the experiment has nothing to measure and
-   the "should `ntfy` be the default?" question has no v1 subject.
-   [13 §11 Q7](13-security.md#11-open-questions) deferred to this entry and
-   should be closed with it. What replaces it as a measurable risk is
-   **cold-start-to-useful-screen latency** for open-and-replay (§8.2), which is
-   owned by [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen).
+ ships no notification backend, so the experiment has nothing to measure and
+ the "should `ntfy` be the default?" question has no v1 subject.
+ [13 §11 Q7](13-security.md#11-open-questions) deferred to this entry and
+ should be closed with it. What replaces it as a measurable risk is
+ **cold-start-to-useful-screen latency** for open-and-replay (§8.2), which is
+ owned by [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen).
 6. **Blob chunk size** (currently unspecified; likely 256 KiB) interacts with
-   backpressure — a large image upload from a phone must not starve the
-   interaction path. Probably needs its own queue class alongside lossy/lossless.
+ backpressure — a large image upload from a phone must not starve the
+ interaction path. Probably needs its own queue class alongside lossy/lossless.
 7. **SSH bridge and binary frames**: the stdio path carries the same framing,
-   but ssh's own windowing may interact badly with 8 MiB frames. May need a
-   smaller `max_binary_frame` negotiated per transport kind.
+ but ssh's own windowing may interact badly with 8 MiB frames. May need a
+ smaller `max_binary_frame` negotiated per transport kind.
 8. **Federated search/actions across instances** (e.g. "find the session that
-   touched `auth.rs`") is currently client-side fan-out. Whether that stays
-   acceptable at ~10 instances is unmeasured.
+ touched `auth.rs`") is currently client-side fan-out. Whether that stays
+ acceptable at ~10 instances is unmeasured.

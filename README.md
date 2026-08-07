@@ -9,13 +9,13 @@ its subagents needs an answer. That state reaches your phone, and you can
 answer from there while the real TUI is still on your screen, in sync.
 
 ```
-omt                    # run a shell here
-omt run zsh            # run something specific
-omt serve              # listen on a Unix socket
-omt web                # listen for browsers, prints a token once
-omt serve              # a daemon whose sessions outlive every terminal
-omt attach             # attach a terminal to it; Ctrl-A d leaves it running
-omt ssh my-dev-box     # attach to an omt on another machine
+omt # run a shell here
+omt run zsh # run something specific
+omt serve # listen on a Unix socket
+omt web # listen for browsers, prints a token once
+omt serve # a daemon whose sessions outlive every terminal
+omt attach # attach a terminal to it; Ctrl-A d leaves it running
+omt ssh my-dev-box # attach to an omt on another machine
 ```
 
 `Ctrl-A d` detaches. Every other key belongs to whatever is running.
@@ -53,7 +53,7 @@ Working, and honest about what is not:
 ## Install
 
 ```sh
-cargo install --path crates/omt      # from a clone
+cargo install --path crates/omt # from a clone
 ```
 
 Requires Rust 1.90+. macOS and Linux; Windows via WSL2.
@@ -64,7 +64,7 @@ Requires Rust 1.90+. macOS and Linux; Windows via WSL2.
 |---|---|
 | Get going in five minutes | [Getting started](docs/guide/getting-started.md) |
 | Know what every key does | [Keybindings](docs/guide/keybindings.md) |
-| Bring your another terminal/VS Code setup | [Importing](docs/guide/importing.md) |
+| Bring your other terminals/VS Code setup | [Importing](docs/guide/importing.md) |
 | Write a plugin | [Plugin guide](docs/guide/plugins.md) |
 | Make a theme | [Themes](docs/guide/themes.md) |
 | Drive omt from a script or an agent | [Capability reference](docs/reference/capabilities.md) |
@@ -76,13 +76,13 @@ Requires Rust 1.90+. macOS and Linux; Windows via WSL2.
 28 crates in one workspace, layered so a change lands in one place:
 
 ```
-L0  omt-types · omt-util                         vocabulary
-L1  omt-catalog · omt-events · omt-proto         contracts
-L2  omt-term · omt-pty · omt-transport · …       subsystems
-L3  omt-session · omt-agent · omt-config · …     domain
-L4  omt-daemon                                   the instance
-L5  omt-tui · omt-server · omt-plugin-host       surfaces
-L6  omt · omt-hook                               binaries
+L0 omt-types · omt-util vocabulary
+L1 omt-catalog · omt-events · omt-proto contracts
+L2 omt-term · omt-pty · omt-transport · … subsystems
+L3 omt-session · omt-agent · omt-config · … domain
+L4 omt-daemon the instance
+L5 omt-tui · omt-server · omt-plugin-host surfaces
+L6 omt · omt-hook binaries
 ```
 
 A crate may depend downward only, and `cargo xtask layering` fails the build if
@@ -97,11 +97,11 @@ assumed to work.
 ## Contributing
 
 ```sh
-cargo test --workspace          # 900+ tests
+cargo test --workspace # 900+ tests
 cargo clippy --workspace --all-targets
-cargo run -p xtask -- layering  # the crate graph
-cargo run -p xtask -- codegen   # regenerate what is generated
-cd web && npm test              # the browser client
+cargo run -p xtask -- layering # the crate graph
+cargo run -p xtask -- codegen # regenerate what is generated
+cd web && npm test # the browser client
 ```
 
 Every test name is a sentence about behaviour, and every non-obvious decision

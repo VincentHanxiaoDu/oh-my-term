@@ -33,24 +33,24 @@ second, behind the same manifest and the same protocol.**
 Rationale:
 
 1. **Language freedom is the point.** The people who will write an adapter for a
-   new agent CLI write TypeScript and Python. A subprocess plugin is `bun run
-   index.ts` or `python main.py`; a WASM plugin is, today, realistically Rust
-   only. another tool reached the same conclusion — every extension point is "run this
-   argv" ([research/another tool.md §7](../research/another tool.md)) — and it works.
+ new agent CLI write TypeScript and Python. A subprocess plugin is `bun run
+ index.ts` or `python main.py`; a WASM plugin is, today, realistically Rust
+ only. other terminals reached the same conclusion — every extension point is "run this
+ argv" ([research/other terminals.md §7](../design/terminal-ux.md)) — and it works.
 2. **Crash isolation is free.** A subprocess that segfaults, hangs, or leaks is
-   killed by the host; a panicking in-process plugin takes the daemon with it.
-   That matters more than performance here: plugins sit on the *event* path, not
-   the PTY byte path.
+ killed by the host; a panicking in-process plugin takes the daemon with it.
+ That matters more than performance here: plugins sit on the *event* path, not
+ the PTY byte path.
 3. **The OS already has a sandbox.** Process-level limits (rlimits, `seccomp` on
-   Linux, `sandbox_init`/App Sandbox on macOS, job objects on Windows) exist and
-   are auditable. Wasmtime's sandbox is better on capability granularity but
-   worse on ecosystem.
+ Linux, `sandbox_init`/App Sandbox on macOS, job objects on Windows) exist and
+ are auditable. Wasmtime's sandbox is better on capability granularity but
+ worse on ecosystem.
 4. **WASM's advantage is deployment, not security** — one artifact, no runtime
-   dependency. That is real, and it is why v2 exists. But it is not worth
-   blocking v1 on a toolchain most contributors do not have.
+ dependency. That is real, and it is why v2 exists. But it is not worth
+ blocking v1 on a toolchain most contributors do not have.
 5. **In-process stays first-party only.** A dynamically-linked `cdylib` plugin
-   ABI is explicitly rejected: Rust has no stable ABI, and a version skew
-   produces silent UB rather than an error.
+ ABI is explicitly rejected: Rust has no stable ABI, and a version skew
+ produces silent UB rather than an error.
 
 The protocol is designed so that the WASM host is a *transport swap*: the same
 manifest, the same message schema, the same permission model. A plugin's
@@ -71,54 +71,54 @@ One directory per plugin, containing `omt-plugin.toml`.
 ```toml
 #:schema https://omt.dev/schemas/plugin.schema.json
 
-id      = "dev.example.aider-adapter"      # reverse-DNS, immutable, the registry key
-name    = "Aider adapter"
-version = "0.3.1"                          # semver
+id = "dev.example.aider-adapter" # reverse-DNS, immutable, the registry key
+name = "Aider adapter"
+version = "0.3.1" # semver
 description = "Observes aider sessions and exposes its confirmations as omt interactions."
 authors = ["Ada Lovelace <ada@example.dev>"]
 license = "Apache-2.0"
 homepage = "https://github.com/example/omt-aider-adapter"
 
 # REQUIRED. The plugin is refused if the host is outside this range.
-# (another tool's `min_another tool_version` lesson, generalized to a range.)
+# 
 omt_api = ">=1.0, <2.0"
 
-platforms = ["linux", "macos"]             # omitted = all
+platforms = ["linux", "macos"] # omitted = all
 
 [entrypoint]
-kind    = "process"                        # process | wasm
-command = ["bun", "run", "dist/index.js"]  # argv, resolved relative to the plugin root
-                                           # PATH lookup only for the argv[0] binary
-restart = "on-crash"                       # never | on-crash | always
-max_restarts = 5                           # per hour, then the plugin is quarantined
+kind = "process" # process | wasm
+command = ["bun", "run", "dist/index.js"] # argv, resolved relative to the plugin root
+ # PATH lookup only for the argv[0] binary
+restart = "on-crash" # never | on-crash | always
+max_restarts = 5 # per hour, then the plugin is quarantined
 
-[build]                                    # optional, run on install/upgrade
+[build] # optional, run on install/upgrade
 command = ["bun", "install", "--frozen-lockfile"]
 timeout = "120s"
 
 # ── What the plugin needs from omt ────────────────────────────────────────
 [permissions]
-capabilities = [                           # capabilities it may call
-  "session.list",
-  "agent.state",
-  "interaction.*",
+capabilities = [ # capabilities it may call
+ "session.list",
+ "agent.state",
+ "interaction.*",
 ]
-events = [                                 # events it may subscribe to
-  "agent.*",
-  "session.created",
-  "session.closed",
+events = [ # events it may subscribe to
+ "agent.*",
+ "session.created",
+ "session.closed",
 ]
-role = "operator"                          # ceiling; see §4
-fs   = { read = ["$PLUGIN_ROOT", "~/.aider.conf.yml"], write = ["$PLUGIN_STATE"] }
-net  = { allow = [] }                      # empty = no network
-exec = { allow = [] }                      # subprocesses it may spawn
-env  = ["HOME", "PATH", "AIDER_MODEL"]     # everything else is stripped
+role = "operator" # ceiling; see §4
+fs = { read = ["$PLUGIN_ROOT", "~/.aider.conf.yml"], write = ["$PLUGIN_STATE"] }
+net = { allow = [] } # empty = no network
+exec = { allow = [] } # subprocesses it may spawn
+env = ["HOME", "PATH", "AIDER_MODEL"] # everything else is stripped
 
 [limits]
-memory   = "128MiB"
-cpu      = "10%"                           # sustained, averaged over 60s
-timeout  = "10s"                           # per request
-queue    = 256                             # pending events before dropping
+memory = "128MiB"
+cpu = "10%" # sustained, averaged over 60s
+timeout = "10s" # per request
+queue = 256 # pending events before dropping
 
 # ── What the plugin contributes ───────────────────────────────────────────
 [[contributes.agent_adapters]]
@@ -130,23 +130,23 @@ state_labels = { working = "thinking", blocked = "confirm" }
 [[contributes.event_sources]]
 id = "aider-history"
 agent = "aider"
-tier = 3                                   # Transcript; may emit structured content
+tier = 3 # Transcript; may emit structured content
 kind = "file-tail"
 path = "{workspace}/.aider.chat.history.md"
 
 [[contributes.capabilities]]
-name  = "aider.set_model"
+name = "aider.set_model"
 group = "aider"
-verb  = "set-model"
-kind  = "command"
-role  = "operator"
-input_schema  = "schemas/set_model.input.json"
+verb = "set-model"
+kind = "command"
+role = "operator"
+input_schema = "schemas/set_model.input.json"
 output_schema = "schemas/set_model.output.json"
 description = "Switch the model aider is using in a session."
 
 [[contributes.ui]]
-kind = "session_action"                    # session_action | dashboard_panel | settings_page
-id   = "aider-model"
+kind = "session_action" # session_action | dashboard_panel | settings_page
+id = "aider-model"
 title = "Switch model"
 icon = "sparkles"
 capability = "aider.set_model"
@@ -160,23 +160,23 @@ trigger = "ctrl-b m"
 capability = "aider.set_model"
 when = "agent_bound && agent_id == 'aider'"
 
-[config_schema]                            # JSON Schema for `[plugins."<id>"]` in config.toml
+[config_schema] # JSON Schema for `[plugins."<id>"]` in config.toml
 path = "schemas/config.schema.json"
 ```
 
 Rules:
 
 - `id`, `version`, `omt_api`, `entrypoint` are required; everything else has a
-  default. A manifest missing `omt_api` is refused outright, with the error
-  naming the field — this is deliberate, and it is why another tool's equivalent field
-  is required too.
+ default. A manifest missing `omt_api` is refused outright, with the error
+ naming the field — this is deliberate, and it is why the equivalent field
+ is required too.
 - Unknown top-level keys are **warnings** (forward compatibility for plugins
-  targeting a newer omt), unknown keys inside a known table are **errors**
-  (typos). Same diagnostic machinery as [10 §5](10-configuration.md), codes
-  `OMT-P###`.
+ targeting a newer omt), unknown keys inside a known table are **errors**
+ (typos). Same diagnostic machinery as [10 §5](10-configuration.md), codes
+ `OMT-P###`.
 - A manifest that fails to parse does not remove the plugin from the registry; it
-  keeps the entry with `status = "invalid"` and its diagnostics, so the user sees
-  *why* their plugin vanished rather than it silently vanishing.
+ keeps the entry with `status = "invalid"` and its diagnostics, so the user sees
+ *why* their plugin vanished rather than it silently vanishing.
 
 ---
 
@@ -194,13 +194,13 @@ Four message kinds, each with `id` for correlation:
 
 ```jsonc
 // host → plugin
-{ "t": "req",  "id": 7, "method": "init",            "params": { ... } }
+{ "t": "req", "id": 7, "method": "init", "params": { ... } }
 { "t": "event","id": 0, "topic": "agent.state_changed", "payload": { ... } }
 // plugin → host
-{ "t": "res",  "id": 7, "ok": true,  "result": { ... } }
-{ "t": "res",  "id": 7, "ok": false, "error": { "code": "invalid_input", "message": "..." } }
+{ "t": "res", "id": 7, "ok": true, "result": { ... } }
+{ "t": "res", "id": 7, "ok": false, "error": { "code": "invalid_input", "message": "..." } }
 { "t": "call", "id": 3, "capability": "interaction.resolve", "input": { ... } }
-{ "t": "log",  "level": "info", "message": "...", "fields": { ... } }
+{ "t": "log", "level": "info", "message": "...", "fields": { ... } }
 ```
 
 ### 3.2 Handshake
@@ -211,24 +211,24 @@ The host sends `init` first and the plugin must answer within
 ```jsonc
 // host → plugin
 { "t": "req", "id": 1, "method": "init", "params": {
-    "omt_version": "1.2.0",
-    "api_version": "1.0",
-    "instance_id": "01J...A",
-    "plugin_id": "dev.example.aider-adapter",
-    "granted": {
-      "capabilities": ["session.list", "agent.state", "interaction.get", "interaction.resolve"],
-      "events": ["agent.*", "session.created", "session.closed"],
-      "role": "operator"
-    },
-    "config": { "model": "gpt-4o" },        // resolved [plugins."<id>"] section
-    "paths": { "root": "...", "state": "...", "config": "...", "cache": "..." }
+ "omt_version": "1.2.0",
+ "api_version": "1.0",
+ "instance_id": "01J...A",
+ "plugin_id": "dev.example.aider-adapter",
+ "granted": {
+ "capabilities": ["session.list", "agent.state", "interaction.get", "interaction.resolve"],
+ "events": ["agent.*", "session.created", "session.closed"],
+ "role": "operator"
+ },
+ "config": { "model": "gpt-4o" }, // resolved [plugins."<id>"] section
+ "paths": { "root": "...", "state": "...", "config": "...", "cache": "..." }
 } }
 
 // plugin → host
 { "t": "res", "id": 1, "ok": true, "result": {
-    "api_version": "1.0",
-    "capabilities_implemented": ["aider.set_model"],
-    "ready": true
+ "api_version": "1.0",
+ "capabilities_implemented": ["aider.set_model"],
+ "ready": true
 } }
 ```
 
@@ -289,11 +289,11 @@ physical button on a desk.
 Two boundaries make this safe rather than alarming:
 
 - A plugin **cannot exceed a remote client**, because it is calling the same
-  catalog through the same dispatch with the same role check. There is no
-  privileged back door to be careless with.
+ catalog through the same dispatch with the same role check. There is no
+ privileged back door to be careless with.
 - A plugin **cannot contribute a `Transport` or an `AuthBackend`** in v1 (§9).
-  A channel does not need to: it is a *consumer* of the protocol, not a new way
-  to speak it. The distinction is that it adds a client, not a socket.
+ A channel does not need to: it is a *consumer* of the protocol, not a new way
+ to speak it. The distinction is that it adds a client, not a socket.
 
 **UI contributions are declarative on purpose.** Letting a plugin ship code into
 the web client would mean shipping arbitrary JS into a page that holds session
@@ -314,17 +314,17 @@ generated from the manifest schema:
 ```
 Install dev.example.aider-adapter 0.3.1?
 
-  Runs                 bun run dist/index.js          (subprocess, restarts on crash)
-  Calls capabilities   session.list, agent.state, interaction.get, interaction.resolve
-  Receives events      agent.*, session.created, session.closed
-  Acts with role       operator            ← can answer interactions and send text
-  Reads files          <plugin root>, ~/.aider.conf.yml
-  Writes files         <plugin state dir>
-  Network              none
-  Spawns processes     none
-  Limits               128 MiB, 10% CPU, 10s per request
+ Runs bun run dist/index.js (subprocess, restarts on crash)
+ Calls capabilities session.list, agent.state, interaction.get, interaction.resolve
+ Receives events agent.*, session.created, session.closed
+ Acts with role operator ← can answer interactions and send text
+ Reads files <plugin root>, ~/.aider.conf.yml
+ Writes files <plugin state dir>
+ Network none
+ Spawns processes none
+ Limits 128 MiB, 10% CPU, 10s per request
 
-  [Install]  [Install with reduced permissions…]  [Cancel]
+ [Install] [Install with reduced permissions…] [Cancel]
 ```
 
 "Reduced permissions" lets the user deselect individual capabilities and events;
@@ -339,20 +339,20 @@ re-prompts, an upgrade that does not is silent.
 Mechanically:
 
 - Every plugin-originated capability call carries a `CallContext`
-  ([03 §3](03-capability-catalog.md)) whose `Actor` is
-  `Actor::Plugin { id, on_behalf_of: Option<Actor> }` and whose `Role` is
-  **`min(plugin.granted.role, triggering_actor.role)`**.
+ ([03 §3](03-capability-catalog.md)) whose `Actor` is
+ `Actor::Plugin { id, on_behalf_of: Option<Actor> }` and whose `Role` is
+ **`min(plugin.granted.role, triggering_actor.role)`**.
 - When a plugin acts because of an event (no triggering actor), the role is
-  `min(plugin.granted.role, Role::Operator)` and the effective actor is
-  `Actor::Plugin { on_behalf_of: None }`. A plugin can never reach `Admin`
-  through an event; `Admin` is only reachable when an `Admin` user explicitly
-  invokes a plugin capability.
+ `min(plugin.granted.role, Role::Operator)` and the effective actor is
+ `Actor::Plugin { on_behalf_of: None }`. A plugin can never reach `Admin`
+ through an event; `Admin` is only reachable when an `Admin` user explicitly
+ invokes a plugin capability.
 - A plugin capability declared `role = "operator"` and invoked by a `Viewer`
-  is rejected at dispatch, *before* the plugin is contacted — so a plugin cannot
-  be used as a confused deputy by a read-only invite link.
+ is rejected at dispatch, *before* the plugin is contacted — so a plugin cannot
+ be used as a confused deputy by a read-only invite link.
 - The audit log records both actors, so `interaction.resolve` performed by a
-  plugin on behalf of a phone shows as such in every surface, including the TUI
-  card ("answered by aider-adapter on behalf of ada@phone").
+ plugin on behalf of a phone shows as such in every surface, including the TUI
+ card ("answered by aider-adapter on behalf of ada@phone").
 
 This rule is enforced in `omt-daemon`'s dispatch, not in `omt-plugin-host`, so a
 bug in the host cannot bypass it. A test constructs a plugin call chain with a
@@ -392,11 +392,11 @@ sustained for 30 s. All limits are visible in `plugin.health`.
 
 ```
 discover → validate manifest → consent → install (build) → enable → running
-                                                              │
-                                      ┌───────────────────────┼──────────────┐
-                                      ▼                       ▼              ▼
-                                   healthy                 degraded      quarantined
-                              (health ok, no drops)   (timeouts/drops)  (crash budget)
+ │
+ ┌───────────────────────┼──────────────┐
+ ▼ ▼ ▼
+ healthy degraded quarantined
+ (health ok, no drops) (timeouts/drops) (crash budget)
 ```
 
 | Stage | Behaviour |
@@ -404,7 +404,7 @@ discover → validate manifest → consent → install (build) → enable → ru
 | **Discovery** | scan `plugins.search_paths` ([10 §7.10](10-configuration.md)) for directories containing `omt-plugin.toml`; plus explicit `--path` installs |
 | **Install** | `omt plugin install <source>` where source is a registry id, a git URL, a GitHub `owner/repo`, or a local path. Copies/clones into `~/.config/omt/plugins/<id>/`, verifies the manifest, runs `[build]` with the same sandbox as the runtime, shows consent, records the resolved version and a content hash |
 | **Enable/disable** | membership in `plugins.enabled`; disabling stops the process and unregisters its contributions live (no restart). Contributions are removed transactionally: a capability provided by a disabled plugin returns `unsupported`, and the web client's catalog diff arrives as an event |
-| **Upgrade** | `omt plugin upgrade <id>` resolves a new version, checks `omt_api` against the running host, re-prompts on widened permissions, then does a stop → swap → start. Plugin state dirs are never touched; migrations are the plugin's own responsibility (the state dir is path discovery only, as in another tool) |
+| **Upgrade** | `omt plugin upgrade <id>` resolves a new version, checks `omt_api` against the running host, re-prompts on widened permissions, then does a stop → swap → start. Plugin state dirs are never touched; migrations are the plugin's own responsibility (the state dir is path discovery only, as elsewhere) |
 | **Health** | the host sends `health` every 30 s; a plugin answers with `{ ok, detail }`. Three missed or failed health checks ⇒ degraded; degraded plugins keep running but their contributions are flagged in the UI |
 | **Crash isolation** | a plugin process exit is never fatal to omt. Pending requests fail with `plugin_unavailable`. Restart follows `entrypoint.restart` and the restart budget; on quarantine the plugin is disabled with a persistent, dismissible notification carrying the last 200 lines of its stderr |
 | **Shutdown** | `shutdown` request, then `SIGTERM` after 5 s, then `SIGKILL` after 10 s |
@@ -421,18 +421,18 @@ Capabilities (per [03 §6](03-capability-catalog.md)): `plugin.list`,
 Three sources, in decreasing trust:
 
 1. **Registry index.** A static, signed JSON index served over HTTPS
-   (`https://registry.omt.dev/index.json`), listing `id`, versions, source URL,
-   a manifest digest, and a maintainer key fingerprint. The index is a *pointer
-   list*, not a package host — artifacts live in the plugin's own repository.
-   Mirrorable and self-hostable via `plugins.registries = [...]`.
+ (`https://registry.omt.dev/index.json`), listing `id`, versions, source URL,
+ a manifest digest, and a maintainer key fingerprint. The index is a *pointer
+ list*, not a package host — artifacts live in the plugin's own repository.
+ Mirrorable and self-hostable via `plugins.registries = [...]`.
 2. **Git / GitHub topic discovery.** `omt plugin search <term>` queries the
-   GitHub API for `topic:omt-plugin`, as another tool's marketplace worker does
-   ([research/another tool.md §7](../research/another tool.md)). Results are clearly labelled
-   "unreviewed" and installing one always shows the full consent screen. This
-   costs nothing and bootstraps an ecosystem before a registry has one.
+ GitHub API for `topic:omt-plugin`, as the marketplace worker does
+ ([research/other terminals.md §7](../design/terminal-ux.md)). Results are clearly labelled
+ "unreviewed" and installing one always shows the full consent screen. This
+ costs nothing and bootstraps an ecosystem before a registry has one.
 3. **Local path.** `omt plugin install --path ./my-plugin` with
-   `plugins.allow_unsigned = true` (the default) — the development loop.
-   `omt plugin dev ./my-plugin` runs it with hot restart on file change.
+ `plugins.allow_unsigned = true` (the default) — the development loop.
+ `omt plugin dev ./my-plugin` runs it with hot restart on file change.
 
 Integrity: the manifest digest recorded at install is re-checked on every start;
 a mismatch disables the plugin and reports it, so an edited plugin directory
@@ -440,30 +440,29 @@ cannot silently change behaviour. Signing (minisign/sigstore over the manifest
 digest) is supported and required when `plugins.allow_unsigned = false`.
 
 We do **not** fetch and execute code from an unauthenticated URL at runtime; the
-only network fetch is install-time, over TLS, against a pinned digest. (another tool's
-`curl` shell-out for remote manifests is exactly the pattern we avoid.)
+only network fetch is install-time, over TLS, against a pinned digest. 
 
 ---
 
 ## 7. Versioning and stability
 
 - **`api_version`** is a separate, slowly-moving semver from the omt version.
-  `1.x` is stable: no message field is removed, no required field is added, no
-  capability is removed without a two-minor-version deprecation alias — the same
-  rules as [03 §7](03-capability-catalog.md), because it is the same catalog.
+ `1.x` is stable: no message field is removed, no required field is added, no
+ capability is removed without a two-minor-version deprecation alias — the same
+ rules as [03 §7](03-capability-catalog.md), because it is the same catalog.
 - A plugin declares an `omt_api` **range**. The host refuses to load a plugin
-  whose range excludes the host's `api_version`, with a message naming both.
+ whose range excludes the host's `api_version`, with a message naming both.
 - **Capability drift is survivable.** `granted.capabilities` at `init` is the
-  authoritative list for that run; a plugin that hardcodes a capability name
-  which no longer exists gets `unsupported` at call time, not a crash.
+ authoritative list for that run; a plugin that hardcodes a capability name
+ which no longer exists gets `unsupported` at call time, not a crash.
 - **Contributed capability names** are namespaced by the plugin's group and must
-  not collide with a core group; collisions are refused at registration with a
-  diagnostic. If two plugins contribute the same name, the first enabled wins and
-  the second is marked `conflicted`.
+ not collide with a core group; collisions are refused at registration with a
+ diagnostic. If two plugins contribute the same name, the first enabled wins and
+ the second is marked `conflicted`.
 - **Deprecation policy**: an `api_version` minor bump may add; a major bump may
-  remove, and the host then supports the previous major for one release cycle by
-  running old plugins through a shim host. Whether that shim is worth its cost is
-  an open question (§9).
+ remove, and the host then supports the previous major for one release cycle by
+ running old plugins through a shim host. Whether that shim is worth its cost is
+ an open question (§9).
 
 ---
 
@@ -488,15 +487,15 @@ omt-ntfy/
 ### 8.2 Manifest
 
 ```toml
-id      = "dev.example.ntfy"
-name    = "ntfy notifications"
+id = "dev.example.ntfy"
+name = "ntfy notifications"
 version = "1.0.0"
 description = "Sends omt notifications to an ntfy topic."
 license = "Apache-2.0"
 omt_api = ">=1.0, <2.0"
 
 [entrypoint]
-kind    = "process"
+kind = "process"
 command = ["bun", "run", "src/index.ts"]
 restart = "on-crash"
 max_restarts = 5
@@ -505,18 +504,18 @@ max_restarts = 5
 command = ["bun", "install", "--frozen-lockfile"]
 
 [permissions]
-capabilities = ["session.get", "workspace.get"]   # to enrich the message
-events       = []                                  # none: it is a sink, not a subscriber
-role         = "viewer"                            # it never mutates anything
-net          = { allow = ["ntfy.sh", "$config.server"] }
-fs           = { read = ["$PLUGIN_ROOT"], write = [] }
+capabilities = ["session.get", "workspace.get"] # to enrich the message
+events = [] # none: it is a sink, not a subscriber
+role = "viewer" # it never mutates anything
+net = { allow = ["ntfy.sh", "$config.server"] }
+fs = { read = ["$PLUGIN_ROOT"], write = [] }
 
 [limits]
-memory  = "64MiB"
+memory = "64MiB"
 timeout = "5s"
 
 [[contributes.notification_sinks]]
-id    = "ntfy"
+id = "ntfy"
 title = "ntfy"
 
 [config_schema]
@@ -538,11 +537,11 @@ enabled = ["dev.example.ntfy"]
 
 [plugins."dev.example.ntfy"]
 server = "ntfy.sh"
-topic  = "ada-omt"
-token  = { secret = "plugins.dev.example.ntfy.token" }
+topic = "ada-omt"
+token = { secret = "plugins.dev.example.ntfy.token" }
 
 [[notifications.rules]]
-when  = "agent.blocked"
+when = "agent.blocked"
 sinks = ["ntfy"]
 title = "{agent} is blocked in {workspace}"
 priority = "high"
@@ -567,52 +566,52 @@ function send(o: unknown) { process.stdout.write(JSON.stringify(o) + "\n"); }
 function log(level: string, message: string) { send({ t: "log", level, message }); }
 
 async function handle(req: Req) {
-  switch (req.method) {
-    case "init":
-      cfg = req.params.config;
-      granted = req.params.granted;
-      log("info", `ntfy sink ready for topic ${cfg!.topic}`);
-      return { api_version: "1.0", capabilities_implemented: [], ready: true };
+ switch (req.method) {
+ case "init":
+ cfg = req.params.config;
+ granted = req.params.granted;
+ log("info", `ntfy sink ready for topic ${cfg!.topic}`);
+ return { api_version: "1.0", capabilities_implemented: [], ready: true };
 
-    case "config_changed":
-      cfg = req.params.config;
-      return {};
+ case "config_changed":
+ cfg = req.params.config;
+ return {};
 
-    // Invoked by the notification router for every rule whose sinks include "ntfy".
-    case "notification.deliver": {
-      const { title, body, priority, session_id, url } = req.params;
-      const res = await fetch(`https://${cfg!.server}/${cfg!.topic}`, {
-        method: "POST",
-        headers: {
-          ...(cfg!.token ? { Authorization: `Bearer ${cfg!.token}` } : {}),
-          Title: title,
-          Priority: priority === "high" ? "high" : "default",
-          // Tapping the notification deep-links into the web client's session view.
-          Click: url ?? "",
-          Tags: "robot",
-        },
-        body,
-      });
-      if (!res.ok) throw new Error(`ntfy responded ${res.status}`);
-      return { delivered: true, session_id };
-    }
+ // Invoked by the notification router for every rule whose sinks include "ntfy".
+ case "notification.deliver": {
+ const { title, body, priority, session_id, url } = req.params;
+ const res = await fetch(`https://${cfg!.server}/${cfg!.topic}`, {
+ method: "POST",
+ headers: {
+ ...(cfg!.token ? { Authorization: `Bearer ${cfg!.token}` } : {}),
+ Title: title,
+ Priority: priority === "high" ? "high" : "default",
+ // Tapping the notification deep-links into the web client's session view.
+ Click: url ?? "",
+ Tags: "robot",
+ },
+ body,
+ });
+ if (!res.ok) throw new Error(`ntfy responded ${res.status}`);
+ return { delivered: true, session_id };
+ }
 
-    case "health":   return { ok: true, detail: `topic=${cfg?.topic}` };
-    case "shutdown": setTimeout(() => process.exit(0), 0); return {};
-    default:         throw new Error(`unknown method ${req.method}`);
-  }
+ case "health": return { ok: true, detail: `topic=${cfg?.topic}` };
+ case "shutdown": setTimeout( => process.exit(0), 0); return {};
+ default: throw new Error(`unknown method ${req.method}`);
+ }
 }
 
 for await (const line of readLines(process.stdin)) {
-  if (!line.trim()) continue;
-  const msg = JSON.parse(line) as Req;
-  if (msg.t !== "req") continue;
-  try {
-    send({ t: "res", id: msg.id, ok: true, result: await handle(msg) });
-  } catch (e) {
-    send({ t: "res", id: msg.id, ok: false,
-           error: { code: "internal", message: String(e) } });
-  }
+ if (!line.trim) continue;
+ const msg = JSON.parse(line) as Req;
+ if (msg.t !== "req") continue;
+ try {
+ send({ t: "res", id: msg.id, ok: true, result: await handle(msg) });
+ } catch (e) {
+ send({ t: "res", id: msg.id, ok: false,
+ error: { code: "internal", message: String(e) } });
+ }
 }
 ```
 
@@ -626,11 +625,11 @@ field as `format: "omt-secret"`. It is redacted in every host-side log.
 $ omt plugin install github:example/omt-ntfy
 Fetching manifest… dev.example.ntfy 1.0.0 (unreviewed, from GitHub topic search)
 
-  Runs                 bun run src/index.ts
-  Calls capabilities   session.get, workspace.get
-  Acts with role       viewer              ← cannot type, cannot answer prompts
-  Network              ntfy.sh
-  Sandbox              namespaces + seccomp (linux)
+ Runs bun run src/index.ts
+ Calls capabilities session.get, workspace.get
+ Acts with role viewer ← cannot type, cannot answer prompts
+ Network ntfy.sh
+ Sandbox namespaces + seccomp (linux)
 
 Install? [y/N] y
 Running build: bun install --frozen-lockfile … ok
@@ -639,7 +638,7 @@ Installed. Enable with: omt plugin enable dev.example.ntfy
 $ omt config set plugins.dev.example.ntfy.topic ada-omt
 $ omt plugin enable dev.example.ntfy
 $ omt plugin health dev.example.ntfy
-dev.example.ntfy  running  healthy  pid 48123  rss 31MiB  0 drops  topic=ada-omt
+dev.example.ntfy running healthy pid 48123 rss 31MiB 0 drops topic=ada-omt
 ```
 
 Then, when Claude Code parks an `AskUserQuestion` in the `api` workspace: the
@@ -665,28 +664,28 @@ the common case, code when the format is genuinely bespoke.
 ## 9. Open questions
 
 - **OPEN QUESTION — WASM timing.** Is the component model (`wasm32-wasip2` +
-  WIT) stable enough in Wasmtime for a v2 within the first year, and is the
-  guest-language story outside Rust (JS via ComponentizeJS, Python via
-  componentize-py) good enough that it actually widens the contributor pool
-  rather than narrowing it?
+ WIT) stable enough in Wasmtime for a v2 within the first year, and is the
+ guest-language story outside Rust (JS via ComponentizeJS, Python via
+ componentize-py) good enough that it actually widens the contributor pool
+ rather than narrowing it?
 - **OPEN QUESTION — should plugins be able to contribute a `Transport` or an
-  `AuthBackend`?** They are P2 extension points, but a third-party auth backend
-  is a very sharp edge. Proposed: no for v1; revisit with a signed-plugins-only
-  requirement.
+ `AuthBackend`?** They are P2 extension points, but a third-party auth backend
+ is a very sharp edge. Proposed: no for v1; revisit with a signed-plugins-only
+ requirement.
 - **OPEN QUESTION — UI richness ceiling.** Declarative `session_action` /
-  `dashboard_panel` / `settings_page` covers a lot, but not a plugin that wants a
-  custom visualization. Is a sandboxed iframe with a postMessage bridge to a
-  *restricted* capability set worth the risk later, or is "declarative forever"
-  the right permanent answer?
+ `dashboard_panel` / `settings_page` covers a lot, but not a plugin that wants a
+ custom visualization. Is a sandboxed iframe with a postMessage bridge to a
+ *restricted* capability set worth the risk later, or is "declarative forever"
+ the right permanent answer?
 - **OPEN QUESTION — the major-version shim.** Running `api_version` 1.x plugins
-  under a 2.x host requires a translation layer whose cost we cannot estimate
-  before we know what 2.0 changes. The alternative is a hard cutover with a
-  migration guide. Decide when 2.0 is on the horizon, not now.
+ under a 2.x host requires a translation layer whose cost we cannot estimate
+ before we know what 2.0 changes. The alternative is a hard cutover with a
+ migration guide. Decide when 2.0 is on the horizon, not now.
 - **OPEN QUESTION — per-workspace plugin enablement.** `plugins.enabled` is
-  global. A project config cannot enable a plugin (correctly — it would be code
-  execution from a clone), but should a *user* be able to enable a plugin only
-  for certain workspaces?
+ global. A project config cannot enable a plugin (correctly — it would be code
+ execution from a clone), but should a *user* be able to enable a plugin only
+ for certain workspaces?
 - **OPEN QUESTION — event tier clamping for `push` sources.** A plugin declaring
-  a `push` event source asserts its own tier. We clamp claims of tier ≥ 3 to
-  sources we can verify, but a plugin that genuinely speaks a native agent
-  protocol *should* be allowed tier 5. What evidence does the host accept?
+ a `push` event source asserts its own tier. We clamp claims of tier ≥ 3 to
+ sources we can verify, but a plugin that genuinely speaks a native agent
+ protocol *should* be allowed tier 5. What evidence does the host accept?

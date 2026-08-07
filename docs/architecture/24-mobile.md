@@ -17,15 +17,15 @@ screen is the roster, not a terminal.
 ## 2. Screens
 
 ```
-┌─ Sessions ──────────────┐   ┌─ Session ───────────────┐   ┌─ Card ─────────┐
-│ 2 of 7 need you         │   │ ● ● ◐ ● ●   5 subagents │   │ Bash wants to  │
-│                         │   │ ● ⬤ ● ● ◐                │   │ run:           │
-│ ⬤ api    needs you      │   │                          │   │                │
-│ ⬤ web    needs you      │   │ ┌─ transcript ────────┐  │   │  rm -rf build  │
-│ ◐ infra  working        │   │ │ …                    │  │   │                │
-│ ○ docs   idle           │   │ └──────────────────────┘  │   │ [Allow] [Deny] │
-│ ✓ tests  finished       │   │                          │   │  hold to allow │
-└─────────────────────────┘   └──────────────────────────┘   └────────────────┘
+┌─ Sessions ──────────────┐ ┌─ Session ───────────────┐ ┌─ Card ─────────┐
+│ 2 of 7 need you │ │ ● ● ◐ ● ● 5 subagents │ │ Bash wants to │
+│ │ │ ● ⬤ ● ● ◐ │ │ run: │
+│ ⬤ api needs you │ │ │ │ │
+│ ⬤ web needs you │ │ ┌─ transcript ────────┐ │ │ rm -rf build │
+│ ◐ infra working │ │ │ … │ │ │ │
+│ ○ docs idle │ │ └──────────────────────┘ │ │ [Allow] [Deny] │
+│ ✓ tests finished │ │ │ │ hold to allow │
+└─────────────────────────┘ └──────────────────────────┘ └────────────────┘
 ```
 
 ### 2.1 Roster — the home screen
@@ -45,7 +45,7 @@ coloured by `AgentState` **and carrying a distinct glyph** — a grid whose only
 signal is hue does not tell some users which agent is stuck.
 
 Tapping a blocked cell opens its card. Tapping a working cell opens its
-transcript. `actionsFor()` never offers a prompt for a running subagent,
+transcript. `actionsFor` never offers a prompt for a running subagent,
 because there is no input channel to deliver one into — see [06 §5](06-agent-layer.md).
 
 ### 2.3 Card — the reason the app exists
@@ -102,7 +102,7 @@ calls it "resize terminal".
 
 Two implementation traps, both real: measuring cell width before the webfont
 loads gives the wrong column count, and iOS Safari shrinks `visualViewport`
-rather than the layout viewport when the keyboard opens, so a naive `fit()` on
+rather than the layout viewport when the keyboard opens, so a naive `fit` on
 `resize` thrashes.
 
 **xterm.js has no native touch handling at all** ([xtermjs#5377], open,
@@ -176,13 +176,13 @@ ciphertext.
 Two things it does require:
 
 - **An HTTPS origin the phone can reach.** `tailscale cert` / `tailscale serve`
-  gives a real Let's Encrypt certificate for `host.tailnet.ts.net` over DNS-01,
-  with nothing publicly exposed. Self-signed is not a path: Safari refuses to
-  register a service worker without a trusted certificate.
+ gives a real Let's Encrypt certificate for `host.tailnet.ts.net` over DNS-01,
+ with nothing publicly exposed. Self-signed is not a path: Safari refuses to
+ register a service worker without a trusted certificate.
 - **On iOS, the PWA must be installed to the Home Screen.** `PushManager` is
-  not exposed to a Safari tab, and every iOS browser is WebKit, so no browser
-  escapes this. Permission must come from a direct tap, and every push must
-  show something visible — there is no silent push for web on iOS.
+ not exposed to a Safari tab, and every iOS browser is WebKit, so no browser
+ escapes this. Permission must come from a direct tap, and every push must
+ show something visible — there is no silent push for web on iOS.
 
 Fallback for people who will not install: **self-hosted ntfy with
 `upstream-base-url`**, which relays a *poll request* — a topic hash and a
@@ -195,7 +195,7 @@ omt never runs a notification service on behalf of users.
 **Push is the wake-up; the socket is what you use once awake.** A backgrounded
 WebSocket dies within seconds — on iOS this is equally true of a native app
 without an audio or VoIP background mode. Relying on the socket for delivery is
-another tool's mobile failure mode: nothing arrives when the app is closed.
+the mobile failure mode: nothing arrives when the app is closed.
 
 Also: **suppress push while the user is looking at the terminal.** Claude Code
 does this with a presence file. Being buzzed about something you are actively
@@ -204,7 +204,7 @@ watching is how notifications get turned off.
 ## 5. Connection
 
 - **Same network / VPN** — Tailscale is the common case, and the instance's
-  tailnet address needs nothing else.
+ tailnet address needs nothing else.
 - **Through a bastion** — `omt ssh` from a machine that can reach both.
 - **Never a public port by default.** `omt web` binds loopback.
 
@@ -244,7 +244,7 @@ add a native app eventually, not a reason to start with one.
 
 Two costs to plan for: iOS has no `beforeinstallprompt`, so installation is a
 written instruction; and **deleting the home-screen icon destroys the push
-subscription**, so re-pairing has to be cheap — a QR scan, the way another tool does
+subscription**, so re-pairing has to be cheap — a QR scan
 it.
 
 The EU DMA changes nothing here. `BrowserEngineKit` shipped in 2024 and as of
@@ -271,7 +271,7 @@ an app.
 the failure is uncatchable.
 
 **Nobody ships this.** Claude Code mobile, Cursor, Codex, Jules, Replit and
-another tool are all remote. The gap is structural, not un-attempted.
+other terminals are all remote. The gap is structural, not un-attempted.
 
 Two things follow that this document does assume: the client stays a client,
 and iOS Live Activities are worth a native app *later* — Cursor tracks eight

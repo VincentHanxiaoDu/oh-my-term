@@ -32,23 +32,23 @@ Related: [01 — Principles](01-principles.md) (P3 parity, P6 collaboration) ·
 |---|---|---|
 | **Absolute-cell tree** | tmux ([research §1.1](../research/multiplexers.md#11-tmux--an-n-ary-cell-tree-carrying-absolute-geometry)) | Geometry *is* the state, so every container resize is a proportional-rebuild pass (`layout_new_pane_size`) that fakes ratios badly, and the layout is permitted to exceed the window — which is where tmux's cropped-window experience comes from. Unusable when the container size differs per client, which is omt's normal case. |
 | **Flat set + constraint solver** | zellij ([research §1.2](../research/multiplexers.md#12-zellij--no-tree-at-all-a-flat-pane-set-plus-a-constraint-solver)) | Structure is *rediscovered* from coordinates on every resize. That makes the tree invariants unstateable, which forfeits [05 §12](05-session-model.md#12-testing)'s property-test strategy, and it needs a Cassowary dependency whose failure mode zellij itself works around with an `is_layout_valid` "abandon ship" hack. |
-| **N-ary ratio tree** | another terminal's `PaneBranch`, and [05 §2](05-session-model.md#2-layout-the-bsp-tree) | — |
+| **N-ary ratio tree** | the `PaneBranch`, and [05 §2](05-session-model.md#2-layout-the-bsp-tree) | — |
 
 **Decision: an n-ary ratio tree, geometry always derived, never stored.**
 
 This confirms doc 05's choice, for three reasons that the research made concrete:
 
 1. **Ratios are size-independent, and omt renders the same layout at several
-   sizes at once.** another tool's `panes(area) -> Vec<PaneInfo>`
-   ([research §1.3](../research/multiplexers.md#13-another tool--a-strict-binary-bsp-tree-with-f32-ratios))
-   proves the property we need: geometry is a pure function of `(tree, area)`, so
-   the *same tree* can be laid out for a laptop and a phone in the same tick with
-   no state duplication. An absolute-cell tree cannot do this at all.
+ sizes at once.** the `panes(area) -> Vec<PaneInfo>`
+ ([research §1.3](../research/multiplexers.md#13-other terminals--a-strict-binary-bsp-tree-with-f32-ratios))
+ proves the property we need: geometry is a pure function of `(tree, area)`, so
+ the *same tree* can be laid out for a laptop and a phone in the same tick with
+ no state duplication. An absolute-cell tree cannot do this at all.
 2. **N-ary makes close-and-redistribute total.** Binary trees make three equal
-   columns `Split(a, Split(b, c))`; closing `b` leaves 1/3 : 2/3, which is
-   another tool's actual behaviour and is wrong. tmux avoids it by being n-ary, and
-   another terminal — a GUI terminal with no tmux lineage — independently chose n-ary flex.
-   Three implementations converging is enough evidence.
+ columns `Split(a, Split(b, c))`; closing `b` leaves 1/3 : 2/3, which is
+ the actual behaviour and is wrong. tmux avoids it by being n-ary, and
+ other terminals — a GUI terminal with no tmux lineage — independently chose n-ary flex.
+ Three implementations converging is enough evidence.
 3. **The invariants are stateable**, so §11's property tests can be written.
 
 **Rejected: binary.** The only argument for it is that "BSP" is the familiar
@@ -63,25 +63,25 @@ four links in this document target it and link stability outweighs the word.
 /// A workspace's tiling arrangement. Geometry is never stored here.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LayoutTree {
-    /// The workspace has no panes. Only ever the root.
-    Empty,
-    Leaf(PaneId),
-    Split(Split),
+ /// The workspace has no panes. Only ever the root.
+ Empty,
+ Leaf(PaneId),
+ Split(Split),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Split {
-    pub id: SplitId,
-    pub axis: Axis,
-    /// Invariant: `children.len() >= 2`, weights are finite, strictly positive,
-    /// and sum to 1.0 within `WEIGHT_EPSILON`.
-    pub children: Vec<Child>,
+ pub id: SplitId,
+ pub axis: Axis,
+ /// Invariant: `children.len >= 2`, weights are finite, strictly positive,
+ /// and sum to 1.0 within `WEIGHT_EPSILON`.
+ pub children: Vec<Child>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Child {
-    pub weight: Weight,
-    pub node: LayoutTree,
+ pub weight: Weight,
+ pub node: LayoutTree,
 }
 
 /// Column-wise (children side by side) or row-wise (children stacked).
@@ -119,12 +119,12 @@ and are supplied to `compute`:
 ```rust
 #[derive(Clone, Copy, Debug)]
 pub struct Constraints {
-    /// Smallest usable content area for a pane, in cells. Default 20×3.
-    pub min: GridSize,
-    /// Cells consumed by a divider between two siblings. 1 with borders, 0 without.
-    pub divider: u16,
-    /// Extra rows a pane spends on its own title bar. 0 or 1. See §9.
-    pub title_rows: u16,
+ /// Smallest usable content area for a pane, in cells. Default 20×3.
+ pub min: GridSize,
+ /// Cells consumed by a divider between two siblings. 1 with borders, 0 without.
+ pub divider: u16,
+ /// Extra rows a pane spends on its own title bar. 0 or 1. See §9.
+ pub title_rows: u16,
 }
 ```
 
@@ -142,16 +142,16 @@ out of the tiling arithmetic entirely
 ```rust
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Layout {
-    pub tiles: LayoutTree,
-    /// Overlay layer, z-ordered back to front. Never participates in tiling.
-    pub floats: Vec<FloatingPane>,
-    /// Non-destructive zoom. The tree underneath is untouched.
-    pub zoom: Option<PaneId>,
-    /// Stacks collapse N panes into one tile. Keyed by the tile that hosts them.
-    pub stacks: HashMap<StackId, Stack>,
-    pub focus: Option<PaneId>,
-    /// The previously focused pane, for `pane.focus_last`.
-    pub last_focus: Option<PaneId>,
+ pub tiles: LayoutTree,
+ /// Overlay layer, z-ordered back to front. Never participates in tiling.
+ pub floats: Vec<FloatingPane>,
+ /// Non-destructive zoom. The tree underneath is untouched.
+ pub zoom: Option<PaneId>,
+ /// Stacks collapse N panes into one tile. Keyed by the tile that hosts them.
+ pub stacks: HashMap<StackId, Stack>,
+ pub focus: Option<PaneId>,
+ /// The previously focused pane, for `pane.focus_last`.
+ pub last_focus: Option<PaneId>,
 }
 ```
 
@@ -191,38 +191,38 @@ events diffable.
 
 ```rust
 pub struct Geometry {
-    /// Every pane that received a rect, in stable pre-order.
-    pub panes: Vec<PanePlacement>,
-    /// Every divider, addressable and hit-testable. See §2.4.
-    pub dividers: Vec<Divider>,
-    /// Panes that exist in the tree but could not be placed at `min`.
-    pub hidden: Vec<PaneId>,
-    /// Set when `hidden` is non-empty, so a client can explain itself.
-    pub degraded: Option<Degradation>,
+ /// Every pane that received a rect, in stable pre-order.
+ pub panes: Vec<PanePlacement>,
+ /// Every divider, addressable and hit-testable. See §2.4.
+ pub dividers: Vec<Divider>,
+ /// Panes that exist in the tree but could not be placed at `min`.
+ pub hidden: Vec<PaneId>,
+ /// Set when `hidden` is non-empty, so a client can explain itself.
+ pub degraded: Option<Degradation>,
 }
 
 pub struct PanePlacement {
-    pub pane: PaneId,
-    /// Including the title bar, excluding dividers.
-    pub outer: Rect,
-    /// The pane's content area; for a `pty` session this is the PTY-visible grid.
-    pub content: Rect,
-    pub edges: EdgeFlags,     // which sides touch the container, for border drawing
-    pub stack: Option<StackId>,
+ pub pane: PaneId,
+ /// Including the title bar, excluding dividers.
+ pub outer: Rect,
+ /// The pane's content area; for a `pty` session this is the PTY-visible grid.
+ pub content: Rect,
+ pub edges: EdgeFlags, // which sides touch the container, for border drawing
+ pub stack: Option<StackId>,
 }
 
 pub struct Divider {
-    /// Addresses the split node. Stable across renders; see §2.4.
-    pub split: SplitId,
-    /// Which gap in that split: between `children[index]` and `children[index+1]`.
-    pub index: usize,
-    pub axis: Axis,
-    /// The divider's own rect, `divider` cells thick.
-    pub rect: Rect,
+ /// Addresses the split node. Stable across renders; see §2.4.
+ pub split: SplitId,
+ /// Which gap in that split: between `children[index]` and `children[index+1]`.
+ pub index: usize,
+ pub axis: Axis,
+ /// The divider's own rect, `divider` cells thick.
+ pub rect: Rect,
 }
 
 impl Layout {
-    pub fn compute(&self, area: Rect, c: Constraints) -> Geometry;
+ pub fn compute(&self, area: Rect, c: Constraints) -> Geometry;
 }
 ```
 
@@ -234,11 +234,11 @@ client per frame. It is `O(panes)`.
 Given a split of `n` children with weights `w_i` inside an extent `E`:
 
 ```
-usable   = E - divider * (n - 1)
-raw_i    = usable * w_i                       // f32
-floor_i  = floor(raw_i)
-frac_i   = raw_i - floor_i
-leftover = usable - sum(floor_i)              // integer, in [0, n)
+usable = E - divider * (n - 1)
+raw_i = usable * w_i // f32
+floor_i = floor(raw_i)
+frac_i = raw_i - floor_i
+leftover = usable - sum(floor_i) // integer, in [0, n)
 ```
 
 **The `leftover` cells are given, one each, to the children with the largest
@@ -247,11 +247,11 @@ specified rather than implied because every implementation studied does
 something different and none of them documents it:
 
 - tmux hands out ±1 round-robin in child order, so early children win
-  ([research §2.1](../research/multiplexers.md#21-tmux--the-canonical-prior-art-explained));
+ ([research §2.1](../research/multiplexers.md#21-tmux--the-canonical-prior-art-explained));
 - tmux's proportional path instead dumps the entire truncation onto the *last*
-  child, which can be `n-1` cells;
+ child, which can be `n-1` cells;
 - zellij sorts by rounded size and sweeps ±1
-  ([research §2.6](../research/multiplexers.md#26-zellij--a-cassowary-solver-and-explicit-remainder-repair)).
+ ([research §2.6](../research/multiplexers.md#26-zellij--a-cassowary-solver-and-explicit-remainder-repair)).
 
 Largest-fraction-first is the standard largest-remainder apportionment, it is
 the one that minimises total deviation from the requested ratios, and the
@@ -268,29 +268,29 @@ tile the extent with no gap and no overlap, and every child's size differs from
 the tree. The algorithm, applied per split, top-down:
 
 1. Compute `need_i` = the minimum extent the subtree at child `i` requires along
-   this axis: for a leaf, `min` plus `title_rows`; for a split on the same axis,
-   the sum of its children's needs plus dividers; for a split on the other axis,
-   the maximum of its children's needs.
+ this axis: for a leaf, `min` plus `title_rows`; for a split on the same axis,
+ the sum of its children's needs plus dividers; for a split on the other axis,
+ the maximum of its children's needs.
 2. If `sum(need_i) + dividers <= usable`, distribute by §2.2, then **lift** any
-   child below its `need_i` up to it and take the deficit from the children with
-   the most surplus, largest-surplus-first. This terminates because step 2's
-   guard guarantees enough total surplus.
+ child below its `need_i` up to it and take the deficit from the children with
+ the most surplus, largest-surplus-first. This terminates because step 2's
+ guard guarantees enough total surplus.
 3. If `sum(need_i) + dividers > usable`, the split cannot be shown in full.
-   **Drop children from the tail of a priority order until it fits.** The
-   priority order is: the focused pane's subtree first, then the remaining
-   children in index order. Dropped panes are reported in `Geometry::hidden`,
-   and the survivors are re-distributed by step 2 with the dropped children's
-   weights excluded.
+ **Drop children from the tail of a priority order until it fits.** The
+ priority order is: the focused pane's subtree first, then the remaining
+ children in index order. Dropped panes are reported in `Geometry::hidden`,
+ and the survivors are re-distributed by step 2 with the dropped children's
+ weights excluded.
 4. If even one child cannot meet its need, `compute` places the focused pane
-   alone at the full extent and reports every other pane hidden with
-   `Degradation::ForcedSolo`.
+ alone at the full extent and reports every other pane hidden with
+ `Degradation::ForcedSolo`.
 
 ```rust
 pub enum Degradation {
-    /// Some panes were dropped; the rest fit. Client should offer a pane switcher.
-    Partial { hidden: u16 },
-    /// Nothing fits but one pane. Equivalent to an implicit zoom.
-    ForcedSolo,
+ /// Some panes were dropped; the rest fit. Client should offer a pane switcher.
+ Partial { hidden: u16 },
+ /// Nothing fits but one pane. Equivalent to an implicit zoom.
+ ForcedSolo,
 }
 ```
 
@@ -309,28 +309,28 @@ where naive implementations diverge from user expectation.
 
 ```rust
 pub enum ResizeTarget {
-    /// The addressable form. What a drag sends.
-    Divider { split: SplitId, index: usize },
-    /// The convenience form, for keybindings: "grow the focused pane rightwards".
-    Edge { pane: PaneId, edge: Direction2D },
+ /// The addressable form. What a drag sends.
+ Divider { split: SplitId, index: usize },
+ /// The convenience form, for keybindings: "grow the focused pane rightwards".
+ Edge { pane: PaneId, edge: Direction2D },
 }
 
 pub enum ResizeAmount {
-    /// Cells, at the container size the client is looking at.
-    Cells { delta: i32, area: Rect, constraints: Constraints },
-    /// Fraction of the split's extent. Size-independent.
-    Fraction(f32),
+ /// Cells, at the container size the client is looking at.
+ Cells { delta: i32, area: Rect, constraints: Constraints },
+ /// Fraction of the split's extent. Size-independent.
+ Fraction(f32),
 }
 
 impl Layout {
-    pub fn resize(&mut self, target: ResizeTarget, amount: ResizeAmount)
-        -> Result<ResizeOutcome, LayoutError>;
+ pub fn resize(&mut self, target: ResizeTarget, amount: ResizeAmount)
+ -> Result<ResizeOutcome, LayoutError>;
 }
 
 pub struct ResizeOutcome {
-    /// The change actually applied, which may be less than requested.
-    pub applied: f32,
-    pub clamped: bool,
+ /// The change actually applied, which may be less than requested.
+ pub applied: f32,
+ pub clamped: bool,
 }
 ```
 
@@ -354,43 +354,43 @@ below `MIN_WEIGHT`. `ResizeOutcome::clamped` reports when the clamp bound.
 Justification, and what is *not* done:
 
 - **Not "renormalize all siblings".** If a 4-column split's second divider
-  moves, columns 1 and 4 must not twitch. tmux gets this right by construction
-  (`layout_resize_pane_grow` finds the nearest sibling with slack and transfers
-  between exactly two cells); another tool gets it right by adjusting one split node's
-  ratio. Both are right and this is the same rule.
+ moves, columns 1 and 4 must not twitch. tmux gets this right by construction
+ (`layout_resize_pane_grow` finds the nearest sibling with slack and transfers
+ between exactly two cells); other terminals gets it right by adjusting one split node's
+ ratio. Both are right and this is the same rule.
 - **Not "propagate to the next sibling when the neighbour is at minimum".** tmux
-  *does* walk on to the next sibling for more slack. That produces a drag where
-  the pane under your cursor stops moving but a pane two columns away starts
-  shrinking, which is confusing on a screen and unexplainable on a touch device.
-  omt clamps instead, and reports it. This is a deliberate, user-visible
-  divergence from tmux.
+ *does* walk on to the next sibling for more slack. That produces a drag where
+ the pane under your cursor stops moving but a pane two columns away starts
+ shrinking, which is confusing on a screen and unexplainable on a touch device.
+ omt clamps instead, and reports it. This is a deliberate, user-visible
+ divergence from tmux.
 - **The `Edge` form resolves to a `Divider` first**, using the same last-child
-  inversion tmux discovered: walk from the pane to the nearest ancestor split
-  whose axis matches the edge; the divider is the one on the requested side of
-  the child that contains the pane; if the pane is in the last child and the
-  edge points outward, there is no such divider, so use the divider *before* it
-  and invert the sign. If no matching ancestor exists, return
-  `LayoutError::NoDividerInDirection` — you cannot widen a pane in a workspace
-  with no vertical divider, and saying so is better than silently doing nothing.
+ inversion tmux discovered: walk from the pane to the nearest ancestor split
+ whose axis matches the edge; the divider is the one on the requested side of
+ the child that contains the pane; if the pane is in the last child and the
+ edge points outward, there is no such divider, so use the divider *before* it
+ and invert the sign. If no matching ancestor exists, return
+ `LayoutError::NoDividerInDirection` — you cannot widen a pane in a workspace
+ with no vertical divider, and saying so is better than silently doing nothing.
 - **`SplitId` is stable and addressable**, so a drag is a sequence of small
-  deltas against one named object, not a re-hit-test per frame. This is another tool's
-  `SplitBorder { path }` idea with a stable id instead of a path, which survives
-  a concurrent structural change from another client (a path would silently
-  address a different split). If the `SplitId` no longer exists,
-  `resize` returns `LayoutError::UnknownSplit` and the client drops the drag —
-  the correct outcome under [P6](01-principles.md#p6--collaboration-is-a-runtime-feature-not-just-a-workflow).
+ deltas against one named object, not a re-hit-test per frame. This is its
+ `SplitBorder { path }` idea with a stable id instead of a path, which survives
+ a concurrent structural change from another client (a path would silently
+ address a different split). If the `SplitId` no longer exists,
+ `resize` returns `LayoutError::UnknownSplit` and the client drops the drag —
+ the correct outcome under [P6](01-principles.md#p6--collaboration-is-a-runtime-feature-not-just-a-workflow).
 - **`Cells` deltas are converted to fractions against the sending client's own
-  `area`.** Two clients of different sizes dragging the same divider both get
-  the movement they see under their own cursor. This is only coherent because
-  weights, not cells, are the stored state.
+ `area`.** Two clients of different sizes dragging the same divider both get
+ the movement they see under their own cursor. This is only coherent because
+ weights, not cells, are the stored state.
 
 ### 2.5 Split and close
 
 ```rust
 impl Layout {
-    pub fn split(&mut self, at: PaneId, dir: Direction2D, new: PaneId, ratio: Option<f32>,
-                 area: Rect, c: Constraints) -> Result<(), LayoutError>;
-    pub fn close(&mut self, pane: PaneId) -> Result<Option<PaneId>, LayoutError>;
+ pub fn split(&mut self, at: PaneId, dir: Direction2D, new: PaneId, ratio: Option<f32>,
+ area: Rect, c: Constraints) -> Result<, LayoutError>;
+ pub fn close(&mut self, pane: PaneId) -> Result<Option<PaneId>, LayoutError>;
 }
 ```
 
@@ -400,15 +400,15 @@ impl Layout {
 `ratio` defaults to 0.5 and is the *new* pane's share of the target's slot.
 
 1. Reject with `LayoutError::TooSmall` if the target's current extent, per
-   `compute(area, c)`, cannot hold two panes at `min` plus a divider. Checking
-   against the *caller's* area is deliberate: a phone must not be able to create
-   a split it cannot see. (A client may pass the primary view's area to split
-   "as the laptop sees it" — see §3.6.)
+ `compute(area, c)`, cannot hold two panes at `min` plus a divider. Checking
+ against the *caller's* area is deliberate: a phone must not be able to create
+ a split it cannot see. (A client may pass the primary view's area to split
+ "as the laptop sees it" — see §3.6.)
 2. If the target's parent split already has this axis, **insert a sibling**
-   rather than nesting: the target's slot weight `s` becomes `s * (1 - ratio)`
-   and the new sibling takes `s * ratio`. This is what keeps N2 true without a
-   normalization pass and is why "split right three times" yields four siblings,
-   not three nested levels.
+ rather than nesting: the target's slot weight `s` becomes `s * (1 - ratio)`
+ and the new sibling takes `s * ratio`. This is what keeps N2 true without a
+ normalization pass and is why "split right three times" yields four siblings,
+ not three nested levels.
 3. Otherwise replace the leaf with a two-child `Split` of the new axis.
 4. Focus moves to the new pane.
 5. `normalize`, then `check_invariants`.
@@ -445,13 +445,13 @@ content rect, which may change a session's PTY size (§3), which costs a reflow
 alt-screen program. Therefore:
 
 - Resizes are **debounced and coalesced** at 250 ms per doc 05 §2.2, and a drag
-  produces one PTY resize, not sixty.
+ produces one PTY resize, not sixty.
 - A pane entering or leaving `Geometry::hidden` does **not** resize its session's
-  PTY. A hidden pane is a *presentation* fact; the session keeps its size and
-  keeps running. This matters because a phone rotating between portrait and
-  landscape must not resize the laptop's agent twice per rotation.
+ PTY. A hidden pane is a *presentation* fact; the session keeps its size and
+ keeps running. This matters because a phone rotating between portrait and
+ landscape must not resize the laptop's agent twice per rotation.
 - Per [04 §3.3](04-terminal-core.md#33-algorithm) step 1, a resize is deferred
-  while a DECSET 2026 synchronized-output block is open.
+ while a DECSET 2026 synchronized-output block is open.
 
 ---
 
@@ -466,15 +466,15 @@ is no per-observer variant and there never will be.
 Two consequences are not negotiable:
 
 - **A session that is visible to a laptop and a phone at the same time is
-  rendered once, at one size.** Someone sees a size that is not theirs.
+ rendered once, at one size.** Someone sees a size that is not theirs.
 - **Server-side per-client re-rendering is impossible for the case that matters.**
-  [07 §4.3](07-remote-protocol.md#43-the-resize-problem) already rejects it and
-  the reasoning is correct: an alt-screen agent that drew a box at 120 columns
-  cannot be re-rendered at 40, because the information is gone, which is true
-  for a `pty` session; a `native` session's content is typed events and
-  re-renders freely at any width (§3.7). Nothing in tmux,
-  zellij, wezterm or another tool does this
-  ([research §3](../research/multiplexers.md#3-multi-client-different-sizes--the-crux)).
+ [07 §4.3](07-remote-protocol.md#43-the-resize-problem) already rejects it and
+ the reasoning is correct: an alt-screen agent that drew a box at 120 columns
+ cannot be re-rendered at 40, because the information is gone, which is true
+ for a `pty` session; a `native` session's content is typed events and
+ re-renders freely at any width (§3.7). Nothing in tmux,
+ zellij, wezterm or other terminals does this
+ ([research §3](../research/multiplexers.md#3-multi-client-different-sizes--the-crux)).
 
 But omt has one degree of freedom tmux does not, and it is the whole answer.
 
@@ -487,11 +487,11 @@ several clients. tmux cannot do this — a tmux pane *is* the process's home.
 Therefore omt can decouple two questions that every other multiplexer conflates:
 
 1. **"How are things arranged on my screen?"** — pure presentation. Has no
-   effect on any process. Can be per-client at zero cost.
+ effect on any process. Can be per-client at zero cost.
 2. **"What size is this session's PTY?"** — genuinely shared, genuinely one
-   value.
+ value.
 
-tmux, zellij and another tool all answer (1) globally because they must, and then have
+tmux, zellij and other terminals all answer (1) globally because they must, and then have
 to make (2) painful to compensate. omt should answer (1) per client and confine
 the pain to (2), where it is irreducible.
 
@@ -507,31 +507,31 @@ universe.
 ```rust
 /// A workspace holds a small set of named arrangements over its sessions.
 pub struct Workspace {
-    // ... per 05 §1.1 ...
-    pub views: IndexMap<ViewId, LayoutView>,
-    /// The view a client is put in when it attaches and asks for nothing.
-    pub primary: ViewId,
+ // ... per 05 §1.1 ...
+ pub views: IndexMap<ViewId, LayoutView>,
+ /// The view a client is put in when it attaches and asks for nothing.
+ pub primary: ViewId,
 }
 
 pub struct LayoutView {
-    pub id: ViewId,
-    pub name: String,              // "primary", "phone", "ada's laptop"
-    pub layout: Layout,
-    pub kind: ViewKind,
-    /// Clients currently rendering this view.
-    pub clients: SmallVec<[ClientId; 4]>,
+ pub id: ViewId,
+ pub name: String, // "primary", "phone", "ada's laptop"
+ pub layout: Layout,
+ pub kind: ViewKind,
+ /// Clients currently rendering this view.
+ pub clients: SmallVec<[ClientId; 4]>,
 }
 
 pub enum ViewKind {
-    /// The workspace's canonical arrangement. Exactly one per workspace.
-    /// Shared: everyone in it sees the same splits, the same zoom, the same focus.
-    Primary,
-    /// Auto-created for a client too small for `Primary`. Destroyed when its
-    /// last client detaches. Never persisted.
-    Adaptive { derived_from: ViewId, owner: ClientId },
-    /// Explicitly created by a user ("give me my own arrangement here").
-    /// Persisted with the workspace.
-    Named,
+ /// The workspace's canonical arrangement. Exactly one per workspace.
+ /// Shared: everyone in it sees the same splits, the same zoom, the same focus.
+ Primary,
+ /// Auto-created for a client too small for `Primary`. Destroyed when its
+ /// last client detaches. Never persisted.
+ Adaptive { derived_from: ViewId, owner: ClientId },
+ /// Explicitly created by a user ("give me my own arrangement here").
+ /// Persisted with the workspace.
+ Named,
 }
 ```
 
@@ -544,12 +544,12 @@ per-client state. The many-to-one relation is what makes this cost nothing.
 
 ```rust
 pub fn choose_view(ws: &Workspace, client: &ClientView, cfg: &LayoutConfig) -> ViewId {
-    if let Some(v) = client.pinned_view { return v; }                  // explicit wins
-    let primary = &ws.views[ws.primary];
-    let geom = primary.layout.compute(client.area(), cfg.constraints);
-    if geom.hidden.is_empty() { return ws.primary; }                   // it fits: share it
-    if !cfg.adaptive_views { return ws.primary; }                      // opted out: degrade in place
-    ws.adaptive_view_for(client)                                       // fork a private view
+ if let Some(v) = client.pinned_view { return v; } // explicit wins
+ let primary = &ws.views[ws.primary];
+ let geom = primary.layout.compute(client.area, cfg.constraints);
+ if geom.hidden.is_empty { return ws.primary; } // it fits: share it
+ if !cfg.adaptive_views { return ws.primary; } // opted out: degrade in place
+ ws.adaptive_view_for(client) // fork a private view
 }
 ```
 
@@ -588,30 +588,30 @@ for the session the phone *is* showing.
 
 ```rust
 pub struct SessionSizing {
-    /// The size actually on the PTY.
-    pub current: GridSize,
-    pub policy: SizePolicy,
-    /// Everyone rendering this session, with the content rect their view gives it.
-    pub observers: SmallVec<[(ClientId, GridSize, Participation); 4]>,
-    /// Debounce state; see §2.6.
-    pub pending: Option<(GridSize, Instant)>,
+ /// The size actually on the PTY.
+ pub current: GridSize,
+ pub policy: SizePolicy,
+ /// Everyone rendering this session, with the content rect their view gives it.
+ pub observers: SmallVec<[(ClientId, GridSize, Participation); 4]>,
+ /// Debounce state; see §2.6.
+ pub pending: Option<(GridSize, Instant)>,
 }
 
 pub enum Participation {
-    /// This observer's size is an input to the policy.
-    Participant,
-    /// This observer renders whatever it is given and letterboxes. Never an input.
-    Observer,
+ /// This observer's size is an input to the policy.
+ Participant,
+ /// This observer renders whatever it is given and letterboxes. Never an input.
+ Observer,
 }
 
 pub enum SizePolicy {
-    /// Default. The writer-token holder's view drives the PTY. Falls back to
-    /// `Smallest` over participants when nobody holds the token.
-    Driver,
-    /// Every participant is fully visible. Opt-in, for pair programming.
-    Smallest,
-    /// "Keep this session at 120x40 whatever happens."
-    Pinned { size: GridSize, by: ActorId },
+ /// Default. The writer-token holder's view drives the PTY. Falls back to
+ /// `Smallest` over participants when nobody holds the token.
+ Driver,
+ /// Every participant is fully visible. Opt-in, for pair programming.
+ Smallest,
+ /// "Keep this session at 120x40 whatever happens."
+ Pinned { size: GridSize, by: ActorId },
 }
 ```
 
@@ -623,41 +623,41 @@ no writer holds the token, and the behaviour of the opt-in `Smallest` policy.**
 Reasoning:
 
 - The writer is the person whose keystrokes the program is responding to. Sizing
-  for them is sizing for the interaction that is actually happening.
+ for them is sizing for the interaction that is actually happening.
 - The writer token already exists ([05 §5](05-session-model.md#5-the-writer-token)),
-  is already visible in every UI, and already has a takeover protocol. Attaching
-  size ownership to it costs no new concept and no new UI.
+ is already visible in every UI, and already has a takeover protocol. Attaching
+ size ownership to it costs no new concept and no new UI.
 - Unconditional `Smallest` is exactly tmux's most-hated behaviour. It should be
-  reachable, because pair programming genuinely wants it, but not default.
+ reachable, because pair programming genuinely wants it, but not default.
 - A resize is disruptive for alt-screen programs (§2.6), so the policy should
-  change the size *rarely*. `Driver` changes it only on takeover; `Smallest`
-  changes it on every attach and detach.
+ change the size *rarely*. `Driver` changes it only on takeover; `Smallest`
+ changes it on every attach and detach.
 
 **Consequences, all user-visible, all required to be surfaced:**
 
 1. **Taking the writer token may resize the PTY.** `keep_size` and the 20 %
-   threshold are *acquisition* semantics, so they belong to
-   [12 §3.3](12-collaboration.md#33-lifecycle) alongside
-   [07 §4.3](07-remote-protocol.md#43-the-resize-problem)'s negotiation. The
-   client warns
-   before the first takeover of a session whose size would change by more than
-   20 %, and offers `writer.acquire { keep_size: true }`, which acquires the
-   token while installing `Pinned` at the current size. That flag is now a
-   `SizePolicy` transition, and it must be reflected in `session.writer.acquire`.
+ threshold are *acquisition* semantics, so they belong to
+ [12 §3.3](12-collaboration.md#33-lifecycle) alongside
+ [07 §4.3](07-remote-protocol.md#43-the-resize-problem)'s negotiation. The
+ client warns
+ before the first takeover of a session whose size would change by more than
+ 20 %, and offers `writer.acquire { keep_size: true }`, which acquires the
+ token while installing `Pinned` at the current size. That flag is now a
+ `SizePolicy` transition, and it must be reflected in `session.writer.acquire`.
 2. **Non-participants letterbox.** A client whose view gives a session a smaller
-   content rect than `current` renders the full grid scaled to fit width and
-   letterboxed vertically, with the badge doc 07 already specifies:
-   `120×40 · driven by laptop`. The phone reads at full fidelity; only
-   legibility degrades, and on a phone the block view
-   ([08 §4.2](08-web-client.md#42-block-view)) is the default surface anyway.
+ content rect than `current` renders the full grid scaled to fit width and
+ letterboxed vertically, with the badge doc 07 already specifies:
+ `120×40 · driven by laptop`. The phone reads at full fidelity; only
+ legibility degrades, and on a phone the block view
+ ([08 §4.2](08-web-client.md#42-block-view)) is the default surface anyway.
 3. **A client larger than `current` renders inactive margin**, never a stretch.
 4. **The mobile web client attaches `Observer` by default**, per doc 05 §2.2, and
-   switching it to "full terminal" makes it a `Participant` with a visible
-   notice that it may resize the session. A phone therefore cannot shrink a
-   laptop's agent by accident — only by choosing to.
+ switching it to "full terminal" makes it a `Participant` with a visible
+ notice that it may resize the session. A phone therefore cannot shrink a
+ laptop's agent by accident — only by choosing to.
 5. **`Orphaned` and `Exited` sessions have no sizing.** Their content is
-   readable at whatever width it was written; a resize would reflow scrollback
-   for no benefit and is refused.
+ readable at whatever width it was written; a resize would reflow scrollback
+ for no benefit and is refused.
 
 **The degradation story, end to end.** Laptop at 200×50 has a four-pane
 workspace; a phone at 52×24 attaches. The phone does not fit the primary layout,
@@ -674,31 +674,31 @@ redraws once. Every step is visible, reversible, and named.
 ### 3.5 Rejected alternatives
 
 - **Shared authoritative size with letterboxing for all** (no per-client layout).
-  This is doc 07's model taken alone. It is correct for a *session* and wrong for
-  a *workspace*: it means the phone renders a scaled-down four-way split, and a
-  four-way split scaled to a phone is unreadable regardless of fidelity.
-  Per-client layout is what makes doc 07's per-session answer survivable.
+ This is doc 07's model taken alone. It is correct for a *session* and wrong for
+ a *workspace*: it means the phone renders a scaled-down four-way split, and a
+ four-way split scaled to a phone is unreadable regardless of fidelity.
+ Per-client layout is what makes doc 07's per-session answer survivable.
 - **Server-side per-client rendering.** Rejected in §3.1 and in doc 07. It also
-  costs one emulator per client per session, which is a real memory cost for a
-  daemon expected to hold dozens of sessions.
+ costs one emulator per client per session, which is a real memory cost for a
+ daemon expected to hold dozens of sessions.
 - **"Primary client sets everything, others are read-only mirrors."** Violates
-  [D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) — remote is
-  exactly equivalent to local — and it is precisely the second-class mobile
-  experience the product exists to avoid.
+ [D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) — remote is
+ exactly equivalent to local — and it is precisely the second-class mobile
+ experience the product exists to avoid.
 - **Per-client PTY per session (fork the process view).** Not possible. One
-  process, one controlling terminal.
+ process, one controlling terminal.
 
 ### 3.6 Cross-view operations
 
 Because arrangements are per-view, layout capabilities take an explicit view:
 
 - `pane.*` and `layout.*` inputs carry `view: Option<ViewId>`, defaulting to the
-  caller's current view.
+ caller's current view.
 - `layout.promote { view }` copies an `Adaptive` or `Named` view's arrangement
-  onto `Primary` — "make everyone see what I see". Requires `Operator`.
+ onto `Primary` — "make everyone see what I see". Requires `Operator`.
 - `layout.adopt { view }` replaces the caller's view with a copy of another's.
 - A client may pin itself to `Primary` regardless of size
-  (`client.pinned_view`), accepting the degradation; §7 gives it a real UI.
+ (`client.pinned_view`), accepting the degradation; §7 gives it a real UI.
 
 ### 3.7 Native sessions
 
@@ -707,15 +707,15 @@ A `native` session ([D8](decisions.md#d8--two-session-modes-pty-default-and-nati
 everything §3.4 arbitrates simply does not apply to it.
 
 - **Size-independent, and excluded from `SessionSizing` entirely.** There is no
-  `current`, no `policy`, no participants to weigh.
+ `current`, no `policy`, no participants to weigh.
 - **They never letterbox.** A native pane re-renders at whatever content rect it
-  is given, independently per client — 200 columns on the laptop and 52 on the
-  phone at the same instant, both at full fidelity.
+ is given, independently per client — 200 columns on the laptop and 52 on the
+ phone at the same instant, both at full fidelity.
 - **They emit no `SessionResized`** (05 §11 invariant 11).
 - `session.size_policy` and `layout.synchronize` **reject** a native pane; there
-  is no PTY to size and none to broadcast keystrokes into.
+ is no PTY to size and none to broadcast keystrokes into.
 - The 250 ms resize debounce (§2.6) is **skipped**: a re-`compute` costs a
-  re-render and nothing else, so there is nothing to coalesce.
+ re-render and nothing else, so there is nothing to coalesce.
 
 ---
 
@@ -725,17 +725,17 @@ everything §3.4 arbitrates simply does not apply to it.
 
 ```rust
 pub enum LayoutPreset {
-    /// One pane fills the view. The degenerate case, and the phone default.
-    Solo,
-    /// All panes in one row, or one column.
-    EvenColumns, EvenRows,
-    /// One large pane plus a column/row of the rest. `main` is a fraction.
-    MainColumn { main: f32, mirrored: bool },
-    MainRow { main: f32, mirrored: bool },
-    /// Balanced grid, last row short. Ordered row-major.
-    Tiled,
-    /// One flexible pane plus N collapsed title bars. See §5.3.
-    Stacked,
+ /// One pane fills the view. The degenerate case, and the phone default.
+ Solo,
+ /// All panes in one row, or one column.
+ EvenColumns, EvenRows,
+ /// One large pane plus a column/row of the rest. `main` is a fraction.
+ MainColumn { main: f32, mirrored: bool },
+ MainRow { main: f32, mirrored: bool },
+ /// Balanced grid, last row short. Ordered row-major.
+ Tiled,
+ /// One flexible pane plus N collapsed title bars. See §5.3.
+ Stacked,
 }
 ```
 
@@ -765,56 +765,56 @@ and it is what makes restore a feature rather than a plugin ecosystem, which is
 what tmux's separate, unauthorable layout string cost it.
 
 The recursive shape is already fixed by
-[10 §9.1](10-configuration.md#91-launch-configurations), adopted from another terminal, and
+[10 §9.1](10-configuration.md#91-launch-configurations), adopted from other terminals, and
 this document does not get to change it. Restated as a type:
 
 ```rust
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LayoutSpec {
-    Leaf(PaneSpec),
-    Branch {
-        split: Axis,                    // "columns" | "rows"
-        /// Weights. Omitted means equal. Length must match `panes`.
-        #[serde(default)]
-        ratio: Vec<f32>,
-        panes: Vec<LayoutSpec>,
-    },
-    /// A named preset over `panes`, resolved at apply time.
-    Preset { preset: LayoutPreset, panes: Vec<LayoutSpec> },
+ Leaf(PaneSpec),
+ Branch {
+ split: Axis, // "columns" | "rows"
+ /// Weights. Omitted means equal. Length must match `panes`.
+ #[serde(default)]
+ ratio: Vec<f32>,
+ panes: Vec<LayoutSpec>,
+ },
+ /// A named preset over `panes`, resolved at apply time.
+ Preset { preset: LayoutPreset, panes: Vec<LayoutSpec> },
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PaneSpec {
-    pub cwd: Option<PathBuf>,
-    pub session: Option<SessionRef>,    // bind an existing session instead of spawning
-    pub commands: Vec<String>,
-    pub agent: Option<AgentSpec>,
-    pub title: Option<String>,
-    #[serde(default)]
-    pub focused: bool,
-    /// Minimum this pane wants; below it the pane is dropped first (§2.3).
-    pub min: Option<GridSize>,
-    /// Ordering hint for §2.3's drop priority. Higher survives longer.
-    #[serde(default)]
-    pub priority: i8,
+ pub cwd: Option<PathBuf>,
+ pub session: Option<SessionRef>, // bind an existing session instead of spawning
+ pub commands: Vec<String>,
+ pub agent: Option<AgentSpec>,
+ pub title: Option<String>,
+ #[serde(default)]
+ pub focused: bool,
+ /// Minimum this pane wants; below it the pane is dropped first (§2.3).
+ pub min: Option<GridSize>,
+ /// Ordering hint for §2.3's drop priority. Higher survives longer.
+ #[serde(default)]
+ pub priority: i8,
 }
 ```
 
 Notes:
 
 - **`split` is `columns`/`rows`, not `horizontal`/`vertical`**, for the reason in
-  §1.2. Doc 10 §9.1's launch-config example has been changed to `columns`/`rows`;
-  both spellings are accepted on read, with `columns`/`rows` canonical on write
-  ([10 §9.1](10-configuration.md#91-launch-configurations)).
+ §1.2. Doc 10 §9.1's launch-config example has been changed to `columns`/`rows`;
+ both spellings are accepted on read, with `columns`/`rows` canonical on write
+ ([10 §9.1](10-configuration.md#91-launch-configurations)).
 - **`Preset` in the file** is what gives a saved layout responsiveness for free:
-  `{ preset: tiled, panes: [...] }` is meaningful at any size and any pane count,
-  where a fixed `ratio` list is not.
+ `{ preset: tiled, panes: [...] }` is meaningful at any size and any pane count,
+ where a fixed `ratio` list is not.
 - **`priority` and `min`** are what let a launch config say "the agent pane
-  survives on a phone; the log tail does not". Without them §2.3's drop order is
-  a guess.
+ survives on a phone; the log tail does not". Without them §2.3's drop order is
+ a guess.
 - YAML for launch configs (doc 10's decision, unchanged); the same structure is
-  JSON on the wire and in the store.
+ JSON on the wire and in the store.
 
 **Responsive variants.** zellij's swap layouts are the best idea in this space
 and omt takes them in a simplified form: a saved layout may carry alternates
@@ -822,13 +822,13 @@ guarded by a size or pane-count predicate.
 
 ```yaml
 layout:
-  split: columns
-  ratio: [0.6, 0.4]
-  panes: [...]
-when_narrower_than: 100          # cols
-  layout: { preset: stacked, panes: [...] }
+ split: columns
+ ratio: [0.6, 0.4]
+ panes: [...]
+when_narrower_than: 100 # cols
+ layout: { preset: stacked, panes: [...] }
 when_narrower_than: 60
-  layout: { preset: solo, panes: [...] }
+ layout: { preset: solo, panes: [...] }
 ```
 
 Evaluated at `choose_view` time (§3.3) and on viewport change, most specific
@@ -842,7 +842,7 @@ marked **damaged** and stops auto-swapping until they ask for it
 [research §4.1](../research/multiplexers.md#41-tmux-presets-and-the-layout-string):
 
 ```
-checksum "," cell        cell := SX "x" SY "," XOFF "," YOFF [ "," pane-id | "[" cells "]" | "{" cells "}" ]
+checksum "," cell cell := SX "x" SY "," XOFF "," YOFF [ "," pane-id | "[" cells "]" | "{" cells "}" ]
 ```
 
 Import is worth building because there is a large corpus of these in people's
@@ -850,14 +850,14 @@ notes, dotfiles and tmux-resurrect saves, and because it is a 100-line parser.
 
 - `{}` → `Axis::Columns`, `[]` → `Axis::Rows`.
 - **Absolute cells become weights**: for each split, `weight_i = child_extent_i /
-  sum(child_extent + divider)`. The format's own consistency rule
-  (`sum(child.sx + 1) - 1 == parent.sx`) guarantees this is well-defined; a
-  string that violates it is rejected with the offending node, not
-  best-effort-parsed ([P5](01-principles.md#p5--production-grade-from-the-first-commit)).
+ sum(child_extent + divider)`. The format's own consistency rule
+ (`sum(child.sx + 1) - 1 == parent.sx`) guarantees this is well-defined; a
+ string that violates it is rejected with the offending node, not
+ best-effort-parsed ([P5](01-principles.md#p5--production-grade-from-the-first-commit)).
 - The checksum is **verified and reported but not trusted** — it is a 16-bit
-  rotate-and-add typo guard, not integrity.
+ rotate-and-add typo guard, not integrity.
 - Pane ids in the string are positional only; the caller supplies the mapping to
-  omt sessions, or omt spawns shells in pre-order.
+ omt sessions, or omt spawns shells in pre-order.
 - Floating cells in the `<...>` suffix map to §5.2 floats.
 
 Export is deliberately **not** offered. Emitting absolute cells for one size is a
@@ -867,18 +867,18 @@ through a format that cannot represent presets, priorities or float pinning.
 ### 4.4 Saved layouts and per-workspace defaults
 
 - `~/.config/omt/layouts/*.yaml` — a bare `LayoutSpec`, applicable to any
-  workspace (`layout.apply_saved { name }`). Panes without a `session` spawn
-  shells; panes with one bind by title or role.
+ workspace (`layout.apply_saved { name }`). Panes without a `session` spawn
+ shells; panes with one bind by title or role.
 - `<repo>/.omt/layouts/*.yaml` — project-local, shadowing user layouts of the
-  same name, subject to doc 10's trust prompt.
+ same name, subject to doc 10's trust prompt.
 - **Per-workspace default**: `workspace.default_layout` in config, keyed by path
-  glob or by git remote, applied on `workspace.open` when the workspace has no
-  persisted layout. This is the cheap version of a launch config, for people who
-  want "any Rust repo opens with an agent pane and a test pane" without naming
-  it.
+ glob or by git remote, applied on `workspace.open` when the workspace has no
+ persisted layout. This is the cheap version of a launch config, for people who
+ want "any Rust repo opens with an agent pane and a test pane" without naming
+ it.
 - `layout.save { name, view }` snapshots a live view into a file. The round-trip
-  (§4.2) is what makes these worth maintaining; doc 10 §9.1 already makes the
-  same argument for `omt launch save`.
+ (§4.2) is what makes these worth maintaining; doc 10 §9.1 already makes the
+ same argument for `omt launch save`.
 
 Launch configurations (doc 10 §9.1) remain the richer thing — they create
 workspaces and sessions and bind agents. A saved layout only rearranges what is
@@ -896,36 +896,36 @@ gets the whole area and every other pane is reported `hidden`. The tree is
 untouched.
 
 - **Zoom is per view, not per workspace.** This resolves
-  [05 §13 open question 5](05-session-model.md#13-open-questions) in the way that
-  document anticipated: a phone in an `Adaptive` view is effectively always
-  zoomed, and that must not force the laptop into zoom. A deliberate shared
-  "everyone look at this" is `layout.promote` (§3.6) after zooming, or
-  `pane.zoom { view: primary }` explicitly.
+ [05 §13 open question 5](05-session-model.md#13-open-questions) in the way that
+ document anticipated: a phone in an `Adaptive` view is effectively always
+ zoomed, and that must not force the laptop into zoom. A deliberate shared
+ "everyone look at this" is `layout.promote` (§3.6) after zooming, or
+ `pane.zoom { view: primary }` explicitly.
 - Zoom survives structural changes to the tree; closing the zoomed pane clears
-  it and focuses per §2.5.
+ it and focuses per §2.5.
 - `Degradation::ForcedSolo` (§2.3) is rendered identically to zoom but is
-  distinguishable in the state, so the UI can say "too small to show the layout"
-  rather than "zoomed" — different words for different situations.
+ distinguishable in the state, so the UI can say "too small to show the layout"
+ rather than "zoomed" — different words for different situations.
 
 ### 5.2 Floating panes
 
 ```rust
 pub struct FloatingPane {
-    pub pane: PaneId,
-    /// Fractions of the view area, so a float survives a resize and a phone.
-    pub rect: FractionalRect,
-    pub min: GridSize,
-    /// Stays visible when the float layer is hidden.
-    pub pinned: bool,
-    pub kind: FloatKind,
+ pub pane: PaneId,
+ /// Fractions of the view area, so a float survives a resize and a phone.
+ pub rect: FractionalRect,
+ pub min: GridSize,
+ /// Stays visible when the float layer is hidden.
+ pub pinned: bool,
+ pub kind: FloatKind,
 }
 
 pub enum FloatKind {
-    /// A user-created floating terminal.
-    Terminal,
-    /// System overlay: the workspace explorer panel (15), an interaction card
-    /// (06), the palette (16). Not persisted, not reorderable by the user.
-    Overlay { role: OverlayRole },
+ /// A user-created floating terminal.
+ Terminal,
+ /// System overlay: the workspace explorer panel (15), an interaction card
+ /// (06), the palette (16). Not persisted, not reorderable by the user.
+ Overlay { role: OverlayRole },
 }
 ```
 
@@ -936,17 +936,17 @@ keeps §2's algorithms free of `is_tiled` guards on every recursion, which is th
 thing that makes tmux's `layout.c` hard to read.
 
 - `rect` is fractional so that a float placed on a laptop lands somewhere
-  sensible on a phone, clamped to the area and to `min`.
+ sensible on a phone, clamped to the area and to `min`.
 - The whole layer toggles with `layout.floats.toggle`, `pinned` floats excepted.
 - `FloatKind::Overlay` is how [15 — Workspace explorer](15-workspace-explorer.md)'s
-  panel and doc 06's interaction cards get placed without inventing a second
-  overlay system. Doc 15 §7.1 describes a TUI side panel that "does not exist
-  until toggled"; that is an `Overlay` float created on toggle and dropped on
-  close, and the two documents should agree on the mechanism.
+ panel and doc 06's interaction cards get placed without inventing a second
+ overlay system. Doc 15 §7.1 describes a TUI side panel that "does not exist
+ until toggled"; that is an `Overlay` float created on toggle and dropped on
+ close, and the two documents should agree on the mechanism.
 - **On a phone, floats become sheets.** §7.2.
 - Floats are excluded from directional navigation by default
-  (`pane.navigate` stays within `tiles`); `pane.focus_float` and `Esc` move in
-  and out of the layer. Mixing them produces navigation nobody can predict.
+ (`pane.navigate` stays within `tiles`); `pane.focus_float` and `Esc` move in
+ and out of the layer. Mixing them produces navigation nobody can predict.
 
 ### 5.3 Stacked panes
 
@@ -959,18 +959,18 @@ narrow-laptop case.
 
 ```rust
 pub struct Stack {
-    pub id: StackId,
-    /// Ordered. Exactly one is expanded.
-    pub members: Vec<PaneId>,
-    pub expanded: usize,
+ pub id: StackId,
+ /// Ordered. Exactly one is expanded.
+ pub members: Vec<PaneId>,
+ pub expanded: usize,
 }
 ```
 
 A stack occupies one `Leaf` slot; `LayoutTree::Leaf(PaneId)` where that pane is
 a stack member resolves through `Layout::stacks`. `compute` gives the expanded
-member `extent - (members.len() - 1) * title_rows` and one title row to each
+member `extent - (members.len - 1) * title_rows` and one title row to each
 other member. The stack's minimum need is
-`min.rows + (members.len() - 1) * title_rows`, and if that does not fit, §2.3
+`min.rows + (members.len - 1) * title_rows`, and if that does not fit, §2.3
 drops trailing members into `hidden` rather than failing.
 
 Operations: `pane.stack.create` (from a split's children),
@@ -982,40 +982,40 @@ right); navigation *within* a stack is `Up`/`Down` once focus is inside.
 ### 5.4 Swap, rotate, move, marks
 
 ```
-pane.swap   { a, b }                      exchange two panes' slots; layout unchanged
-pane.rotate { split?, reverse }           cycle panes through fixed slots
-pane.move   { pane, to, dir }             remove, then split `to` and place there
+pane.swap { a, b } exchange two panes' slots; layout unchanged
+pane.rotate { split?, reverse } cycle panes through fixed slots
+pane.move { pane, to, dir } remove, then split `to` and place there
 pane.move_to_workspace { pane, workspace, view? }
-pane.mark   { pane, mark: Option<MarkId> }
+pane.mark { pane, mark: Option<MarkId> }
 ```
 
 - **`rotate` cycles contents through slots, never the tree.** tmux's
-  `rotate-window` does this and it is much simpler and much more predictable than
-  rotating structure. kitty's `splits` layout has the same operation.
+ `rotate-window` does this and it is much simpler and much more predictable than
+ rotating structure. kitty's `splits` layout has the same operation.
 - **`move_to_workspace` moves the *pane*, and the session follows only if this
-  was its last pane** — per doc 05's lifetime rule 1, a session outlives its
-  panes. Moving a pane to another workspace does not change the session's
-  `workspace` field ([05 §1](05-session-model.md#1-the-object-model): a session's
-  workspace is fixed at creation), which means a workspace's view may show a
-  session that is not a member of it. That is a real and useful thing — "show me
-  the deploy log from the infra workspace next to my code" — and `pane.list`
-  reports `foreign: bool` so the UI can label it.
+ was its last pane** — per doc 05's lifetime rule 1, a session outlives its
+ panes. Moving a pane to another workspace does not change the session's
+ `workspace` field ([05 §1](05-session-model.md#1-the-object-model): a session's
+ workspace is fixed at creation), which means a workspace's view may show a
+ session that is not a member of it. That is a real and useful thing — "show me
+ the deploy log from the infra workspace next to my code" — and `pane.list`
+ reports `foreign: bool` so the UI can label it.
 - **Marks are per actor, not global.** tmux has exactly one server-wide marked
-  pane ([research §5.5](../research/multiplexers.md#55-marked-pane-and-synchronize-panes)),
-  which is a single-user assumption omt should not inherit under
-  [D4](decisions.md#d4--single-user-many-devices--with-the-interfaces-left-open-for-many-users).
-  `marks: HashMap<ActorId, PaneId>` plus optional named marks
-  (`MarkId::Named(String)`) for "jump to the pane I call `build`". A mark is
-  rendered in the border of the marking actor's own clients only, plus a subtle
-  shared indicator, so a collaborator's mark does not confuse you.
+ pane ([research §5.5](../research/multiplexers.md#55-marked-pane-and-synchronize-panes)),
+ which is a single-user assumption omt should not inherit under
+ [D4](decisions.md#d4--single-user-many-devices--with-the-interfaces-left-open-for-many-users).
+ `marks: HashMap<ActorId, PaneId>` plus optional named marks
+ (`MarkId::Named(String)`) for "jump to the pane I call `build`". A mark is
+ rendered in the border of the marking actor's own clients only, plus a subtle
+ shared indicator, so a collaborator's mark does not confuse you.
 - **`synchronize` (input broadcast)** is a property of a *view*, not of the
-  workspace: `LayoutView::synchronize: Option<SyncGroup>` naming a set of panes.
-  It requires the writer token on **every** target session, acquires them as a
-  set or fails atomically, and is rendered with a loud persistent indicator per
-  tmux's precedent. It is `Operator` and declares `WRITES_PTY` and `DESTRUCTIVE`
-  — typing one command into eight production shells is exactly what
-  [03 §2](03-capability-catalog.md#2-declaring-a-capability)'s confirm gesture
-  exists for.
+ workspace: `LayoutView::synchronize: Option<SyncGroup>` naming a set of panes.
+ It requires the writer token on **every** target session, acquires them as a
+ set or fails atomically, and is rendered with a loud persistent indicator per
+ tmux's precedent. It is `Operator` and declares `WRITES_PTY` and `DESTRUCTIVE`
+ — typing one command into eight production shells is exactly what
+ [03 §2](03-capability-catalog.md#2-declaring-a-capability)'s confirm gesture
+ exists for.
 
 ---
 
@@ -1023,8 +1023,8 @@ pane.mark   { pane, mark: Option<MarkId> }
 
 ```rust
 impl Layout {
-    pub fn navigate(&self, from: PaneId, dir: Direction2D, geom: &Geometry,
-                    wrap: bool) -> Option<PaneId>;
+ pub fn navigate(&self, from: PaneId, dir: Direction2D, geom: &Geometry,
+ wrap: bool) -> Option<PaneId>;
 }
 ```
 
@@ -1036,22 +1036,22 @@ four studied implementations are geometric
 Let `f` be the source pane's `outer` rect. For `dir = Left`:
 
 1. **Candidates.** Every placed, non-hidden pane `p ≠ from` with
-   `p.right <= f.left` and `overlaps(p.top, p.bottom, f.top, f.bottom)`, where
-   `overlaps(a0,a1,b0,b1) = a0 < b1 && a1 > b0`.
-   The `<=` (rather than tmux's exact `p.right + divider == f.left`) means a
-   pane two columns away is eligible when nothing is adjacent, which matters
-   after a `hidden` drop leaves a gap.
+ `p.right <= f.left` and `overlaps(p.top, p.bottom, f.top, f.bottom)`, where
+ `overlaps(a0,a1,b0,b1) = a0 < b1 && a1 > b0`.
+ The `<=` (rather than tmux's exact `p.right + divider == f.left`) means a
+ pane two columns away is eligible when nothing is adjacent, which matters
+ after a `hidden` drop leaves a gap.
 2. **Rank** by the tuple, ascending, and take the minimum:
 
-   ```
-   ( edge_distance,            // f.left - p.right, saturating
-     Reverse(overlap_cells),   // perpendicular overlap; more is better
-     center_distance,          // |center(p.perp) - center(f.perp)|
-     placement_index )         // stable pre-order index; total tie-break
-   ```
+ ```
+ ( edge_distance, // f.left - p.right, saturating
+ Reverse(overlap_cells), // perpendicular overlap; more is better
+ center_distance, // |center(p.perp) - center(f.perp)|
+ placement_index ) // stable pre-order index; total tie-break
+ ```
 3. **Wrap**, if `wrap` is on and there were no candidates: re-run against panes
-   whose `p.left >= f.right`, ranking by *greatest* `edge_distance` — i.e. jump
-   to the far side. Off by default; tmux wraps, and it surprises people.
+ whose `p.left >= f.right`, ranking by *greatest* `edge_distance` — i.e. jump
+ to the far side. Off by default; tmux wraps, and it surprises people.
 
 Transposed identically for `Right`, `Up`, `Down`.
 
@@ -1062,7 +1062,7 @@ which both break ties by **most-recently-active**
 (`window_pane_choose_best` compares `active_point`; zellij uses
 `max_by_key(active_at)`). Recency means the same keypress from the same visual
 arrangement can go to two different panes depending on history — an
-unpredictable keybinding, and unexplainable in a UI. another tool's ranking tuple is
+unpredictable keybinding, and unexplainable in a UI. the ranking tuple is
 the better prior art and omt takes it.
 
 Non-rectangular arrangements — an L-shaped region left of the source, a tall
@@ -1110,20 +1110,20 @@ rendered as a horizontally swipeable carousel over the view's panes, with a
 persistent pane strip.**
 
 - **Carousel, not tabs.** Doc 08 already binds "swipe left/right on the session
-  header" to previous/next session, so the gesture exists. One pane fills the
-  viewport; adjacent panes are one swipe away. This is the same information
-  architecture as `Solo` + `pane.focus_cycle`, so it needs no special server
-  support.
+ header" to previous/next session, so the gesture exists. One pane fills the
+ viewport; adjacent panes are one swipe away. This is the same information
+ architecture as `Solo` + `pane.focus_cycle`, so it needs no special server
+ support.
 - **Pane strip.** A one-row strip of chips above the content: session title,
-  agent status dot (§8), unread/attention badge. Tapping a chip is
-  `pane.focus_index`. This is the phone's answer to "which panes exist", and it
-  is also what a `Degradation::Partial` renders when a user has pinned themselves
-  to a layout that does not fit.
+ agent status dot (§8), unread/attention badge. Tapping a chip is
+ `pane.focus_index`. This is the phone's answer to "which panes exist", and it
+ is also what a `Degradation::Partial` renders when a user has pinned themselves
+ to a layout that does not fit.
 - **Split preview.** A phone user who creates a split needs to see that it
-  worked. The strip grows a chip and a toast says "split created — 2 panes";
-  tapping the toast opens the **layout map** (§7.3).
+ worked. The strip grows a chip and a toast says "split created — 2 panes";
+ tapping the toast opens the **layout map** (§7.3).
 - **Landscape tablet** (≥ 900 px) gets the primary view if it fits, else an
-  `Adaptive` view with `EvenColumns` at two panes, else `Stacked`.
+ `Adaptive` view with `EvenColumns` at two panes, else `Stacked`.
 
 ### 7.2 Floats and overlays on a phone
 
@@ -1140,34 +1140,34 @@ Dragging a border on a phone is bad, and building a touch drag affordance for
 1-cell precision would be a bad feature well implemented. Instead:
 
 1. **The palette is the primary surface.** Doc 16 §4 already generates palette
-   rows from capability inputs by enumerating enums — `pane.split` becomes
-   "Split into columns" / "Split into rows", `layout.preset` becomes one row per
-   preset. Every `pane.*` and `layout.*` capability is therefore reachable from
-   a phone with no per-capability mobile work, which is
-   [P3](01-principles.md#p3--parity-one-capability-three-surfaces) working as
-   designed rather than as an aspiration.
+ rows from capability inputs by enumerating enums — `pane.split` becomes
+ "Split into columns" / "Split into rows", `layout.preset` becomes one row per
+ preset. Every `pane.*` and `layout.*` capability is therefore reachable from
+ a phone with no per-capability mobile work, which is
+ [P3](01-principles.md#p3--parity-one-capability-three-surfaces) working as
+ designed rather than as an aspiration.
 2. **The layout map** — a dedicated full-screen editor, reached from the pane
-   strip's overflow or the palette. It renders the view's `Geometry` as
-   touch-sized boxes at whatever aspect the phone has, and supports:
-   - tap a box → focus (and dismiss);
-   - long-press a box → action sheet: split (4 directions), zoom, close, move to
-     workspace, mark, stack;
-   - **drag a box onto another → `pane.move { pane, to, dir }`**, with the drop
-     direction taken from which quadrant of the target you release in. This is
-     the same idea as another terminal's `PaneDragDropLocation` and it is a *good* touch
-     interaction, unlike border dragging;
-   - **tap a divider → a size stepper**, `−` / `+` / `=`, issuing
-     `pane.resize { target: Divider{..}, amount: Fraction(±0.05) }` and
-     `layout.balance`. Discrete 5 % steps against a named divider are precise,
-     undoable, and require no fine motor control. A slider is offered for
-     continuous adjustment on tablets.
-   - the map edits the phone's own view by default, with a prominent
-     **"apply to everyone"** button (`layout.promote`) so the phone can arrange
-     the laptop deliberately.
+ strip's overflow or the palette. It renders the view's `Geometry` as
+ touch-sized boxes at whatever aspect the phone has, and supports:
+ - tap a box → focus (and dismiss);
+ - long-press a box → action sheet: split (4 directions), zoom, close, move to
+ workspace, mark, stack;
+ - **drag a box onto another → `pane.move { pane, to, dir }`**, with the drop
+ direction taken from which quadrant of the target you release in. This is
+ the same idea as the `PaneDragDropLocation` and it is a *good* touch
+ interaction, unlike border dragging;
+ - **tap a divider → a size stepper**, `−` / `+` / `=`, issuing
+ `pane.resize { target: Divider{..}, amount: Fraction(±0.05) }` and
+ `layout.balance`. Discrete 5 % steps against a named divider are precise,
+ undoable, and require no fine motor control. A slider is offered for
+ continuous adjustment on tablets.
+ - the map edits the phone's own view by default, with a prominent
+ **"apply to everyone"** button (`layout.promote`) so the phone can arrange
+ the laptop deliberately.
 3. **Presets are the ergonomic path.** On a phone, "make it tiled" is one tap and
-   is what people actually want; the divider stepper exists for the rare case.
+ is what people actually want; the divider stepper exists for the rare case.
 4. **Voice and STT** (`stt.*`, doc 03) reach the palette like any other input, so
-   "split right" is a spoken command with no extra plumbing.
+ "split right" is a spoken command with no extra plumbing.
 
 Nothing in this section is a reduced capability set. The phone edits a different
 *view* by default, which is a scoping decision, not a permission one — consistent
@@ -1254,28 +1254,28 @@ safe and returns the original result.
 
 ```rust
 capability! {
-    /// Split a pane, creating a session in the new pane when none is given.
-    name  = "pane.split",
-    group = "pane", verb = "split",
-    kind  = Command,
-    role  = Role::Operator,
-    input  = PaneSplit {
-        pane: PaneId,
-        dir: Direction2D,
-        ratio: Option<f32>,
-        session: Option<SessionId>,
-        top_level: bool,
-        view: Option<ViewId>,
-    },
-    output = PaneSplitAck { pane: PaneId, session: SessionId, layout: LayoutTree },
-    /// The declared maximum.
-    effects = [Effects::SPAWNS_PROCESS],
-    /// Narrowed per call: splitting to show an *existing* session spawns nothing.
-    /// [03 §2.1](03-capability-catalog.md#21-conditional-effects).
-    refine_effects = |i: &PaneSplit| {
-        if i.session.is_none() { Effects::SPAWNS_PROCESS } else { Effects::empty() }
-    },
-    intent = Intent::Cas,
+ /// Split a pane, creating a session in the new pane when none is given.
+ name = "pane.split",
+ group = "pane", verb = "split",
+ kind = Command,
+ role = Role::Operator,
+ input = PaneSplit {
+ pane: PaneId,
+ dir: Direction2D,
+ ratio: Option<f32>,
+ session: Option<SessionId>,
+ top_level: bool,
+ view: Option<ViewId>,
+ },
+ output = PaneSplitAck { pane: PaneId, session: SessionId, layout: LayoutTree },
+ /// The declared maximum.
+ effects = [Effects::SPAWNS_PROCESS],
+ /// Narrowed per call: splitting to show an *existing* session spawns nothing.
+ /// [03 §2.1](03-capability-catalog.md#21-conditional-effects).
+ refine_effects = |i: &PaneSplit| {
+ if i.session.is_none { Effects::SPAWNS_PROCESS } else { Effects::empty }
+ },
+ intent = Intent::Cas,
 }
 ```
 
@@ -1348,11 +1348,11 @@ It rejects `native` sessions (§3.7).
 same surface. Two shaping decisions are worth stating explicitly:
 
 - Layout operations live in a `layout.*` group of their own, because they act on
-  a *view*, not a pane, and because the CLI reads better that way
-  (`omt layout preset tiled`). The workspace, where one is needed, is an input.
+ a *view*, not a pane, and because the CLI reads better that way
+ (`omt layout preset tiled`). The workspace, where one is needed, is an input.
 - `pane.resize` takes the `ResizeTarget`/`ResizeAmount` pair rather than a flat
-  `{ pane, edge, delta }`, so an edge drag and a proportional nudge are the same
-  capability.
+ `{ pane, edge, delta }`, so an edge drag and a proportional nudge are the same
+ capability.
 
 ### 9.4 Events
 
@@ -1381,22 +1381,22 @@ exactly right, debounced 500 ms.
 **What is persisted per workspace:**
 
 - `views` with `ViewKind::{Primary, Named}` — their `LayoutTree`, floats
-  (`Terminal` only; `Overlay` floats are transient by definition), stacks, zoom,
-  focus, `synchronize` group, and named marks.
+ (`Terminal` only; `Overlay` floats are transient by definition), stacks, zoom,
+ focus, `synchronize` group, and named marks.
 - Per-pane: `PaneId`, its `SessionId`, `priority` and `min` overrides.
 - Per `pty` session only: `SessionSizing::{current, policy}`, so a `Pinned` session comes
-  back pinned and an `Orphaned` session's content is readable at the width it
-  was written. A `native` session has no sizing to persist (§3.7).
+ back pinned and an `Orphaned` session's content is readable at the width it
+ was written. A `native` session has no sizing to persist (§3.7).
 
 **What is not:**
 
 - `ViewKind::Adaptive` views. They are a function of a client's viewport and are
-  rebuilt on attach. Persisting them would restore a phone-shaped layout for a
-  laptop.
+ rebuilt on attach. Persisting them would restore a phone-shaped layout for a
+ laptop.
 - `Overlay` floats, per doc 15 §7.1's "does not exist until toggled".
 - `Geometry`. Derived, always.
 - Per-actor marks (`HashMap<ActorId, PaneId>`) — an actor's mark does not
-  outlive the daemon; named marks do.
+ outlive the daemon; named marks do.
 
 **Restore.** Per doc 05 §8.2 the tree comes back intact and its sessions come
 back `Orphaned`. The layout must therefore tolerate panes whose sessions are
@@ -1422,7 +1422,7 @@ Following doc 05 §12's style — deterministic, no runtime, no clock.
 **Property tests** (`proptest`) over an arbitrary operation sequence drawn from
 `{split, close, resize, move, swap, rotate, zoom, unzoom, preset, balance,
 stack, unstack, float, unfloat}` applied to an arbitrary starting tree, with
-`check_invariants()` after each:
+`check_invariants` after each:
 
 | P1 | Every split has ≥ 2 children (N1). |
 | P2 | No split has a child split of the same axis (N2). |
@@ -1472,26 +1472,26 @@ original size, within the ±1 cell of G6.
 a virtual clock:
 
 1. Laptop 200×50 attaches with 4 panes; phone 52×24 attaches → assert the phone
-   is placed in an `Adaptive` view, the primary layout is unchanged, and **no
-   `SessionResized` is emitted**.
+ is placed in an `Adaptive` view, the primary layout is unchanged, and **no
+ `SessionResized` is emitted**.
 2. Phone requests the writer token → assert the 20 % warning fires, and that
-   accepting emits exactly one `SessionResized { reason: WriterChanged }` after
-   the debounce, not one per intermediate viewport report.
+ accepting emits exactly one `SessionResized { reason: WriterChanged }` after
+ the debounce, not one per intermediate viewport report.
 3. Phone rotates portrait→landscape→portrait within the debounce window →
-   assert zero PTY resizes.
+ assert zero PTY resizes.
 4. Policy set to `Smallest` with three clients attached, one detaching → assert
-   the size follows the new minimum and that a detach during the debounce
-   coalesces.
+ the size follows the new minimum and that a detach during the debounce
+ coalesces.
 5. Two clients drag the same divider concurrently → assert both deltas apply in
-   `seq` order and the result is the composition, not last-write-wins (weights
-   are commutative under addition, which is why `Divider` deltas are the right
-   wire form).
+ `seq` order and the result is the composition, not last-write-wins (weights
+ are commutative under addition, which is why `Divider` deltas are the right
+ wire form).
 6. A client resizes a divider that another client just deleted → assert
-   `UnknownSplit`, not a panic and not a silent no-op.
+ `UnknownSplit`, not a panic and not a silent no-op.
 7. `layout.promote` from a phone → assert every primary-view client receives one
-   `LayoutChanged` and that a laptop's zoom state is replaced, not merged.
+ `LayoutChanged` and that a laptop's zoom state is replaced, not merged.
 8. Daemon restart mid-drag → assert the persisted layout is the last committed
-   state, never a partial drag.
+ state, never a partial drag.
 
 ---
 
@@ -1503,22 +1503,22 @@ The model this document defines, stated compactly so every other document has a
 single place to check itself against:
 
 - The layout types of §1.2 and §1.3 are canonical: `LayoutTree` / `Split` /
-  `Axis { Columns, Rows }`, with `Layout::zoom: Option<PaneId>` as a flag beside
-  the tree. Doc 05 §2 defines these.
+ `Axis { Columns, Rows }`, with `Layout::zoom: Option<PaneId>` as a flag beside
+ the tree. Doc 05 §2 defines these.
 - A workspace owns `views: IndexMap<ViewId, LayoutView>` plus a `primary`
-  (§3.3); doc 05 §1.1 says so, and focus and zoom live inside a view.
+ (§3.3); doc 05 §1.1 says so, and focus and zoom live inside a view.
 - Presence and `ClientView` are keyed on `(ViewId, SessionId)`
-  ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing),
-  [12 §2](12-collaboration.md#2-presence-is-first-class-state)), never a bare
-  `PaneId`.
+ ([05 §4](05-session-model.md#4-attachment-detach-and-multi-client-viewing),
+ [12 §2](12-collaboration.md#2-presence-is-first-class-state)), never a bare
+ `PaneId`.
 - Zoom is per view (§5.1); [05 §13](05-session-model.md#13-open-questions) Q5 is
-  closed accordingly.
+ closed accordingly.
 - `layout.*` and `pane.navigate` are the capability names (§9.3).
 - Launch-config YAML writes `columns`/`rows` and keeps reading
-  `horizontal`/`vertical` ([10 §9.1](10-configuration.md#91-launch-configurations)).
+ `horizontal`/`vertical` ([10 §9.1](10-configuration.md#91-launch-configurations)).
 - `pane.split`'s conditional `SPAWNS_PROCESS` is handled by
-  [03 §2](03-capability-catalog.md#2-declaring-a-capability)'s conditional-effects
-  rule.
+ [03 §2](03-capability-catalog.md#2-declaring-a-capability)'s conditional-effects
+ rule.
 
 Two items are requests to another owner, and remain live: doc 12 must ratify `writer.acquire { keep_size }` and the 20 % takeover
 warning threshold (§3.4 consequence 1), and doc 15's owner must confirm that the

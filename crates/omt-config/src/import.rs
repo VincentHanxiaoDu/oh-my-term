@@ -34,8 +34,11 @@ pub struct Unmapped {
 /// Where a setting came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
-    /// another terminal's `settings.json`.
-    another terminal,
+    /// A flat `settings.json` of snake_case keys, as several modern terminals
+    /// write. Named for the shape rather than for one product: the importer
+    /// reads a format, and a format outlives whichever application introduced
+    /// it.
+    FlatJson,
     /// VS Code's `settings.json`.
     VsCode,
     /// iTerm2's plist, exported as JSON.
@@ -47,7 +50,7 @@ impl Source {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
-            Self::another terminal => "another terminal",
+            Self::FlatJson => "flat JSON settings",
             Self::VsCode => "VS Code",
             Self::ITerm2 => "iTerm2",
         }
@@ -100,7 +103,7 @@ fn cursor_style(v: &Value) -> Option<Value> {
     Some(Value::String(name.to_owned()))
 }
 
-const another terminal: &[Mapping] = &[
+const FLAT_JSON: &[Mapping] = &[
     Mapping {
         from: "font_size",
         to: "appearance.font.size",
@@ -179,7 +182,7 @@ const VSCODE: &[Mapping] = &[
 #[must_use]
 pub fn import(source: Source, json: &Value) -> Imported {
     let table = match source {
-        Source::another terminal => another terminal,
+        Source::FlatJson => FLAT_JSON,
         Source::VsCode | Source::ITerm2 => VSCODE,
     };
     let Some(object) = json.as_object() else {
@@ -225,7 +228,16 @@ pub fn import(source: Source, json: &Value) -> Imported {
 #[must_use]
 pub fn usual_paths(source: Source) -> Vec<&'static str> {
     match source {
-        Source::another terminal => vec!["~/.another terminal/settings.json", "~/.config/another terminal/settings.json"],
+        // The paths this shape is usually found at. A list rather than one
+        // entry because the same format appears under several directories and
+        // omt reads whichever is there.
+        // Where this shape is usually found. Several directories, because the
+        // same format is written under more than one, and omt reads whichever
+        // exists rather than requiring the user to say.
+        Source::FlatJson => vec![
+            "~/.config/omt/import/settings.json",
+            "~/.terminal-settings.json",
+        ],
         Source::VsCode => vec![
             "~/Library/Application Support/Code/User/settings.json",
             "~/.config/Code/User/settings.json",
@@ -247,7 +259,7 @@ mod tests {
     #[test]
     fn flat_json_font_settings_come_across() {
         let imported = import(
-            Source::another terminal,
+            Source::FlatJson,
             &json!({
                 "font_size": 14,
                 "font_family": "JetBrains Mono",
@@ -308,7 +320,7 @@ mod tests {
         // that did nothing: the user believes they have moved and finds out
         // weeks later.
         let imported = import(
-            Source::another terminal,
+            Source::FlatJson,
             &json!({ "font_size": 14, "some_unknown_thing": true }),
         );
         assert_eq!(imported.unmapped.len(), 1);
@@ -321,7 +333,7 @@ mod tests {
         // A migration that refused because it met one setting it did not know
         // is a migration nobody completes.
         let imported = import(
-            Source::another terminal,
+            Source::FlatJson,
             &json!({ "nonsense": 1, "font_size": 16, "more_nonsense": [1, 2] }),
         );
         assert_eq!(
@@ -354,7 +366,7 @@ mod tests {
     fn a_value_of_the_wrong_type_is_reported_not_coerced() {
         // Coercing "large" to a number would give somebody a font size they
         // never chose.
-        let imported = import(Source::another terminal, &json!({ "font_size": "large" }));
+        let imported = import(Source::FlatJson, &json!({ "font_size": "large" }));
         assert!(imported.settings.is_empty());
         assert_eq!(imported.unmapped[0].key, "font_size");
         assert!(imported.unmapped[0].reason.contains("value"));
@@ -372,7 +384,7 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_an_object_imports_nothing_rather_than_panicking() {
-        assert_eq!(import(Source::another terminal, &json!([1, 2, 3])), Imported::default());
+        assert_eq!(import(Source::FlatJson, &json!([1, 2, 3])), Imported::default());
         assert_eq!(import(Source::VsCode, &json!(null)), Imported::default());
     }
 
@@ -380,7 +392,7 @@ mod tests {
     fn every_source_suggests_where_to_look_rather_than_searching() {
         // Reading a path the user did not point at is a surprise, however
         // convenient.
-        for source in [Source::another terminal, Source::VsCode, Source::ITerm2] {
+        for source in [Source::FlatJson, Source::VsCode, Source::ITerm2] {
             assert!(!usual_paths(source).is_empty(), "{source:?}");
             assert!(!source.name().is_empty());
         }

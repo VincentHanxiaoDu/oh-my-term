@@ -1023,7 +1023,7 @@ mod tests {
     fn a_shell_without_marks_still_produces_a_block_from_its_output() {
         // What `ssh` to a host with no shell integration looks like. It used to
         // produce nothing, so the session appeared empty — the exact case
-        // another terminal's EarlyOutput exists for.
+        // this rule exists for.
         let mut t = Terminal::new(TermConfig::default());
         t.advance(b"$ ls\r\nfile\r\n$ ");
         let blocks = t.blocks();

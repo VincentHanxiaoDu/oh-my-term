@@ -64,14 +64,14 @@ and a closing one.
 Two things kill it as a product even sideloaded:
 
 - **The phantom process killer.** Android 12+ kills forked children beyond a
-  default of **32**, and any using "excessive CPU". `npm install` exceeds that
-  trivially, and it is [unfixable from inside an
-  app](https://issuetracker.google.com/issues/205156966) — the workaround needs
-  `adb`.
+ default of **32**, and any using "excessive CPU". `npm install` exceeds that
+ trivially, and it is [unfixable from inside an
+ app](https://issuetracker.google.com/issues/205156966) — the workaround needs
+ `adb`.
 - **AVF, the genuinely good path, is unreachable.** Android 16's Linux Terminal
-  is a real Debian VM on KVM with no W^X problem, but
-  `android.system.virtualmachine` is `@SystemApi` behind a permission grantable
-  only to preinstalled apps or via `adb`.
+ is a real Debian VM on KVM with no W^X problem, but
+ `android.system.virtualmachine` is `@SystemApi` behind a permission grantable
+ only to preinstalled apps or via `adb`.
 
 Claude Code *does* run in Termux via npm — the native installer fails on
 Bionic, and OAuth is unreliable enough that API-key auth is recommended.
@@ -103,7 +103,7 @@ docs describe the mobile app as [a client for Claude Code
 sessions](https://code.claude.com/docs/en/mobile) rather than a place where
 code runs. Cursor's cloud agents run in Cursor's infrastructure "not on your
 machine". Codex runs in OpenAI-managed containers. Jules spins a GCP VM per
-task. another tool Mobile is explicitly a companion. another terminal has no mobile client at all.
+task. other terminals Mobile is explicitly a companion. other terminals has no mobile client at all.
 
 Three tiers exist — vendor cloud sandbox, remote-control-your-own-machine, and
 on-device — and the third is occupied only by unofficial Android Termux hacks.
@@ -121,13 +121,13 @@ vanished mid-turn" as normal — is exactly that.
 Two adjacent things are worth doing, and neither is a bet:
 
 1. **Verify omt cross-compiles for `aarch64-linux-android` and runs under
-   Termux**, and publish that as a supported sideload target. Low cost, and it
-   is the one place "the phone is the machine" is literally true today. It
-   costs the Play channel rather than any engineering direction.
+ Termux**, and publish that as a supported sideload target. Low cost, and it
+ is the one place "the phone is the machine" is literally true today. It
+ costs the Play channel rather than any engineering direction.
 2. **iOS Live Activities** for long-running agent progress. Cursor's iOS app
-   tracks up to eight concurrent agents in the Dynamic Island, which maps
-   almost exactly onto omt's subagent grid — and it is the one thing genuinely
-   worth a native app for later.
+ tracks up to eight concurrent agents in the Dynamic Island, which maps
+ almost exactly onto omt's subagent grid — and it is the one thing genuinely
+ worth a native app for later.
 
 Worth noting what the Android path would actually buy: inference still goes to
 a remote API, it still needs a foreground service and an `adb` incantation to

@@ -26,22 +26,22 @@ The one-paragraph summary, stated up front so nothing below reads as overselling
 Related documents:
 
 - [01 — Principles](01-principles.md) — P2 pluggable, P3 parity, P4 native
-  semantics, P8 security
+ semantics, P8 security
 - [03 — Capability catalog](03-capability-catalog.md) — the declaration style §8 uses
 - [04 — Terminal core](04-terminal-core.md) — `Target`, `Position`, OSC 8, OSC 133
-  blocks, mouse modes, selection. **This document is the layer above `omt-term` §8.**
+ blocks, mouse modes, selection. **This document is the layer above `omt-term` §8.**
 - [09 — SSH and media](09-ssh-and-media.md) — the blob store and file transfer
-  protocol §5 reuses verbatim
+ protocol §5 reuses verbatim
 - [10 — Configuration](10-configuration.md) — `[open]` keys, keybinding format
-- [15 — Workspace explorer](15-workspace-explorer.md) — `confine()`, sensitivity,
-  `workspace.files.reveal`
+- [15 — Workspace explorer](15-workspace-explorer.md) — `confine`, sensitivity,
+ `workspace.files.reveal`
 - [16 — Input and keymap](16-input-and-keymap.md) — chord semantics, modifier
-  forwarding, `omt doctor keys`. 16 owns input semantics and the trigger grammar;
-  this document owns semantic open and the mouse *activation policy* that
-  [16 §6.2](16-input-and-keymap.md#62-the-hard-case--omt-vim-mode-vs-a-real-vim-in-a-pane)
-  now records as the one sanctioned exception to its mouse-suppression rule.
+ forwarding, `omt doctor keys`. 16 owns input semantics and the trigger grammar;
+ this document owns semantic open and the mouse *activation policy* that
+ [16 §6.2](16-input-and-keymap.md#62-the-hard-case--omt-vim-mode-vs-a-real-vim-in-a-pane)
+ now records as the one sanctioned exception to its mouse-suppression rule.
 - Research: [iTerm2 §8.4](../research/iterm2.md#84-smart-selection--semantic-history)
-  (semantic history, smart selection, `iTermPathFinder`, `iTermCachingFileManager`)
+ (semantic history, smart selection, `iTermPathFinder`, `iTermCachingFileManager`)
 
 ---
 
@@ -53,32 +53,32 @@ Three stages, cleanly separated because they have different purity, different
 trust and different homes:
 
 ```
-  bytes → grid            recognition          resolution           action
-  ───────────────    ─────────────────────  ─────────────────  ──────────────────
-      omt-term         omt-term §8.3           omt-open           omt-open
-      (existing)       Match { rule, span,     ResolvedTarget     OpenHandler
-                               captures }      { kind, exists,    → editor / explorer
-                                                 remote, … }        / browser / agent
-      pure                  pure               syscalls, cached   spawns, network
+ bytes → grid recognition resolution action
+ ─────────────── ───────────────────── ───────────────── ──────────────────
+ omt-term omt-term §8.3 omt-open omt-open
+ (existing) Match { rule, span, ResolvedTarget OpenHandler
+ captures } { kind, exists, → editor / explorer
+ remote, … } / browser / agent
+ pure pure syscalls, cached spawns, network
 ```
 
 - **Recognition is pure and lives in `omt-term`.** It is a function of the
-  logical line's text plus its OSC 8 runs. It issues no syscalls, so it can run
-  in the parser's own crate under [P1](01-principles.md#p1--clean-small-crates-explicit-seams)
-  and is trivially fuzzable. `04 §8.3` already declares the `Target` enum and
-  `Terminal::target_at`; this document specifies the rule set behind them and
-  widens `Target` (§2.6).
+ logical line's text plus its OSC 8 runs. It issues no syscalls, so it can run
+ in the parser's own crate under [P1](01-principles.md#p1--clean-small-crates-explicit-seams)
+ and is trivially fuzzable. `04 §8.3` already declares the `Target` enum and
+ `Terminal::target_at`; this document specifies the rule set behind them and
+ widens `Target` (§2.6).
 - **Resolution and action live in a new L2 crate, `omt-open`.** Resolution
-  `stat`s things; action spawns processes and opens URLs. Neither belongs in a
-  pure state machine.
+ `stat`s things; action spawns processes and opens URLs. Neither belongs in a
+ pure state machine.
 - **Everything user-facing is a capability**, so the phone can do all of it
-  ([P3](01-principles.md#p3--parity-one-capability-three-surfaces)).
+ ([P3](01-principles.md#p3--parity-one-capability-three-surfaces)).
 
 ### 1.2 The new crate
 
 ```
-L2 subsystems   omt-term · omt-pty · omt-agent-adapters · omt-transport
-                omt-auth · omt-stt · omt-media · omt-open        ← new
+L2 subsystems omt-term · omt-pty · omt-agent-adapters · omt-transport
+ omt-auth · omt-stt · omt-media · omt-open ← new
 ```
 
 `omt-open` depends on `omt-types`, `omt-catalog`, `omt-events`, `regex`, and
@@ -96,38 +96,38 @@ owns those files.
 ### 1.3 What this is not
 
 - **Not a linkifier for the outer terminal.** omt renders its own grid; it does
-  not emit OSC 8 to make the *host* emulator underline things. Doing so would
-  hand activation to the host, which is precisely the conflict §4.2 exists to
-  solve.
+ not emit OSC 8 to make the *host* emulator underline things. Doing so would
+ hand activation to the host, which is precisely the conflict §4.2 exists to
+ solve.
 - **Not an editor.** Same boundary as [15 §1.1](15-workspace-explorer.md) — omt
-  hands off to the real editor.
+ hands off to the real editor.
 - **Not automatic.** No target is ever activated without an explicit user
-  action. See [§8](#8-security).
+ action. See [§8](#8-security).
 - **Not available in `native` sessions in v1.** A `native` session
-  ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)) has no
-  PTY, no grid and therefore no `Position`. This document's entire model is
-  `Match { span: Range<Position> }` over `omt-term` coordinates — every part of
-  it, from anchoring across reflow (§2.5) to hint-label placement (§5.2) to
-  mouse hit-testing (§5.1), is expressed in grid coordinates. **Semantic open
-  is out of scope for `native` sessions in v1, and the UI offers no hints, no
-  click targets and no `open.*` actions there.**
+ ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)) has no
+ PTY, no grid and therefore no `Position`. This document's entire model is
+ `Match { span: Range<Position> }` over `omt-term` coordinates — every part of
+ it, from anchoring across reflow (§2.5) to hint-label placement (§5.2) to
+ mouse hit-testing (§5.1), is expressed in grid coordinates. **Semantic open
+ is out of scope for `native` sessions in v1, and the UI offers no hints, no
+ click targets and no `open.*` actions there.**
 
-  **This is a real loss and it is stated rather than hidden**: a native agent's
-  transcript is full of `src/lib.rs:42`, and those will not be clickable.
+ **This is a real loss and it is stated rather than hidden**: a native agent's
+ transcript is full of `src/lib.rs:42`, and those will not be clickable.
 
-  **Why it is deferred rather than solved now.** The fix is to generalise the
-  anchor from a grid span to a `ContentRef` that a transcript offset can also
-  satisfy — sketched in §2.6 — and that is an `omt-types` change touching
-  `Match`, `MatchId`, anchoring, and every handler signature. Doing it
-  speculatively, before a native transcript renderer exists to validate it
-  against, would freeze a second coordinate system on a guess about what a
-  transcript offset looks like. Doing it later is an additive enum variant
-  behind one type, which is exactly the shape of change that is cheap.
+ **Why it is deferred rather than solved now.** The fix is to generalise the
+ anchor from a grid span to a `ContentRef` that a transcript offset can also
+ satisfy — sketched in §2.6 — and that is an `omt-types` change touching
+ `Match`, `MatchId`, anchoring, and every handler signature. Doing it
+ speculatively, before a native transcript renderer exists to validate it
+ against, would freeze a second coordinate system on a guess about what a
+ transcript offset looks like. Doing it later is an additive enum variant
+ behind one type, which is exactly the shape of change that is cheap.
 
-  **Recorded as the known future edit**, not as an open question: §2.6 carries
-  the target shape, and the `omt-types` contracts change must land `Match` and
-  `Target` with a *documented intent* to gain a `ContentRef` anchor — so the
-  change is planned rather than rediscovered.
+ **Recorded as the known future edit**, not as an open question: §2.6 carries
+ the target shape, and the `omt-types` contracts change must land `Match` and
+ `Target` with a *documented intent* to gain a `ContentRef` anchor — so the
+ change is planned rather than rediscovered.
 
 ---
 
@@ -151,15 +151,15 @@ completed logical lines.
 reasons, in order of weight:
 
 1. **The emitter knows things the text does not.** `rg --hyperlink-format=file://{host}{path}:{line}:{column}`
-   emits an *absolute* URI even when the displayed text is relative to a
-   directory omt cannot see. Preferring the visible text discards ground truth.
+ emits an *absolute* URI even when the displayed text is relative to a
+ directory omt cannot see. Preferring the visible text discards ground truth.
 2. **P4.** [P4](01-principles.md#p4--native-semantics-observe-never-re-implement)
-   says structured claims come from structured sources. An OSC 8 URI is a
-   structured source; a regex over rendered output is not. Letting a regex
-   override an explicit declaration is exactly the inversion P4 forbids.
+ says structured claims come from structured sources. An OSC 8 URI is a
+ structured source; a regex over rendered output is not. Letting a regex
+ override an explicit declaration is exactly the inversion P4 forbids.
 3. **It is the emitter's escape hatch.** A program that dislikes omt's guess can
-   fix it by emitting OSC 8. If heuristics could win, there would be no such
-   hatch.
+ fix it by emitting OSC 8. If heuristics could win, there would be no such
+ hatch.
 
 The one refinement: **explicit wins the *target*, heuristics may still enrich
 it.** If OSC 8 says `file:///home/v/p/src/main.rs` and the surrounding text is
@@ -174,14 +174,14 @@ it is visible in `open.resolve` output and in tests.
 /// One recognition rule. User-extensible per P2; the built-ins are ordinary
 /// entries in the same table, with no privileged status.
 pub struct Rule {
-    pub id: RuleId,                 // stable string, e.g. "builtin.rustc_arrow"
-    pub kind: MatchKind,            // what the match *is* (§2.3)
-    pub regex: Regex,               // must contain at least the named group the kind requires
-    pub precedence: i16,            // higher wins overlaps; built-ins occupy 0..=1000
-    pub anchor: Anchor,             // Anywhere | LineStart | AfterWhitespace
-    pub scope: RuleScope,           // Any | InBlockKind(..) | WhenCommandMatches(Regex)
-    pub captures: CaptureMap,       // named group → semantic slot
-    pub enabled: bool,
+ pub id: RuleId, // stable string, e.g. "builtin.rustc_arrow"
+ pub kind: MatchKind, // what the match *is* (§2.3)
+ pub regex: Regex, // must contain at least the named group the kind requires
+ pub precedence: i16, // higher wins overlaps; built-ins occupy 0..=1000
+ pub anchor: Anchor, // Anywhere | LineStart | AfterWhitespace
+ pub scope: RuleScope, // Any | InBlockKind(..) | WhenCommandMatches(Regex)
+ pub captures: CaptureMap, // named group → semantic slot
+ pub enabled: bool,
 }
 
 pub enum Anchor { Anywhere, LineStart, AfterWhitespace }
@@ -197,10 +197,10 @@ the same shape `omt-term` already uses for multi-pattern search
 ([04 §8.1](04-terminal-core.md#81-search)):
 
 1. One `RegexSet` over all enabled rules answers *which rules could match this
-   line* in a single pass. On the overwhelmingly common line where nothing
-   matches, that pass is the entire cost.
+ line* in a single pass. On the overwhelmingly common line where nothing
+ matches, that pass is the entire cost.
 2. For each rule the set flagged, run its `Regex` with `find_iter`, honoring
-   `Anchor`.
+ `Anchor`.
 3. Collect `RawMatch { rule, byte_span, captures }`.
 4. **Overlap resolution** (§2.4).
 5. Convert byte spans to `Range<Position>` (§2.5).
@@ -216,11 +216,11 @@ grep-style matching without the false positives everywhere else.
 
 ```rust
 pub enum MatchKind {
-    Url,                    // any scheme; the allow-list is applied at action time (§7.1)
-    Path,                   // with optional line/col
-    GitRef,                 // sha, tag, branch
-    Issue,                  // owner/repo#123, #123, JIRA-456
-    Custom(RuleId),         // user rule with no built-in semantics; actions come from config
+ Url, // any scheme; the allow-list is applied at action time (§7.1)
+ Path, // with optional line/col
+ GitRef, // sha, tag, branch
+ Issue, // owner/repo#123, #123, JIRA-456
+ Custom(RuleId), // user rule with no built-in semantics; actions come from config
 }
 ```
 
@@ -236,15 +236,15 @@ matches the node-stack rule (span covering `/app/src/x.js:12:5`), the generic
 logical line:
 
 1. **OSC 8 runs are laid down first and are immovable.** Any heuristic match
-   overlapping an OSC 8 run is dropped, except for the line/col enrichment in
-   §2.1.
+ overlapping an OSC 8 run is dropped, except for the line/col enrichment in
+ §2.1.
 2. **Highest `precedence` wins** any pair of overlapping spans.
 3. **Equal precedence: the longer span wins.** `/app/src/x.js:12:5` beats
-   `/app/src/x.js`. This is the rule that makes "path plus line" reliable, and
-   it is why line/col rules and bare-path rules can coexist at the same
-   precedence without a hand-tuned ordering between them.
+ `/app/src/x.js`. This is the rule that makes "path plus line" reliable, and
+ it is why line/col rules and bare-path rules can coexist at the same
+ precedence without a hand-tuned ordering between them.
 4. **Equal precedence and equal length: earlier in the table wins.** Total
-   ordering, so the result is deterministic and diffable in tests.
+ ordering, so the result is deterministic and diffable in tests.
 5. Non-overlapping matches all survive; a line can carry many.
 
 Explicitly *not* done: iTerm2's "try prefixes and suffixes around the click
@@ -265,13 +265,13 @@ is a logical-line coordinate and matching runs over **logical** (unwrapped)
 lines, three properties fall out for free:
 
 - **A match spanning a soft wrap is found normally.** `/very/long/path/to/f.rs:412`
-  broken across a 80-column boundary is one match, not two fragments — the same
-  win [04 §8.1](04-terminal-core.md#81-search) gets for search.
+ broken across a 80-column boundary is one match, not two fragments — the same
+ win [04 §8.1](04-terminal-core.md#81-search) gets for search.
 - **Matches survive reflow by construction**, exactly as block boundaries,
-  selections and search results do. A resize does not re-run the matcher.
+ selections and search results do. A resize does not re-run the matcher.
 - **A rendered match may occupy several disjoint screen rectangles.** The
-  renderer turns one `Range<Position>` into N row-segments at draw time; hint
-  labels attach to the *first* rectangle in reading order.
+ renderer turns one `Range<Position>` into N row-segments at draw time; hint
+ labels attach to the *first* rectangle in reading order.
 
 Cache invalidation is by `Generation` (04 §4.1): a line's match list is valid
 while its generation is unchanged, and generations are already the equality test
@@ -291,23 +291,23 @@ reading convenience — if the two ever differ, 04 wins and this copy is the bug
 
 ```rust
 pub struct Match {
-    pub id: MatchId,                    // (LineId, index) — stable while the line lives
-    pub span: Range<Position>,
-    pub rule: RuleId,
-    pub kind: MatchKind,
-    pub origin: MatchOrigin,            // Osc8 | Osc8WithHeuristicLineCol | Heuristic
-    pub slots: SmallVec<[(Slot, Range<u16>); 4]>,   // byte ranges *within the matched text*
-    pub text: CompactString,            // the matched text, for display and for handlers
-    pub block: Option<BlockId>,         // owning block; supplies cwd/host at resolve time
+ pub id: MatchId, // (LineId, index) — stable while the line lives
+ pub span: Range<Position>,
+ pub rule: RuleId,
+ pub kind: MatchKind,
+ pub origin: MatchOrigin, // Osc8 | Osc8WithHeuristicLineCol | Heuristic
+ pub slots: SmallVec<[(Slot, Range<u16>); 4]>, // byte ranges *within the matched text*
+ pub text: CompactString, // the matched text, for display and for handlers
+ pub block: Option<BlockId>, // owning block; supplies cwd/host at resolve time
 }
 
 // Reproduced from 04 §8.3; that document is authoritative.
 pub enum Target {
-    Url(Url),
-    Path { raw: String, line: Option<u32>, col: Option<u32> },
-    GitRef { raw: String },
-    Issue { raw: String, repo: Option<String> },
-    Custom { rule: RuleId, slots: SmallVec<[(Slot, Range<u16>); 4]> },
+ Url(Url),
+ Path { raw: String, line: Option<u32>, col: Option<u32> },
+ GitRef { raw: String },
+ Issue { raw: String, repo: Option<String> },
+ Custom { rule: RuleId, slots: SmallVec<[(Slot, Range<u16>); 4]> },
 }
 ```
 
@@ -317,7 +317,7 @@ elsewhere:
 
 | Variant | 18 used to say | 04 says, and now so does 18 | Where the lost information comes from |
 |---|---|---|---|
-| `Url` | `Url { raw: String }` | `Url(Url)` | A parsed `Url` is strictly stronger: the scheme allow-list of §3.2 needs a parse anyway, and `Url::as_str()` recovers `raw`. |
+| `Url` | `Url { raw: String }` | `Url(Url)` | A parsed `Url` is strictly stronger: the scheme allow-list of §3.2 needs a parse anyway, and `Url::as_str` recovers `raw`. |
 | `Issue` | `{ owner, repo, number, key }` | `{ raw, repo }` | Recognition produces the raw reference; **decomposition into owner/number/key is a resolution concern**, performed by the issue handler (§4) from `raw` against the block's forge config. Recognition stays pure and forge-agnostic, which is the §2.4 rule. |
 | `Custom.slots` | `BTreeMap<String, String>` | `SmallVec<[(Slot, Range<u16>); 4]>` | The map form both allocated per match and *copied* the slot text out of the line. Ranges into the matched text are what `Match::slots` already carries two fields above — the two were inconsistent inside this one document, and the range form is the one that survives reflow, because it does not snapshot the text. Handlers index `Match::text` with the range; §4's action templates are unaffected, since `Slot` is still a name. |
 
@@ -330,12 +330,12 @@ recorded future shape replaces it with:
 
 ```rust
 pub enum ContentRef {
-    /// A span in a terminal grid — the only variant in v1.
-    Grid { span: Range<Position>, block: Option<BlockId> },
-    /// A byte range within one entry of a rendered transcript. The variant a
-    /// `native` session (and, later, the `pty` transcript view of
-    /// [08 §4.4](08-web-client.md#44-transcript-view)) would use.
-    Transcript { entry: EventSeq, offset: Range<u32> },
+ /// A span in a terminal grid — the only variant in v1.
+ Grid { span: Range<Position>, block: Option<BlockId> },
+ /// A byte range within one entry of a rendered transcript. The variant a
+ /// `native` session (and, later, the `pty` transcript view of
+ /// [08 §4.4](08-web-client.md#44-transcript-view)) would use.
+ Transcript { entry: EventSeq, offset: Range<u32> },
 }
 ```
 
@@ -365,8 +365,8 @@ noted per rule). Named groups map to `Slot`s of the same name.
 |---|---|---|---|---|
 | 900 | `builtin.python_traceback` | Path | `File "(?<path>[^"\n]+)", line (?<line>\d+)` | Python, and Ruby's `from x.rb:12:in` variant below. Very high precedence: the quotes make it unambiguous and paths inside may contain spaces. |
 | 890 | `builtin.python_pytest_in` | Path | `^(?<path>[^\s:][^:\n]*\.py):(?<line>\d+): in \S` | pytest's failure frames. `LineStart`. |
-| 880 | `builtin.node_stack` | Path | `\bat (?:[^\s()]+ \()?(?<path>(?:file://)?(?:/|[A-Za-z]:[\\/])[^\s():]+):(?<line>\d+):(?<col>\d+)\)?` | Node/V8, jest, vitest, tsx. Handles both `at fn (p:l:c)` and `at p:l:c`. `file://` prefix stripped at resolve. |
-| 875 | `builtin.node_stack_rel` | Path | `\bat (?:[^\s()]+ \()?(?<path>\.{0,2}/?[\w.@+-]+(?:/[\w.@+-]+)*\.[cm]?[jt]sx?):(?<line>\d+):(?<col>\d+)\)?` | Bundled/relative frames (webpack, esbuild). |
+| 880 | `builtin.node_stack` | Path | `\bat (?:[^\s]+ \?(?<path>(?:file://)?(?:/|[A-Za-z]:[\\/])[^\s:]+):(?<line>\d+):(?<col>\d+)\)?` | Node/V8, jest, vitest, tsx. Handles both `at fn (p:l:c)` and `at p:l:c`. `file://` prefix stripped at resolve. |
+| 875 | `builtin.node_stack_rel` | Path | `\bat (?:[^\s]+ \?(?<path>\.{0,2}/?[\w.@+-]+(?:/[\w.@+-]+)*\.[cm]?[jt]sx?):(?<line>\d+):(?<col>\d+)\)?` | Bundled/relative frames (webpack, esbuild). |
 | 870 | `builtin.java_stack` | Path | `\bat [\w$.]+\((?<path>[\w$]+\.(?:java|kt|scala|groovy)):(?<line>\d+)\)` | Only a *basename* — resolution needs the workspace index (§3.4). |
 | 860 | `builtin.rustc_arrow` | Path | `-->\s+(?<path>[^\s:][^:\n]*?):(?<line>\d+):(?<col>\d+)` | rustc, and every tool that copies its diagnostic format (miri, clippy, cargo-nextest). |
 | 855 | `builtin.rust_panic` | Path | `panicked at (?<path>[^\s:][^:\n]*?):(?<line>\d+):(?<col>\d+)` | `thread '…' panicked at src/x.rs:9:5:` (Rust ≥ 1.73 format) |
@@ -394,16 +394,16 @@ rules are config data, validated at load like everything else in
 
 ```toml
 [[open.rule]]
-id         = "buildkite.job"
-kind       = "custom"
-regex      = 'https://buildkite\.com/(?<org>[\w-]+)/(?<pipe>[\w-]+)/builds/(?<num>\d+)'
+id = "buildkite.job"
+kind = "custom"
+regex = 'https://buildkite\.com/(?<org>[\w-]+)/(?<pipe>[\w-]+)/builds/(?<num>\d+)'
 precedence = 950
-actions    = ["open_url", "copy"]
+actions = ["open_url", "copy"]
 
 [[open.rule]]
-id         = "monorepo.bazel_label"
-kind       = "path"
-regex      = '//(?<path>[\w/-]+):(?<target>[\w.-]+)'
+id = "monorepo.bazel_label"
+kind = "path"
+regex = '//(?<path>[\w/-]+):(?<target>[\w.-]+)'
 precedence = 720
 # Transform the captured label into a real path before resolution.
 path_template = "{path}/BUILD.bazel"
@@ -427,39 +427,39 @@ existence-checked thing, or an honest failure.
 
 ```rust
 pub struct ResolutionContext<'a> {
-    pub host: TargetHost,                 // Local | Remote { instance, host }
-    pub block_cwd: Option<&'a Path>,      // OSC 7 / OSC 1337 CurrentDir at block start
-    pub block_host: Option<&'a RemoteHost>,
-    pub pane_cwd: Option<&'a Path>,       // fallback only
-    pub workspace_roots: &'a [CanonicalPath],
-    pub git: Option<&'a GitIdentity>,     // for GitRef / Issue resolution
-    pub home: &'a Path,
+ pub host: TargetHost, // Local | Remote { instance, host }
+ pub block_cwd: Option<&'a Path>, // OSC 7 / OSC 1337 CurrentDir at block start
+ pub block_host: Option<&'a RemoteHost>,
+ pub pane_cwd: Option<&'a Path>, // fallback only
+ pub workspace_roots: &'a [CanonicalPath],
+ pub git: Option<&'a GitIdentity>, // for GitRef / Issue resolution
+ pub home: &'a Path,
 }
 
 /// **The canonical definition.** Other documents contribute fields; none
 /// redeclare the struct.
 pub struct ResolvedTarget {
-    pub target: Target,
-    pub resolution: Resolution,
-    pub existence: Existence,
-    pub sensitivity: Sensitivity,         // from 15 §9.4, so handlers can gate
-    pub actions: Vec<ActionOffer>,        // ordered, best first (§4.3)
-    /// Which machine owns the file. Filled by the *resolving* instance; §6.1.
-    pub host: TargetHost,
-    /// Set when the path is inside an open workspace root, so the explorer can
-    /// jump straight to the node. `ExplorerRef` is defined in
-    /// [15 §8.1](15-workspace-explorer.md#81-fileline-from-terminal-output).
-    pub explorer: Option<ExplorerRef>,
+ pub target: Target,
+ pub resolution: Resolution,
+ pub existence: Existence,
+ pub sensitivity: Sensitivity, // from 15 §9.4, so handlers can gate
+ pub actions: Vec<ActionOffer>, // ordered, best first (§4.3)
+ /// Which machine owns the file. Filled by the *resolving* instance; §6.1.
+ pub host: TargetHost,
+ /// Set when the path is inside an open workspace root, so the explorer can
+ /// jump straight to the node. `ExplorerRef` is defined in
+ /// [15 §8.1](15-workspace-explorer.md#81-fileline-from-terminal-output).
+ pub explorer: Option<ExplorerRef>,
 }
 
 pub enum Resolution {
-    File { path: PathBuf, workspace: Option<WorkspaceId>, line: Option<u32>, col: Option<u32> },
-    Dir  { path: PathBuf, workspace: Option<WorkspaceId> },
-    Url  { url: Url, display: UrlDisplay },      // §7.1
-    Commit { sha: String, workspace: WorkspaceId, subject: String },
-    IssueUrl { url: Url },
-    Ambiguous { candidates: Vec<PathBuf> },      // §3.5
-    Unresolved { reason: UnresolvedReason },
+ File { path: PathBuf, workspace: Option<WorkspaceId>, line: Option<u32>, col: Option<u32> },
+ Dir { path: PathBuf, workspace: Option<WorkspaceId> },
+ Url { url: Url, display: UrlDisplay }, // §7.1
+ Commit { sha: String, workspace: WorkspaceId, subject: String },
+ IssueUrl { url: Url },
+ Ambiguous { candidates: Vec<PathBuf> }, // §3.5
+ Unresolved { reason: UnresolvedReason },
 }
 
 pub enum Existence { Exists { kind: NodeKind, len: u64 }, Missing, Unknown /* remote, not yet probed */ }
@@ -477,10 +477,10 @@ Why it matters, concretely:
 ```
 ~/proj $ cd crates/parser
 ~/proj/crates/parser $ cargo test
-   … error[E0308]: mismatched types
-     --> src/lexer.rs:88:17
+ … error[E0308]: mismatched types
+ --> src/lexer.rs:88:17
 ~/proj/crates/parser $ cd ../..
-~/proj $                                  ← user is here now, and clicks the error
+~/proj $ ← user is here now, and clicks the error
 ```
 
 The pane's cwd is `~/proj`. `~/proj/src/lexer.rs` may not exist (open nothing —
@@ -493,13 +493,13 @@ plausible-looking file and debugs the wrong thing.
 So resolution walks a strict ladder and **stops at the first success**:
 
 1. **The match's `block.cwd`** (OSC 7 / `OSC 1337;CurrentDir=` captured at
-   OSC 133 A/B time). Correct by construction.
+ OSC 133 A/B time). Correct by construction.
 2. **A path-only prefix search within the owning block's workspace root**, if
-   the block has no cwd but the match's path is *unique* under that root
-   (§3.4). One candidate → use it. Several → `Ambiguous`.
+ the block has no cwd but the match's path is *unique* under that root
+ (§3.4). One candidate → use it. Several → `Ambiguous`.
 3. **The pane's current cwd**, and only if the resulting file exists **and** the
-   block had no cwd. Marked `confidence: Low` on the result and shown with a
-   "resolved against the pane's current directory" note in the UI.
+ block had no cwd. Marked `confidence: Low` on the result and shown with a
+ "resolved against the pane's current directory" note in the UI.
 4. Otherwise `Unresolved { reason: NoCwd }`.
 
 Rung 3 is deliberately last and deliberately labelled. It exists because the
@@ -519,45 +519,45 @@ current directory, not the command's — install shell integration to fix"*.
 Applied in order, before any syscall:
 
 1. Strip a `file://` or `file://<host>/` prefix; if `<host>` is non-empty and
-   not `localhost` and not the session's host, the target is remote (§5).
+ not `localhost` and not the session's host, the target is remote (§5).
 2. Percent-decode **only** when the raw text came from a URL context. A literal
-   `%20` in a shell path is a real character; a `%20` in a `file:` URI is a
-   space. `MatchOrigin` tells them apart.
+ `%20` in a shell path is a real character; a `%20` in a `file:` URI is a
+ space. `MatchOrigin` tells them apart.
 3. Expand a leading `~/` or `~user/` against `ResolutionContext::home` /
-   the passwd database. Never expand `~` inside a path.
+ the passwd database. Never expand `~` inside a path.
 4. On Windows, normalize separators; recognize `\\?\`, drive-relative and UNC
-   forms and reject the exotic ones rather than guessing.
+ forms and reject the exotic ones rather than guessing.
 5. Trim trailing punctuation that survived the confirm pass (`.`, `,`, `:`,
-   `'`, `"`, `)` when unbalanced) — only for `builtin.*_path` rules, never for
-   quoted forms like `python_traceback`.
+ `'`, `"`, `)` when unbalanced) — only for `builtin.*_path` rules, never for
+ quoted forms like `python_traceback`.
 6. Lexically normalize `.`/`..` **without** touching the filesystem, then join
-   against the resolved cwd.
+ against the resolved cwd.
 
 ### 3.3 Existence, confinement and sensitivity
 
 - **`stat` with a cache.** A `StatCache` keyed by absolute path, TTL 2 s,
-  capacity 4096, negative entries cached at TTL 500 ms. Naive existence checking
-  **once per match, on every re-match of a line**, is the classic performance
-  killer here — a screen of a stack trace is dozens of `stat`s per frame, and
-  scrolling re-runs them. (omt never checks on *hover*: §5.1 renders decoration
-  from the matcher, not the pointer.) iTerm2 needed
-  `iTermCachingFileManager` for exactly this reason
-  ([iTerm2 §8.4](../research/iterm2.md#84-smart-selection--semantic-history)).
-  The cache is invalidated wholesale on a workspace FS event from
-  [15 §4.6](15-workspace-explorer.md) for paths under a watched root.
+ capacity 4096, negative entries cached at TTL 500 ms. Naive existence checking
+ **once per match, on every re-match of a line**, is the classic performance
+ killer here — a screen of a stack trace is dozens of `stat`s per frame, and
+ scrolling re-runs them. (omt never checks on *hover*: §5.1 renders decoration
+ from the matcher, not the pointer.) iTerm2 needed
+ `iTermCachingFileManager` for exactly this reason
+ ([iTerm2 §8.4](../research/iterm2.md#84-smart-selection--semantic-history)).
+ The cache is invalidated wholesale on a workspace FS event from
+ [15 §4.6](15-workspace-explorer.md) for paths under a watched root.
 - **Confinement is applied at *action* time, not resolution time.** Resolution
-  may report that `/etc/shadow` exists — a `Viewer` on a phone learning that a
-  path printed on their own screen exists is not a disclosure. *Opening* it is
-  gated: a path inside a workspace root goes through
-  [15 §9.1](15-workspace-explorer.md#91-path-confinement)'s `confine()`; a path
-  outside every root is offered only `reveal_in_editor` (Operator,
-  `SPAWNS_PROCESS`) and `copy`, never `workspace.explorer.reveal` or `read`. This mirrors
-  [15 §8.4](15-workspace-explorer.md#84-open-in-editor)'s existing split exactly.
+ may report that `/etc/shadow` exists — a `Viewer` on a phone learning that a
+ path printed on their own screen exists is not a disclosure. *Opening* it is
+ gated: a path inside a workspace root goes through
+ [15 §9.1](15-workspace-explorer.md#91-path-confinement)'s `confine`; a path
+ outside every root is offered only `reveal_in_editor` (Operator,
+ `SPAWNS_PROCESS`) and `copy`, never `workspace.explorer.reveal` or `read`. This mirrors
+ [15 §8.4](15-workspace-explorer.md#84-open-in-editor)'s existing split exactly.
 - **Sensitivity** is computed with [15 §9.4](15-workspace-explorer.md#94-sensitive-files)'s
-  matcher. A `Sensitive` target is badged 🔒 in the hint overlay, its *preview*
-  is suppressed for `Viewer`, and "insert into agent prompt" requires an extra
-  confirm on every surface — handing `.env` to an agent is a real exfiltration
-  path and the one-tap version of it should not exist.
+ matcher. A `Sensitive` target is badged 🔒 in the hint overlay, its *preview*
+ is suppressed for `Viewer`, and "insert into agent prompt" requires an extra
+ confirm on every surface — handing `.env` to an agent is a real exfiltration
+ path and the one-tap version of it should not exist.
 
 ### 3.4 Basename-only targets and the workspace index
 
@@ -567,7 +567,7 @@ test runners print a basename with no directory. These resolve through
 
 - exactly one match under the block's workspace root → resolve to it;
 - several → `Ambiguous` with the candidate list, ranked by (a) inside the block's
-  cwd subtree, (b) shortest path, (c) most recently modified;
+ cwd subtree, (b) shortest path, (c) most recently modified;
 - none → `Unresolved { reason: NotFoundInWorkspace }`.
 
 The index is the explorer's, not a second one. If the explorer is disabled
@@ -579,24 +579,24 @@ unavailable and says so.
 **omt never opens a substitute.** The failure UX, in full:
 
 - The hint label / underline for a non-existent path renders **dimmed with a
-  strikethrough** rather than as an active link, so the user learns before
-  acting. This costs one `stat` per visible match, from the cache above.
+ strikethrough** rather than as an active link, so the user learns before
+ acting. This costs one `stat` per visible match, from the cache above.
 - Activating it anyway (it is not forbidden — the file may have just been
-  deleted, and the user may want to copy the path) opens the **action menu**
-  with `copy`, `search workspace for this basename`, and `insert into agent
-  prompt` enabled, and `open in editor` disabled with an inline reason.
+ deleted, and the user may want to copy the path) opens the **action menu**
+ with `copy`, `search workspace for this basename`, and `insert into agent
+ prompt` enabled, and `open in editor` disabled with an inline reason.
 - The reason is specific, never "not found":
 
 ```
 ┌ omt · open ──────────────────────────────────────────────┐
-│  src/lexer.rs:88:17                                       │
-│                                                           │
-│  Resolved to  ~/proj/src/lexer.rs   — does not exist       │
-│  Resolved against the pane's current directory, because    │
-│  the block that printed this has no recorded cwd.          │
-│    ▸ Install shell integration    (omt shell install)      │
-│    ▸ Search the workspace for "lexer.rs"          [enter]  │
-│    ▸ Copy the text                                    [y]  │
+│ src/lexer.rs:88:17 │
+│ │
+│ Resolved to ~/proj/src/lexer.rs — does not exist │
+│ Resolved against the pane's current directory, because │
+│ the block that printed this has no recorded cwd. │
+│ ▸ Install shell integration (omt shell install) │
+│ ▸ Search the workspace for "lexer.rs" [enter] │
+│ ▸ Copy the text [y] │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -609,15 +609,15 @@ surfaces. Failure with a next step is the whole product difference here.
 ### 3.6 Non-path resolution
 
 - **`GitRef`.** Resolved against the block's `GitIdentity` with
-  `git cat-file -t <sha>`; a miss demotes the match to plain text (no menu, no
-  underline) rather than offering a broken action. On a hit, `git show --stat`'s
-  first line becomes the display subject, and actions are *show the commit in
-  the explorer's diff view*, *copy*, and *open on the forge* when a remote is a
-  recognizable GitHub/GitLab/Gitea/Bitbucket URL.
+ `git cat-file -t <sha>`; a miss demotes the match to plain text (no menu, no
+ underline) rather than offering a broken action. On a hit, `git show --stat`'s
+ first line becomes the display subject, and actions are *show the commit in
+ the explorer's diff view*, *copy*, and *open on the forge* when a remote is a
+ recognizable GitHub/GitLab/Gitea/Bitbucket URL.
 - **`Issue`.** `owner/repo#n` resolves directly. Bare `#n` resolves against the
-  block's git remote; with no remote, the match is dropped. JIRA keys resolve
-  against `open.issue.jira_base`. All produce `IssueUrl` and are then subject to
-  §7.1's URL rules like any other URL — a forge URL is not privileged.
+ block's git remote; with no remote, the match is dropped. JIRA keys resolve
+ against `open.issue.jira_base`. All produce `IssueUrl` and are then subject to
+ §7.1's URL rules like any other URL — a forge URL is not privileged.
 
 ---
 
@@ -629,18 +629,18 @@ surfaces. Failure with a next step is the whole product difference here.
 /// P2 extension point #7. Registered in `Registry<Box<dyn OpenHandler>>`.
 #[async_trait]
 pub trait OpenHandler: Send + Sync {
-    fn id(&self) -> HandlerId;                     // "editor", "explorer", "browser", …
-    fn label(&self) -> &str;                       // shown in menus, i18n-free per P10
+ fn id(&self) -> HandlerId; // "editor", "explorer", "browser", …
+ fn label(&self) -> &str; // shown in menus, i18n-free per P10
 
-    /// Cheap, synchronous, no syscalls: can this handler act on this target?
-    /// Returns a rank; the highest-ranked applicable handler is the default.
-    fn applicability(&self, t: &ResolvedTarget, ctx: &HandlerCtx) -> Option<Applicability>;
+ /// Cheap, synchronous, no syscalls: can this handler act on this target?
+ /// Returns a rank; the highest-ranked applicable handler is the default.
+ fn applicability(&self, t: &ResolvedTarget, ctx: &HandlerCtx) -> Option<Applicability>;
 
-    /// Declared statically so the capability's audit record and the mobile
-    /// confirm-sheet policy are correct without running anything.
-    fn effects(&self) -> Effects;
+ /// Declared statically so the capability's audit record and the mobile
+ /// confirm-sheet policy are correct without running anything.
+ fn effects(&self) -> Effects;
 
-    async fn activate(&self, t: &ResolvedTarget, ctx: &HandlerCtx) -> Result<Activation, OpenError>;
+ async fn activate(&self, t: &ResolvedTarget, ctx: &HandlerCtx) -> Result<Activation, OpenError>;
 }
 
 pub struct Applicability { pub rank: i16, pub reason: Option<&'static str> }
@@ -649,16 +649,16 @@ pub struct Applicability { pub rank: i16, pub reason: Option<&'static str> }
 /// between "the instance did it" and "the client must do it" is what makes the
 /// thin client and the browser work through the same capability.
 pub enum Activation {
-    Done { detail: String },
-    ClientMust(ClientAction),
+ Done { detail: String },
+ ClientMust(ClientAction),
 }
 
 pub enum ClientAction {
-    OpenUrl { url: Url },
-    OpenLocalFile { blob: BlobId, suggested_name: String, line: Option<u32>, col: Option<u32>,
-                    provenance: RemoteProvenance, read_only: bool },
-    CopyText { text: String },
-    ShowInline { blob: BlobId, mime: Mime, line: Option<u32> },
+ OpenUrl { url: Url },
+ OpenLocalFile { blob: BlobId, suggested_name: String, line: Option<u32>, col: Option<u32>,
+ provenance: RemoteProvenance, read_only: bool },
+ CopyText { text: String },
+ ShowInline { blob: BlobId, mime: Mime, line: Option<u32> },
 }
 ```
 
@@ -685,15 +685,15 @@ Effective rank = handler `rank` + config bias:
 [open]
 # Per match-kind default: the handler id that wins a plain activation.
 default = { path = "editor", dir = "explorer", url = "browser",
-            commit = "commit_show", issue = "browser", custom = "menu" }
+ commit = "commit_show", issue = "browser", custom = "menu" }
 
 # Bias an individual handler up or down globally.
 [open.rank]
-explorer = +20        # "I live in omt; don't launch VS Code for every click"
+explorer = +20 # "I live in omt; don't launch VS Code for every click"
 
 # Per rule override, highest specificity.
 [[open.binding]]
-rule    = "builtin.git_diff_header"
+rule = "builtin.git_diff_header"
 handler = "explorer"
 ```
 
@@ -773,11 +773,11 @@ images. The trait gains a sibling method:
 // Added to `AgentAdapter`, owned by [06 §7](06-agent-layer.md#7-adapters).
 // One method; `attachment_reference` (09 §4.3.7) already covers the disk-blob case.
 
-    /// How this agent wants to be handed a *source file* the user is pointing at.
-    /// Returns `AttachmentReference`, the single reference type
-    /// ([09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)).
-    fn file_reference(&self, path: &Path, line: Option<u32>, col: Option<u32>)
-        -> AttachmentReference;
+ /// How this agent wants to be handed a *source file* the user is pointing at.
+ /// Returns `AttachmentReference`, the single reference type
+ /// ([09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)).
+ fn file_reference(&self, path: &Path, line: Option<u32>, col: Option<u32>)
+ -> AttachmentReference;
 ```
 
 | Agent | `file_reference` |
@@ -803,34 +803,34 @@ whose transport rules are specified in
 [16 §4.5](16-input-and-keymap.md#45-synthetic-answers-are-written-as-keys-never-as-text):
 
 - For a `pty`-mode agent with no structured prompt channel, this insertion is
-  `PtyWrite::Paste` — bracket-wrapped when the agent has enabled mode 2004, which
-  is the *correct* framing for text and the opposite of what a synthetic card
-  answer requires. The two paths must not be merged.
+ `PtyWrite::Paste` — bracket-wrapped when the agent has enabled mode 2004, which
+ is the *correct* framing for text and the opposite of what a synthetic card
+ answer requires. The two paths must not be merged.
 - While an interaction card is open in the target pane, `agent_insert` is
-  **disabled**, not queued. A digit or a bracket sequence arriving at a card
-  resolves or corrupts it; a card is not a prompt box, and D3's "submitting typed
-  text to a prompt box" allowance does not reach it. The handler is greyed out
-  with that reason, and the user is offered the card instead. This is the same
-  target-identity failure [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
-  item 3 names for a replayed enqueue.
+ **disabled**, not queued. A digit or a bracket sequence arriving at a card
+ resolves or corrupts it; a card is not a prompt box, and D3's "submitting typed
+ text to a prompt box" allowance does not reach it. The handler is greyed out
+ with that reason, and the user is offered the card instead. This is the same
+ target-identity failure [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+ item 3 names for a replayed enqueue.
 
 ### 4.6 User-defined command handlers
 
 ```toml
 [[open.handler]]
-id      = "gh-pr"
-label   = "Open PR in gh"
+id = "gh-pr"
+label = "Open PR in gh"
 matches = { kind = "issue" }
 program = "gh"
-args    = ["pr", "view", "{number}", "--repo", "{owner}/{repo}", "--web"]
+args = ["pr", "view", "{number}", "--repo", "{owner}/{repo}", "--web"]
 effects = ["spawns_process", "network"]
 
 [[open.handler]]
-id      = "blame"
-label   = "git blame here"
+id = "blame"
+label = "git blame here"
 matches = { kind = "path", exists = true }
 program = "git"
-args    = ["-C", "{workspace_root}", "blame", "-L", "{line},+20", "--", "{path}"]
+args = ["-C", "{workspace_root}", "blame", "-L", "{line},+20", "--", "{path}"]
 in_pane = true
 ```
 
@@ -879,16 +879,16 @@ itself and forwards everything else untouched.**
 Two honest caveats:
 
 - Shift+click is also the conventional "extend selection". omt therefore binds
-  **Shift+click = activate** only when reporting is on (where selection is
-  already unusual and the user reaching for Shift means "talk to the
-  multiplexer, not the app"), and **Shift+click = extend selection** when
-  reporting is off. This is context-dependent behavior, which is a smell — but
-  the alternative is either stealing plain clicks from vim or having no mouse
-  activation at all inside a TUI, and both are worse. It is configurable
-  (`open.mouse.activate_modifier`) and it is documented in `omt keys list`.
+ **Shift+click = activate** only when reporting is on (where selection is
+ already unusual and the user reaching for Shift means "talk to the
+ multiplexer, not the app"), and **Shift+click = extend selection** when
+ reporting is off. This is context-dependent behavior, which is a smell — but
+ the alternative is either stealing plain clicks from vim or having no mouse
+ activation at all inside a TUI, and both are worse. It is configurable
+ (`open.mouse.activate_modifier`) and it is documented in `omt keys list`.
 - A tiny number of applications *do* handle shifted clicks. omt keeps a
-  `terminal.mouse.shift_passthrough_programs` list (empty by default) matched
-  against the pane's foreground process name, for the user who hits one.
+ `terminal.mouse.shift_passthrough_programs` list (empty by default) matched
+ against the pane's foreground process name, for the user who hits one.
 
 **Modes 1002/1003 (drag and any-motion reporting) additionally mean omt must not
 render hover underlines**, because computing them requires knowing where the
@@ -902,25 +902,25 @@ reporting is on. This is also a performance win — no work per mouse move.
 ### 5.2 Hint mode — the primary mechanism
 
 Press a chord; every match in the viewport gets a short label; type the label;
-the action runs. vimium, tmux-fingers, kitty's `hints` kitten and another terminal's
+the action runs. vimium, tmux-fingers, kitty's `hints` kitten and its
 keyboard link navigation are all prior art for the interaction, and it is the
 right one here for reasons specific to omt:
 
 1. **It is independent of mouse reporting entirely.** The chord is a key
-   sequence omt already reserves as its prefix; no application sees it.
+ sequence omt already reserves as its prefix; no application sees it.
 2. **It is independent of the outer terminal.** No modifier negotiation, no
-   emulator handler to fight (§5.3). It works over ssh, inside tmux, in
-   Terminal.app.
+ emulator handler to fight (§5.3). It works over ssh, inside tmux, in
+ Terminal.app.
 3. **It is identical on every surface.** The web client renders the same labels
-   and accepts the same keystrokes from a Bluetooth keyboard; the phone taps the
-   label instead. That is P3 satisfied structurally rather than by effort.
+ and accepts the same keystrokes from a Bluetooth keyboard; the phone taps the
+ label instead. That is P3 satisfied structurally rather than by effort.
 4. **It composes with actions.** Selecting a label with a different key runs a
-   different handler, which no click gesture can do without more modifiers.
+ different handler, which no click gesture can do without more modifiers.
 
 ```
-<leader> f        enter hint mode, default action per §4.3
-<leader> F        enter hint mode, always show the action menu on select
-<leader> g        enter hint mode restricted to `kind = url`
+<leader> f enter hint mode, default action per §4.3
+<leader> F enter hint mode, always show the action menu on select
+<leader> g enter hint mode restricted to `kind = url`
 ```
 
 (`<leader>` is `ctrl-b` by default; the token and the spelling are
@@ -929,20 +929,20 @@ right one here for reasons specific to omt:
 Behavior:
 
 - Labels come from a **homerow alphabet** (`open.hints.alphabet`, default
-  `"asdfghjkl;qwertyuiopzxcvbnm"`), assigned so that the first N matches get
-  one-character labels and the rest get two. Assignment is in **reading order**
-  (top-left to bottom-right), not in match-discovery order, so the label of a
-  given match is stable while the screen is.
+ `"asdfghjkl;qwertyuiopzxcvbnm"`), assigned so that the first N matches get
+ one-character labels and the rest get two. Assignment is in **reading order**
+ (top-left to bottom-right), not in match-discovery order, so the label of a
+ given match is stable while the screen is.
 - Labels render as a reverse-video overlay at the match start, **overlaying**
-  the cell contents rather than shifting them, so nothing reflows and the
-  underlying line stays readable.
+ the cell contents rather than shifting them, so nothing reflows and the
+ underlying line stays readable.
 - Typing a prefix filters; the overlay dims non-candidates. `esc` cancels.
-  `space` while a label is selected opens the action menu for it.
+ `space` while a label is selected opens the action menu for it.
 - Scrolling is allowed while in hint mode; labels re-assign on the new viewport.
 - **Scope is the viewport by default.** `ctrl-b f` in scrollback view hints the
-  scrolled viewport. `open.hints.scope = "viewport" | "block"` — `block` hints
-  every match in the block under the cursor, including its off-screen lines,
-  which is how you act on the 40th frame of a stack trace without scrolling.
+ scrolled viewport. `open.hints.scope = "viewport" | "block"` — `block` hints
+ every match in the block under the cursor, including its off-screen lines,
+ which is how you act on the 40th frame of a stack trace without scrolling.
 
 Hint mode is a **capability trio** (§8) rather than TUI-local state, so the web
 client, the phone and a scripted client all drive the identical state machine
@@ -1001,17 +1001,17 @@ It never shows it twice, and it is suppressible forever from the card:
 
 ```
 ┌ omt · your terminal is intercepting that click ──────────────┐
-│ iTerm2 handles Cmd+click itself (Semantic History) and omt    │
-│ never sees it. On this session the file lives on `box`, so    │
-│ iTerm2 would look for it on *this* machine.                   │
-│                                                               │
-│   ▸ Use  ⇧ Shift+click  instead                    (works now)│
-│   ▸ Use  ctrl-b f       hint mode                  (works now)│
-│   ▸ Turn iTerm2's handler off:                                │
-│       Settings → Profiles → Advanced → Semantic History        │
-│         → "Never" ;  or set the modifier to ⌥ Option           │
-│   ▸ Copy an iTerm2 dynamic-profile snippet          [c]       │
-│   ▸ Don't show this again                           [d]       │
+│ iTerm2 handles Cmd+click itself (Semantic History) and omt │
+│ never sees it. On this session the file lives on `box`, so │
+│ iTerm2 would look for it on *this* machine. │
+│ │
+│ ▸ Use ⇧ Shift+click instead (works now)│
+│ ▸ Use ctrl-b f hint mode (works now)│
+│ ▸ Turn iTerm2's handler off: │
+│ Settings → Profiles → Advanced → Semantic History │
+│ → "Never" ; or set the modifier to ⌥ Option │
+│ ▸ Copy an iTerm2 dynamic-profile snippet [c] │
+│ ▸ Don't show this again [d] │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -1041,23 +1041,23 @@ classic bug.
 Rules:
 
 1. **Activation fires on mouse-*up*, never mouse-down**, and only if the up is
-   within `open.mouse.slop` cells (default 1) of the down, within
-   `open.mouse.max_ms` (default 500 ms), with no intervening motion beyond slop.
-   A drag is a selection, unconditionally.
+ within `open.mouse.slop` cells (default 1) of the down, within
+ `open.mouse.max_ms` (default 500 ms), with no intervening motion beyond slop.
+ A drag is a selection, unconditionally.
 2. **A double-click is never an activation.** The second down cancels any
-   pending activation from the first up. Double-click remains word/semantic
-   select ([04 §8.2](04-terminal-core.md#82-selection)).
+ pending activation from the first up. Double-click remains word/semantic
+ select ([04 §8.2](04-terminal-core.md#82-selection)).
 3. **An existing non-empty selection suppresses activation** on the click that
-   clears it — the first click after a selection dismisses it and does nothing
-   else, matching every text UI.
+ clears it — the first click after a selection dismisses it and does nothing
+ else, matching every text UI.
 4. **Selection wins on hit-test ties.** If a modifier is held but a selection
-   drag is already in progress, the drag continues.
+ drag is already in progress, the drag continues.
 5. `SelectionMode::Semantic` ([04 §8.2](04-terminal-core.md#82-selection))
-   is redefined in terms of this document: semantic select selects the
-   *innermost match span* under the cursor, falling back to `word_chars`. One
-   definition of "the thing under the cursor", used by both selection and
-   activation, so double-click-then-copy and hint-then-copy give byte-identical
-   results. This is a small change to 04 §8.2's phrasing; see [§12](#12-open-questions).
+ is redefined in terms of this document: semantic select selects the
+ *innermost match span* under the cursor, falling back to `word_chars`. One
+ definition of "the thing under the cursor", used by both selection and
+ activation, so double-click-then-copy and hint-then-copy give byte-identical
+ results. This is a small change to 04 §8.2's phrasing; see [§12](#12-open-questions).
 
 ### 5.5 Blocks — the third, mouse-free path
 
@@ -1066,14 +1066,14 @@ output of one command is an addressable object. So a fourth activation route
 exists that needs neither mouse nor hint labels:
 
 - `session.blocks.list` → a block → **"targets in this block"** → a list of
-  every match with its resolved state, navigable with arrows, actionable with
-  enter. On a phone this is a scrollable list of every file a failing test
-  mentioned, which is a better UI than the terminal it came from.
+ every match with its resolved state, navigable with arrows, actionable with
+ enter. On a phone this is a scrollable list of every file a failing test
+ mentioned, which is a better UI than the terminal it came from.
 - The block action menu gains **"open all files in this block"** (capped at
-  `open.max_batch`, default 10, with a confirm naming the count) — the "cargo
-  test printed six failures, open all of them" motion.
+ `open.max_batch`, default 10, with a confirm naming the count) — the "cargo
+ test printed six failures, open all of them" motion.
 - A block's targets are computed on demand for the whole block, not just the
-  visible part, and cached with the block.
+ visible part, and cached with the block.
 
 ### 5.6 Deferring to 16 — Input and keymap
 
@@ -1082,16 +1082,16 @@ overrides, conflict diagnostics (`OMT-C4xx`) and the `omt doctor keys` flow are
 [16](16-input-and-keymap.md)'s, not this document's. This document contributes:
 
 - two new `when` contexts, `hint_mode` and `open_menu_focused`, now carried in
-  [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet` alongside
-  the `mouse_reporting` it already had;
+ [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet` alongside
+ the `mouse_reporting` it already had;
 - default bindings `<leader> f` / `<leader> F` / `<leader> g` (§5.2), now
-  registered in [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace).
-  `<leader> g` coexists with the explorer's `g` prefix: they differ by `when`,
-  which 16 §2.3 rule 3 resolves;
+ registered in [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace).
+ `<leader> g` coexists with the explorer's `g` prefix: they differ by `when`,
+ which 16 §2.3 rule 3 resolves;
 - one mouse-binding requirement, **now supported**: [16 §2.3](16-input-and-keymap.md#23-resolution)'s
-  `Chord` admits a mouse event with modifiers (`"shift-mouse1"`) carrying a
-  `when` predicate, and [16 §2.2](16-input-and-keymap.md#22-types) gives
-  `MouseEvent` a shape (`kind`/`button`/`mods`/`pos`, decoded from SGR 1006).
+ `Chord` admits a mouse event with modifiers (`"shift-mouse1"`) carrying a
+ `when` predicate, and [16 §2.2](16-input-and-keymap.md#22-types) gives
+ `MouseEvent` a shape (`kind`/`button`/`mods`/`pos`, decoded from SGR 1006).
 
 ---
 
@@ -1109,10 +1109,10 @@ the *resolving* instance:
 
 ```rust
 pub enum TargetHost {
-    /// The resolving instance is the client's own machine.
-    Local,
-    /// The file lives on the instance; the calling client is elsewhere.
-    Instance { instance: InstanceId, host: RemoteHost },
+ /// The resolving instance is the client's own machine.
+ Local,
+ /// The file lives on the instance; the calling client is elsewhere.
+ Instance { instance: InstanceId, host: RemoteHost },
 }
 ```
 
@@ -1125,39 +1125,39 @@ into", which is a third machine and is handled honestly in §6.7.
 ### 6.2 The flow, end to end
 
 ```
- local omt-tui (laptop)                          remote omt instance (box)
- ──────────────────────                          ─────────────────────────
+ local omt-tui (laptop) remote omt instance (box)
+ ────────────────────── ─────────────────────────
  ctrl-b f, "sd"
-   → open.hints.select { hint_session, "sd" }  ──►
-                                                  resolve (block cwd, stat, sensitivity)
-                                                  handler = "editor",
-                                                  editor.side resolves to `client`
-                                              ◄── Activation::ClientMust(OpenLocalFile{
-                                                    blob, name, line, col, provenance,
-                                                    read_only: true })
-   ── media.blob.begin/pull over the SAME       ►
-      multiplexed control channel  [09 §4.2/§6.1]
-   ◄─ binary frames, separate logical stream, lower priority than input
-   → land in local blob store, materialize into
-     the managed remote-mirror dir  (§6.3)
-   → spawn local editor with §4.4 argv
-   → register the file with the provenance
-     sidecar + read-only marker  (§6.5)
+ → open.hints.select { hint_session, "sd" } ──►
+ resolve (block cwd, stat, sensitivity)
+ handler = "editor",
+ editor.side resolves to `client`
+ ◄── Activation::ClientMust(OpenLocalFile{
+ blob, name, line, col, provenance,
+ read_only: true })
+ ── media.blob.begin/pull over the SAME ►
+ multiplexed control channel [09 §4.2/§6.1]
+ ◄─ binary frames, separate logical stream, lower priority than input
+ → land in local blob store, materialize into
+ the managed remote-mirror dir (§6.3)
+ → spawn local editor with §4.4 argv
+ → register the file with the provenance
+ sidecar + read-only marker (§6.5)
 ```
 
 Three points about the transfer:
 
 - **It reuses [09](09-ssh-and-media.md)'s protocol exactly.** `media.file.pull`
-  reads the path on the instance into a blob; `media.blob.*` streams it. The
-  content-hash dedup means re-opening the same file twice costs one round trip
-  ([09 §2](09-ssh-and-media.md#2-the-blob-store)). Nothing new is defined here,
-  and that is deliberate: a second file-transfer protocol in the same product
-  would be a maintenance and security liability for no gain.
+ reads the path on the instance into a blob; `media.blob.*` streams it. The
+ content-hash dedup means re-opening the same file twice costs one round trip
+ ([09 §2](09-ssh-and-media.md#2-the-blob-store)). Nothing new is defined here,
+ and that is deliberate: a second file-transfer protocol in the same product
+ would be a maintenance and security liability for no gain.
 - **It rides the multiplexed control channel**, so a 2 MB file does not stall
-  keystrokes ([09 §6.1](09-ssh-and-media.md#61-the-media-path-in-thin-client-mode)).
+ keystrokes ([09 §6.1](09-ssh-and-media.md#61-the-media-path-in-thin-client-mode)).
 - **It is a `media.file.pull` in the *pull* direction**, which is the direction
-  [09 §7.4](09-ssh-and-media.md#74-file-push-and-pull) already specifies and
-  quota-checks.
+ [09 §7.4](09-ssh-and-media.md#74-file-push-and-pull) already specifies and
+ quota-checks.
 
 ### 6.3 Where the file lands, and why the layout matters
 
@@ -1170,32 +1170,32 @@ rules live in the store and not in its callers.
 
 ```
 $XDG_STATE_HOME/omt/remote/<host>/<h8>/<tail…>/<basename>
-                            │       │    └── up to 3 trailing components of the remote dir
-                            │       └────── first 8 hex of BLAKE3(full remote path)
-                            └────────────── the remote host name
+ │ │ └── up to 3 trailing components of the remote dir
+ │ └────── first 8 hex of BLAKE3(full remote path)
+ └────────────── the remote host name
 
-e.g.  ~/.local/state/omt/remote/box/3f9a1c02/app/src/lexer.rs
-      sidecar:  ~/.local/state/omt/remote/box/3f9a1c02/app/src/.lexer.rs.omt-remote.json
+e.g. ~/.local/state/omt/remote/box/3f9a1c02/app/src/lexer.rs
+ sidecar: ~/.local/state/omt/remote/box/3f9a1c02/app/src/.lexer.rs.omt-remote.json
 ```
 
 Every element earns its place:
 
 - **`<basename>` is preserved verbatim.** The editor tab says `lexer.rs`, syntax
-  highlighting works, language servers pick the right grammar, and the file
-  looks like what it is. A hash-named file is unusable.
+ highlighting works, language servers pick the right grammar, and the file
+ looks like what it is. A hash-named file is unusable.
 - **The trailing path components** give the editor's breadcrumb and any
-  "recently opened" list enough context to distinguish two `mod.rs` files.
+ "recently opened" list enough context to distinguish two `mod.rs` files.
 - **`<h8>`** guarantees uniqueness without extending the human-readable part, so
-  `/a/b/src/lexer.rs` and `/c/d/src/lexer.rs` never collide.
+ `/a/b/src/lexer.rs` and `/c/d/src/lexer.rs` never collide.
 - **`<host>` first** means the path *reads* as remote. A user glancing at the
-  title bar sees `omt/remote/box/…` and knows.
+ title bar sees `omt/remote/box/…` and knows.
 - The tree lives under `XDG_STATE_HOME`, not `XDG_RUNTIME_DIR`, because editors
-  keep files open across reboots and a vanished path mid-session is worse than a
-  stale one. That root is the `Mirror` class's root, chosen by `omt-media`
-  ([09 §2](09-ssh-and-media.md#2-the-blob-store)) rather than by this crate. It
-  is swept by the store's own sweeper, and it is pinned while an editor is
-  believed to have it open — which `omt-open` expresses by calling the store's
-  `pin`/`unpin`, never by touching a refcount itself.
+ keep files open across reboots and a vanished path mid-session is worse than a
+ stale one. That root is the `Mirror` class's root, chosen by `omt-media`
+ ([09 §2](09-ssh-and-media.md#2-the-blob-store)) rather than by this crate. It
+ is swept by the store's own sweeper, and it is pinned while an editor is
+ believed to have it open — which `omt-open` expresses by calling the store's
+ `pin`/`unpin`, never by touching a refcount itself.
 
 The **sidecar** is the machine-readable provenance record: remote instance id,
 host, absolute remote path, BLAKE3 of the fetched content, fetch time, the
@@ -1215,7 +1215,7 @@ explained:
 | Not readable by the remote user (`EACCES`) | `Unresolved { RemoteUnreadable }` with the actual errno string and the file's mode/owner from `stat`, so the user knows whether to `sudo` or give up |
 | fifo / socket / device | Refused outright, same rule as [09 §8](09-ssh-and-media.md#8-security) |
 | Sensitive per [15 §9.4](15-workspace-explorer.md#94-sensitive-files) | Fetch requires `Operator` and an explicit confirm naming the file; the fetched copy is `0600` and the mirror is created with `ttl_override = 1h` ([09 §2](09-ssh-and-media.md#2-the-blob-store)) instead of the class default |
-| Symlink | Resolved **on the remote** through `confine()`; a link escaping every workspace root is fetchable only under the same "outside workspace ⇒ editor-only" rule as §3.3 |
+| Symlink | Resolved **on the remote** through `confine`; a link escaping every workspace root is fetchable only under the same "outside workspace ⇒ editor-only" rule as §3.3 |
 
 ### 6.5 The snapshot problem — and the recommendation
 
@@ -1284,27 +1284,27 @@ that an agent is concurrently editing the same tree.
 When explicitly enabled per host:
 
 - The fetched file is `0644`. A `notify` watcher on the materialized path
-  debounces 300 ms after the last write. The watcher lives in `omt-daemon` and is
-  a **caller** of `omt-media`: it reads the mirror through the store's API and
-  holds the mirror alive with a `pin` handle. It does not write into the blob
-  tree and it does not mutate a refcount directly — [09 §2](09-ssh-and-media.md#2-the-blob-store)'s
-  `resolve_in_root` remains the store's only writer.
+ debounces 300 ms after the last write. The watcher lives in `omt-daemon` and is
+ a **caller** of `omt-media`: it reads the mirror through the store's API and
+ holds the mirror alive with a `pin` handle. It does not write into the blob
+ tree and it does not mutate a refcount directly — [09 §2](09-ssh-and-media.md#2-the-blob-store)'s
+ `resolve_in_root` remains the store's only writer.
 - On change: recompute BLAKE3. If unchanged from the fetched hash (editors
-  rewrite files on save without changes), do nothing.
+ rewrite files on save without changes), do nothing.
 - **Pre-flight conflict check.** Call `workspace.files.stat` on the remote and
-  compare mtime+size against the sidecar's record, then fetch and hash if they
-  differ. If the remote changed since the fetch — *which is exactly what happens
-  when the agent edited it* — **do not push.** Show a conflict card with a diff
-  of local-vs-remote and three choices: keep remote (discard local), overwrite
-  remote (with the diff shown and a confirm), or write local changes to
-  `<path>.omt-local` on the remote and open both.
+ compare mtime+size against the sidecar's record, then fetch and hash if they
+ differ. If the remote changed since the fetch — *which is exactly what happens
+ when the agent edited it* — **do not push.** Show a conflict card with a diff
+ of local-vs-remote and three choices: keep remote (discard local), overwrite
+ remote (with the diff shown and a confirm), or write local changes to
+ `<path>.omt-local` on the remote and open both.
 - No conflict: `media.file.push` ([09 §7.4](09-ssh-and-media.md#74-file-push-and-pull))
-  with `overwrite: true`, preserving the original mode, through the remote's
-  `confine()`. Every push is an audit event and a visible toast naming the
-  remote path.
+ with `overwrite: true`, preserving the original mode, through the remote's
+ `confine`. Every push is an audit event and a visible toast naming the
+ remote path.
 - The watcher stops when the mirror's TTL expires or the session detaches,
-  dropping its `pin`, and says so — a silently-stopped sync is the worst possible
-  state. `open.remote.discard` is the explicit form of the same call.
+ dropping its `pin`, and says so — a silently-stopped sync is the worst possible
+ state. `open.remote.discard` is the explicit form of the same call.
 
 `writeback` is documented as **experimental** and is off by default. That is a
 deliberate, stated choice, not an omission.
@@ -1350,27 +1350,27 @@ terminal cell that is ~8 px wide, so tapping a match in a rendered grid is not
 viable and is not attempted:
 
 - **Match spans get an expanded hit area** (a transparent overlay padded to 44 px
-  tall, horizontally clamped to the span) in the grid view, and adjacent
-  overlapping hit areas are resolved by a **disambiguation popover** listing the
-  candidate matches by text — a tap that is between two links shows both rather
-  than guessing.
+ tall, horizontally clamped to the span) in the grid view, and adjacent
+ overlapping hit areas are resolved by a **disambiguation popover** listing the
+ candidate matches by text — a tap that is between two links shows both rather
+ than guessing.
 - **Long-press (400 ms) opens the action sheet**; a plain tap runs the default
-  handler. This is the platform convention and it is what users will try.
+ handler. This is the platform convention and it is what users will try.
 - **Block view is the primary surface**, per [08](08-web-client.md). Each block
-  carries a **"Targets (7)"** affordance expanding to a proper list — full-width
-  rows, 56 px tall, each showing the match text, its resolved path, its
-  existence state, and a trailing action button. This is §5.5's block path, and
-  on a phone it is better than the terminal it came from: no zooming, no
-  precision tapping, and it works for matches scrolled off screen.
+ carries a **"Targets (7)"** affordance expanding to a proper list — full-width
+ rows, 56 px tall, each showing the match text, its resolved path, its
+ existence state, and a trailing action button. This is §5.5's block path, and
+ on a phone it is better than the terminal it came from: no zooming, no
+ precision tapping, and it works for matches scrolled off screen.
 - **The hint-mode overlay is tappable**, so a phone user with the chord bound to
-  a toolbar button gets the same labelled overlay and taps a label.
+ a toolbar button gets the same labelled overlay and taps a label.
 - **Every action is reachable.** The parity test (§9) asserts it, and the
-  handler ranks in §4.2 are surface-aware precisely so the phone's defaults are
-  right: `read_inline` ranks 85 on web and 30 on the TUI, so tapping a
-  `file:line` on a phone **shows you the code**, syntax-highlighted, at that
-  line, rather than trying to launch an editor on a machine you are not sitting
-  at. That is the single best interaction in this document and it exists only
-  because the file never needed to move.
+ handler ranks in §4.2 are surface-aware precisely so the phone's defaults are
+ right: `read_inline` ranks 85 on web and 30 on the TUI, so tapping a
+ `file:line` on a phone **shows you the code**, syntax-highlighted, at that
+ line, rather than trying to launch an editor on a machine you are not sitting
+ at. That is the single best interaction in this document and it exists only
+ because the file never needed to move.
 
 **URL opening on the web** is `window.open(url, "_blank", "noopener,noreferrer")`
 after §8.1's checks, from a real user gesture so popup blockers do not eat it.
@@ -1389,88 +1389,88 @@ chose. Everything in this document must hold under that assumption.
 ### 8.1 URLs
 
 - **Never auto-open. Ever.** No hover-open, no "activate on render", no
-  `open.autoopen` config key. Every activation is a user gesture on a specific
-  match. This is not negotiable and there is no knob to relax it.
+ `open.autoopen` config key. Every activation is a user gesture on a specific
+ match. This is not negotiable and there is no knob to relax it.
 - **Scheme allow-list**, checked after normalization, default
-  `["http", "https", "mailto"]`. `file` is **not** in the default list: a `file:`
-  URL from terminal output opened by the OS handler executes whatever the OS
-  associates with that extension, and on a thin client it would silently target
-  the wrong machine. `file:` URLs are recognized (so §2.1's OSC 8 enrichment
-  works — `rg --hyperlink-format` emits them) but resolve to a `Path` target and
-  go through §3, never to the browser. Adding a scheme is explicit config, and
-  the notoriously dangerous ones (`javascript`, `data`, `vbscript`, `blob`,
-  `about`, `chrome`, `ms-msdt`, `search-ms`, `vscode`, `jetbrains`, `ssh`,
-  `smb`, `\\`-UNC) are on a **deny-list that config cannot override** — a
-  user-added scheme is intersected with the allow-list, not unioned past the
-  deny-list.
+ `["http", "https", "mailto"]`. `file` is **not** in the default list: a `file:`
+ URL from terminal output opened by the OS handler executes whatever the OS
+ associates with that extension, and on a thin client it would silently target
+ the wrong machine. `file:` URLs are recognized (so §2.1's OSC 8 enrichment
+ works — `rg --hyperlink-format` emits them) but resolve to a `Path` target and
+ go through §3, never to the browser. Adding a scheme is explicit config, and
+ the notoriously dangerous ones (`javascript`, `data`, `vbscript`, `blob`,
+ `about`, `chrome`, `ms-msdt`, `search-ms`, `vscode`, `jetbrains`, `ssh`,
+ `smb`, `\\`-UNC) are on a **deny-list that config cannot override** — a
+ user-added scheme is intersected with the allow-list, not unioned past the
+ deny-list.
 - **Homograph and punycode display.** The host is decoded and re-rendered with
-  an explicit policy borrowed from browser practice: a host whose labels mix
-  scripts, or contain confusables outside the user's configured locale scripts,
-  is displayed **as punycode** with a warning glyph. The action sheet always
-  shows the **full, decoded-and-re-encoded origin** on its own line, in a
-  distinct style, above the path — because the thing being confirmed is the
-  origin, not the pretty text. `UrlDisplay { rendered, punycode_forced, mixed_script, truncated }`
-  carries this to every surface so all three render the same warning.
+ an explicit policy borrowed from browser practice: a host whose labels mix
+ scripts, or contain confusables outside the user's configured locale scripts,
+ is displayed **as punycode** with a warning glyph. The action sheet always
+ shows the **full, decoded-and-re-encoded origin** on its own line, in a
+ distinct style, above the path — because the thing being confirmed is the
+ origin, not the pretty text. `UrlDisplay { rendered, punycode_forced, mixed_script, truncated }`
+ carries this to every surface so all three render the same warning.
 - **Text/target mismatch is surfaced.** An OSC 8 span whose visible text is
-  itself a URL with a different host than the link target is the phishing shape.
-  The action sheet shows both, labelled `text:` and `target:`, and the default
-  action becomes `menu` rather than `browser`.
+ itself a URL with a different host than the link target is the phishing shape.
+ The action sheet shows both, labelled `text:` and `target:`, and the default
+ action becomes `menu` rather than `browser`.
 - **Length and control characters.** A URL over 2048 chars is truncated for
-  display with the full value available on demand. Any C0/C1, bidi-override
-  (U+202A–U+202E, U+2066–U+2069) or zero-width character in the *displayed* text
-  is rendered as an escaped glyph — the bidi trick that makes `evil.com` look
-  like `moc.live` must not survive into a confirmation dialog.
+ display with the full value available on demand. Any C0/C1, bidi-override
+ (U+202A–U+202E, U+2066–U+2069) or zero-width character in the *displayed* text
+ is rendered as an escaped glyph — the bidi trick that makes `evil.com` look
+ like `moc.live` must not survive into a confirmation dialog.
 - **No referrer, no window opener**; the daemon never fetches a URL to "preview"
-  it, because that would turn a rendered line into an SSRF from the user's
-  machine.
+ it, because that would turn a rendered line into an SSRF from the user's
+ machine.
 
 ### 8.2 Paths
 
 - **Confinement at action time** per §3.3, using [15 §9.1](15-workspace-explorer.md#91-path-confinement)'s
-  `confine()` verbatim — the same `realpath`-then-`openat`-`O_NOFOLLOW` sequence,
-  not a reimplementation. A symlink inside a workspace pointing at `/etc` is a
-  `SymlinkTarget::Outside` dead end, not a fetch.
+ `confine` verbatim — the same `realpath`-then-`openat`-`O_NOFOLLOW` sequence,
+ not a reimplementation. A symlink inside a workspace pointing at `/etc` is a
+ `SymlinkTarget::Outside` dead end, not a fetch.
 - **Sensitive files** per [15 §9.4](15-workspace-explorer.md#94-sensitive-files):
-  badged, content refused to `Viewer`, extra confirm before `agent_insert`, and
-  a shorter TTL on any fetched copy (§6.4). The redactor from
-  [13 §8](13-security.md#8-secret-redaction) runs over `read_inline` output on
-  the way out, as it already does for diffs.
+ badged, content refused to `Viewer`, extra confirm before `agent_insert`, and
+ a shorter TTL on any fetched copy (§6.4). The redactor from
+ [13 §8](13-security.md#8-secret-redaction) runs over `read_inline` output on
+ the way out, as it already does for diffs.
 - **`Unknown`/`Missing` never falls back to a different path.** §3.5.
 - **No path is ever executed.** There is no "run this file" handler and there
-  will not be one.
+ will not be one.
 
 ### 8.3 Editor and command templates
 
 The highest-value injection target in this document, because the input is
 attacker-controlled text and the output is a process.
 
-1. **argv only.** `std::process::Command` with `.arg()` per element. No
-   `sh -c`, no `cmd /c`, no `CreateProcess` command-line string on Windows —
-   Windows uses the raw-argument API with explicit quoting rules so the
-   `"` / `\` / `^` re-parsing hazards are handled once, in one place, with tests.
+1. **argv only.** `std::process::Command` with `.arg` per element. No
+ `sh -c`, no `cmd /c`, no `CreateProcess` command-line string on Windows —
+ Windows uses the raw-argument API with explicit quoting rules so the
+ `"` / `\` / `^` re-parsing hazards are handled once, in one place, with tests.
 2. **Typed substitution.** `{line}`/`{col}` are `u32` formatted by omt.
-   `{path}` is a `PathBuf`. `{workspace_root}` is a `CanonicalPath`. No template
-   variable is ever concatenated into a larger string containing a separator; an
-   element is either fully literal or exactly one substituted value. `--goto {path}:{line}:{col}`
-   is the one exception and is built by `format!` from three *typed* values, not
-   from raw match text.
+ `{path}` is a `PathBuf`. `{workspace_root}` is a `CanonicalPath`. No template
+ variable is ever concatenated into a larger string containing a separator; an
+ element is either fully literal or exactly one substituted value. `--goto {path}:{line}:{col}`
+ is the one exception and is built by `format!` from three *typed* values, not
+ from raw match text.
 3. **A path is never allowed to look like a flag.** If the resolved path's first
-   byte is `-`, omt prefixes it with `./` (or passes it after a `--` separator
-   when the program is known to accept one). `-rf` as a filename does not become
-   an option.
+ byte is `-`, omt prefixes it with `./` (or passes it after a `--` separator
+ when the program is known to accept one). `-rf` as a filename does not become
+ an option.
 4. **`program` is resolved from `PATH` at config load**, and the resolved
-   absolute path is what is spawned and what the confirm sheet displays. A
-   `PATH` change mid-session cannot redirect an editor launch, and the user sees
-   `/usr/local/bin/code`, not `code`.
+ absolute path is what is spawned and what the confirm sheet displays. A
+ `PATH` change mid-session cannot redirect an editor launch, and the user sees
+ `/usr/local/bin/code`, not `code`.
 5. **Environment is not inherited wholesale**: the spawn gets a filtered
-   environment (`PATH`, `HOME`, `USER`, `LANG`, `DISPLAY`/`WAYLAND_DISPLAY`,
-   `TERM` when `in_pane`, plus `open.editor.env`), so a session's injected
-   agent credentials do not leak into an editor process.
+ environment (`PATH`, `HOME`, `USER`, `LANG`, `DISPLAY`/`WAYLAND_DISPLAY`,
+ `TERM` when `in_pane`, plus `open.editor.env`), so a session's injected
+ agent credentials do not leak into an editor process.
 6. **Fuzz + corpus.** §10.
 7. **`SPAWNS_PROCESS` drives the confirmation** on every surface via
-   [08 §2.3](08-web-client.md#23-effects-drive-ui-policy-not-just-audit), so a
-   phone activating an editor sees a sheet naming the resolved program — which
-   is the correct amount of friction for "spawn a process on my laptop".
+ [08 §2.3](08-web-client.md#23-effects-drive-ui-policy-not-just-audit), so a
+ phone activating an editor sees a sheet naming the resolved program — which
+ is the correct amount of friction for "spawn a process on my laptop".
 
 ### 8.4 Rules as untrusted input
 
@@ -1510,89 +1510,89 @@ follow. 04's sketch is a cross-document edit that 04's owner should apply.
 
 ```rust
 capability! {
-    /// Every match in a scope, with spans and rule ids. Pure; no filesystem access.
-    name  = "open.targets.list",
-    group = "open", verb = "targets-list",
-    kind  = Query, role = Role::Viewer,
-    input  = TargetsList { session: SessionId, scope: TargetScope /* Viewport | Block(BlockId) | Line(Position) */,
-                           kinds: Option<Vec<MatchKind>>, limit: Option<u32> },
-    output = TargetsListOut { matches: Vec<Match>, truncated: bool, generation: Generation },
-    effects = [],
-    since = "0.5",
+ /// Every match in a scope, with spans and rule ids. Pure; no filesystem access.
+ name = "open.targets.list",
+ group = "open", verb = "targets-list",
+ kind = Query, role = Role::Viewer,
+ input = TargetsList { session: SessionId, scope: TargetScope /* Viewport | Block(BlockId) | Line(Position) */,
+ kinds: Option<Vec<MatchKind>>, limit: Option<u32> },
+ output = TargetsListOut { matches: Vec<Match>, truncated: bool, generation: Generation },
+ effects = [],
+ since = "0.5",
 }
 
 capability! {
-    /// Resolve one match to a concrete target: cwd resolution, stat (cached),
-    /// sensitivity, and the ordered list of applicable actions. Idempotent.
-    name  = "open.resolve",
-    group = "open", verb = "resolve",
-    kind  = Query, role = Role::Viewer,
-    input  = ResolveIn { session: SessionId, match_ref: MatchRef /* ById(MatchId) | AtPosition(Position) | RawText(String) */,
-                         for_client: ClientProfile /* surface + editor capabilities, so ranks are correct */ },
-    output = ResolvedTarget,
-    effects = [Effects::READS_FS],
-    since = "0.5",
+ /// Resolve one match to a concrete target: cwd resolution, stat (cached),
+ /// sensitivity, and the ordered list of applicable actions. Idempotent.
+ name = "open.resolve",
+ group = "open", verb = "resolve",
+ kind = Query, role = Role::Viewer,
+ input = ResolveIn { session: SessionId, match_ref: MatchRef /* ById(MatchId) | AtPosition(Position) | RawText(String) */,
+ for_client: ClientProfile /* surface + editor capabilities, so ranks are correct */ },
+ output = ResolvedTarget,
+ effects = [Effects::READS_FS],
+ since = "0.5",
 }
 
 capability! {
-    /// Run a handler against a resolved target. The one mutating entry point.
-    /// Declares the *union* of its handlers' effects; the audit record carries
-    /// the actual handler's effects, and the mobile confirm sheet is driven by
-    /// the `ActionOffer.effects` returned from `open.resolve`, not by this.
-    name  = "open.activate",
-    group = "open", verb = "activate",
-    kind  = Command, role = Role::Operator,
-    input  = ActivateIn { session: SessionId, match_ref: MatchRef, handler: Option<HandlerId>,
-                          confirm_token: Option<ConfirmToken>, agent_pane: Option<PaneId> },
-    output = ActivateOut { activation: Activation, handler: HandlerId },
-    effects = [Effects::READS_FS, Effects::SPAWNS_PROCESS, Effects::WRITES_PTY, Effects::NETWORK],
-    since = "0.5",
+ /// Run a handler against a resolved target. The one mutating entry point.
+ /// Declares the *union* of its handlers' effects; the audit record carries
+ /// the actual handler's effects, and the mobile confirm sheet is driven by
+ /// the `ActionOffer.effects` returned from `open.resolve`, not by this.
+ name = "open.activate",
+ group = "open", verb = "activate",
+ kind = Command, role = Role::Operator,
+ input = ActivateIn { session: SessionId, match_ref: MatchRef, handler: Option<HandlerId>,
+ confirm_token: Option<ConfirmToken>, agent_pane: Option<PaneId> },
+ output = ActivateOut { activation: Activation, handler: HandlerId },
+ effects = [Effects::READS_FS, Effects::SPAWNS_PROCESS, Effects::WRITES_PTY, Effects::NETWORK],
+ since = "0.5",
 }
 
 capability! {
-    /// The registry contents, with per-target applicability when a match is named.
-    name  = "open.handlers.list",
-    group = "open", verb = "handlers-list",
-    kind  = Query, role = Role::Viewer,
-    input  = HandlersList { session: Option<SessionId>, match_ref: Option<MatchRef> },
-    output = HandlersListOut { handlers: Vec<HandlerInfo>, offers: Option<Vec<ActionOffer>> },
-    effects = [],
-    since = "0.5",
+ /// The registry contents, with per-target applicability when a match is named.
+ name = "open.handlers.list",
+ group = "open", verb = "handlers-list",
+ kind = Query, role = Role::Viewer,
+ input = HandlersList { session: Option<SessionId>, match_ref: Option<MatchRef> },
+ output = HandlersListOut { handlers: Vec<HandlerInfo>, offers: Option<Vec<ActionOffer>> },
+ effects = [],
+ since = "0.5",
 }
 
 capability! {
-    /// Enter hint mode for one client's viewport. Instance-owned so the TUI,
-    /// the browser and the phone share one label assignment and one state machine.
-    name  = "open.hints.begin",
-    group = "open", verb = "hints-begin",
-    kind  = Command, role = Role::Operator,
-    input  = HintsBegin { session: SessionId, scope: TargetScope, kinds: Option<Vec<MatchKind>>,
-                          alphabet: Option<String>, action: HintAction /* Default | Menu | Handler(HandlerId) */ },
-    output = HintsBeginOut { hint_session: HintSessionId, hints: Vec<Hint /* { label, span, kind, exists } */> },
-    effects = [],
-    since = "0.5",
+ /// Enter hint mode for one client's viewport. Instance-owned so the TUI,
+ /// the browser and the phone share one label assignment and one state machine.
+ name = "open.hints.begin",
+ group = "open", verb = "hints-begin",
+ kind = Command, role = Role::Operator,
+ input = HintsBegin { session: SessionId, scope: TargetScope, kinds: Option<Vec<MatchKind>>,
+ alphabet: Option<String>, action: HintAction /* Default | Menu | Handler(HandlerId) */ },
+ output = HintsBeginOut { hint_session: HintSessionId, hints: Vec<Hint /* { label, span, kind, exists } */> },
+ effects = [],
+ since = "0.5",
 }
 
 capability! {
-    /// Feed keystrokes into an open hint session. Returns the narrowed set, or
-    /// the activation when a label resolves uniquely.
-    name  = "open.hints.select",
-    group = "open", verb = "hints-select",
-    kind  = Command, role = Role::Operator,
-    input  = HintsSelect { hint_session: HintSessionId, keys: String },
-    output = HintsSelectOut { remaining: Vec<Hint>, chosen: Option<MatchId>, activation: Option<Activation> },
-    effects = [Effects::READS_FS, Effects::SPAWNS_PROCESS, Effects::WRITES_PTY, Effects::NETWORK],
-    since = "0.5",
+ /// Feed keystrokes into an open hint session. Returns the narrowed set, or
+ /// the activation when a label resolves uniquely.
+ name = "open.hints.select",
+ group = "open", verb = "hints-select",
+ kind = Command, role = Role::Operator,
+ input = HintsSelect { hint_session: HintSessionId, keys: String },
+ output = HintsSelectOut { remaining: Vec<Hint>, chosen: Option<MatchId>, activation: Option<Activation> },
+ effects = [Effects::READS_FS, Effects::SPAWNS_PROCESS, Effects::WRITES_PTY, Effects::NETWORK],
+ since = "0.5",
 }
 
 capability! {
-    name  = "open.hints.cancel",
-    group = "open", verb = "hints-cancel",
-    kind  = Command, role = Role::Operator,
-    input  = HintsCancel { hint_session: HintSessionId },
-    output = Ack,
-    effects = [],
-    since = "0.5",
+ name = "open.hints.cancel",
+ group = "open", verb = "hints-cancel",
+ kind = Command, role = Role::Operator,
+ input = HintsCancel { hint_session: HintSessionId },
+ output = Ack,
+ effects = [],
+ since = "0.5",
 }
 ```
 
@@ -1631,25 +1631,25 @@ scrolling. It does not happen, by construction:
 Mechanics:
 
 - **`RegexSet` prefilter.** One pass answers "which rules could match". On the
-  overwhelmingly common no-match line that pass is the whole cost.
+ overwhelmingly common no-match line that pass is the whole cost.
 - **A byte-level pre-prefilter before even that**: a line containing none of
-  `/ : . # @ h w` (a `memchr`-style class test) cannot match any built-in rule
-  and skips the `RegexSet` entirely. Built from the enabled rule set at config
-  load, so user rules widen it correctly.
+ `/ : . # @ h w` (a `memchr`-style class test) cannot match any built-in rule
+ and skips the `RegexSet` entirely. Built from the enabled rule set at config
+ load, so user rules widen it correctly.
 - **Cache keyed by `(LineId, Generation)`**, LRU of `open.match.cache_lines`
-  (default 4 096). Generation equality already means content equality
-  ([04 §4.1](04-terminal-core.md)), so invalidation is free and correct.
+ (default 4 096). Generation equality already means content equality
+ ([04 §4.1](04-terminal-core.md)), so invalidation is free and correct.
 - **Damage-driven.** Only lines in the frame's `Damage` are re-matched. A frame
-  with `DamageKind::Scroll` re-matches only the newly exposed rows.
+ with `DamageKind::Scroll` re-matches only the newly exposed rows.
 - **Resolution is separate and lazier still.** `stat` runs only for matches that
-  are (a) visible **and** (b) `kind = Path`, behind the 2 s `StatCache`, at most
-  `open.resolve.max_stats_per_frame` (default 32) per frame with the remainder
-  deferred to the next. Undecided matches render as plain (not strikethrough)
-  until their `stat` lands — an unknown state never renders as a definite one.
+ are (a) visible **and** (b) `kind = Path`, behind the 2 s `StatCache`, at most
+ `open.resolve.max_stats_per_frame` (default 32) per frame with the remainder
+ deferred to the next. Undecided matches render as plain (not strikethrough)
+ until their `stat` lands — an unknown state never renders as a definite one.
 - **Remote resolution is never speculative.** For a thin client, `open.resolve`
-  is issued on activation or on entering hint mode, not per frame. Hint mode
-  batches: one `open.hints.begin` returns every label with its existence state
-  in a single round trip, so the whole overlay costs one RTT.
+ is issued on activation or on entering hint mode, not per frame. Hint mode
+ batches: one `open.hints.begin` returns every label with its existence state
+ in a single round trip, so the whole overlay costs one RTT.
 
 Budget, on the [04 §9.1](04-terminal-core.md#91-targets) reference machine:
 
@@ -1731,7 +1731,7 @@ normal file; dedup on second fetch; refusal for oversize, binary, directory,
 **8. Fuzz.** Two targets, per [P5](01-principles.md#p5--production-grade-from-the-first-commit):
 `fuzz_match` (arbitrary bytes → the matcher; asserts no panic, no span outside
 the line, total time under budget) and `fuzz_resolve` (arbitrary path text +
-context → the resolver; asserts no path escapes `confine()` and no syscall
+context → the resolver; asserts no path escapes `confine` and no syscall
 outside the allowed roots, checked with a syscall-recording filesystem shim).
 
 **9. Parity.** [03 §5](03-capability-catalog.md#5-the-parity-contract)'s test
@@ -1754,41 +1754,41 @@ Genuine uncertainties, and the cross-document edits this file implies.
 **Cross-references other documents need** (I edited no existing file):
 
 1. **[02 — Crate map](02-crate-map.md)** — add `omt-open` to the L2 list and to
-   the "Ownership for parallel implementation" table (`Semantic open` →
-   `omt-open` → blocked by contracts, terminal). Move `Match`/`Target` into
-   `omt-types`.
+ the "Ownership for parallel implementation" table (`Semantic open` →
+ `omt-open` → blocked by contracts, terminal). Move `Match`/`Target` into
+ `omt-types`.
 2. **[04 §8.3–8.4](04-terminal-core.md#83-hyperlinks-and-detection)** — `Target`
-   moves to `omt-types` and gains `GitRef`/`Issue`; `Custom` gains named slots.
-   The click-target capabilities it points at are `open.targets.list` /
-   `open.resolve` from §9 — 04 links here rather than declaring its own.
-   §5.4 also redefines `SelectionMode::Semantic` in terms
-   of match spans, which 04 §8.2 currently leaves to `word_chars`.
+ moves to `omt-types` and gains `GitRef`/`Issue`; `Custom` gains named slots.
+ The click-target capabilities it points at are `open.targets.list` /
+ `open.resolve` from §9 — 04 links here rather than declaring its own.
+ §5.4 also redefines `SelectionMode::Semantic` in terms
+ of match spans, which 04 §8.2 currently leaves to `word_chars`.
 3. **[03 §6](03-capability-catalog.md#6-capability-groups-initial-surface)** —
-   add an `open` row to the group table.
+ add an `open` row to the group table.
 4. **[10 §7](10-configuration.md#7-the-settings-surface)** — a new `[open]`
-   section (`default`, `rank`, `binding`, `rule`, `handler`, `editor.*`,
-   `mouse.*`, `hints.*`, `remote.*`, `match.*`, `issue.*`), and the §5.2 default
-   keybindings in `keybindings.toml`.
+ section (`default`, `rank`, `binding`, `rule`, `handler`, `editor.*`,
+ `mouse.*`, `hints.*`, `remote.*`, `match.*`, `issue.*`), and the §5.2 default
+ keybindings in `keybindings.toml`.
 5. **Resolved — [15](15-workspace-explorer.md) and `workspace.files.reveal`.**
-   `workspace.files.reveal` stays as the capability 15 owns, and **the `editor`
-   handler and `workspace.files.reveal` share one implementation**: this document
-   owns the handler and the editor argv/template resolution (§4.4), 15 owns the
-   capability surface. 15 §8.4's `editor_args` default
-   (`--goto {path}:{line}:{col}`) is VS Code-specific and is superseded by the
-   detected per-editor table here.
+ `workspace.files.reveal` stays as the capability 15 owns, and **the `editor`
+ handler and `workspace.files.reveal` share one implementation**: this document
+ owns the handler and the editor argv/template resolution (§4.4), 15 owns the
+ capability surface. 15 §8.4's `editor_args` default
+ (`--goto {path}:{line}:{col}`) is VS Code-specific and is superseded by the
+ detected per-editor table here.
 6. **[09](09-ssh-and-media.md)** — §6 adds a consumer of `media.file.pull`; no
-   protocol change, but 09's §7.4 could mention it.
+ protocol change, but 09's §7.4 could mention it.
 7. **Resolved — [16 — Input and keymap](16-input-and-keymap.md).** (a) The
-   trigger grammar **does** support mouse events with modifiers:
-   [16 §2.2](16-input-and-keymap.md#22-types) gives `MouseEvent` a shape
-   (`kind`/`button`/`mods`/`pos`, SGR 1006) and
-   [16 §2.3](16-input-and-keymap.md#23-resolution)'s `Chord` admits a
-   `"shift-mouse1"`-style trigger with a `when`. (b) `mouse_reporting`,
-   `hint_mode` and `open_menu_focused` are all in
-   [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet`.
-   (c) `<leader> f` / `<leader> F` / `<leader> g` are registered in
-   [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace). Still outstanding:
-   `omt doctor keys` needs the §5.3(c) outer-emulator section, which 16 owns.
+ trigger grammar **does** support mouse events with modifiers:
+ [16 §2.2](16-input-and-keymap.md#22-types) gives `MouseEvent` a shape
+ (`kind`/`button`/`mods`/`pos`, SGR 1006) and
+ [16 §2.3](16-input-and-keymap.md#23-resolution)'s `Chord` admits a
+ `"shift-mouse1"`-style trigger with a `when`. (b) `mouse_reporting`,
+ `hint_mode` and `open_menu_focused` are all in
+ [16 §4.1](16-input-and-keymap.md#41-the-context-set)'s `ContextSet`.
+ (c) `<leader> f` / `<leader> F` / `<leader> g` are registered in
+ [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace). Still outstanding:
+ `omt doctor keys` needs the §5.3(c) outer-emulator section, which 16 owns.
 8. **[00 — Overview](00-overview.md)** and any docs index need an `18` entry.
 
 **Genuine technical uncertainties:**
@@ -1810,52 +1810,52 @@ activation behind a `Spawner` seam exactly analogous to `omt-workspace-fs`'s
 L2 invariants. This document is deliberately **not** restructured on it.
 
 9. **Shift+click passthrough is asserted, not verified.** The claim in §5.1 —
-   that iTerm2, kitty, WezTerm, Ghostty, Alacritty, Terminal.app and Windows
-   Terminal all let Shift bypass application mouse reporting, and that
-   applications do not expect shifted clicks — is based on the long-standing
-   xterm convention and on those terminals' documented selection behavior. It
-   has **not** been tested emulator by emulator, nor against a corpus of TUIs.
-   This is the single load-bearing empirical assumption in the document and it
-   needs a hands-on matrix before the mouse path ships. If it fails on a major
-   emulator, hint mode absorbs the loss without a redesign — which is a large
-   part of why hint mode is primary.
+ that iTerm2, kitty, WezTerm, Ghostty, Alacritty, Terminal.app and Windows
+ Terminal all let Shift bypass application mouse reporting, and that
+ applications do not expect shifted clicks — is based on the long-standing
+ xterm convention and on those terminals' documented selection behavior. It
+ has **not** been tested emulator by emulator, nor against a corpus of TUIs.
+ This is the single load-bearing empirical assumption in the document and it
+ needs a hands-on matrix before the mouse path ships. If it fails on a major
+ emulator, hint mode absorbs the loss without a redesign — which is a large
+ part of why hint mode is primary.
 10. **Which modifier the outer emulator swallows before omt sees it** is
-    likewise knowledge, not detection (§5.3(a)). omt cannot observe another
-    program's keymap. Is there a probe? (Send a modifier-click-shaped query and
-    see whether anything arrives — probably not, since a swallowed event
-    produces no signal at all.) If not, the one-shot card in §5.3(b) is the best
-    available and its trigger heuristic ("unexplained gap") needs tuning against
-    real usage.
+ likewise knowledge, not detection (§5.3(a)). omt cannot observe another
+ program's keymap. Is there a probe? (Send a modifier-click-shaped query and
+ see whether anything arrives — probably not, since a swallowed event
+ produces no signal at all.) If not, the one-shot card in §5.3(b) is the best
+ available and its trigger heuristic ("unexplained gap") needs tuning against
+ real usage.
 11. **Zed's remote-project CLI surface** (§6.5.1) is unverified. If `zed` cannot
-    be told to open one remote path at a line, it drops to `snapshot`.
+ be told to open one remote path at a line, it drops to `snapshot`.
 12. **VS Code `--file-uri` with a line suffix.** `code -g` takes `file:line:col`
-    for local paths; whether the `vscode-remote://` URI form accepts the same
-    suffix is unverified. If not, handoff opens the file at line 1 and omt
-    should say so rather than silently mis-position.
+ for local paths; whether the `vscode-remote://` URI form accepts the same
+ suffix is unverified. If not, handoff opens the file at line 1 and omt
+ should say so rather than silently mis-position.
 13. **`nvim --remote` and TRAMP latency.** Both are offered in §6.5.1; neither
-    is measured. TRAMP over a slow link is famously slow, and offering an action
-    that takes 20 seconds is worse than not offering it. Needs a timing gate.
+ is measured. TRAMP over a slow link is famously slow, and offering an action
+ that takes 20 seconds is worse than not offering it. Needs a timing gate.
 14. **Basename-only resolution ranking** (§3.4) is a guess. In a monorepo with
-    forty `mod.rs`, is "inside the block cwd subtree, then shortest, then most
-    recently modified" the right order? Wants real-world tuning, and possibly a
-    "remember my choice for this basename in this workspace" memory — which is
-    state, and therefore deferred until there is evidence it is needed.
+ forty `mod.rs`, is "inside the block cwd subtree, then shortest, then most
+ recently modified" the right order? Wants real-world tuning, and possibly a
+ "remember my choice for this basename in this workspace" memory — which is
+ state, and therefore deferred until there is evidence it is needed.
 15. **`builtin.git_sha`'s false-positive rate** is unmeasured. The guard (digit
-    *and* hex-letter, `git cat-file` verification) should make wrong matches
-    silent rather than harmful, but a `docker` digest or a base16 UUID in a log
-    will still light up spans that then quietly resolve to nothing. If the
-    visual noise is bad, the rule should default to `enabled = false` outside
-    blocks whose command matches `^git\b`.
+ *and* hex-letter, `git cat-file` verification) should make wrong matches
+ silent rather than harmful, but a `docker` digest or a base16 UUID in a log
+ will still light up spans that then quietly resolve to nothing. If the
+ visual noise is bad, the rule should default to `enabled = false` outside
+ blocks whose command matches `^git\b`.
 16. **Hint-label stability under streaming output.** Labels are assigned in
-    reading order over the viewport; a line arriving mid-hint-session shifts
-    everything. Current design freezes the assignment at `hints.begin` and lets
-    the content scroll under it, which is stable but can leave a label pointing
-    at a match that has scrolled away. The alternative (re-assign on damage) is
-    unusable because the label the user is halfway through typing changes. The
-    freeze is chosen; whether it should also **pause output rendering** for the
-    duration (tmux-fingers effectively does, by drawing a static overlay) is
-    unresolved and is a real UX question.
+ reading order over the viewport; a line arriving mid-hint-session shifts
+ everything. Current design freezes the assignment at `hints.begin` and lets
+ the content scroll under it, which is stable but can leave a label pointing
+ at a match that has scrolled away. The alternative (re-assign on damage) is
+ unusable because the label the user is halfway through typing changes. The
+ freeze is chosen; whether it should also **pause output rendering** for the
+ duration (tmux-fingers effectively does, by drawing a static overlay) is
+ unresolved and is a real UX question.
 17. **Does anything actually emit OSC 8 with a `line` fragment?** §2.1's
-    enrichment rule exists because nothing standard does. If a convention
-    emerges (`file:///p/x.rs#L88`, or a `line=` param), omt should consume it
-    and the enrichment becomes a fallback rather than the norm.
+ enrichment rule exists because nothing standard does. If a convention
+ emerges (`file:///p/x.rs#L88`, or a `line=` param), omt should consume it
+ and the enrichment becomes a fallback rather than the norm.

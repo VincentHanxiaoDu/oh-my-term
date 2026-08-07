@@ -87,7 +87,7 @@ and you would attach to somebody else's sessions without either end noticing.
 ## Bring your existing setup
 
 ```sh
-omt import another terminal
+omt import other terminals
 omt import vscode
 ```
 
@@ -102,11 +102,11 @@ See [Importing](importing.md).
 
 ```
 ~/.config/omt/
-├── config.toml          # your settings
-├── secrets.toml         # 0600, never merged into config.toml
-├── keybindings.toml     # your key overrides
-├── themes/              # your themes
-└── plugins/<id>/        # installed plugins
+├── config.toml # your settings
+├── secrets.toml # 0600, never merged into config.toml
+├── keybindings.toml # your key overrides
+├── themes/ # your themes
+└── plugins/<id>/ # installed plugins
 ```
 
 Per-project settings go in `<repo>/.omt/config.toml`. That file arrives with a

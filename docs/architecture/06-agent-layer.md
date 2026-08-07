@@ -5,7 +5,7 @@ The design of `omt-agent` (pipeline and state) and `omt-agent-adapters`
 else, so it gets the most detail.
 
 Source material: [`docs/research/agent-clis.md`](../research/agent-clis.md) for
-the per-CLI facts, and [`docs/research/another tool.md`](../research/another tool.md) §3 for
+the per-CLI facts, and [`docs/design/terminal-ux.md`](../design/terminal-ux.md) §3 for
 prior art.
 
 ---
@@ -13,15 +13,15 @@ prior art.
 ## 1. What this layer must deliver
 
 1. **Which agent** is running in a session, and when that binding starts and
-   ends.
+ ends.
 2. **What state** it is in — enough to answer "does this need me?" across
-   twenty sessions on four machines.
+ twenty sessions on four machines.
 3. **Structured interactions** — question cards, permission requests, plan
-   reviews — surfaced as data that any surface can render and *answer*.
+ reviews — surfaced as data that any surface can render and *answer*.
 4. **Ancillary semantics** the agents already expose and nobody surfaces: the
-   message queue, slash commands, token usage, subagent trees, compaction.
+ message queue, slash commands, token usage, subagent trees, compaction.
 
-Requirements 1 and 2 are what another tool does. Requirements 3 and 4 drive every design
+Requirements 1 and 2 are what other terminals does. Requirements 3 and 4 drive every design
 choice below — though
 [D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim) is the honest
 calibration here: requirement 3 is **table stakes** across this category, not a
@@ -37,35 +37,35 @@ Detection has two independent axes that must not be conflated:
 - **Binding**: *which* agent occupies the session, with a lifetime.
 - **State**: what that agent is doing right now.
 
-another tool conflates them into one polling loop; omt separates them because binding
+other terminals conflates them into one polling loop; omt separates them because binding
 changes are rare (seconds to hours) and state changes are frequent (hundreds of
 milliseconds), and because a binding carries an identity (the agent's own
 session id) that everything else keys off.
 
 ```rust
 pub struct AgentBinding {
-    pub id: BindingId,
-    pub session: SessionId,
-    pub kind: AgentKind,
-    pub version: Option<String>,
-    /// The agent's own session identifier, once known.
-    pub agent_session: Option<AgentSessionId>,
-    pub cwd: PathBuf,
-    pub started_at: Timestamp,
-    pub ended_at: Option<Timestamp>,
-    /// `pty` (default) or `native` (ACP). Defined in
-    /// [05 §1](05-session-model.md#13-session-modes-d8), which owns `SessionMode`. D8.
-    pub mode: SessionMode,
-    /// Which sources are currently live for this binding.
-    pub sources: Vec<SourceStatus>,
+ pub id: BindingId,
+ pub session: SessionId,
+ pub kind: AgentKind,
+ pub version: Option<String>,
+ /// The agent's own session identifier, once known.
+ pub agent_session: Option<AgentSessionId>,
+ pub cwd: PathBuf,
+ pub started_at: Timestamp,
+ pub ended_at: Option<Timestamp>,
+ /// `pty` (default) or `native` (ACP). Defined in
+ /// [05 §1](05-session-model.md#13-session-modes-d8), which owns `SessionMode`. D8.
+ pub mode: SessionMode,
+ /// Which sources are currently live for this binding.
+ pub sources: Vec<SourceStatus>,
 }
 ```
 
 A binding ends when the foreground process group changes away from the agent, or
 when a lifecycle source reports session end. Retained evidence (OSC titles,
 tailed files, hook correlation) is dropped on binding end so a new agent can
-never inherit the previous one's state — the same discipline another tool applies in
-`clear_retained()`, and for the same reason.
+never inherit the previous one's state — the same discipline other terminals applies in
+`clear_retained`, and for the same reason.
 
 ### 2.1 Session modes
 
@@ -75,10 +75,10 @@ An agent occupies a session in one of two modes — `SessionMode::Pty` or
 [D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp).
 
 - **`pty` (default).** The agent draws its own TUI in a real PTY and omt observes
-  it from outside. The tiered source model of §3–§4 applies in full.
+ it from outside. The tiered source model of §3–§4 applies in full.
 - **`native`.** omt spawns the agent in ACP mode. There is **no TUI and no PTY**;
-  the ACP connection is the sole event source and the sole responder, and the
-  merge rules of §4 are inert because there is only one source to merge.
+ the ACP connection is the sole event source and the sole responder, and the
+ merge rules of §4 are inert because there is only one source to merge.
 
 This corrects a framing that appears elsewhere in this document: **ACP is a
 replacement front end, not an observability sidecar.** You cannot run a CLI's own
@@ -86,10 +86,10 @@ TUI and speak ACP to the same process. `AcpClient` therefore appears twice in
 this design, and the two appearances are not the same thing:
 
 1. as a tier-`Protocol` `EventSource` for a **`pty`** session whose agent happens
-   to expose ACP alongside its TUI (a second endpoint on a process omt is already
-   observing), and
+ to expose ACP alongside its TUI (a second endpoint on a process omt is already
+ observing), and
 2. as **the whole of a `native`** session — transport, event stream, responder
-   and renderer input, with nothing else present.
+ and renderer input, with nothing else present.
 
 ---
 
@@ -103,26 +103,26 @@ sessions only** ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-
 ```rust
 #[async_trait]
 pub trait EventSource: Send + Sync {
-    fn id(&self) -> SourceId;
-    /// Confidence tier; see §4. Fixed per source, not per event.
-    fn tier(&self) -> Tier;
-    /// Which agents this source can serve.
-    fn supports(&self, kind: AgentKind) -> bool;
+ fn id(&self) -> SourceId;
+ /// Confidence tier; see §4. Fixed per source, not per event.
+ fn tier(&self) -> Tier;
+ /// Which agents this source can serve.
+ fn supports(&self, kind: AgentKind) -> bool;
 
-    /// Begin observing a binding. The source pushes normalized events and
-    /// reports its own health; it must never block and must never write to the
-    /// PTY.
-    async fn attach(&self, binding: &AgentBinding, sink: EventSink) -> Result<SourceHandle, SourceError>;
+ /// Begin observing a binding. The source pushes normalized events and
+ /// reports its own health; it must never block and must never write to the
+ /// PTY.
+ async fn attach(&self, binding: &AgentBinding, sink: EventSink) -> Result<SourceHandle, SourceError>;
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tier {
-    Heuristic = 0,   // PTY screen/bell guesses
-    Process   = 1,   // process + environ inspection
-    Marker    = 2,   // omt-injected env correlation, OSC backchannel
-    Transcript= 3,   // agent's own session file
-    Hook      = 4,   // agent's own hook system
-    Protocol  = 5,   // agent's own structured protocol (ACP, app-server, REST/SSE)
+ Heuristic = 0, // PTY screen/bell guesses
+ Process = 1, // process + environ inspection
+ Marker = 2, // omt-injected env correlation, OSC backchannel
+ Transcript= 3, // agent's own session file
+ Hook = 4, // agent's own hook system
+ Protocol = 5, // agent's own structured protocol (ACP, app-server, REST/SSE)
 }
 ```
 
@@ -152,20 +152,19 @@ One state machine per binding consumes all sources.
 **Rules.**
 
 1. Every incoming event carries its source tier. State transitions are applied
-   from the highest tier that has spoken within its *freshness window*.
+ from the highest tier that has spoken within its *freshness window*.
 2. Freshness windows are per tier: Protocol/Hook 30 s, Transcript 15 s,
-   Marker 10 s, Process 10 s, Heuristic 3 s. A tier that goes silent past its
-   window stops suppressing lower tiers.
+ Marker 10 s, Process 10 s, Heuristic 3 s. A tier that goes silent past its
+ window stops suppressing lower tiers.
 3. **A lower tier may never contradict a live higher tier.** It may only fill a
-   gap. This is the rule that makes heuristics safe to keep enabled.
+ gap. This is the rule that makes heuristics safe to keep enabled.
 4. When a Protocol or Hook source is *authoritative* for an agent — meaning it
-   reports the full lifecycle, not just session identity — the heuristic source
-   is suspended entirely for that binding. Two sources of truth for the same
-   fact is a bug, not redundancy. (another tool reaches the same conclusion with
-   `full_lifecycle_hook_authority`.)
+ reports the full lifecycle, not just session identity — the heuristic source
+ is suspended entirely for that binding. Two sources of truth for the same
+ fact is a bug, not redundancy. 
 5. Transitions to `Idle` are debounced (three confirmations within 700 ms) to
-   avoid flicker between an agent's tool calls; transitions to `Blocked` are
-   *not* debounced, because latency there is the whole product.
+ avoid flicker between an agent's tool calls; transitions to `Blocked` are
+ *not* debounced, because latency there is the whole product.
 
 **Observable state.**
 
@@ -178,14 +177,14 @@ source, never an observable state.)
 
 ```rust
 pub enum AgentState {
-    Starting,
-    Idle,
-    Working { since: Timestamp, detail: Option<String> },
-    /// Needs a human. Always carries the reason, and an interaction id when
-    /// the block is structured rather than merely observed.
-    Blocked { since: Timestamp, reason: BlockReason, interaction: Option<InteractionId> },
-    Exited { code: Option<i32> },
-    Unknown,
+ Starting,
+ Idle,
+ Working { since: Timestamp, detail: Option<String> },
+ /// Needs a human. Always carries the reason, and an interaction id when
+ /// the block is structured rather than merely observed.
+ Blocked { since: Timestamp, reason: BlockReason, interaction: Option<InteractionId> },
+ Exited { code: Option<i32> },
+ Unknown,
 }
 
 pub enum BlockReason { Question, Permission, PlanReview, Elicitation, Input, Unspecified }
@@ -199,7 +198,7 @@ terminal view. That degradation is explicit and visible, never silent.
 ### Explainability is a feature
 
 `agent.explain` returns the full decision: every source, its tier, its last
-event, its freshness, which one won, and why. another tool's `agent explain` is the
+event, its freshness, which one won, and why. the `agent explain` is the
 single best idea in that codebase and omt copies the *idea* (not the code).
 Without it, a mis-detection is unfalsifiable and every bug report is useless.
 
@@ -225,120 +224,120 @@ user's real interactive TUI is on screen**.
 
 ```rust
 pub struct Interaction {
-    pub id: InteractionId,
-    pub session: SessionId,
-    pub binding: BindingId,
-    pub kind: InteractionKind,
-    pub opened_at: Timestamp,
-    /// Deadline after which the agent proceeds on its own, if the mechanism has
-    /// one. Named `timeout_at` on the wire and in 12 §4.
-    pub timeout_at: Option<Timestamp>,
-    pub state: InteractionState,
-    /// How an answer gets back to the agent. §5.2.
-    pub responder: ResponderRef,
-    /// Whether omt can deliver an answer to *this* card at all, and over which
-    /// channel. Computed once by the normalizer from `responder` + `kind`;
-    /// see §5.2.1. Remote answerability renders from this and never from
-    /// `state == Open` (D13).
-    pub deliverable: Deliverable,
-    /// Advisory: who is currently looking at this card. See 12 §4.4.
-    pub viewers: Vec<ActorId>,
+ pub id: InteractionId,
+ pub session: SessionId,
+ pub binding: BindingId,
+ pub kind: InteractionKind,
+ pub opened_at: Timestamp,
+ /// Deadline after which the agent proceeds on its own, if the mechanism has
+ /// one. Named `timeout_at` on the wire and in 12 §4.
+ pub timeout_at: Option<Timestamp>,
+ pub state: InteractionState,
+ /// How an answer gets back to the agent. §5.2.
+ pub responder: ResponderRef,
+ /// Whether omt can deliver an answer to *this* card at all, and over which
+ /// channel. Computed once by the normalizer from `responder` + `kind`;
+ /// see §5.2.1. Remote answerability renders from this and never from
+ /// `state == Open` (D13).
+ pub deliverable: Deliverable,
+ /// Advisory: who is currently looking at this card. See 12 §4.4.
+ pub viewers: Vec<ActorId>,
 }
 
 /// Whether an answer can be delivered, and over which channel. §5.2.1.
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Deliverable {
-    /// The responder has a real response channel (ACP, plugin, app-server).
-    /// Not gated by the writer token — 12 §3.1.
-    Native,
-    /// Keystrokes into the agent's own TUI. Delivery is D13's gated
-    /// transaction; `requires_token` is `true` for every synthetic delivery
-    /// and is carried explicitly so a client can render the gate without
-    /// knowing the rule.
-    Synthetic { requires_token: bool },
-    /// omt cannot answer this card. The surface shows it read-only with
-    /// `reason` and offers the terminal view (§4, D16).
-    None { reason: NotDeliverableReason },
+ /// The responder has a real response channel (ACP, plugin, app-server).
+ /// Not gated by the writer token — 12 §3.1.
+ Native,
+ /// Keystrokes into the agent's own TUI. Delivery is D13's gated
+ /// transaction; `requires_token` is `true` for every synthetic delivery
+ /// and is carried explicitly so a client can render the gate without
+ /// knowing the rule.
+ Synthetic { requires_token: bool },
+ /// omt cannot answer this card. The surface shows it read-only with
+ /// `reason` and offers the terminal view (§4, D16).
+ None { reason: NotDeliverableReason },
 }
 
 #[serde(rename_all = "snake_case")]
 pub enum NotDeliverableReason {
-    /// Submitting requires cursor navigation — multiSelect, plan review.
-    NotPositionIndependent,
-    /// The option's index is not derivable from the payload — a *specific*
-    /// deny on a permission prompt (D16).
-    IndexNotDerivable,
-    /// The responder is `Inferred` and not enabled for this agent (D3).
-    InferredResponderDisabled,
-    /// No responder covers this kind for this agent.
-    NoResponder,
+ /// Submitting requires cursor navigation — multiSelect, plan review.
+ NotPositionIndependent,
+ /// The option's index is not derivable from the payload — a *specific*
+ /// deny on a permission prompt (D16).
+ IndexNotDerivable,
+ /// The responder is `Inferred` and not enabled for this agent (D3).
+ InferredResponderDisabled,
+ /// No responder covers this kind for this agent.
+ NoResponder,
 }
 
 /// Semantics and transitions: 12 §4.1.
 pub enum InteractionState {
-    Open,
-    /// CAS won; the answer is committed as a decision but not yet written.
-    /// **Carries the response** — see the note below; without it a crash
-    /// between CAS and delivery cannot report what was lost.
-    Resolving { by: Actor, at: Timestamp, response: InteractionResponse },
-    /// The bytes have been written to the delivery channel. Not yet proof
-    /// the agent received them.
-    Submitted { by: Actor, at: Timestamp, response: InteractionResponse },
-    /// omt **observed the agent record the answer**. The only success state.
-    Resolved  { by: Actor, at: Timestamp, response: InteractionResponse },
-    /// Written, but no confirming observation arrived inside the window.
-    /// The response text is preserved so the user can see what was lost.
-    Undelivered { by: Actor, at: Timestamp, response: InteractionResponse,
-                  reason: UndeliveredReason },
-    Cancelled { by: Actor, reason: CancelReason, at: Timestamp },
-    Abandoned { at: Timestamp, detail: String },
+ Open,
+ /// CAS won; the answer is committed as a decision but not yet written.
+ /// **Carries the response** — see the note below; without it a crash
+ /// between CAS and delivery cannot report what was lost.
+ Resolving { by: Actor, at: Timestamp, response: InteractionResponse },
+ /// The bytes have been written to the delivery channel. Not yet proof
+ /// the agent received them.
+ Submitted { by: Actor, at: Timestamp, response: InteractionResponse },
+ /// omt **observed the agent record the answer**. The only success state.
+ Resolved { by: Actor, at: Timestamp, response: InteractionResponse },
+ /// Written, but no confirming observation arrived inside the window.
+ /// The response text is preserved so the user can see what was lost.
+ Undelivered { by: Actor, at: Timestamp, response: InteractionResponse,
+ reason: UndeliveredReason },
+ Cancelled { by: Actor, reason: CancelReason, at: Timestamp },
+ Abandoned { at: Timestamp, detail: String },
 }
 
 pub enum UndeliveredReason {
-    /// No confirming observation inside the bounded window.
-    NotConfirmed,
-    /// A completion arrived for this call, but the agent recorded a *different*
-    /// answer — almost always because the local user answered by hand first.
-    /// See §5.1.1; this is never retried and is surfaced with both answers.
-    AnsweredDifferently { observed: InteractionResponse },
-    /// The daemon restarted with a decision recorded but unwritten, or
-    /// written and unconfirmed. Never retried — see below.
-    DaemonRestart,
-    /// The gated PTY transaction (D13) failed its preconditions.
-    PreconditionFailed,
+ /// No confirming observation inside the bounded window.
+ NotConfirmed,
+ /// A completion arrived for this call, but the agent recorded a *different*
+ /// answer — almost always because the local user answered by hand first.
+ /// See §5.1.1; this is never retried and is surfaced with both answers.
+ AnsweredDifferently { observed: InteractionResponse },
+ /// The daemon restarted with a decision recorded but unwritten, or
+ /// written and unconfirmed. Never retried — see below.
+ DaemonRestart,
+ /// The gated PTY transaction (D13) failed its preconditions.
+ PreconditionFailed,
 }
 
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InteractionKind {
-    /// Claude Code AskUserQuestion; ACP/MCP elicitation with a choice schema.
-    Choice { questions: Vec<ChoiceQuestion> },
-    Permission {
-        tool: String,
-        /// The verbatim tool input, unmodified.
-        input: serde_json::Value,
-        /// The shell command, for exec-shaped tools.
-        command: Option<String>,
-        /// Structured diff for edit-shaped tools. `FileDiff` is defined in
-        /// [15 §3.2](15-workspace-explorer.md#32-vcs-model) so one renderer
-        /// serves both the explorer and this card (15 §8.5).
-        diff: Option<FileDiff>,
-        /// The agent's own option list, verbatim and in the agent's order.
-        /// omt neither adds, removes, nor reorders entries (D1).
-        options: Vec<PermissionOption>,
-    },
-    PlanReview { plan: String },
-    Text { prompt: String, placeholder: Option<String>, multiline: bool },
+ /// Claude Code AskUserQuestion; ACP/MCP elicitation with a choice schema.
+ Choice { questions: Vec<ChoiceQuestion> },
+ Permission {
+ tool: String,
+ /// The verbatim tool input, unmodified.
+ input: serde_json::Value,
+ /// The shell command, for exec-shaped tools.
+ command: Option<String>,
+ /// Structured diff for edit-shaped tools. `FileDiff` is defined in
+ /// [15 §3.2](15-workspace-explorer.md#32-vcs-model) so one renderer
+ /// serves both the explorer and this card (15 §8.5).
+ diff: Option<FileDiff>,
+ /// The agent's own option list, verbatim and in the agent's order.
+ /// omt neither adds, removes, nor reorders entries (D1).
+ options: Vec<PermissionOption>,
+ },
+ PlanReview { plan: String },
+ Text { prompt: String, placeholder: Option<String>, multiline: bool },
 }
 
 pub struct ChoiceQuestion {
-    pub question: String,
-    /// Short tab label, ~12 chars — Claude Code's `header`.
-    pub header: String,
-    pub multi_select: bool,
-    pub options: Vec<ChoiceOption>,   // { label, description }
-    /// Every surface offers free text in addition to the options, because the
-    /// native clients do.
-    pub allow_free_text: bool,
+ pub question: String,
+ /// Short tab label, ~12 chars — Claude Code's `header`.
+ pub header: String,
+ pub multi_select: bool,
+ pub options: Vec<ChoiceOption>, // { label, description }
+ /// Every surface offers free text in addition to the options, because the
+ /// native clients do.
+ pub allow_free_text: bool,
 }
 
 /// One of the agent's own suggestions, passed through unchanged.
@@ -359,23 +358,23 @@ has one implementation and one fixture.
 ```rust
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InteractionResponse {
-    /// One `ChoiceAnswer` per question, index-aligned with `questions`.
-    Choices { answers: Vec<ChoiceAnswer> },
-    Permission { decision: PermissionOptionKind,
-                 updated_input: Option<serde_json::Value>,
-                 reason: Option<String> },
-    Text { value: String },
-    PlanReview { decision: PlanDecision, reason: Option<String> },
+ /// One `ChoiceAnswer` per question, index-aligned with `questions`.
+ Choices { answers: Vec<ChoiceAnswer> },
+ Permission { decision: PermissionOptionKind,
+ updated_input: Option<serde_json::Value>,
+ reason: Option<String> },
+ Text { value: String },
+ PlanReview { decision: PlanDecision, reason: Option<String> },
 }
 
 pub struct ChoiceAnswer {
-    /// Selected option labels. Length 1 unless `multi_select`.
-    pub labels: Vec<String>,
-    /// Free text entered via the synthetic "Other…" row. Mutually exclusive
-    /// with a non-empty `labels`.
-    pub other: Option<String>,
-    /// Extra context attached to a chosen option — Claude Code's `n` key.
-    pub comment: Option<String>,
+ /// Selected option labels. Length 1 unless `multi_select`.
+ pub labels: Vec<String>,
+ /// Free text entered via the synthetic "Other…" row. Mutually exclusive
+ /// with a non-empty `labels`.
+ pub other: Option<String>,
+ /// Extra context attached to a chosen option — Claude Code's `n` key.
+ pub comment: Option<String>,
 }
 ```
 
@@ -383,24 +382,24 @@ pub struct ChoiceAnswer {
 
 ```
 agent emits ──► source normalizes ──► ledger opens Interaction ──► broadcast
-                                                │
-                     ┌──────────────────────────┼──────────────────────────┐
-                     ▼                          ▼                          ▼
-                 TUI card                  web card (phone)          API client
-                     └──────────── interaction.resolve ─────────────┘
-                                            │
-                          ledger CAS: Open → Resolving{response}
-                                            │
-                                    responder injects
-                                            │
-                                      → Submitted
-                                            │
-                     ┌──────────────────────┴──────────────────────┐
-        omt observes the agent record it            window elapses with no
-        (PostToolUse / transcript entry /              confirming observation
-         tool result) within the window                        │
-                     ▼                                          ▼
-                 → Resolved                              → Undelivered
+ │
+ ┌──────────────────────────┼──────────────────────────┐
+ ▼ ▼ ▼
+ TUI card web card (phone) API client
+ └──────────── interaction.resolve ─────────────┘
+ │
+ ledger CAS: Open → Resolving{response}
+ │
+ responder injects
+ │
+ → Submitted
+ │
+ ┌──────────────────────┴──────────────────────┐
+ omt observes the agent record it window elapses with no
+ (PostToolUse / transcript entry / confirming observation
+ tool result) within the window │
+ ▼ ▼
+ → Resolved → Undelivered
 ```
 
 #### 5.1.1 What counts as a confirming observation
@@ -409,11 +408,11 @@ The window alone is not a predicate. An observation confirms a *specific*
 submitted answer only when all three hold:
 
 1. **Same call.** The observation carries the `tool_use_id` the interaction was
-   opened from. For agents with no such id, the correlation is
-   `(agent_session, interaction kind, opened_at ± window)` and is marked
-   low-confidence in `agent.explain`.
+ opened from. For agents with no such id, the correlation is
+ `(agent_session, interaction kind, opened_at ± window)` and is marked
+ low-confidence in `agent.explain`.
 2. **Terminal for that call.** It is a completion, not progress — a
-   `PostToolUse`, a `tool_result`, or the transcript's own record of the answer.
+ `PostToolUse`, a `tool_result`, or the transcript's own record of the answer.
 3. **The recorded answer equals the submitted one.**
 
 Rule 3 is the one that matters and it is not redundant with rule 1. The failure
@@ -482,16 +481,16 @@ already-applied call — that is a read of the ledger, not a second write.)
 ```rust
 #[async_trait]
 pub trait Responder: Send + Sync {
-    fn fidelity(&self) -> Fidelity;   // Native | Synthetic
-    /// Only meaningful for `Synthetic`; `Native` responders return
-    /// `Independent`. Required by D3: it is the axis that decides whether a
-    /// responder is enabled by default.
-    fn state_dependence(&self) -> StateDependence;
-    /// Whether this channel can deliver a modified tool input alongside an
-    /// approval. A property of the channel, not of the agent's option list.
-    /// See §5.4. D9.
-    fn supports_edit(&self) -> bool { false }
-    async fn respond(&self, i: &Interaction, r: &InteractionResponse) -> Result<(), RespondError>;
+ fn fidelity(&self) -> Fidelity; // Native | Synthetic
+ /// Only meaningful for `Synthetic`; `Native` responders return
+ /// `Independent`. Required by D3: it is the axis that decides whether a
+ /// responder is enabled by default.
+ fn state_dependence(&self) -> StateDependence;
+ /// Whether this channel can deliver a modified tool input alongside an
+ /// approval. A property of the channel, not of the agent's option list.
+ /// See §5.4. D9.
+ fn supports_edit(&self) -> bool { false }
+ async fn respond(&self, i: &Interaction, r: &InteractionResponse) -> Result<, RespondError>;
 }
 ```
 
@@ -540,35 +539,35 @@ The synthetic responder exists under a precise rule, stated in
 
 ```rust
 pub enum StateDependence {
-    /// The answer is the same regardless of the agent's internal UI state:
-    /// typing `1`/`2`/`3`, `y`/`n`, free text, or a line-oriented CLI's stdin.
-    Independent,
-    /// Producing the answer requires knowing where a highlight bar currently
-    /// sits — i.e. state omt inferred from the screen.
-    Inferred,
+ /// The answer is the same regardless of the agent's internal UI state:
+ /// typing `1`/`2`/`3`, `y`/`n`, free text, or a line-oriented CLI's stdin.
+ Independent,
+ /// Producing the answer requires knowing where a highlight bar currently
+ /// sits — i.e. state omt inferred from the screen.
+ Inferred,
 }
 ```
 
 - `Independent` is allowed and enabled by default. Writing `y\n` to Aider is not
-  a hack; stdin is its documented input channel. A TUI that accepts `1`/`2`/`3`
-  is equally safe, because no inference step exists.
+ a hack; stdin is its documented input channel. A TUI that accepts `1`/`2`/`3`
+ is equally safe, because no inference step exists.
 - `Inferred` — counting arrow keys against a cursor position derived from the
-  screen — is **disabled by default**. A version bump, locale change or resize
-  invalidates the inference, omt selects the *wrong* option, and on a phone the
-  user cannot see that it went wrong. Enabling it is per-agent, explicit, and
-  labelled experimental everywhere it surfaces.
+ screen — is **disabled by default**. A version bump, locale change or resize
+ invalidates the inference, omt selects the *wrong* option, and on a phone the
+ user cannot see that it went wrong. Enabling it is per-agent, explicit, and
+ labelled experimental everywhere it surfaces.
 - Adapters must discover whether a prompt offers a position-independent form and
-  prefer it. That discovery is a testable property of the adapter.
+ prefer it. That discovery is a testable property of the adapter.
 - It is **never** used when a native responder is available.
 - Every synthetic response is tagged `fidelity: synthetic` in the event stream
-  and visibly attributed as omt-typed on every surface.
+ and visibly attributed as omt-typed on every surface.
 - It requires the writer token, and it is serialized with human input.
 
 Note what this rule deliberately does *not* say: it does not exempt "dangerous"
 tools. Per [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics),
 omt does not classify an agent's operations by danger — that is the agent's own
 permission model's job, and duplicating it would create two mental models and
-false confidence. another tool's `agent.prompt` (type text, send Enter 300 ms later to
+false confidence. the `agent.prompt` (type text, send Enter 300 ms later to
 survive paste debouncing) is the prior art here, and its fragility comes from
 exactly the inference step this rule forbids.
 
@@ -600,7 +599,7 @@ responder.state_dependence, kind, agent, mode)`:
 
 - `Native` fidelity → `Native`.
 - `Synthetic` + `Independent` + the kind passes the per-card-type table below →
-  `Synthetic { requires_token: true }`.
+ `Synthetic { requires_token: true }`.
 - `Synthetic` + `Inferred` and not explicitly enabled → `None { InferredResponderDisabled }`.
 - no responder → `None { NoResponder }`.
 
@@ -662,18 +661,18 @@ instead is a way to *become* that human, or to reach one.
 one a user actually needs:
 
 - **`Native` or `Synthetic { .. }`** — the card *was* answerable from here, and
-  the delivery is what failed. The copy reads *"your answer was not confirmed —
-  the agent's card is probably still waiting. Answer it at the terminal."* Paired
-  with `reason`: `PreconditionFailed` adds *"nothing was typed"* (the strongest
-  case for the card still being open and untouched), `NotConfirmed` adds *"omt
-  typed an answer but never saw the agent record it"*, and
-  `AnsweredDifferently { observed }` shows what the agent recorded instead, which
-  usually means someone at the keyboard already dealt with it.
+ the delivery is what failed. The copy reads *"your answer was not confirmed —
+ the agent's card is probably still waiting. Answer it at the terminal."* Paired
+ with `reason`: `PreconditionFailed` adds *"nothing was typed"* (the strongest
+ case for the card still being open and untouched), `NotConfirmed` adds *"omt
+ typed an answer but never saw the agent record it"*, and
+ `AnsweredDifferently { observed }` shows what the agent recorded instead, which
+ usually means someone at the keyboard already dealt with it.
 - **`None { reason }`** — the card was never answerable from omt at all
-  (multi-select, a plan review, a specific deny, no responder). The copy says so
-  and names the reason: *"this card can only be answered at the terminal."* There
-  is nothing to re-attempt, and telling the user that is more useful than an
-  identical failure banner.
+ (multi-select, a plan review, a specific deny, no responder). The copy says so
+ and names the reason: *"this card can only be answered at the terminal."* There
+ is nothing to re-attempt, and telling the user that is more useful than an
+ identical failure banner.
 
 A client that cannot render either affordance — a CLI printing a result — prints
 the same two facts as text: the preserved response, and the session to open.
@@ -707,15 +706,15 @@ unverified — but under D11 nothing depends on the answer. The
 now the card-answering spike named in §5.2. Therefore:
 
 1. `omt-hook` reports the interaction *without* deferring. This is the shipped
-   path, not a fallback: the card renders remotely, and the answer is delivered
-   by the synthetic responder driving the agent's own card, under D3 and D13.
+ path, not a fallback: the card renders remotely, and the answer is delivered
+ by the synthetic responder driving the agent's own card, under D3 and D13.
 2. Deferral, if it ever ships, is per-agent opt-in for a user who prefers a
-   parked call to a live local card, and it is labelled as taking the local
-   native card away.
+ parked call to a live local card, and it is labelled as taking the local
+ native card away.
 3. `omt-hook` blocks only up to a configured budget (default 250 ms beyond the
-   agent's own tolerance) and always fails open. An agent must never hang
-   because omt is slow or dead. This is non-negotiable: the hook's default
-   behaviour on any error is to return `{}` and get out of the way.
+ agent's own tolerance) and always fails open. An agent must never hang
+ because omt is slow or dead. This is non-negotiable: the hook's default
+ behaviour on any error is to return `{}` and get out of the way.
 
 ### 5.4 Editing an argument before approving
 
@@ -739,33 +738,33 @@ with `precondition_failed` rather than silently dropped.
 adding entries to the agent's own option list. The rule:
 
 - omt **never** adds an `Edit` entry to the `PermissionOption`s the agent
-  supplied. That list is passed through verbatim, in the agent's order (§5).
+ supplied. That list is passed through verbatim, in the agent's order (§5).
 - Editing is instead offered whenever the **responder** declares it deliverable.
-  The `Responder` trait (§5.2) gains:
+ The `Responder` trait (§5.2) gains:
 
-  ```rust
-      /// Whether this channel can deliver a modified tool input alongside an
-      /// approval. Not a property of the agent's suggestion list. D9.
-      fn supports_edit(&self) -> bool { false }
-  ```
+ ```rust
+ /// Whether this channel can deliver a modified tool input alongside an
+ /// approval. Not a property of the agent's suggestion list. D9.
+ fn supports_edit(&self) -> bool { false }
+ ```
 
-  Delivering an edited input is a property of the *channel* — Claude Code's
-  `PreToolUse` `updatedInput`, ACP's permission response — not of what the agent
-  happened to suggest. Offering an edit affordance that the channel can honour is
-  not omt inventing an option; it is omt exposing a capability the transport
-  already has.
+ Delivering an edited input is a property of the *channel* — Claude Code's
+ `PreToolUse` `updatedInput`, ACP's permission response — not of what the agent
+ happened to suggest. Offering an edit affordance that the channel can honour is
+ not omt inventing an option; it is omt exposing a capability the transport
+ already has.
 
-  The alternative — *offer `Edit` only when the agent listed it in `options`* —
-  is **rejected and recorded as such**: it would make the feature unavailable on
-  channels that demonstrably support it, purely because an agent's suggestion
-  list is a UI hint rather than a capability declaration.
+ The alternative — *offer `Edit` only when the agent listed it in `options`* —
+ is **rejected and recorded as such**: it would make the feature unavailable on
+ channels that demonstrably support it, purely because an agent's suggestion
+ list is a UI hint rather than a capability declaration.
 
-**Where it is available, and where it is not.** `supports_edit()` is a property
+**Where it is available, and where it is not.** `supports_edit` is a property
 of the channel, and the channels do not agree — so this feature is present on one
 session mode and absent on the other. That has to be stated here rather than
 discovered from a table three sections up:
 
-| Responder | `supports_edit()` | Consequence |
+| Responder | `supports_edit` | Consequence |
 |---|---|---|
 | ACP `session/request_permission` — every `native` session ([D8](decisions.md#d8--two-session-modes-pty-default-and-native-acp)), and the ACP agents in `pty` mode that still answer natively | **true** | The full editor, on every surface: [08 §5.3](08-web-client.md#53-permission--approval-cards--kindtype--permission)'s sheet on the web, and the `CARD_FOCUSED` map's `e` in the TUI ([16 §8.3](16-input-and-keymap.md#83-contextual-maps)) |
 | opencode plugin reply, Codex app-server approval | **true** where the reply carries a modified input; each adapter declares it | as above |
@@ -774,17 +773,17 @@ discovered from a table three sections up:
 Two things follow, and both are deliberate:
 
 1. **The affordance is absent, not disabled.** A greyed-out *Edit* button would
-   advertise a feature the transport cannot perform and invite the user to hunt
-   for the setting that enables it. [08 §5.3](08-web-client.md#53-permission--approval-cards--kindtype--permission)
-   already renders it this way; this document had simply never said why.
+ advertise a feature the transport cannot perform and invite the user to hunt
+ for the setting that enables it. [08 §5.3](08-web-client.md#53-permission--approval-cards--kindtype--permission)
+ already renders it this way; this document had simply never said why.
 2. **No TUI argument editor is specified for `pty` mode**, and none should be.
-   In `pty` mode the local user is looking at the agent's own card, which has its
-   own amend affordance (Claude Code prints `Tab to amend` on permission cards) —
-   omt drawing a second editor over it would be exactly the replacement card
-   [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
-   forbids, and it would have to deliver its result through the digit channel it
-   does not fit through. The `e` binding is therefore installed only where the
-   responder reports `supports_edit()`.
+ In `pty` mode the local user is looking at the agent's own card, which has its
+ own amend affordance (Claude Code prints `Tab to amend` on permission cards) —
+ omt drawing a second editor over it would be exactly the replacement card
+ [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+ forbids, and it would have to deliver its result through the digit channel it
+ does not fit through. The `e` binding is therefore installed only where the
+ responder reports `supports_edit`.
 
 This is a real gap against the competitor [D9](decisions.md#d9--positioning-what-omt-may-and-may-not-claim)
 measured omt against, in the flagship agent's default mode, and it is recorded as
@@ -824,7 +823,7 @@ spinner-cadence line rewrites, prompt glyph on the last non-empty row,
 bracketed-paste transitions, and BEL/OSC 9/OSC 777 → `NeedsAttention`.
 
 Screen text is read from the live bottom buffer, never the scrolled viewport, so
-a user reading scrollback cannot change detection — another tool's `detection_text()`
+a user reading scrollback cannot change detection — the `detection_text`
 gets this right and it is worth stating explicitly.
 
 Why the hard cap: locale changes, a theme change, or a minor version bump
@@ -838,51 +837,51 @@ that a user taps "Allow" on is a security incident.
 
 ```rust
 pub trait AgentAdapter: Send + Sync {
-    fn kind(&self) -> AgentKind;
+ fn kind(&self) -> AgentKind;
 
-    /// Fingerprints for tier-1 detection: env markers (preferred), exe names,
-    /// argv patterns for runtime-wrapped bundles.
-    fn fingerprint(&self) -> Fingerprint;
+ /// Fingerprints for tier-1 detection: env markers (preferred), exe names,
+ /// argv patterns for runtime-wrapped bundles.
+ fn fingerprint(&self) -> Fingerprint;
 
-    /// Env to inject when omt spawns this agent (correlation ids, hook config).
-    fn spawn_env(&self, ctx: &SpawnCtx) -> Vec<(OsString, OsString)>;
+ /// Env to inject when omt spawns this agent (correlation ids, hook config).
+ fn spawn_env(&self, ctx: &SpawnCtx) -> Vec<(OsString, OsString)>;
 
-    /// Which session modes this adapter supports. D8. `Pty` only is the
-    /// default; an adapter that can be driven over ACP declares `Native` too.
-    /// `SessionModeSet` is defined in [05 §1.1](05-session-model.md#11-types)
-    /// alongside `SessionMode`; it is *not* the keymap's `ModeSet`
-    /// ([16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)).
-    fn supported_modes(&self) -> SessionModeSet { SessionModeSet::PTY_ONLY }
+ /// Which session modes this adapter supports. D8. `Pty` only is the
+ /// default; an adapter that can be driven over ACP declares `Native` too.
+ /// `SessionModeSet` is defined in [05 §1.1](05-session-model.md#11-types)
+ /// alongside `SessionMode`; it is *not* the keymap's `ModeSet`
+ /// ([16 §6.5](16-input-and-keymap.md#65-the-keymap-abstraction)).
+ fn supported_modes(&self) -> SessionModeSet { SessionModeSet::PTY_ONLY }
 
-    /// Argv and env for spawning this agent in ACP mode. `None` when the
-    /// adapter does not support `SessionMode::Native`.
-    fn acp_spawn(&self, ctx: &SpawnCtx) -> Option<AcpSpawn> { None }
+ /// Argv and env for spawning this agent in ACP mode. `None` when the
+ /// adapter does not support `SessionMode::Native`.
+ fn acp_spawn(&self, ctx: &SpawnCtx) -> Option<AcpSpawn> { None }
 
-    /// Sources this adapter can construct for a binding, best-first.
-    fn sources(&self) -> Vec<Box<dyn EventSource>>;
+ /// Sources this adapter can construct for a binding, best-first.
+ fn sources(&self) -> Vec<Box<dyn EventSource>>;
 
-    /// Native responders, best-first.
-    fn responders(&self) -> Vec<Box<dyn Responder>>;
+ /// Native responders, best-first.
+ fn responders(&self) -> Vec<Box<dyn Responder>>;
 
-    /// Hook/plugin installation into the agent's own config.
-    fn integration(&self) -> Option<&dyn Integration>;
+ /// Hook/plugin installation into the agent's own config.
+ fn integration(&self) -> Option<&dyn Integration>;
 
-    /// Resolved slash commands for remote completion.
-    fn commands(&self, b: &AgentBinding) -> BoxFuture<Result<Vec<SlashCommand>, AdapterError>>;
+ /// Resolved slash commands for remote completion.
+ fn commands(&self, b: &AgentBinding) -> BoxFuture<Result<Vec<SlashCommand>, AdapterError>>;
 
-    /// This agent's native file-reference syntax for a workspace-relative path
-    /// (Claude Code and opencode: `@crates/omt-term/src/lib.rs`). `None` means
-    /// the agent has none, and the surface offers "insert path" instead of
-    /// "insert mention". Used by
-    /// [15 §8.2](15-workspace-explorer.md#82-inserting-a-path-or-file-into-an-agent-prompt).
-    fn path_mention(&self, rel: &RelPath) -> Option<String> { None }
+ /// This agent's native file-reference syntax for a workspace-relative path
+ /// (Claude Code and opencode: `@crates/omt-term/src/lib.rs`). `None` means
+ /// the agent has none, and the surface offers "insert path" instead of
+ /// "insert mention". Used by
+ /// [15 §8.2](15-workspace-explorer.md#82-inserting-a-path-or-file-into-an-agent-prompt).
+ fn path_mention(&self, rel: &RelPath) -> Option<String> { None }
 
-    /// How this agent wants to be handed an attachment that already exists on
-    /// disk. See [09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)
-    /// for the per-agent table and [09 §4.3.7](09-ssh-and-media.md#437-what-the-agent-finally-receives)
-    /// for the `AttachmentReference` enum.
-    fn attachment_reference(&self, path: &Path, meta: &BlobMeta,
-                            class: &AttachmentClass) -> Option<AttachmentReference>;
+ /// How this agent wants to be handed an attachment that already exists on
+ /// disk. See [09 §7.1](09-ssh-and-media.md#71-handing-the-image-to-the-agent)
+ /// for the per-agent table and [09 §4.3.7](09-ssh-and-media.md#437-what-the-agent-finally-receives)
+ /// for the `AttachmentReference` enum.
+ fn attachment_reference(&self, path: &Path, meta: &BlobMeta,
+ class: &AttachmentClass) -> Option<AttachmentReference>;
 }
 ```
 
@@ -891,25 +890,25 @@ live on the adapter rather than in a central table keyed by `AgentKind`
 ([P4](01-principles.md#p4--native-semantics-observe-never-re-implement)).
 `path_mention` is defaulted, so adding it does not break third-party adapters
 ([P2](01-principles.md#p2--pluggable-extension-without-modification)). In
-`native` mode `sources()` is not consulted at all — the ACP connection built from
+`native` mode `sources` is not consulted at all — the ACP connection built from
 `acp_spawn` is the only source (§2.1).
 
 ### 7.1 Integration installer
 
 `Integration` writes omt's hook into the agent's own configuration —
 `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.cursor/hooks.json`,
-Gemini's settings, opencode's plugin directory. Rules learned from another tool:
+Gemini's settings, opencode's plugin directory. Rules learned from other terminals:
 
 - **Merge, never overwrite.** Users already have hooks; this machine has
-  another tool's installed in three of those files right now.
+ the installed in three of those files right now.
 - Preserve formatting and comments — edit the JSONC concrete syntax tree, do not
-  round-trip through a value.
+ round-trip through a value.
 - Stamp every installed artifact with `omt-integration-version` so stale
-  installs are detectable and upgradable.
+ installs are detectable and upgradable.
 - Every install is reversible (`omt integration uninstall`) and previewable
-  (`--dry-run` printing the exact diff).
+ (`--dry-run` printing the exact diff).
 - Guard clauses at the top of the hook: if `OMT_SOCK` is unset or the socket is
-  gone, exit 0 immediately.
+ gone, exit 0 immediately.
 
 ### 7.2 Correlation
 
@@ -996,60 +995,60 @@ mirror-don't-intercept shape and which nobody else does. Every other agent degra
 ## 8. Ancillary semantics
 
 - **Message queue.** Claude Code writes `queue-operation` (`enqueue`/`remove`)
-  lines to its transcript. omt mirrors the pending queue to every surface and
-  exposes `agent.queue.enqueue`/`remove`, so a phone can queue work for an agent
-  that is mid-turn — which is exactly what one wants to do from a phone. No
-  other CLI exposes this cleanly; the model degrades to a local omt-side queue
-  that is flushed when the agent goes idle, clearly labelled as omt-managed.
+ lines to its transcript. omt mirrors the pending queue to every surface and
+ exposes `agent.queue.enqueue`/`remove`, so a phone can queue work for an agent
+ that is mid-turn — which is exactly what one wants to do from a phone. No
+ other CLI exposes this cleanly; the model degrades to a local omt-side queue
+ that is flushed when the agent goes idle, clearly labelled as omt-managed.
 
-  Four requirements from
-  [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism):
+ Four requirements from
+ [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism):
 
-  1. **`agent.queue.enqueue` carries a `BindingId` and requires
-     `AgentState::Working`.** The session id alone is not a sufficient target:
-     a replayed or delayed enqueue against a session whose agent has since
-     exited types the text **into the shell prompt, where it is executed as a
-     command**. The call fails `precondition_failed` if the named binding is not
-     the session's current binding, or if the binding is not `Working`. D3 does
-     not protect here — it governs answers, and "submitting typed text to a
-     prompt box" is on its allowed list; the failure is target identity, not
-     state inference.
-  2. **The omt-managed fallback queue needs a durable intent log.** It is
-     memory-only in the current design, so every non-Claude agent's queued text
-     dies unrecorded on `kill -9`. It is persisted through `omt-store` with its
-     own row in [21 §6.2](21-data-lifecycle.md#62-what-kill--9-loses), and each
-     entry carries `created_at` and `valid_until`; an entry past `valid_until`
-     is presented for re-confirmation rather than silently flushed.
-  3. **`queue-operation` is an enqueue receipt, and must be read as delivery
-     confirmation, not as mirror data.** After an injected enqueue, omt waits a
-     bounded window for a matching `queue-operation enqueue` line in the
-     transcript. On a match the entry renders `Queued`; on timeout it renders
-     `Failed { not_confirmed }` with the text preserved, and — as with
-     interactions — it is **never retried automatically**.
-  4. **`queue: unknown` is a distinct rendering.** When the transcript reader is
-     stale, disabled or has never seen a `queue-operation` line for a binding
-     that should have one, surfaces show `unknown`, never an empty queue. An
-     empty queue is a claim; a broken reader must not be able to make it.
+ 1. **`agent.queue.enqueue` carries a `BindingId` and requires
+ `AgentState::Working`.** The session id alone is not a sufficient target:
+ a replayed or delayed enqueue against a session whose agent has since
+ exited types the text **into the shell prompt, where it is executed as a
+ command**. The call fails `precondition_failed` if the named binding is not
+ the session's current binding, or if the binding is not `Working`. D3 does
+ not protect here — it governs answers, and "submitting typed text to a
+ prompt box" is on its allowed list; the failure is target identity, not
+ state inference.
+ 2. **The omt-managed fallback queue needs a durable intent log.** It is
+ memory-only in the current design, so every non-Claude agent's queued text
+ dies unrecorded on `kill -9`. It is persisted through `omt-store` with its
+ own row in [21 §6.2](21-data-lifecycle.md#62-what-kill--9-loses), and each
+ entry carries `created_at` and `valid_until`; an entry past `valid_until`
+ is presented for re-confirmation rather than silently flushed.
+ 3. **`queue-operation` is an enqueue receipt, and must be read as delivery
+ confirmation, not as mirror data.** After an injected enqueue, omt waits a
+ bounded window for a matching `queue-operation enqueue` line in the
+ transcript. On a match the entry renders `Queued`; on timeout it renders
+ `Failed { not_confirmed }` with the text preserved, and — as with
+ interactions — it is **never retried automatically**.
+ 4. **`queue: unknown` is a distinct rendering.** When the transcript reader is
+ stale, disabled or has never seen a `queue-operation` line for a binding
+ that should have one, surfaces show `unknown`, never an empty queue. An
+ empty queue is a claim; a broken reader must not be able to make it.
 
 - **Slash commands.** Surfaced through `agent.commands.list` from the agent's
-  own resolution (never from omt guessing), giving the web client a real
-  completion popup with descriptions and argument hints.
+ own resolution (never from omt guessing), giving the web client a real
+ completion popup with descriptions and argument hints.
 - **File changes.** Tool calls that touch files are normalized into
-  `AgentPayload::FileChanged { path, change, tool, turn }` (§8.2), where `change`
-  is `Created | Modified | Deleted | Renamed { from }`. Every tier-3/4/5 source
-  already carries the information (hook `PostToolUse` for `Edit`/`Write`/
-  `MultiEdit`, ACP `tool_call_update` with a file location, transcript tool
-  results), so this is normalization, not new observation. It is *attribution*,
-  not truth about the filesystem — git status is the truth. Consumed by
-  [15 §8.3](15-workspace-explorer.md#83-files-the-agent-changed-this-session),
-  which keys the set by `BindingId` and clears it on binding end (§2).
+ `AgentPayload::FileChanged { path, change, tool, turn }` (§8.2), where `change`
+ is `Created | Modified | Deleted | Renamed { from }`. Every tier-3/4/5 source
+ already carries the information (hook `PostToolUse` for `Edit`/`Write`/
+ `MultiEdit`, ACP `tool_call_update` with a file location, transcript tool
+ results), so this is normalization, not new observation. It is *attribution*,
+ not truth about the filesystem — git status is the truth. Consumed by
+ [15 §8.3](15-workspace-explorer.md#83-files-the-agent-changed-this-session),
+ which keys the set by `BindingId` and clears it on binding end (§2).
 - **Usage, rate limits, compaction, subagents.** Normalized into `AgentEvent`
-  payloads and rendered as session metadata. Subagent threads are a tree via
-  `thread.parent`, unifying Claude Code's `isSidechain`, Codex's subagent thread
-  source, and opencode's `session.parent_id`.
+ payloads and rendered as session metadata. Subagent threads are a tree via
+ `thread.parent`, unifying Claude Code's `isSidechain`, Codex's subagent thread
+ source, and opencode's `session.parent_id`.
 - **Session summaries.** Claude Code emits an `away_summary` — a natural
-  language "where is this session at". It is displayed verbatim on the session
-  card; omt never generates one itself (P4: omt does not talk to models).
+ language "where is this session at". It is displayed verbatim on the session
+ card; omt never generates one itself (P4: omt does not talk to models).
 
 **The queue operations, and which of them each agent has.**
 
@@ -1069,27 +1068,27 @@ and on a mirrored queue a removal is the same class of act as an enqueue — an
 at-most-once write into the agent's own UI.
 
 - It carries a `BindingId` and requires `AgentState::Working`, for requirement
-  1's reason unchanged: a stale `remove` against a session whose agent has exited
-  has no queue to act on and must fail rather than type.
+ 1's reason unchanged: a stale `remove` against a session whose agent has exited
+ has no queue to act on and must fail rather than type.
 - It names the entry by the id `agent.queue.list` returned **and** by a hash of
-  the entry's text. If the entry at that id no longer carries that text — the
-  agent consumed it, or the local user reordered around it — the call fails
-  `precondition_failed` and nothing is written. An id alone is a position, and a
-  position in a queue that is draining is not a stable target.
+ the entry's text. If the entry at that id no longer carries that text — the
+ agent consumed it, or the local user reordered around it — the call fails
+ `precondition_failed` and nothing is written. An id alone is a position, and a
+ position in a queue that is draining is not a stable target.
 - **What confirms it: Claude Code writes a `queue-operation remove` line, and
-  that line is the receipt.** Requirement 3's rule applies unchanged and in the
-  same direction — the line is delivery confirmation, not mirror data. omt waits
-  a bounded window (the same per-adapter default as an enqueue) for a
-  `queue-operation remove` naming that entry.
+ that line is the receipt.** Requirement 3's rule applies unchanged and in the
+ same direction — the line is delivery confirmation, not mirror data. omt waits
+ a bounded window (the same per-adapter default as an enqueue) for a
+ `queue-operation remove` naming that entry.
 - **When it is not confirmed inside the window**, the entry renders
-  `Removal not confirmed — the item may still be queued; check the terminal`,
-  with the entry's text preserved and still shown in the mirrored queue. It is
-  **never retried automatically**, for D15's reason: a repeated removal against a
-  queue that has since drained removes a *different* message. Exactly as with an
-  interaction, the offered action is to open the terminal view, never to try
-  again.
+ `Removal not confirmed — the item may still be queued; check the terminal`,
+ with the entry's text preserved and still shown in the mirrored queue. It is
+ **never retried automatically**, for D15's reason: a repeated removal against a
+ queue that has since drained removes a *different* message. Exactly as with an
+ interaction, the offered action is to open the terminal view, never to try
+ again.
 - On an omt-managed queue a removal is a row deletion in omt's own log, is
-  confirmed by the write itself, and needs none of the above.
+ confirmed by the write itself, and needs none of the above.
 
 `remove`'s intent class therefore moves from `Cas` to
 [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)'s
@@ -1106,14 +1105,14 @@ removal that lands followed by an enqueue that does not leaves the user with a
 queue that has silently lost a message and nothing safe to retry. So:
 
 - On an **omt-managed** queue, `agent.queue.edit { binding, entry, expected_hash,
-  text }` rewrites the row in place under a CAS on the entry version. omt owns
-  the sink, so this is an ordinary `Cas` command with no confirmation window and
-  no loss mode.
+ text }` rewrites the row in place under a CAS on the entry version. omt owns
+ the sink, so this is an ordinary `Cas` command with no confirmation window and
+ no loss mode.
 - On a **mirrored** queue it returns `unsupported`, with the reason: Claude Code
-  emits `enqueue` and `remove` and no third verb, so there is no edit primitive
-  to drive and no receipt that would confirm one. The surface renders those
-  entries read-only rather than offering an edit that would decompose into the
-  lossy pair.
+ emits `enqueue` and `remove` and no third verb, so there is no edit primitive
+ to drive and no receipt that would confirm one. The surface renders those
+ entries read-only rather than offering an edit that would decompose into the
+ lossy pair.
 
 **Queue reorder — declared, and `agent.queue.reorder` is what
 [08 §6.1](08-web-client.md#61-live-message-queue)'s "only if the instance reports a
@@ -1122,15 +1121,15 @@ capability that did not exist anywhere in the catalog. It exists now, with the
 same split and for the same reason:
 
 - **omt-managed queues can be reordered.** The order is a column in omt's own
-  log; `agent.queue.reorder { binding, order: Vec<EntryId>, expected_version }`
-  is a CAS over the whole ordering, which is the only shape that is safe when two
-  clients drag at once.
+ log; `agent.queue.reorder { binding, order: Vec<EntryId>, expected_version }`
+ is a CAS over the whole ordering, which is the only shape that is safe when two
+ clients drag at once.
 - **Claude Code's mirrored queue cannot be, and no shipped agent's own queue
-  can.** There is no `queue-operation move`, no documented reorder gesture omt
-  could drive position-independently ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
-  would forbid an inferred one), and therefore no receipt. The capability returns
-  `unsupported` for that binding and the client hides the drag handles — the same
-  absent-not-disabled rule §5.4 applies to argument editing.
+ can.** There is no `queue-operation move`, no documented reorder gesture omt
+ could drive position-independently ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)
+ would forbid an inferred one), and therefore no receipt. The capability returns
+ `unsupported` for that binding and the client hides the drag handles — the same
+ absent-not-disabled rule §5.4 applies to argument editing.
 
 Stated plainly, because it is the sort of thing a reader will otherwise assume
 the other way round: **the flagship agent is the one that cannot reorder or edit
@@ -1156,44 +1155,44 @@ output of the merge in §4 and the single input of every read-side consumer.
 
 ```rust
 pub struct AgentEvent {
-    // ---- identity ----
-    pub session: SessionId,
-    /// Which binding produced this. Everything the read side keys by binding —
-    /// 15 §8.3's changed-file set, the queue, `agent.explain` — keys on this,
-    /// and clears when the binding ends (§2).
-    pub binding: BindingId,
-    pub agent: AgentKind,
-    pub agent_version: Option<String>,
-    /// The agent's own session identifier, when known (§7.2).
-    pub agent_session: Option<AgentSessionId>,
-    /// Which thread inside the binding. Subagents are threads, not bindings.
-    pub thread: ThreadRef,
+ // ---- identity ----
+ pub session: SessionId,
+ /// Which binding produced this. Everything the read side keys by binding —
+ /// 15 §8.3's changed-file set, the queue, `agent.explain` — keys on this,
+ /// and clears when the binding ends (§2).
+ pub binding: BindingId,
+ pub agent: AgentKind,
+ pub agent_version: Option<String>,
+ /// The agent's own session identifier, when known (§7.2).
+ pub agent_session: Option<AgentSessionId>,
+ /// Which thread inside the binding. Subagents are threads, not bindings.
+ pub thread: ThreadRef,
 
-    // ---- ordering and provenance ----
-    /// The session's `Seq` space ([03 §4](03-capability-catalog.md#4-events-are-the-read-side-twin)).
-    pub seq: Seq,
-    pub ts: Timestamp,
-    /// The tier that produced this event, and the specific source inside it.
-    /// `tier` is what §4's merge and 08 §4.4's provenance chip read; `source`
-    /// is what `agent.explain` reports.
-    pub tier: Tier,
-    pub source: SourceId,
+ // ---- ordering and provenance ----
+ /// The session's `Seq` space ([03 §4](03-capability-catalog.md#4-events-are-the-read-side-twin)).
+ pub seq: Seq,
+ pub ts: Timestamp,
+ /// The tier that produced this event, and the specific source inside it.
+ /// `tier` is what §4's merge and 08 §4.4's provenance chip read; `source`
+ /// is what `agent.explain` reports.
+ pub tier: Tier,
+ pub source: SourceId,
 
-    // ---- place ----
-    pub cwd: PathBuf,
-    pub git_branch: Option<String>,
+ // ---- place ----
+ pub cwd: PathBuf,
+ pub git_branch: Option<String>,
 
-    pub payload: AgentPayload,
+ pub payload: AgentPayload,
 }
 
 /// Subagent trees. Unifies Claude Code's `isSidechain`/`parent_tool_use_id`,
 /// Codex's subagent thread source, and opencode's `session.parent_id` (§8).
 pub struct ThreadRef {
-    pub id: ThreadId,
-    pub parent: Option<ThreadId>,
-    pub is_subagent: bool,
-    /// The agent's own label for the subagent, verbatim. omt never invents one.
-    pub label: Option<String>,
+ pub id: ThreadId,
+ pub parent: Option<ThreadId>,
+ pub is_subagent: bool,
+ /// The agent's own label for the subagent, verbatim. omt never invents one.
+ pub label: Option<String>,
 }
 ```
 
@@ -1215,106 +1214,106 @@ Twenty variants in seven groups. Every one is consumed by a named document
 ```rust
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentPayload {
-    // ================= lifecycle =================
-    SessionStart {
-        reason: StartReason,
-        model: Option<String>,
-        /// The agent's own permission posture, verbatim and read-only (D1).
-        permission_mode: Option<String>,
-        transcript_path: Option<PathBuf>,
-    },
-    SessionEnd { reason: SessionEndReason, code: Option<i32> },
-    /// What this agent can do, as the agent itself reports it. Never probed,
-    /// never guessed (P4).
-    Capabilities {
-        tools: Vec<String>,
-        slash_commands: Vec<SlashCommand>,
-        mcp_servers: Vec<McpServerStatus>,
-        models: Vec<String>,
-        /// The modes the agent offers, and which one is live.
-        permission_modes: Vec<String>,
-        active_permission_mode: Option<String>,
-    },
+ // ================= lifecycle =================
+ SessionStart {
+ reason: StartReason,
+ model: Option<String>,
+ /// The agent's own permission posture, verbatim and read-only (D1).
+ permission_mode: Option<String>,
+ transcript_path: Option<PathBuf>,
+ },
+ SessionEnd { reason: SessionEndReason, code: Option<i32> },
+ /// What this agent can do, as the agent itself reports it. Never probed,
+ /// never guessed (P4).
+ Capabilities {
+ tools: Vec<String>,
+ slash_commands: Vec<SlashCommand>,
+ mcp_servers: Vec<McpServerStatus>,
+ models: Vec<String>,
+ /// The modes the agent offers, and which one is live.
+ permission_modes: Vec<String>,
+ active_permission_mode: Option<String>,
+ },
 
-    // ================= turn state =================
-    TurnStart { turn: TurnId, trigger: TurnTrigger },
-    TurnEnd {
-        turn: TurnId,
-        outcome: TurnOutcome,
-        /// The agent's own closing message, when the mechanism reports it
-        /// (Claude Code's `Stop` hook carries `last_assistant_message`).
-        last_message: Option<String>,
-        turn_count: Option<u32>,
-    },
-    /// Extended thinking / reasoning. Subsumes the draft model's separate
-    /// `Thinking` variant — see the note below.
-    Reasoning { turn: Option<TurnId>, text: Option<String>, partial: bool,
-                tokens: Option<u64> },
-    /// The fields of [20 §11.2](20-recall-and-usage.md#112-normalization)'s
-    /// `UsageEvent` that are not already in the envelope. **`cost_usd` is
-    /// agent-reported only**; omt never computes a price from a token count and
-    /// a rate card, and `None` is rendered as *not reported*, never as 0.
-    Usage { model: Option<String>, tokens: Tokens, cost_usd: Option<f64>,
-            context_window: Option<u64>, accounting: Accounting },
-    /// Observed from the agent, never inferred (20 §11.3's `RateLimitState`).
-    RateLimit { kind: String, status: String, resets_at: Option<Timestamp>,
-                detail: Option<String> },
-    Compaction { phase: CompactionPhase, trigger: Option<String>,
-                 tokens_before: Option<u64>, tokens_after: Option<u64> },
+ // ================= turn state =================
+ TurnStart { turn: TurnId, trigger: TurnTrigger },
+ TurnEnd {
+ turn: TurnId,
+ outcome: TurnOutcome,
+ /// The agent's own closing message, when the mechanism reports it
+ /// (Claude Code's `Stop` hook carries `last_assistant_message`).
+ last_message: Option<String>,
+ turn_count: Option<u32>,
+ },
+ /// Extended thinking / reasoning. Subsumes the draft model's separate
+ /// `Thinking` variant — see the note below.
+ Reasoning { turn: Option<TurnId>, text: Option<String>, partial: bool,
+ tokens: Option<u64> },
+ /// The fields of [20 §11.2](20-recall-and-usage.md#112-normalization)'s
+ /// `UsageEvent` that are not already in the envelope. **`cost_usd` is
+ /// agent-reported only**; omt never computes a price from a token count and
+ /// a rate card, and `None` is rendered as *not reported*, never as 0.
+ Usage { model: Option<String>, tokens: Tokens, cost_usd: Option<f64>,
+ context_window: Option<u64>, accounting: Accounting },
+ /// Observed from the agent, never inferred (20 §11.3's `RateLimitState`).
+ RateLimit { kind: String, status: String, resets_at: Option<Timestamp>,
+ detail: Option<String> },
+ Compaction { phase: CompactionPhase, trigger: Option<String>,
+ tokens_before: Option<u64>, tokens_after: Option<u64> },
 
-    // ================= content =================
-    UserMessage { turn: Option<TurnId>, text: String, origin: MessageOrigin,
-                  attachments: Vec<BlobId> },
-    AssistantText { turn: Option<TurnId>, text: String, partial: bool,
-                    phase: Option<AssistantPhase> },
+ // ================= content =================
+ UserMessage { turn: Option<TurnId>, text: String, origin: MessageOrigin,
+ attachments: Vec<BlobId> },
+ AssistantText { turn: Option<TurnId>, text: String, partial: bool,
+ phase: Option<AssistantPhase> },
 
-    // ================= tools =================
-    ToolCall {
-        turn: Option<TurnId>,
-        call: ToolCallId,
-        name: String,
-        /// Verbatim, unmodified — the same bytes the agent will act on.
-        input: serde_json::Value,
-        status: ToolStatus,
-        /// Set when this call was made by a tool, not by the model directly.
-        parent: Option<ToolCallId>,
-    },
-    ToolResult { call: ToolCallId, outcome: ToolOutcome,
-                 output: Option<ToolOutput>, error: Option<String>,
-                 duration_ms: Option<u64> },
-    /// The agent's own plan / todo list, as it revises it.
-    Plan { turn: Option<TurnId>, steps: Vec<PlanStep> },
-    /// Attribution, not truth about the filesystem — git status is the truth
-    /// ([15 §8.3](15-workspace-explorer.md#83-files-the-agent-changed-this-session)).
-    /// `path` is absolute as the agent reported it; the explorer maps it to a
-    /// `RelPath` against the workspace root and drops what falls outside.
-    FileChanged { path: PathBuf, change: FileChange, tool: Option<String>,
-                  turn: Option<TurnId> },
+ // ================= tools =================
+ ToolCall {
+ turn: Option<TurnId>,
+ call: ToolCallId,
+ name: String,
+ /// Verbatim, unmodified — the same bytes the agent will act on.
+ input: serde_json::Value,
+ status: ToolStatus,
+ /// Set when this call was made by a tool, not by the model directly.
+ parent: Option<ToolCallId>,
+ },
+ ToolResult { call: ToolCallId, outcome: ToolOutcome,
+ output: Option<ToolOutput>, error: Option<String>,
+ duration_ms: Option<u64> },
+ /// The agent's own plan / todo list, as it revises it.
+ Plan { turn: Option<TurnId>, steps: Vec<PlanStep> },
+ /// Attribution, not truth about the filesystem — git status is the truth
+ /// ([15 §8.3](15-workspace-explorer.md#83-files-the-agent-changed-this-session)).
+ /// `path` is absolute as the agent reported it; the explorer maps it to a
+ /// `RelPath` against the workspace root and drops what falls outside.
+ FileChanged { path: PathBuf, change: FileChange, tool: Option<String>,
+ turn: Option<TurnId> },
 
-    // ================= interaction =================
-    /// A card was raised. The `Interaction` object itself is owned by §5 and
-    /// lives in the ledger; this payload **references** it and restates only
-    /// what a transcript needs to render a row in place.
-    InteractionRaised { interaction: InteractionId, kind_tag: InteractionKindTag,
-                        summary: String, timeout_at: Option<Timestamp> },
-    /// The card reached a terminal state. `state` is §5's `InteractionState`,
-    /// which already carries `by`, `at`, `response` and the reason.
-    InteractionResolved { interaction: InteractionId, state: InteractionState },
+ // ================= interaction =================
+ /// A card was raised. The `Interaction` object itself is owned by §5 and
+ /// lives in the ledger; this payload **references** it and restates only
+ /// what a transcript needs to render a row in place.
+ InteractionRaised { interaction: InteractionId, kind_tag: InteractionKindTag,
+ summary: String, timeout_at: Option<Timestamp> },
+ /// The card reached a terminal state. `state` is §5's `InteractionState`,
+ /// which already carries `by`, `at`, `response` and the reason.
+ InteractionResolved { interaction: InteractionId, state: InteractionState },
 
-    // ================= queue =================
-    /// D15's `agent.queue.enqueue` semantics. Carries the `BindingId` of the
-    /// binding the queue belongs to — which is the envelope's `binding`, so it
-    /// is not repeated here; a consumer that has the payload has the binding.
-    QueueChanged { op: QueueOp, entry: Option<QueueEntry>, pending: QueueView },
+ // ================= queue =================
+ /// D15's `agent.queue.enqueue` semantics. Carries the `BindingId` of the
+ /// binding the queue belongs to — which is the envelope's `binding`, so it
+ /// is not repeated here; a consumer that has the payload has the binding.
+ QueueChanged { op: QueueOp, entry: Option<QueueEntry>, pending: QueueView },
 
-    // ================= fallback =================
-    /// The agent's own notification — Claude Code's `Notification` hook, a BEL
-    /// with text, an OSC 777 body. Never omt's words.
-    Notification { kind: String, message: String },
-    /// The heuristic floor's guess (§6). Structurally incapable of carrying
-    /// content: it holds `Activity` and nothing else, and it is the **only**
-    /// payload a tier-0 source can construct (§8.4).
-    Activity { guess: Activity },
+ // ================= fallback =================
+ /// The agent's own notification — Claude Code's `Notification` hook, a BEL
+ /// with text, an OSC 777 body. Never omt's words.
+ Notification { kind: String, message: String },
+ /// The heuristic floor's guess (§6). Structurally incapable of carrying
+ /// content: it holds `Activity` and nothing else, and it is the **only**
+ /// payload a tier-0 source can construct (§8.4).
+ Activity { guess: Activity },
 }
 
 pub enum StartReason { Startup, Resume, Clear, Compact, Fork }
@@ -1329,14 +1328,14 @@ pub enum CompactionPhase { Before, After }
 pub enum FileChange { Created, Modified, Deleted, Renamed { from: PathBuf } }
 pub enum QueueOp { Enqueue, Remove, Consume }
 pub struct QueueEntry {
-    pub id: QueueEntryId,
-    pub text: String,
-    pub origin: MessageOrigin,
-    pub created_at: Timestamp,
-    /// D15 consequence 3: an entry past this is re-confirmed, never silently
-    /// flushed.
-    pub valid_until: Option<Timestamp>,
-    pub state: QueueEntryState,
+ pub id: QueueEntryId,
+ pub text: String,
+ pub origin: MessageOrigin,
+ pub created_at: Timestamp,
+ /// D15 consequence 3: an entry past this is re-confirmed, never silently
+ /// flushed.
+ pub valid_until: Option<Timestamp>,
+ pub state: QueueEntryState,
 }
 pub enum QueueEntryState { Pending, Queued, Consumed, Failed { reason: String } }
 /// Makes §8's fourth queue requirement unrepresentable-to-violate: a broken or
@@ -1356,42 +1355,42 @@ and are referenced, not restated.
 **Three choices recorded here.**
 
 1. **`Thinking` is folded into `Reasoning`.** The earlier draft
-   ([`agent-clis.md` §12.2](../research/agent-clis.md)) had both: `Thinking`
-   under turn state carrying a token delta, and `Reasoning` under content
-   carrying text. They are the same phenomenon observed through two mechanisms,
-   and two variants would mean every consumer handles both identically or
-   handles them inconsistently. One variant carries both `text` and `tokens`,
-   either of which may be absent. The *spinner-level* fact "the agent is
-   thinking right now" is not an event at all — it is `AgentState::Working`.
+ ([`agent-clis.md` §12.2](../research/agent-clis.md)) had both: `Thinking`
+ under turn state carrying a token delta, and `Reasoning` under content
+ carrying text. They are the same phenomenon observed through two mechanisms,
+ and two variants would mean every consumer handles both identically or
+ handles them inconsistently. One variant carries both `text` and `tokens`,
+ either of which may be absent. The *spinner-level* fact "the agent is
+ thinking right now" is not an event at all — it is `AgentState::Working`.
 2. **Interactions appear here as raise + terminal outcome only.** Intermediate
-   transitions (`Open → Resolving → Submitted`) travel on the protocol's
-   `interaction` kind ([07 §3.7](07-remote-protocol.md#37-subscriptions)), not
-   here. A transcript needs to render a card and how it ended; a client tracking
-   a live card subscribes to `interaction`. Duplicating every transition into
-   both streams would give two orderings of the same fact.
+ transitions (`Open → Resolving → Submitted`) travel on the protocol's
+ `interaction` kind ([07 §3.7](07-remote-protocol.md#37-subscriptions)), not
+ here. A transcript needs to render a card and how it ended; a client tracking
+ a live card subscribes to `interaction`. Duplicating every transition into
+ both streams would give two orderings of the same fact.
 3. **`InteractionRaised` does not inline the `Interaction`.** It carries the id,
-   the kind tag and a one-line `summary` for the transcript row. The object is
-   fetched from the ledger (`interaction.get`) or arrives on the `interaction`
-   kind. §5 is the single source of truth for the shape, and a second inlined
-   copy in a persisted log would age badly against the ledger's `state`.
+ the kind tag and a one-line `summary` for the transcript row. The object is
+ fetched from the ledger (`interaction.get`) or arrives on the `interaction`
+ kind. §5 is the single source of truth for the shape, and a second inlined
+ copy in a persisted log would age badly against the ledger's `state`.
 
 **Deliberately omitted**, so their absence is a decision rather than an
 oversight:
 
 - The draft's `RawPty { state_guess }` — replaced by `Activity`, which carries
-  §6's enum and cannot be extended with text without changing §6 first.
+ §6's enum and cannot be extended with text without changing §6 first.
 - An `Error` payload. 20 §8.1's `EntryKind::Error` is *derived*, from
-  `TurnEnd { outcome: Error }`, `ToolResult { outcome: Error }` and
-  `SessionEnd { reason: Error }`. Instance- and session-level faults are
-  [22 §4.4](22-operations.md#44-per-session-fault-isolation-r7)'s `SessionFault`
-  and are not agent events.
+ `TurnEnd { outcome: Error }`, `ToolResult { outcome: Error }` and
+ `SessionEnd { reason: Error }`. Instance- and session-level faults are
+ [22 §4.4](22-operations.md#44-per-session-fault-isolation-r7)'s `SessionFault`
+ and are not agent events.
 - A `Diff` field on `FileChanged`. The draft carried `diff: Option<String>`;
-  structured diffs are [15 §3.2](15-workspace-explorer.md#32-vcs-model)'s
-  `FileDiff`, fetched on demand, and a unified-diff string on every file write
-  would multiply the agent log's size for data git already has.
+ structured diffs are [15 §3.2](15-workspace-explorer.md#32-vcs-model)'s
+ `FileDiff`, fetched on demand, and a unified-diff string on every file write
+ would multiply the agent log's size for data git already has.
 - `SessionSummary`. `away_summary` is carried as `Notification`-adjacent session
-  metadata on the binding, not as a stream event; 20 §8.2's `AgentSummary` reads
-  it from there.
+ metadata on the binding, not as a stream event; 20 §8.2's `AgentSummary` reads
+ it from there.
 
 ### 8.3 Who consumes each payload
 
@@ -1452,15 +1451,15 @@ an `EventSink` at all.
 /// became a tool call" is not a bug that can be written.
 #[async_trait]
 pub trait HeuristicSource: Send + Sync {
-    fn id(&self) -> SourceId;
-    fn supports(&self, kind: AgentKind) -> bool;
-    async fn attach(&self, binding: &AgentBinding, sink: ActivitySink)
-        -> Result<SourceHandle, SourceError>;
+ fn id(&self) -> SourceId;
+ fn supports(&self, kind: AgentKind) -> bool;
+ async fn attach(&self, binding: &AgentBinding, sink: ActivitySink)
+ -> Result<SourceHandle, SourceError>;
 }
 
 impl ActivitySink {
-    /// The only emit method that exists.
-    pub fn emit(&self, guess: Activity);
+ /// The only emit method that exists.
+ pub fn emit(&self, guess: Activity);
 }
 ```
 
@@ -1550,35 +1549,35 @@ where somebody did.
 ## 10. Open questions
 
 1. **Does Claude Code's `AskUserQuestion` card accept a position-independent
-   selection** (typing a number or letter), or does it require counting arrow
-   keys? This is the highest-priority experiment
-   ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)):
-   its answer decides whether the flagship remote-answer path is on by default.
-   Tracked in `../research/spike-card-answering.md` (pending). The `defer` spike
-   it replaced is demoted to an optional optimization (§5.3).
+ selection** (typing a number or letter), or does it require counting arrow
+ keys? This is the highest-priority experiment
+ ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)):
+ its answer decides whether the flagship remote-answer path is on by default.
+ Tracked in `../research/spike-card-answering.md` (pending). The `defer` spike
+ it replaced is demoted to an optional optimization (§5.3).
 2. Do Codex/Cursor/Gemini hook payloads match the Claude-Code shape closely
-   enough for one normalizer? Verify with a logging hook.
+ enough for one normalizer? Verify with a logging hook.
 3. Does hook-emitted OSC actually reach omt's PTY for non-Claude agents, or is
-   hook stdout swallowed?
+ hook stdout swallowed?
 4. **Surfacing each agent's own permission posture.** [13 §7.2](13-security.md#72-remotely-resolving-an-agent-interaction)
-   requires omt to display the agent's active permission mode read-only on every
-   surface. Each CLI names it differently (`permissionMode`,
-   `--dangerously-skip-permissions`, ACP `session/set_mode`, Codex's approval
-   policy). What is the normalized shape, and can it be read reliably for each?
+ requires omt to display the agent's active permission mode read-only on every
+ surface. Each CLI names it differently (`permissionMode`,
+ `--dangerously-skip-permissions`, ACP `session/set_mode`, Codex's approval
+ policy). What is the normalized shape, and can it be read reliably for each?
 5. opencode `session_input` table — is it the type-ahead queue? Would extend the
-   queue feature beyond Claude Code.
+ queue feature beyond Claude Code.
 6. Codex `app-server`: are approvals first-class methods there? If so it is a
-   better responder than hooks for Codex.
+ better responder than hooks for Codex.
 7. Goose/Crush session DB schemas, for transcript-tier support.
 8. Whether Amp's `--stream-json` is byte-compatible with Claude Code's, or only
-   structurally similar.
+ structurally similar.
 9. **Block attribution when two sources disagree** — carried over from
-   [04 §11.5](04-terminal-core.md#11-open-questions). Proposed rule:
-   hook/protocol-sourced attribution outranks writer-token attribution, and the
-   loser is retained as `Attribution::contested`. Needs agreement across 04, 06
-   and [12](12-collaboration.md).
+ [04 §11.5](04-terminal-core.md#11-open-questions). Proposed rule:
+ hook/protocol-sourced attribution outranks writer-token attribution, and the
+ loser is retained as `Attribution::contested`. Needs agreement across 04, 06
+ and [12](12-collaboration.md).
 10. **Writer-token pre-emption by an agent** — carried over from
-    [05 §13.3](05-session-model.md#13-open-questions). When a hook-channel
-    resolution completes and the agent's next action is a PTY write while a
-    human holds the token: queue behind the human (current lean, with a visible
-    indicator) or pre-empt?
+ [05 §13.3](05-session-model.md#13-open-questions). When a hook-channel
+ resolution completes and the agent's next action is a PTY write while a
+ human holds the token: queue behind the human (current lean, with a visible
+ indicator) or pre-empt?

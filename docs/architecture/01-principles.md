@@ -9,7 +9,7 @@ diff and say "this violates P3", and most are backed by a mechanical check.
 
 Every crate has one responsibility, a documented public API, and no knowledge of
 its consumers. A module over ~1500 lines is a design smell and must be split
-before it grows further; there is no file in omt that plays the role another tool's
+before it grows further; there is no file in omt that plays the role its
 10 600-line `server/headless.rs` plays.
 
 **Enforced by:** a CI check on file length (warn at 1200 lines, fail at 2000),
@@ -97,43 +97,43 @@ rewrites the agent's output.
 Two rules fall out of this:
 
 - **Structured content only from structured sources.** Cards rendered remotely
-  must originate from hooks, a native protocol, or a transcript file — never
-  from parsing ANSI. Screen heuristics may only produce a coarse activity
-  guess. (another tool's screen-scraping manifests are a legitimate design under a
-  different goal; they are not sufficient for remote rendering.)
+ must originate from hooks, a native protocol, or a transcript file — never
+ from parsing ANSI. Screen heuristics may only produce a coarse activity
+ guess. (the screen-scraping manifests are a legitimate design under a
+ different goal; they are not sufficient for remote rendering.)
 - **Answers go back the way they came.** An answer to a deferred `PreToolUse`
-  is returned as a hook decision; an ACP permission is answered over ACP.
-  Synthesizing keystrokes into a PTY is the last resort and is always labelled
-  as such in the event stream and on every surface. Its bound is **state
-  dependence, not tool danger**
-  ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)):
-  position-independent answers (`y`/`n`, `1`/`2`/`3`, free text, a line-oriented
-  CLI's stdin) are allowed and on by default; answers requiring omt to count
-  arrow keys against a cursor position it inferred from the screen are off by
-  default.
+ is returned as a hook decision; an ACP permission is answered over ACP.
+ Synthesizing keystrokes into a PTY is the last resort and is always labelled
+ as such in the event stream and on every surface. Its bound is **state
+ dependence, not tool danger**
+ ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)):
+ position-independent answers (`y`/`n`, `1`/`2`/`3`, free text, a line-oriented
+ CLI's stdin) are allowed and on by default; answers requiring omt to count
+ arrow keys against a cursor position it inferred from the screen are off by
+ default.
 - **omt adds no permission policy of its own.** It mirrors the agent CLI's own
-  gate exactly — never adding an approval step the CLI would not have shown, and
-  never suppressing one it would
-  ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
-  There is no omt-side allow-list, deny-list, danger classifier or auto-approve.
+ gate exactly — never adding an approval step the CLI would not have shown, and
+ never suppressing one it would
+ ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
+ There is no omt-side allow-list, deny-list, danger classifier or auto-approve.
 
 ---
 
 ## P5 — Production-grade from the first commit
 
-No MVP tier, no stub layers, no `todo!()` in merged code. A change is done when
+No MVP tier, no stub layers, no `todo!` in merged code. A change is done when
 it has tests, docs, error types with actionable messages, and clean
 `cargo clippy -D warnings`.
 
 Concretely:
 - Errors are typed per crate (`thiserror`), never `anyhow` in library code.
-  `anyhow` is allowed only in binaries, at the top level.
-- No `unwrap()`/`expect()` outside tests and documented invariants (enforced by
-  clippy lints).
+ `anyhow` is allowed only in binaries, at the top level.
+- No `unwrap`/`expect` outside tests and documented invariants (enforced by
+ clippy lints).
 - Any protocol or on-disk format is versioned from v1 and has a compatibility
-  test with a checked-in fixture.
+ test with a checked-in fixture.
 - Every crate that parses untrusted input (VT sequences, config, wire messages)
-  ships a fuzz target.
+ ships a fuzz target.
 
 ---
 
@@ -143,16 +143,16 @@ Multiple humans and multiple agents act on the same instance concurrently. The
 system must therefore have real answers to:
 
 - **Input arbitration** — who is currently driving a session's PTY, and what
-  happens when two clients type at once. (Answer: sessions have a *writer*
-  token with explicit takeover and an observers list; every client always sees
-  who is driving.)
+ happens when two clients type at once. (Answer: sessions have a *writer*
+ token with explicit takeover and an observers list; every client always sees
+ who is driving.)
 - **Interaction ownership** — an `Interaction` can only be resolved once,
-  by exactly one actor, with the resolution broadcast to everyone.
+ by exactly one actor, with the resolution broadcast to everyone.
 - **Causality** — every event carries a monotonic per-session sequence number,
-  so a reconnecting client can resume exactly, and clients never render state
-  out of order.
+ so a reconnecting client can resume exactly, and clients never render state
+ out of order.
 - **Presence** — clients, their capabilities, and what they are viewing are
-  part of the state, so the TUI can show that a phone is attached to a pane.
+ part of the state, so the TUI can show that a phone is attached to a pane.
 
 See [12 — Concurrency and collaboration](12-collaboration.md).
 
@@ -174,16 +174,16 @@ exists in the file and not in the TUI is a bug.
 ## P8 — Security by default, no ambient trust
 
 - The daemon binds to loopback unless explicitly configured otherwise, and
-  refuses to bind to a public interface without an auth backend configured.
+ refuses to bind to a public interface without an auth backend configured.
 - Access control answers **who may connect**, not **what they may do once
-  connected**: an authenticated client is equivalent to the local TUI
-  ([D2](decisions.md#d2--remote-is-exactly-equivalent-to-local)). The
-  `Viewer`/`Operator`/`Admin` roles and credential scopes exist so the owner can
-  *share* a narrowed view — a read-only invite link for a colleague — never to
-  degrade the owner's own phone.
+ connected**: an authenticated client is equivalent to the local TUI
+ ([D2](decisions.md#d2--remote-is-exactly-equivalent-to-local)). The
+ `Viewer`/`Operator`/`Admin` roles and credential scopes exist so the owner can
+ *share* a narrowed view — a read-only invite link for a colleague — never to
+ degrade the owner's own phone.
 - Nothing leaves the machine unless the user configured it to. No telemetry.
 - Secrets (tokens, API keys) live outside the main config file, with strict
-  file permissions, and are redacted in every log and every event.
+ file permissions, and are redacted in every log and every event.
 
 See [13 — Security model](13-security.md).
 
@@ -191,7 +191,7 @@ See [13 — Security model](13-security.md).
 
 ## P9 — Clean-room with respect to studied code
 
-omt is Apache-2.0. The another terminal source is AGPL-3.0 and iTerm2 is GPL-2.0. Their
+omt is Apache-2.0. The other terminals source is AGPL-3.0 and iTerm2 is GPL-2.0. Their
 *interfaces* — escape-sequence numbers, file formats, YAML schemas, protocol
 shapes — are facts and may be reimplemented. Their *code* may not be copied,
 adapted, or translated. See [14 — Licensing and provenance](14-licensing.md).

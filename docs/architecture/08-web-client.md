@@ -17,14 +17,14 @@ application with more room.
 - [12 — Collaboration](12-collaboration.md) — writer token, presence, optimistic UI
 - [13 — Security](13-security.md) — auth, roles, credential scope
 - [15 — Workspace explorer](15-workspace-explorer.md) — file tree, diffs, the
-  shared diff renderer
+ shared diff renderer
 - [20 — Recall and usage](20-recall-and-usage.md) — search semantics, ranking,
-  cross-instance fan-out
+ cross-instance fan-out
 - [Decision log](decisions.md) — in particular
-  [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
-  (no omt-side permission policy) and
-  [D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) (remote is
-  equivalent to local)
+ [D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)
+ (no omt-side permission policy) and
+ [D2](decisions.md#d2--remote-is-exactly-equivalent-to-local) (remote is
+ equivalent to local)
 
 ---
 
@@ -46,40 +46,40 @@ library. Vanilla CSS with custom properties. Vitest + Playwright for tests.**
 **Explicitly rejected:**
 
 - *React/Vue/Svelte* — all workable; Solid wins on the update pattern above and
-  loses only on hiring, which is not a constraint for a package this small.
+ loses only on hiring, which is not a constraint for a package this small.
 - *A UI kit (MUI, shadcn, Ionic)* — every one of them fights us on the two
-  screens that matter (block list, terminal). Mobile ergonomics here are
-  specific enough (§8) that adopting a kit means overriding it everywhere.
+ screens that matter (block list, terminal). Mobile ergonomics here are
+ specific enough (§8) that adopting a kit means overriding it everywhere.
 - *Canvas-rendered custom terminal* — xterm.js already solved it.
 - *Service-worker-based offline session cache* — the SW exists for
-  installability and app-shell precache (§8.6), not for pretending we have state
-  we do not. It carries no push handler ([D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)).
+ installability and app-shell precache (§8.6), not for pretending we have state
+ we do not. It carries no push handler ([D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)).
 
 ### 1.1 Package layout
 
 ```
 web/
-  src/
-    generated/           # written by `cargo xtask codegen`; committed; never hand-edited
-      capabilities.ts    # CapabilityName union, input/output types, Handler<K>
-      events.ts          # Event envelope, AgentEvent payloads, InteractionKind
-      config-schema.ts   # JSON Schema types for the config editor
-    proto/               # hand-written transport: framing, resume, backoff
-    federation/          # InstanceClient, InstanceRegistry, unified selectors
-    capabilities/
-      registry.ts        # the exhaustive handlers map (§2)
-      handlers/*.ts
-    views/
-      blocks/            # block view (mobile default)
-      terminal/          # xterm.js view + virtual key bar
-      interactions/      # AskUserQuestion, permission, plan, elicitation cards
-      dashboard/         # cross-instance agent session dashboard
-      config/            # generated config forms
-    voice/               # MediaRecorder capture, streaming, transcript UI
-    ui/                  # primitives: Sheet, Chip, Card, KeyCap, Diff
-    platform/            # safe-area, viewport, haptics, push, wake-lock
-  tests/
-  mock-instance/         # a TS omt instance simulator (§10.2)
+ src/
+ generated/ # written by `cargo xtask codegen`; committed; never hand-edited
+ capabilities.ts # CapabilityName union, input/output types, Handler<K>
+ events.ts # Event envelope, AgentEvent payloads, InteractionKind
+ config-schema.ts # JSON Schema types for the config editor
+ proto/ # hand-written transport: framing, resume, backoff
+ federation/ # InstanceClient, InstanceRegistry, unified selectors
+ capabilities/
+ registry.ts # the exhaustive handlers map (§2)
+ handlers/*.ts
+ views/
+ blocks/ # block view (mobile default)
+ terminal/ # xterm.js view + virtual key bar
+ interactions/ # AskUserQuestion, permission, plan, elicitation cards
+ dashboard/ # cross-instance agent session dashboard
+ config/ # generated config forms
+ voice/ # MediaRecorder capture, streaming, transcript UI
+ ui/ # primitives: Sheet, Chip, Card, KeyCap, Diff
+ platform/ # safe-area, viewport, haptics, push, wake-lock
+ tests/
+ mock-instance/ # a TS omt instance simulator (§10.2)
 ```
 
 ---
@@ -93,36 +93,36 @@ CI regenerates and diffs it. Hand-editing it is a build failure.
 ### 2.1 What codegen emits
 
 ```ts
-// generated/capabilities.ts  (excerpt)
+// generated/capabilities.ts (excerpt)
 export type CapabilityName =
-  | "session.send_text"
-  | "session.blocks.list"
-  | "interaction.resolve"
-  | "media.image.paste"
-  | "agent.commands.list"
-  /* … */;
+ | "session.send_text"
+ | "session.blocks.list"
+ | "interaction.resolve"
+ | "media.image.paste"
+ | "agent.commands.list"
+ /* … */;
 
 export interface CapabilityIO {
-  "session.send_text": {
-    input:  { session: SessionId; text: string; submit: boolean };
-    output: { seq: Seq };
-    role: "operator";
-    kind: "command";
-    effects: readonly ("writes_pty")[];
-    since: "1.0";
-  };
-  "interaction.resolve": {
-    input:  { interaction: InteractionId; response: InteractionResponse };
-    output: { resolved_by: Actor; seq: Seq };
-    role: "operator";
-    kind: "command";
-    effects: readonly [];              // resolving is not itself a side effect on omt
-    since: "1.0";
-  };
-  /* … one entry per capability … */
+ "session.send_text": {
+ input: { session: SessionId; text: string; submit: boolean };
+ output: { seq: Seq };
+ role: "operator";
+ kind: "command";
+ effects: readonly ("writes_pty")[];
+ since: "1.0";
+ };
+ "interaction.resolve": {
+ input: { interaction: InteractionId; response: InteractionResponse };
+ output: { resolved_by: Actor; seq: Seq };
+ role: "operator";
+ kind: "command";
+ effects: readonly []; // resolving is not itself a side effect on omt
+ since: "1.0";
+ };
+ /* … one entry per capability … */
 }
 
-export type Input<K extends CapabilityName>  = CapabilityIO[K]["input"];
+export type Input<K extends CapabilityName> = CapabilityIO[K]["input"];
 export type Output<K extends CapabilityName> = CapabilityIO[K]["output"];
 export type Effects<K extends CapabilityName> = CapabilityIO[K]["effects"];
 
@@ -143,32 +143,32 @@ JSON in a devtools panel matches the Rust type and the docs.
 // `pty` was this document's rename of `heuristic` and is gone; `workspace_fs`
 // is an `EventKind`, not a source, and `system` is now `core`.
 export type EventSourceTag =
-  | "heuristic" | "process" | "marker" | "transcript" | "hook" | "protocol"
-  | "core" | "fs" | "plugin";
+ | "heuristic" | "process" | "marker" | "transcript" | "hook" | "protocol"
+ | "core" | "fs" | "plugin";
 
 export interface EventEnvelope<P = AgentPayload | TermPayload | TreePayload | WorkspaceFsPayload> {
-  instance: InstanceId;
-  session: SessionId | null;
-  workspace: WorkspaceId | null;      // set for workspace-scoped events (15 §4.6)
-  seq: Seq; ts: string;
-  source: EventSourceTag;
-  caused_by: RequestId | null;        // 12 §5.3
-  payload: P;
+ instance: InstanceId;
+ session: SessionId | null;
+ workspace: WorkspaceId | null; // set for workspace-scoped events (15 §4.6)
+ seq: Seq; ts: string;
+ source: EventSourceTag;
+ caused_by: RequestId | null; // 12 §5.3
+ payload: P;
 }
 
 export type InteractionKind =
-  | { type: "choice"; questions: ChoiceQuestion[] }
-  | { type: "permission"; tool: string; input: unknown;
-      options: PermissionOption[]; diff: FileDiff | null; command: string | null }
-  | { type: "text"; prompt: string; placeholder: string | null; multiline: boolean }
-  | { type: "plan_review"; plan: string };
+ | { type: "choice"; questions: ChoiceQuestion[] }
+ | { type: "permission"; tool: string; input: unknown;
+ options: PermissionOption[]; diff: FileDiff | null; command: string | null }
+ | { type: "text"; prompt: string; placeholder: string | null; multiline: boolean }
+ | { type: "plan_review"; plan: string };
 
 export interface ChoiceQuestion {
-  question: string;
-  header: string;              // ~12 char tab label
-  multi_select: boolean;
-  options: { label: string; description: string }[];
-  allow_free_text: boolean;
+ question: string;
+ header: string; // ~12 char tab label
+ multi_select: boolean;
+ options: { label: string; description: string }[];
+ allow_free_text: boolean;
 }
 ```
 
@@ -184,25 +184,25 @@ import type { CapabilityName, CoreCapabilityName, Input, Output, ExemptName } fr
 export interface HandlerCtx { instance: InstanceClient; ui: UiBus; }
 
 export type Handler<K extends CapabilityName> = {
-  /** Where this capability is reachable from in the UI. Used by the E2E parity test. */
-  surface: SurfaceHint;
-  /** Optional client-side pre-flight: confirmation gestures, optimistic updates. */
-  invoke(ctx: HandlerCtx, input: Input<K>): Promise<Output<K>>;
+ /** Where this capability is reachable from in the UI. Used by the E2E parity test. */
+ surface: SurfaceHint;
+ /** Optional client-side pre-flight: confirmation gestures, optimistic updates. */
+ invoke(ctx: HandlerCtx, input: Input<K>): Promise<Output<K>>;
 };
 
 // Two independent exclusions, both required:
-//   CoreCapabilityName — plugin-contributed capabilities are registered at
-//     runtime and cannot be in a compile-time union (03 §3.6); they reach the
-//     client through the generic schema-driven renderer.
-//   ExemptName — a capability with a web-surface parity exemption owes no
-//     handler.
+// CoreCapabilityName — plugin-contributed capabilities are registered at
+// runtime and cannot be in a compile-time union (03 §3.6); they reach the
+// client through the generic schema-driven renderer.
+// ExemptName — a capability with a web-surface parity exemption owes no
+// handler.
 type Handled = Exclude<CoreCapabilityName, ExemptName>;
 
 export const handlers: { [K in Handled]: Handler<K> } = {
-  "session.send_text":    sendText,
-  "session.blocks.list":  blocksList,
-  "interaction.resolve":  interactionResolve,
-  /* … */
+ "session.send_text": sendText,
+ "session.blocks.list": blocksList,
+ "interaction.resolve": interactionResolve,
+ /* … */
 };
 ```
 
@@ -216,14 +216,14 @@ write the handler.
 Two supporting checks:
 
 1. **No stray keys.** The mapped type also rejects a handler for a capability
-   that no longer exists, so deleting a Rust capability fails the web build
-   until the dead handler is removed.
+ that no longer exists, so deleting a Rust capability fails the web build
+ until the dead handler is removed.
 2. **Surface reachability.** `surface: SurfaceHint` is not decorative. It is one
-   of `{ kind: "action", menu: string } | { kind: "gesture", … } | { kind:
-   "implicit", by: CapabilityName }`, and the E2E parity test (§10.3) drives
-   every non-`implicit` handler through the real UI. `implicit` requires naming
-   the capability that covers it (e.g. `session.write_bytes` is implicit under
-   `session.send_text`), which keeps the escape hatch auditable.
+ of `{ kind: "action", menu: string } | { kind: "gesture", … } | { kind:
+ "implicit", by: CapabilityName }`, and the E2E parity test (§10.3) drives
+ every non-`implicit` handler through the real UI. `implicit` requires naming
+ the capability that covers it (e.g. `session.write_bytes` is implicit under
+ `session.send_text`), which keeps the escape hatch auditable.
 
 ### 2.3 Effects drive UI policy, not just audit
 
@@ -231,14 +231,14 @@ Two supporting checks:
 
 ```ts
 export async function call<K extends CapabilityName>(
-  ctx: HandlerCtx, name: K, input: Input<K>,
+ ctx: HandlerCtx, name: K, input: Input<K>,
 ): Promise<Output<K>> {
-  const meta = CAPABILITY_META[name];
-  if (meta.effects.includes("destructive")) {
-    await ctx.ui.confirm({ title: meta.title, detail: describe(name, input) });
-  }
-  if (meta.role === "admin" && ctx.instance.role !== "admin") throw new Unauthorized(name);
-  return ctx.instance.rpc(name, input);
+ const meta = CAPABILITY_META[name];
+ if (meta.effects.includes("destructive")) {
+ await ctx.ui.confirm({ title: meta.title, detail: describe(name, input) });
+ }
+ if (meta.role === "admin" && ctx.instance.role !== "admin") throw new Unauthorized(name);
+ return ctx.instance.rpc(name, input);
 }
 ```
 
@@ -258,24 +258,24 @@ its own sessions.
 
 ```ts
 export type InstanceStatus =
-  | { state: "disconnected" }
-  | { state: "connecting"; attempt: number; nextRetryMs: number }
-  | { state: "handshaking" }
-  | { state: "connected"; sinceSeqPerSession: Map<SessionId, Seq>; rttMs: number }
-  | { state: "degraded"; reason: "resync" | "slow" }   // 07 §5.2: the message is `Resync`
-  | { state: "auth_failed"; detail: string }
-  | { state: "version_incompatible"; instanceCatalog: string; clientCatalog: string };
+ | { state: "disconnected" }
+ | { state: "connecting"; attempt: number; nextRetryMs: number }
+ | { state: "handshaking" }
+ | { state: "connected"; sinceSeqPerSession: Map<SessionId, Seq>; rttMs: number }
+ | { state: "degraded"; reason: "resync" | "slow" } // 07 §5.2: the message is `Resync`
+ | { state: "auth_failed"; detail: string }
+ | { state: "version_incompatible"; instanceCatalog: string; clientCatalog: string };
 
 export interface InstanceClient {
-  id: InstanceId;
-  label: string;                       // user-editable; defaults to instance.info.hostname
-  origin: string;                      // wss://host:port
-  role: Role;
-  status: Accessor<InstanceStatus>;
-  /** Capability names this instance actually reports at handshake. */
-  available: ReadonlySet<CapabilityName>;
-  rpc<K extends CapabilityName>(name: K, input: Input<K>): Promise<Output<K>>;
-  events: EventStream;
+ id: InstanceId;
+ label: string; // user-editable; defaults to instance.info.hostname
+ origin: string; // wss://host:port
+ role: Role;
+ status: Accessor<InstanceStatus>;
+ /** Capability names this instance actually reports at handshake. */
+ available: ReadonlySet<CapabilityName>;
+ rpc<K extends CapabilityName>(name: K, input: Input<K>): Promise<Output<K>>;
+ events: EventStream;
 }
 ```
 
@@ -310,17 +310,17 @@ The home screen is one list across all instances, not a per-instance drill-down.
 
 ```ts
 interface UnifiedSession {
-  instance: InstanceId; instanceLabel: string;
-  session: SessionId; title: string;
-  // SessionMode, owned by 05 §1. Serde names of the Rust enum. D8.
-  mode: "pty" | "native";
-  workspace: { path: string; name: string; gitBranch: string | null };
-  agent: { kind: AgentKind; state: AgentState; model: string | null } | null;
-  openInteractions: number;
-  queuedMessages: number;
-  lastActivity: string;
-  writer: { client: ClientId; label: string } | null;   // who is driving
-  reachable: boolean;                                    // instance connected?
+ instance: InstanceId; instanceLabel: string;
+ session: SessionId; title: string;
+ // SessionMode, owned by 05 §1. Serde names of the Rust enum. D8.
+ mode: "pty" | "native";
+ workspace: { path: string; name: string; gitBranch: string | null };
+ agent: { kind: AgentKind; state: AgentState; model: string | null } | null;
+ openInteractions: number;
+ queuedMessages: number;
+ lastActivity: string;
+ writer: { client: ClientId; label: string } | null; // who is driving
+ reachable: boolean; // instance connected?
 }
 ```
 
@@ -348,25 +348,25 @@ intersection. Concretely:
 
 ```ts
 export function guard<K extends CapabilityName>(inst: InstanceClient, name: K): Availability {
-  if (inst.available.has(name)) return { ok: true };
-  const meta = CAPABILITY_META[name];
-  return { ok: false, reason: "unsupported", since: meta.since, instance: inst.label };
+ if (inst.available.has(name)) return { ok: true };
+ const meta = CAPABILITY_META[name];
+ return { ok: false, reason: "unsupported", since: meta.since, instance: inst.label };
 }
 ```
 
 Rules:
 
 - A control bound to an unavailable capability renders **disabled with a
-  reason**, never hidden. Hiding it makes the phone look like a different
-  product than the laptop, which is the exact confusion P3 exists to prevent.
+ reason**, never hidden. Hiding it makes the phone look like a different
+ product than the laptop, which is the exact confusion P3 exists to prevent.
 - Tapping a disabled control shows: *"`session.blocks.rerun` needs omt ≥ 1.3 on
-  `mini` (running 1.1). Update that instance."*
+ `mini` (running 1.1). Update that instance."*
 - Cross-instance aggregate views degrade per-row, not per-view: if one instance
-  lacks `agent.queue.list`, that instance's rows show "—" for queue depth and
-  everything else still works.
+ lacks `agent.queue.list`, that instance's rows show "—" for queue depth and
+ everything else still works.
 - If the instance's catalog has a capability the client does **not** know, it is
-  listed under Settings → Instance → Unsupported, with its generated docs link.
-  An older phone PWA against a newer daemon is a normal state.
+ listed under Settings → Instance → Unsupported, with its generated docs link.
+ An older phone PWA against a newer daemon is a normal state.
 
 ---
 
@@ -390,10 +390,10 @@ alone.** On viewports narrower than 600 CSS px:
 
 - a session with **no agent binding** → **block view**;
 - a session with an **agent binding at tier ≥ Transcript source** → **transcript
-  view**;
+ view**;
 - a session with an agent binding **below** that tier → **terminal view**, with
-  the segmented control showing block and transcript as unavailable and saying
-  why (see §4.4);
+ the segmented control showing block and transcript as unavailable and saying
+ why (see §4.4);
 - **terminal view is always exactly one tap away** from any of the above.
 
 Above 600 CSS px terminal view remains the default, unchanged.
@@ -424,7 +424,7 @@ correct and practically unreadable, and pinch-zooming a VT grid means
 horizontal panning through a wall of monospace.
 
 The block model ([04](04-terminal-core.md), derived from
-[another terminal's BLOCKS](../research/another terminal.md)) gives us the escape: output is already
+[the BLOCKS](../design/terminal-ux.md)) gives us the escape: output is already
 segmented into `(command, output, exit code, timings, cwd, git branch)` records
 via OSC 133. A list of collapsible cards is a *native mobile shape*. You scroll
 it with a thumb, you expand what you care about, and you never pan horizontally
@@ -458,29 +458,29 @@ this section should be read as product surface rather than an adaptation layer.
 
 ```ts
 interface BlockSummary {
-  id: BlockId; index: number;
-  command: string | null;          // null for background output
-  // BlockState, owned by 04 §6.3. Serde names of the Rust enum.
-  state: "at_prompt" | "submitted" | "running" | "finished"
-       | "no_execution" | "background" | "truncated";
-  // BlockOrigin, owned by 04 §6.2. "heuristic" means no shell integration:
-  // the UI must render it as unstructured output and must not claim an exit code.
-  origin: "osc133" | "heuristic" | "injected";
-  exit: { code: number } | { signal: number } | null;
-  failed: boolean;                 // NOT exit.code !== 0 — excludes 130/141, see below
-  started_at: string | null; finished_at: string | null;
-  cwd: string | null; git_branch: string | null;
-  output_bytes: number; output_lines: number;
-  truncated: boolean;              // body must be fetched with blocks.get
-  // Attribution, owned by 04 §6.2.
-  attribution:
-    | { type: "human"; client: ClientId | null }
-    | { type: "agent"; kind: AgentKind; run_id: string | null }
-    | { type: "unknown" };
+ id: BlockId; index: number;
+ command: string | null; // null for background output
+ // BlockState, owned by 04 §6.3. Serde names of the Rust enum.
+ state: "at_prompt" | "submitted" | "running" | "finished"
+ | "no_execution" | "background" | "truncated";
+ // BlockOrigin, owned by 04 §6.2. "heuristic" means no shell integration:
+ // the UI must render it as unstructured output and must not claim an exit code.
+ origin: "osc133" | "heuristic" | "injected";
+ exit: { code: number } | { signal: number } | null;
+ failed: boolean; // NOT exit.code !== 0 — excludes 130/141, see below
+ started_at: string | null; finished_at: string | null;
+ cwd: string | null; git_branch: string | null;
+ output_bytes: number; output_lines: number;
+ truncated: boolean; // body must be fetched with blocks.get
+ // Attribution, owned by 04 §6.2.
+ attribution:
+ | { type: "human"; client: ClientId | null }
+ | { type: "agent"; kind: AgentKind; run_id: string | null }
+ | { type: "unknown" };
 }
 ```
 
-`failed` is computed server-side by `Block::failed()`
+`failed` is computed server-side by `Block::failed`
 ([04 §6.2](04-terminal-core.md#62-what-a-block-owns)) and deliberately excludes
 exit 130 (Ctrl-C) and 141 (SIGPIPE). Painting a Ctrl-C'd block red is a papercut
 we are not reproducing.
@@ -488,25 +488,25 @@ we are not reproducing.
 **Card anatomy** (top to bottom):
 
 1. **Header row** — a `$`/agent glyph, the command in monospace (one line,
-   `text-overflow: ellipsis`, tap to expand full), and on the right an
-   **exit-code chip**: green check for 0, red `✗ 1` for failure, grey `⏵` with a
-   spinner for `executing`, amber `⎋ 130` for interrupted. The chip is a real
-   button: tapping it copies `echo $?`-worthy context (command, exit, duration).
+ `text-overflow: ellipsis`, tap to expand full), and on the right an
+ **exit-code chip**: green check for 0, red `✗ 1` for failure, grey `⏵` with a
+ spinner for `executing`, amber `⎋ 130` for interrupted. The chip is a real
+ button: tapping it copies `echo $?`-worthy context (command, exit, duration).
 2. **Meta row** (only when it differs from the previous block) — `~/proj ·
-   main · 2.4s · 14:03`. Suppressing repeats keeps the list scannable.
+ main · 2.4s · 14:03`. Suppressing repeats keeps the list scannable.
 3. **Body** — collapsed by default when `outputLines > 12` or the block
-   succeeded and is older than the current turn; expanded when the block failed
-   or is running. The body is an xterm.js-free renderer over `StyledLine`
-   (`{ text, spans: [{ start, len, fg, bg, flags, link? }] }`) — the structured
-   encoding from [04 §4.4(b)](04-terminal-core.md#44-the-web-mapping-xtermjs),
-   also returned by `session.scrollback.get`. No raw bytes, so there is no
-   second VT parser in the browser. Long lines get `overflow-x: auto` inside the
-   card.
+ succeeded and is older than the current turn; expanded when the block failed
+ or is running. The body is an xterm.js-free renderer over `StyledLine`
+ (`{ text, spans: [{ start, len, fg, bg, flags, link? }] }`) — the structured
+ encoding from [04 §4.4(b)](04-terminal-core.md#44-the-web-mapping-xtermjs),
+ also returned by `session.scrollback.get`. No raw bytes, so there is no
+ second VT parser in the browser. Long lines get `overflow-x: auto` inside the
+ card.
 4. **Action row** (revealed on tap-and-hold, or always on desktop hover) —
-   **Copy** (output / command / both), **Re-run** (`session.blocks.rerun`),
-   **Share** (§4.2.1), **Bookmark**, **Filter lines** (a regex box that filters
-   the body in place), **Open in terminal view** (scrolls the VT view to that
-   block's start line).
+ **Copy** (output / command / both), **Re-run** (`session.blocks.rerun`),
+ **Share** (§4.2.1), **Bookmark**, **Filter lines** (a regex box that filters
+ the body in place), **Open in terminal view** (scrolls the VT view to that
+ block's start line).
 
 **Agent attribution.** When a block was produced by an agent's tool call rather
 than a human keystroke, the header shows the agent glyph plus the tool name
@@ -529,7 +529,7 @@ list pins to the bottom. Any upward scroll gesture unpins and shows a
 
 `Share` serializes the block to a self-contained payload (command, output as
 styled cells, exit code, timings, redacted cwd) and offers: copy as Markdown,
-copy as an ANSI-preserving text blob, or `navigator.share()` on mobile. There is
+copy as an ANSI-preserving text blob, or `navigator.share` on mobile. There is
 **no** omt cloud — sharing produces bytes, never a hosted URL
 ([00 §8](00-overview.md#8-what-omt-is-not)).
 
@@ -539,18 +539,18 @@ xterm.js with the WebGL renderer, `unicode11`, and a `SerializeAddon` used only
 for tests.
 
 - **Input.** Keystrokes go through `session.write_bytes`; pasted text goes
-  through `session.send_text` (which applies bracketed-paste and chunk pacing
-  server-side — the pacing logic lives in `omt-term`, not duplicated here).
-  **This path is for human typing and pasting only.** A synthetic answer to an
-  agent card never goes through it — see §5.1.2.
+ through `session.send_text` (which applies bracketed-paste and chunk pacing
+ server-side — the pacing logic lives in `omt-term`, not duplicated here).
+ **This path is for human typing and pasting only.** A synthetic answer to an
+ agent card never goes through it — see §5.1.2.
 - **Writer token.** The view is read-only until the client holds the writer
-  token ([12](12-collaboration.md)). The header shows *"`laptop` is driving —
-  tap to take over"*; takeover is explicit and broadcast.
+ token ([12](12-collaboration.md)). The header shows *"`laptop` is driving —
+ tap to take over"*; takeover is explicit and broadcast.
 - **Resume.** On reconnect, the client sends `since_seq`; the instance replays
-  or answers `Resync` ([07 §5.2](07-remote-protocol.md#52-replay-window)), in
-  which case the client fetches a scrollback
-  snapshot and re-seeds the emulator. Detail in
-  [07](07-remote-protocol.md).
+ or answers `Resync` ([07 §5.2](07-remote-protocol.md#52-replay-window)), in
+ which case the client fetches a scrollback
+ snapshot and re-seeds the emulator. Detail in
+ [07](07-remote-protocol.md).
 
 #### 4.3.1 Virtual key bar
 
@@ -558,21 +558,21 @@ A single row, `env(safe-area-inset-bottom)`-padded, docked above the software
 keyboard:
 
 ```
-[Esc] [Tab] [Ctrl] [Alt] [←][↑][↓][→] [⌫] [⏎]   ⋯
+[Esc] [Tab] [Ctrl] [Alt] [←][↑][↓][→] [⌫] [⏎] ⋯
 ```
 
 - `Ctrl` and `Alt` are **sticky modifiers**: tap once for the next key, double
-  tap to lock (a filled state shows the lock). This avoids chording on a
-  touchscreen, which is impossible one-handed.
+ tap to lock (a filled state shows the lock). This avoids chording on a
+ touchscreen, which is impossible one-handed.
 - `⋯` opens a second row: `Ctrl-C`, `Ctrl-D`, `Ctrl-Z`, `Ctrl-R`, `|`, `~`,
-  `-`, `/`, `PgUp`, `PgDn`, `Home`, `End`, F-keys.
+ `-`, `/`, `PgUp`, `PgDn`, `Home`, `End`, F-keys.
 - The bar is **configurable** and reads its layout from the instance config
-  (`web.key_bar.rows`), so it is one schema-driven form
-  ([P7](01-principles.md#p7--configuration-is-data-and-errors-are-precise)),
-  not hard-coded.
+ (`web.key_bar.rows`), so it is one schema-driven form
+ ([P7](01-principles.md#p7--configuration-is-data-and-errors-are-precise)),
+ not hard-coded.
 - Every key is ≥ 44×44 CSS px with 8 px gutters (§8.1).
 - Long-press on an arrow key auto-repeats at 40 ms after a 400 ms delay,
-  matching typical key-repeat feel.
+ matching typical key-repeat feel.
 
 #### 4.3.2 Pinch-zoom and viewport negotiation
 
@@ -598,22 +598,22 @@ What is *this* document's business is how a non-authoritative client renders:
 // Client-side rendering mode. Derived from the server's ViewportPolicy —
 // not a fourth negotiation scheme.
 type RenderMode =
-  | { mode: "follow" }        // render the authoritative grid, scaled to fit width,
-                              // letterboxed vertically (07 §4.3)
-  | { mode: "drive" };        // this client holds the writer token and its viewport
-                              // is authoritative
+ | { mode: "follow" } // render the authoritative grid, scaled to fit width,
+ // letterboxed vertically (07 §4.3)
+ | { mode: "drive" }; // this client holds the writer token and its viewport
+ // is authoritative
 ```
 
 Defaults:
 
 - **Phone, terminal view, not the writer** → `follow`. The session stays at
-  whatever the laptop set; the phone renders it scaled to fit, and pinch-zoom
-  changes font size / pans rather than resizing the remote. Resizing a session
-  from a phone is how you make a colleague's vim redraw into confetti.
+ whatever the laptop set; the phone renders it scaled to fit, and pinch-zoom
+ changes font size / pans rather than resizing the remote. Resizing a session
+ from a phone is how you make a colleague's vim redraw into confetti.
 - **Phone, terminal view, writer** → `drive`, but the client first shows the
-  07 §4.3 warning when taking the token would change the size by more than 20 %,
-  and offers "take input without resizing", which acquires the token with
-  `keep_size: true`.
+ 07 §4.3 warning when taking the token would change the size by more than 20 %,
+ and offers "take input without resizing", which acquires the token with
+ `keep_size: true`.
 - **Desktop, writer** → `drive`.
 
 The mode is visible in the UI (a small `↔ 120×34 · following` chip) and the
@@ -649,14 +649,14 @@ different pictures of the same conversation.
 guessed:
 
 - **tier ≥ Transcript source** → transcript view available, and it is the mobile
-  default for that session.
+ default for that session.
 - **below that tier** (heuristic-only agents — Aider, Amp, Crush in TUI mode;
-  [06 §7.3](06-agent-layer.md#73-coverage-matrix-initial)'s "mobile surface"
-  column) → the control shows transcript **disabled** with a plain reason:
-  *"omt can see that this agent is busy or waiting, but not what it said — no
-  structured source."* The session falls back to terminal view plus the
-  busy/idle/needs-you state chip. This is the honest floor and it is shown, not
-  discovered.
+ [06 §7.3](06-agent-layer.md#73-coverage-matrix-initial)'s "mobile surface"
+ column) → the control shows transcript **disabled** with a plain reason:
+ *"omt can see that this agent is busy or waiting, but not what it said — no
+ structured source."* The session falls back to terminal view plus the
+ busy/idle/needs-you state chip. This is the honest floor and it is shown, not
+ discovered.
 
 **Provenance is visible.** Every entry carries the tier that produced it, and
 `agent.explain` is reachable from the view, so a user who sees a gap can find out
@@ -694,17 +694,17 @@ that resets when you change surface teaches the user not to change surface.
 #### 4.5.1 Entering search, and taking `Cmd+F`
 
 - A magnifier control in the session header — the visible affordance, and the
-  route the parity test drives (§10.3).
+ route the parity test drives (§10.3).
 - `/` when no text input is focused, and `Ctrl+F` / `Cmd+F` always, both with
-  `preventDefault`.
+ `preventDefault`.
 - **Taking the browser's find bar is deliberate and is the right call here.**
-  Native find searches the DOM. Terminal view is a WebGL canvas with no text in
-  the DOM at all; block view and transcript view are windowed (§4.2), so the
-  overwhelming majority of a long session is not in the DOM either. Browser find
-  would search the few hundred lines that happen to be mounted and confidently
-  report "1 of 2" over a 100 000-line scrollback. That is worse than not having
-  it. `Esc` closes omt's bar and the very next `Cmd+F` is the browser's again, so
-  the escape hatch is one keystroke and is stated in the bar's overflow menu.
+ Native find searches the DOM. Terminal view is a WebGL canvas with no text in
+ the DOM at all; block view and transcript view are windowed (§4.2), so the
+ overwhelming majority of a long session is not in the DOM either. Browser find
+ would search the few hundred lines that happen to be mounted and confidently
+ report "1 of 2" over a 100 000-line scrollback. That is worse than not having
+ it. `Esc` closes omt's bar and the very next `Cmd+F` is the browser's again, so
+ the escape hatch is one keystroke and is stated in the bar's overflow menu.
 
 #### 4.5.2 The bar
 
@@ -716,26 +716,26 @@ and the top of the screen is neither.
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 🔍 migrat|                    3 / 128+  ∧  ∨ │
-│ [Aa] [.*]   [this session ▾]          ⌄ list │
+│ 🔍 migrat| 3 / 128+ ∧ ∨ │
+│ [Aa] [.*] [this session ▾] ⌄ list │
 └──────────────────────────────────────────────┘
 ```
 
 - The text field is ≥ 16 px so iOS does not auto-zoom (§8.3), and carries
-  `enterkeyhint="search"`; `Enter` is "next match", not "submit and dismiss".
+ `enterkeyhint="search"`; `Enter` is "next match", not "submit and dismiss".
 - `[Aa]` toggles case. Default is **smartcase**: insensitive until the query
-  contains an uppercase character, matching the TUI's `smartcase`
-  ([16 §6](16-input-and-keymap.md#6-modal-keymaps-vim-mode-and-emacs-mode)).
+ contains an uppercase character, matching the TUI's `smartcase`
+ ([16 §6](16-input-and-keymap.md#6-modal-keymaps-vim-mode-and-emacs-mode)).
 - `[.*]` switches `Pattern::Literal` to `Pattern::Regex` (04 §8.1). An invalid
-  regex turns the chip amber and prints the compiler's message under the field;
-  the previous valid result set stays on screen rather than clearing, because a
-  half-typed regex is the normal state of typing a regex.
+ regex turns the chip amber and prints the compiler's message under the field;
+ the previous valid result set stays on screen rather than clearing, because a
+ half-typed regex is the normal state of typing a regex.
 - `∧` / `∨` are ≥ 44 px, right-aligned, adjacent — the two controls a thumb uses
-  most. Long-press auto-repeats at **120 ms** after a 400 ms delay (slower than
-  §4.3.1's key repeat, because each step scrolls the surface and 40 ms of that is
-  motion sickness). Wrapping past either end emits `navigator.vibrate(10)` and a
-  "wrapped to the top" line in the bar — never a silent wrap, which reads as a
-  broken next button.
+ most. Long-press auto-repeats at **120 ms** after a 400 ms delay (slower than
+ §4.3.1's key repeat, because each step scrolls the surface and 40 ms of that is
+ motion sickness). Wrapping past either end emits `navigator.vibrate(10)` and a
+ "wrapped to the top" line in the bar — never a silent wrap, which reads as a
+ broken next button.
 - `⌄ list` opens the results sheet (§4.5.4).
 
 **Keeping the current match visible above the keyboard.** `scrollIntoView`
@@ -786,20 +786,20 @@ indexed`. Users who are not told this will read "0 results in this workspace" as
 "it did not happen".
 
 - **Escalation is one tap and is offered, not hidden.** Zero or few matches in
-  the session scope renders a footer row: *"1 match here · search this workspace"*
-  — and after that, *"· search everywhere"*. Widening is the single most common
-  next action and it should not require finding a menu.
+ the session scope renders a footer row: *"1 match here · search this workspace"*
+ — and after that, *"· search everywhere"*. Widening is the single most common
+ next action and it should not require finding a menu.
 - **Coverage is rendered verbatim.** The `Coverage` line from
-  [20 §2.5](20-recall-and-usage.md#25-honesty-about-coverage) sits under the
-  results, unedited, including its excluded-session count.
+ [20 §2.5](20-recall-and-usage.md#25-honesty-about-coverage) sits under the
+ results, unedited, including its excluded-session count.
 - **Fan-out is 20 §7.2's, not a second implementation.** The client calls
-  `federatedSearch`, renders each instance's results as they land with a stable
-  key per hit so nothing jumps under a finger mid-tap, and shows 20 §7.2's
-  partial-answer banner (`3 of 4 instances answered · build-server: timed out ·
-  retry`) rather than a merged list that quietly omits a machine. Every hit
-  carries the same instance chip the session list uses (§3.3).
+ `federatedSearch`, renders each instance's results as they land with a stable
+ key per hit so nothing jumps under a finger mid-tap, and shows 20 §7.2's
+ partial-answer banner (`3 of 4 instances answered · build-server: timed out ·
+ retry`) rather than a merged list that quietly omits a machine. Every hit
+ carries the same instance chip the session list uses (§3.3).
 - An instance that lacks `search.query` appears as `degraded`, per §3.4's
-  disabled-with-a-reason rule.
+ disabled-with-a-reason rule.
 
 #### 4.5.5 Results, incremental delivery, and what a tap does
 
@@ -809,47 +809,47 @@ the current match stays visible behind it — matching
 introducing a second sheet idiom. On desktop it is a right rail.
 
 - **Session-scope rows**: `line 4 812 · <snippet>`, one line on a phone and two
-  on desktop, with the matched range emphasised. Enough context to recognise a
-  hit is the requirement, and one line of a `StyledLine` around the match meets
-  it; the row keeps the line's original foreground colours, muted, because
-  recognising a hit in `cargo test` output is largely a colour task.
+ on desktop, with the matched range emphasised. Enough context to recognise a
+ hit is the requirement, and one line of a `StyledLine` around the match meets
+ it; the row keeps the line's original foreground colours, muted, because
+ recognising a hit in `cargo test` output is largely a colour task.
 - **Indexed-scope rows** use [20 §4.2](20-recall-and-usage.md#42-grouping)'s
-  grouping verbatim: grouped by session, best hit plus up to three more, then
-  `+N more in this session`. The group header is the session title, its instance
-  chip, its workspace and branch, and the relative time. Snippets come from
-  `Hit.snippet` and `Hit.match_ranges` and are **never re-derived client-side** —
-  the server's snippet is redacted by construction
-  ([20 §5](20-recall-and-usage.md#5-redaction-and-the-index)) and a client that
-  re-extracted context from anywhere else would leak what the index deliberately
-  did not return.
+ grouping verbatim: grouped by session, best hit plus up to three more, then
+ `+N more in this session`. The group header is the session title, its instance
+ chip, its workspace and branch, and the relative time. Snippets come from
+ `Hit.snippet` and `Hit.match_ranges` and are **never re-derived client-side** —
+ the server's snippet is redacted by construction
+ ([20 §5](20-recall-and-usage.md#5-redaction-and-the-index)) and a client that
+ re-extracted context from anywhere else would leak what the index deliberately
+ did not return.
 - **Tapping a hit** goes to the anchor, in the surface currently selected:
-  block view scrolls to and expands the block, transcript view scrolls to the
-  entry, terminal view scrolls the grid. A hit in *another* session opens that
-  session first, at its default surface for its kind (§4), and lands on the
-  anchor there. A hit on a **disconnected** instance renders greyed with its
-  snippet intact and taps to "reconnect to `mini` to open this" — the §3.3 rule
-  that stale rows beat vanished rows applies to results too.
+ block view scrolls to and expands the block, transcript view scrolls to the
+ entry, terminal view scrolls the grid. A hit in *another* session opens that
+ session first, at its default surface for its kind (§4), and lands on the
+ anchor there. A hit on a **disconnected** instance renders greyed with its
+ snippet intact and taps to "reconnect to `mini` to open this" — the §3.3 rule
+ that stale rows beat vanished rows applies to results too.
 - **Empty state** is `search.suggest`'s recent queries and nothing else. No tips,
-  no syntax cheatsheet the user did not ask for; the query mini-language
-  ([20 §12.1](20-recall-and-usage.md#121-search)) is behind a `?` in the overflow.
+ no syntax cheatsheet the user did not ask for; the query mini-language
+ ([20 §12.1](20-recall-and-usage.md#121-search)) is behind a `?` in the overflow.
 
 **Incremental results, and the honest counter.** Neither corpus answers in one
 round trip, and the UI never pretends otherwise:
 
 - Input is debounced **120 ms**.
 - `session.search` is driven by its cursor: the client issues calls until either
-  **300 ms** has elapsed or the visible band plus one screen ahead is covered,
-  paints, and continues the cursor in `requestIdleCallback` slices. First paint
-  is therefore bounded by 300 ms regardless of scrollback length.
+ **300 ms** has elapsed or the visible band plus one screen ahead is covered,
+ paints, and continues the cursor in `requestIdleCallback` slices. First paint
+ is therefore bounded by 300 ms regardless of scrollback length.
 - The counter reads `3 / 128+` while a cursor is unexhausted and drops the `+`
-  when it completes. A total the client does not have is never rounded, estimated
-  or animated up to; `total_estimate` from `SearchResults` is shown only for
-  indexed scope, and labelled `≈`.
+ when it completes. A total the client does not have is never rounded, estimated
+ or animated up to; `total_estimate` from `SearchResults` is shown only for
+ indexed scope, and labelled `≈`.
 - A 2 px indeterminate line under the bar runs while any call is in flight, with
-  a **Stop** in its place after 3 s. Stopping aborts the fetches (`AbortSignal`)
-  and drops the cursor; results already rendered stay.
+ a **Stop** in its place after 3 s. Stopping aborts the fetches (`AbortSignal`)
+ and drops the cursor; results already rendered stay.
 - In federated scope the counter also carries progress across instances:
-  `128+ · 3 of 4 instances`.
+ `128+ · 3 of 4 instances`.
 
 #### 4.5.6 Against §4.2's "Filter lines", and against 20's ranking
 
@@ -895,28 +895,28 @@ and answered through `interaction.resolve`.
 ### 5.1 The shared lifecycle
 
 ```
-agent emits           omt normalizes            web renders          web resolves
+agent emits omt normalizes web renders web resolves
 ────────────────────────────────────────────────────────────────────────────────
-PreToolUse{           Event{payload:            <InteractionCard>    interaction.resolve
- AskUserQuestion}  →   Interaction{id, kind, →   picks a component →  {interaction,
- → hook reports        timeout_at, state}}       by kind.type          response, intent_id}
-   and returns {}      the agent draws its                                 │
-   (no defer, D11)     own card locally                                    ▼
-                                                          ledger CAS: Open → Resolving
-                                                                           │
-                                                              responder delivers
-                                                       (Native RPC, or D13's gated
-                                                        PTY transaction into the
-                                                        agent's own card)
-                                                                           │
-                                                                     → Submitted
-                                                                           │
-                                    ┌──────────────────────────────────────┴────────┐
-                        omt observes the agent record it          window elapses with
-                        (PostToolUse / transcript / tool result)   no observation
-                                    ▼                                      ▼
-                              → Resolved                            → Undelivered
-                                    └──────── broadcast to ALL surfaces (TUI too) ───┘
+PreToolUse{ Event{payload: <InteractionCard> interaction.resolve
+ AskUserQuestion} → Interaction{id, kind, → picks a component → {interaction,
+ → hook reports timeout_at, state}} by kind.type response, intent_id}
+ and returns {} the agent draws its │
+ (no defer, D11) own card locally ▼
+ ledger CAS: Open → Resolving
+ │
+ responder delivers
+ (Native RPC, or D13's gated
+ PTY transaction into the
+ agent's own card)
+ │
+ → Submitted
+ │
+ ┌──────────────────────────────────────┴────────┐
+ omt observes the agent record it window elapses with
+ (PostToolUse / transcript / tool result) no observation
+ ▼ ▼
+ → Resolved → Undelivered
+ └──────── broadcast to ALL surfaces (TUI too) ───┘
 ```
 
 [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
@@ -928,37 +928,37 @@ it is that `Resolved` is no longer the state a successful resolve produces.
 Invariants the UI must respect:
 
 - **Resolve-once.** `interaction.resolve` is idempotent by
-  `(interaction, identity_or_device, intent_id)` — a client-minted `intent_id`
-  persisted in the outbox (§8.5) plus the stable identity behind the actor, per
-  [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
-  consequence 6 and [12 §4.1](12-collaboration.md#41-the-invariant). A retry
-  under the same key returns the original outcome, which is what makes a flaky
-  mobile network survivable; a *different* identity gets `conflict`. The old key
-  `(interaction, actor, response)` broke on exactly that retry — `ActorId` is
-  minted per connection, so a reconnecting phone read as a stranger overriding
-  itself — and the client must not key its own dedup on the actor or the
-  response either.
-  A losing resolution must be surfaced, never silently corrected.
+ `(interaction, identity_or_device, intent_id)` — a client-minted `intent_id`
+ persisted in the outbox (§8.5) plus the stable identity behind the actor, per
+ [D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism)
+ consequence 6 and [12 §4.1](12-collaboration.md#41-the-invariant). A retry
+ under the same key returns the original outcome, which is what makes a flaky
+ mobile network survivable; a *different* identity gets `conflict`. The old key
+ `(interaction, actor, response)` broke on exactly that retry — `ActorId` is
+ minted per connection, so a reconnecting phone read as a stranger overriding
+ itself — and the client must not key its own dedup on the actor or the
+ response either.
+ A losing resolution must be surfaced, never silently corrected.
 - **Five renderable states, not three.** See §5.1.1.
 - **Timeouts are real.** `timeout_at` (when the agent gives one) drives a thin
-  progress bar on the card's top edge. At <10 s remaining the card vibrates once
-  (`navigator.vibrate(30)`) and the bar turns amber. On expiry the ledger records
-  `Cancelled { Timeout }` by `Actor::System`
-  ([12 §4.3](12-collaboration.md#43-timeouts)) and the card shows "timed out —
-  the agent continued with its own default", because we cannot un-time-out it.
-  This is the **only** non-human resolution in the system; omt never
-  auto-answers ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
+ progress bar on the card's top edge. At <10 s remaining the card vibrates once
+ (`navigator.vibrate(30)`) and the bar turns amber. On expiry the ledger records
+ `Cancelled { Timeout }` by `Actor::System`
+ ([12 §4.3](12-collaboration.md#43-timeouts)) and the card shows "timed out —
+ the agent continued with its own default", because we cannot un-time-out it.
+ This is the **only** non-human resolution in the system; omt never
+ auto-answers ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics)).
 - **Never synthesize.** If the interaction's `source` is `heuristic`, it is not
-  an interaction and the card is not rendered. An interaction must be *observed*
-  by a tier that carries the payload (`marker` and above); a guess derived from
-  scraping the grid is a guess, and rendering it as a card would put words in the
-  agent's mouth. (`heuristic` is 07 §3.7.3's spelling; this branch previously
-  read `pty`, which was this document's own rename of the same tier and is no
-  longer in the closed set — the check is unchanged, only its spelling.)
-  [P4](01-principles.md#p4--native-semantics-observe-never-re-implement). In
-  `native` mode the rule is vacuous rather than relaxed: every event on a
-  `native` session is `protocol`-sourced, so nothing can ever fail it
-  ([06 §2.1](06-agent-layer.md#21-session-modes)).
+ an interaction and the card is not rendered. An interaction must be *observed*
+ by a tier that carries the payload (`marker` and above); a guess derived from
+ scraping the grid is a guess, and rendering it as a card would put words in the
+ agent's mouth. (`heuristic` is 07 §3.7.3's spelling; this branch previously
+ read `pty`, which was this document's own rename of the same tier and is no
+ longer in the closed set — the check is unchanged, only its spelling.)
+ [P4](01-principles.md#p4--native-semantics-observe-never-re-implement). In
+ `native` mode the rule is vacuous rather than relaxed: every event on a
+ `native` session is `protocol`-sourced, so nothing can ever fail it
+ ([06 §2.1](06-agent-layer.md#21-session-modes)).
 
 #### 5.1.1 The card's state machine
 
@@ -982,16 +982,16 @@ client's single state set; §8.5 defers to it.
 Three rules the component must not violate:
 
 - **`Submitted` is not a success state and must not be styled as one.** It is
-  the honest intermediate: the bytes went out, and on the `Synthetic` path a
-  successful write proves nothing because the sink is a UI omt does not own.
-  This is also why `interaction.resolve` is never optimistic
-  ([12 §7.1](12-collaboration.md#71-what-may-be-optimistic)) — `Submitted` is a
-  real server state, not a local guess.
+ the honest intermediate: the bytes went out, and on the `Synthetic` path a
+ successful write proves nothing because the sink is a UI omt does not own.
+ This is also why `interaction.resolve` is never optimistic
+ ([12 §7.1](12-collaboration.md#71-what-may-be-optimistic)) — `Submitted` is a
+ real server state, not a local guess.
 - **`Undelivered` never offers a retry.** An injection is at-most-once; the only
-  actor permitted to re-answer is a human who can see the screen. The offered
-  action is the terminal view.
+ actor permitted to re-answer is a human who can see the screen. The offered
+ action is the terminal view.
 - A card resolved from the laptop while you were reading it **animates to its
-  new state — it does not vanish.**
+ new state — it does not vanish.**
 
 Cards appear in three places, driven by the same component: inline in block view
 at the position they occurred, as a **bottom sheet** when they arrive while that
@@ -1008,15 +1008,15 @@ does **not** decide answerability. It reads one field:
 ```ts
 // From the generated `Interaction` (06 §5.2.1 owns it):
 type Deliverable =
-  | { type: "native" }
-  | { type: "synthetic"; requires_token: boolean }
-  | { type: "none"; reason: NotDeliverableReason };
+ | { type: "native" }
+ | { type: "synthetic"; requires_token: boolean }
+ | { type: "none"; reason: NotDeliverableReason };
 
 type NotDeliverableReason =
-  | "not_position_independent"    // submitting needs cursor navigation
-  | "index_not_derivable"         // the option's absolute index is not in the payload
-  | "inferred_responder_disabled" // D3: the responder is a guess and is off
-  | "no_responder";               // nothing covers this kind for this agent
+ | "not_position_independent" // submitting needs cursor navigation
+ | "index_not_derivable" // the option's absolute index is not in the payload
+ | "inferred_responder_disabled" // D3: the responder is a guess and is off
+ | "no_responder"; // nothing covers this kind for this agent
 ```
 
 `deliverable` is computed **once, in the daemon's normalizer**, from
@@ -1030,10 +1030,10 @@ rules follow:
 
 - **`{ type: "none" }` renders the card in full, read-only** — §5.1.3.
 - **`{ type: "synthetic", requires_token: true }`** renders the controls, but
-  the resolve is gated on the writer token
-  ([12 §3.1](12-collaboration.md#31-what-it-governs)); a client that does not
-  hold it shows the ordinary "`laptop` is driving — tap to take over" affordance
-  on the action row rather than a disabled card.
+ the resolve is gated on the writer token
+ ([12 §3.1](12-collaboration.md#31-what-it-governs)); a client that does not
+ hold it shows the ordinary "`laptop` is driving — tap to take over" affordance
+ on the action row rather than a disabled card.
 - **`{ type: "native" }`** renders the controls ungated.
 
 A kind whose per-option answerability differs — permissions, §5.3 — reads the
@@ -1067,37 +1067,37 @@ The read-only presentation has four parts, and `<ReadOnlyFooter>` renders all
 four for every kind:
 
 1. **The controls are inert, not disabled-looking.** Options render as a
-   **list**, not as radio rows or checkboxes: no tap targets, no selection
-   affordance, no press-and-hold ring. A greyed-out button invites a tap and
-   then punishes it; a plain list never promised anything. The card keeps its
-   `Open` chrome — the timeout bar (§5.1.1) still runs, because the question is
-   still live and may still expire.
+ **list**, not as radio rows or checkboxes: no tap targets, no selection
+ affordance, no press-and-hold ring. A greyed-out button invites a tap and
+ then punishes it; a plain list never promised anything. The card keeps its
+ `Open` chrome — the timeout bar (§5.1.1) still runs, because the question is
+ still live and may still expire.
 2. **A reason, stating *why*, in the agent's terms.** Not "unavailable". The
-   copy is a fixed map from `NotDeliverableReason`, written so the user learns
-   something true about the mechanism rather than about omt's limits:
+ copy is a fixed map from `NotDeliverableReason`, written so the user learns
+ something true about the mechanism rather than about omt's limits:
 
-   | `reason` | Copy |
-   |---|---|
-   | `not_position_independent` | **"Answer this one at the terminal."** Submitting this card means moving the cursor to a Submit row, and omt can only send a keystroke that resolves an option outright — it cannot navigate the agent's own list without seeing where the cursor is. |
-   | `index_not_derivable` | **"Answer this one at the terminal."** This prompt shows a different number of options depending on what the agent has already been allowed, and omt is not told which — so it cannot know which number means *No*. (`Esc` is offered separately, see §5.3.) |
-   | `inferred_responder_disabled` | **"Answer this one at the terminal."** omt is inferring this agent's card from screen output rather than being told about it, so remote answering is off ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)). |
-   | `no_responder` | **"Answer this one at the terminal."** omt has no channel back to this agent for this kind of question — it can watch it, not answer it. |
+ | `reason` | Copy |
+ |---|---|
+ | `not_position_independent` | **"Answer this one at the terminal."** Submitting this card means moving the cursor to a Submit row, and omt can only send a keystroke that resolves an option outright — it cannot navigate the agent's own list without seeing where the cursor is. |
+ | `index_not_derivable` | **"Answer this one at the terminal."** This prompt shows a different number of options depending on what the agent has already been allowed, and omt is not told which — so it cannot know which number means *No*. (`Esc` is offered separately, see §5.3.) |
+ | `inferred_responder_disabled` | **"Answer this one at the terminal."** omt is inferring this agent's card from screen output rather than being told about it, so remote answering is off ([D3](decisions.md#d3--synthetic-input-is-bounded-by-state-dependence-not-by-tool-danger)). |
+ | `no_responder` | **"Answer this one at the terminal."** omt has no channel back to this agent for this kind of question — it can watch it, not answer it. |
 
-   The reason is a **disclosure**, collapsed to its bold first line with a "why?"
-   toggle. The headline is what the user needs in two seconds; the explanation is
-   there for the one time they want it, and does not push the question itself off
-   a phone screen.
+ The reason is a **disclosure**, collapsed to its bold first line with a "why?"
+ toggle. The headline is what the user needs in two seconds; the explanation is
+ there for the one time they want it, and does not push the question itself off
+ a phone screen.
 3. **One primary action: `Open terminal view`.** Full-width, in the footer,
-   focused. It switches the surface (§4.3) and scrolls the grid to the bottom,
-   because the agent's own card is on screen there and is fully answerable by a
-   human who can see it. This is the same action `Undelivered` offers (§5.1.1)
-   and it is deliberately the same control in the same place. On a **`native`
-   session there is no terminal view** — but `native` mode has no `none`
-   deliverable either (every row of D16's table is `Native` under ACP), so the
-   combination does not arise; if a future agent produces one, the fallback is
-   `<UnknownInteraction>`'s (§5.6).
+ focused. It switches the surface (§4.3) and scrolls the grid to the bottom,
+ because the agent's own card is on screen there and is fully answerable by a
+ human who can see it. This is the same action `Undelivered` offers (§5.1.1)
+ and it is deliberately the same control in the same place. On a **`native`
+ session there is no terminal view** — but `native` mode has no `none`
+ deliverable either (every row of D16's table is `Native` under ACP), so the
+ combination does not arise; if a future agent produces one, the fallback is
+ `<UnknownInteraction>`'s (§5.6).
 4. **No secondary action, and never a "notify me" or "try anyway".** The honest
-   set of things the user can do here is one thing.
+ set of things the user can do here is one thing.
 
 When the card is later answered at the keyboard, it transitions through the
 ordinary `Resolved { by }` path and animates in place like any other card — a
@@ -1110,68 +1110,68 @@ The data shape is verbatim from
 
 ```ts
 interface ChoiceQuestion {
-  question: string;
-  header: string;                  // short tab label, ~12 chars
-  multi_select: boolean;
-  options: { label: string; description: string }[];
+ question: string;
+ header: string; // short tab label, ~12 chars
+ multi_select: boolean;
+ options: { label: string; description: string }[];
 }
-// Interaction kind: { type: "choice", questions: ChoiceQuestion[] }   // 1..4 in practice
+// Interaction kind: { type: "choice", questions: ChoiceQuestion[] } // 1..4 in practice
 ```
 
 **Component: `<ChoiceCard>`**
 
 ```
 ┌────────────────────────────────────────────┐
-│ ⌁ claude · botim-eclipse            2 of 3 │   ← agent + workspace, progress
+│ ⌁ claude · botim-eclipse 2 of 3 │ ← agent + workspace, progress
 ├────────────────────────────────────────────┤
-│ [GitHub Org] [Visibility] [Doc Language]   │   ← header chips (tabs)
+│ [GitHub Org] [Visibility] [Doc Language] │ ← header chips (tabs)
 ├────────────────────────────────────────────┤
-│ Repository visibility?                     │   ← question
-│                                            │
-│ ○ Private (Recommended)                    │
-│   Only org members with access can see it. │   ← description, 2-line clamp
-│ ○ Internal                                 │
-│   Visible to all members of the enterprise.│
-│ ○ Public                                   │
-│   Visible to everyone on the internet.     │
-│ ○ Other…                                   │   ← free-text escape (§5.2.2)
+│ Repository visibility? │ ← question
+│ │
+│ ○ Private (Recommended) │
+│ Only org members with access can see it. │ ← description, 2-line clamp
+│ ○ Internal │
+│ Visible to all members of the enterprise.│
+│ ○ Public │
+│ Visible to everyone on the internet. │
+│ ○ Other… │ ← free-text escape (§5.2.2)
 ├────────────────────────────────────────────┤
-│  💬 Add a comment          [ Back ] [Next] │
+│ 💬 Add a comment [ Back ] [Next] │
 └────────────────────────────────────────────┘
 ```
 
 Behavior:
 
 - **Header chips are the navigation.** With `questions.length > 1` the `header`
-  strings become a horizontally scrollable chip row. A chip shows a filled dot
-  once its question is answered. Tapping a chip jumps to that question — the
-  card is a wizard, not a scroll of everything, because a phone shows one
-  question comfortably and four badly. On a wide viewport all questions render
-  stacked and the chips become a sticky in-page index.
+ strings become a horizontally scrollable chip row. A chip shows a filled dot
+ once its question is answered. Tapping a chip jumps to that question — the
+ card is a wizard, not a scroll of everything, because a phone shows one
+ question comfortably and four badly. On a wide viewport all questions render
+ stacked and the chips become a sticky in-page index.
 - **`multi_select: false`** → radio semantics; selecting an option advances to the
-  next question after a 250 ms confirmation flash. This makes the common case
-  (3 single-select questions) three taps. This is the one Claude Code card type
-  D16 rates **fully** answerable: one ASCII digit resolves the option at that
-  absolute index and submits in the same keystroke.
+ next question after a 250 ms confirmation flash. This makes the common case
+ (3 single-select questions) three taps. This is the one Claude Code card type
+ D16 rates **fully** answerable: one ASCII digit resolves the option at that
+ absolute index and submits in the same keystroke.
 - **`multi_select: true`** → **not answerable from this surface in `pty` mode.**
-  The normalizer sets `deliverable = None { NotPositionIndependent }` for a
-  `Choice` where *any* question is multi-select, and the card renders read-only
-  per §5.1.3: every option listed with its description, no checkboxes, no
-  **Next**, and the terminal-view action in the footer. The mechanism reason is
-  worth stating because it is not obvious — the digit accelerator *does* work
-  here, but on a multi-select card a digit only **toggles** the row; *submitting*
-  requires navigating to a Submit row, and cursor navigation is exactly what omt
-  cannot do without seeing where the cursor is (D16). Half a working mechanism is
-  not a working mechanism. In `native` mode the row is `Native` and the checkbox
-  UI below applies unchanged.
+ The normalizer sets `deliverable = None { NotPositionIndependent }` for a
+ `Choice` where *any* question is multi-select, and the card renders read-only
+ per §5.1.3: every option listed with its description, no checkboxes, no
+ **Next**, and the terminal-view action in the footer. The mechanism reason is
+ worth stating because it is not obvious — the digit accelerator *does* work
+ here, but on a multi-select card a digit only **toggles** the row; *submitting*
+ requires navigating to a Submit row, and cursor navigation is exactly what omt
+ cannot do without seeing where the cursor is (D16). Half a working mechanism is
+ not a working mechanism. In `native` mode the row is `Native` and the checkbox
+ UI below applies unchanged.
 - **When it is answerable** (`native` mode, or a non-Claude agent whose responder
-  reports otherwise), `multi_select: true` → checkbox semantics with an explicit
-  **Next**; no auto-advance. The component keeps this branch; `deliverable`
-  decides whether it is reachable, and the component does not test
-  `multi_select` to make that decision (§5.1.2).
+ reports otherwise), `multi_select: true` → checkbox semantics with an explicit
+ **Next**; no auto-advance. The component keeps this branch; `deliverable`
+ decides whether it is reachable, and the component does not test
+ `multi_select` to make that decision (§5.1.2).
 - **Descriptions** are clamped to two lines with a "more" affordance; they are
-  the whole reason this card beats reading ANSI on a phone, so they are never
-  hidden entirely.
+ the whole reason this card beats reading ANSI on a phone, so they are never
+ hidden entirely.
 - Options are ≥ 56 px tall rows with the full row as the hit target.
 
 #### 5.2.1 The `n`-key "add comment" affordance
@@ -1188,16 +1188,16 @@ resolution:
 
 ```ts
 type ChoiceAnswer = {
-  /** Selected option labels for this question. Length 1 unless multi_select. */
-  labels: string[];
-  /** Free-text entered via "Other…". Mutually exclusive with labels being non-empty. */
-  other?: string;
-  /** The `n`-key comment: extra context attached to a chosen option. */
-  comment?: string;
+ /** Selected option labels for this question. Length 1 unless multi_select. */
+ labels: string[];
+ /** Free-text entered via "Other…". Mutually exclusive with labels being non-empty. */
+ other?: string;
+ /** The `n`-key comment: extra context attached to a chosen option. */
+ comment?: string;
 };
 
 // InteractionResponse for a choice interaction:
-{ type: "choices", answers: ChoiceAnswer[] }   // one per question, index-aligned
+{ type: "choices", answers: ChoiceAnswer[] } // one per question, index-aligned
 ```
 
 Keyboard users on desktop get the literal `n` key bound to the same button, so
@@ -1241,11 +1241,11 @@ hook) renders identically. No agent branching in the view layer.
 
 ```ts
 { type: "permission";
-  tool: string;                      // "Bash" | "Edit" | "mcp__foo__bar" | …
-  input: unknown;                    // the verbatim tool_input
-  options: PermissionOption[];       // the agent's own option list, verbatim
-  diff: FileDiff | null;             // structured diff for edit-shaped tools
-  command: string | null }           // the shell command for exec-shaped tools
+ tool: string; // "Bash" | "Edit" | "mcp__foo__bar" | …
+ input: unknown; // the verbatim tool_input
+ options: PermissionOption[]; // the agent's own option list, verbatim
+ diff: FileDiff | null; // structured diff for edit-shaped tools
+ command: string | null } // the shell command for exec-shaped tools
 ```
 
 Shape owned by [06 §5](06-agent-layer.md#5-interactions--the-flagship-path);
@@ -1255,88 +1255,88 @@ Shape owned by [06 §5](06-agent-layer.md#5-interactions--the-flagship-path);
 `command` is present, but the action row is uniform.
 
 - **Command preview** (`command != null`): the command in a monospace block with
-  shell-aware syntax highlighting. Long commands wrap rather than scroll — you
-  must be able to read the whole thing before allowing it, and it is never
-  ellipsized.
-  There is deliberately **no risk strip and no danger badge.** omt does not
-  classify an agent's tool calls
-  ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics));
-  the agent CLI owns that judgement and has already decided to ask. A strip that
-  says "looks safe" on something omt failed to recognise is worse than no strip
-  at all.
+ shell-aware syntax highlighting. Long commands wrap rather than scroll — you
+ must be able to read the whole thing before allowing it, and it is never
+ ellipsized.
+ There is deliberately **no risk strip and no danger badge.** omt does not
+ classify an agent's tool calls
+ ([D1](decisions.md#d1--omt-adds-no-policy-layer-over-an-agents-permission-semantics));
+ the agent CLI owns that judgement and has already decided to ask. A strip that
+ says "looks safe" on something omt failed to recognise is worse than no strip
+ at all.
 - **Diff preview** (`diff != null`): rendered by the **same** diff component the
-  explorer uses ([15 §7.4](15-workspace-explorer.md#74-reading-a-diff-on-a-phone)) —
-  structured hunks, line-number gutter, server-computed intra-line ranges,
-  hunk collapsing, unified-only on narrow viewports with a desktop split
-  toggle. One renderer, one palette, one mobile behaviour. Where the diff was
-  reconstructed by omt rather than supplied by the agent it is marked
-  `source: "computed"` (15 §8.5).
+ explorer uses ([15 §7.4](15-workspace-explorer.md#74-reading-a-diff-on-a-phone)) —
+ structured hunks, line-number gutter, server-computed intra-line ranges,
+ hunk collapsing, unified-only on narrow viewports with a desktop split
+ toggle. One renderer, one palette, one mobile behaviour. Where the diff was
+ reconstructed by omt rather than supplied by the agent it is marked
+ `source: "computed"` (15 §8.5).
 - **Generic tool input** (neither): pretty-printed JSON, redacted per
-  [13 §8](13-security.md#8-secret-redaction).
+ [13 §8](13-security.md#8-secret-redaction).
 - **Actions** are rendered from `options`, **in the order the agent sent them,
-  with the agent's own labels** — including `allow_always` / `deny_always` when
-  the agent offered them. omt does not add, remove, reorder or relabel options
-  (D1), and does not withhold `allow_always` from a remote client (D2): a phone
-  the owner holds is the laptop keyboard. Where the agent's option carries a
-  persistence scope, that scope is shown as a subtitle
-  (`"for Bash(git *) in this project"`) so the user knows what they are
-  granting.
+ with the agent's own labels** — including `allow_always` / `deny_always` when
+ the agent offered them. omt does not add, remove, reorder or relabel options
+ (D1), and does not withhold `allow_always` from a remote client (D2): a phone
+ the owner holds is the laptop keyboard. Where the agent's option carries a
+ persistence scope, that scope is shown as a subtitle
+ (`"for Bash(git *) in this project"`) so the user knows what they are
+ granting.
 - **In `pty` mode the permission card is *partly* answerable, and the split is
-  per option.** This is the one kind where `deliverable` alone is not the whole
-  story (06 §5.2.1). D16 verified that option 1 on a Claude Code permission
-  prompt is **always** `Yes`, so allow is position-independent — but the list is
-  2–4 options long depending on prior grants that the hook payload does not
-  carry, so the index of a *specific* `No` is not derivable. Guessing it is how
-  you deny a write by allowing it. So, when
-  `deliverable.type === "synthetic"`:
-  - options whose `kind` is `allow` or `allow_always` render as **actions**, with
-    the press-and-hold gesture below;
-  - options whose `kind` is `deny` or `deny_always` render **inert**, in place,
-    in the agent's order — the user still sees exactly what the agent offered —
-    each carrying the `index_not_derivable` reason from §5.1.3's table on a
-    shared "why?" disclosure, not one per row;
-  - the footer gains a single **`Cancel this request`** action, which sends
-    `Esc` — D16's **universal safe negative**, the one keystroke that is
-    position-independent on every card. It travels through the same D13 gated
-    transaction as an allow, never through §4.3's input path. It is labelled for
-    what it does (it
-    withdraws the request; it does not record a reasoned denial) and is styled as
-    a secondary destructive action, never as the agent's own `No`. `y` and `n` do
-    nothing on these cards and are not bound;
-  - `Open terminal view` sits next to it, because a *reasoned* deny — the one
-    that carries `reason` to the agent and the only one `deny_always` can be — is
-    a keyboard action.
+ per option.** This is the one kind where `deliverable` alone is not the whole
+ story (06 §5.2.1). D16 verified that option 1 on a Claude Code permission
+ prompt is **always** `Yes`, so allow is position-independent — but the list is
+ 2–4 options long depending on prior grants that the hook payload does not
+ carry, so the index of a *specific* `No` is not derivable. Guessing it is how
+ you deny a write by allowing it. So, when
+ `deliverable.type === "synthetic"`:
+ - options whose `kind` is `allow` or `allow_always` render as **actions**, with
+ the press-and-hold gesture below;
+ - options whose `kind` is `deny` or `deny_always` render **inert**, in place,
+ in the agent's order — the user still sees exactly what the agent offered —
+ each carrying the `index_not_derivable` reason from §5.1.3's table on a
+ shared "why?" disclosure, not one per row;
+ - the footer gains a single **`Cancel this request`** action, which sends
+ `Esc` — D16's **universal safe negative**, the one keystroke that is
+ position-independent on every card. It travels through the same D13 gated
+ transaction as an allow, never through §4.3's input path. It is labelled for
+ what it does (it
+ withdraws the request; it does not record a reasoned denial) and is styled as
+ a secondary destructive action, never as the agent's own `No`. `y` and `n` do
+ nothing on these cards and are not bound;
+ - `Open terminal view` sits next to it, because a *reasoned* deny — the one
+ that carries `reason` to the agent and the only one `deny_always` can be — is
+ a keyboard action.
 
-  When `deliverable.type === "native"` every option is an action and the footer
-  has no `Esc` row; ACP carries a real denial.
+ When `deliverable.type === "native"` every option is an action and the footer
+ has no `Esc` row; ACP carries a real denial.
 - **Edit before approving.** The card gains an edit affordance whenever the
-  responder reports `supports_edit` — a property of the channel, not of the
-  agent's option list ([06 §5.4](06-agent-layer.md#54-editing-an-argument-before-approving)),
-  so omt is not adding an option the agent did not offer. A `Synthetic` responder
-  does not report it: submitting an edited argument means typing a payload into
-  the agent's own card, which is text entry, not an indexed keystroke. The
-  affordance is therefore absent in `pty` mode rather than disabled, and the
-  client tests `supports_edit` — it does not infer the answer from
-  `deliverable`. Tapping it switches the
-  input pane from read-only pretty-printed JSON to an editor: schema-aware
-  (typed fields, enums, required keys) where the channel supplied the tool's own
-  input schema, a plain JSON editor otherwise, with the same
-  [13 §8](13-security.md#8-secret-redaction) redaction rules and no client-side
-  "fixing up". Before submit the card shows a **diff of original versus edited
-  input**, rendered by the §5.3 diff component, because approving a change you
-  cannot see is exactly the failure this feature exists to prevent. On a phone
-  the editor is a **full-height sheet**, never an inline field — JSON editing in
-  a 3-line box above a software keyboard is unusable. The submit button reads
-  **"Approve with changes"**, and the resolution is attributed as user-edited on
-  every surface.
+ responder reports `supports_edit` — a property of the channel, not of the
+ agent's option list ([06 §5.4](06-agent-layer.md#54-editing-an-argument-before-approving)),
+ so omt is not adding an option the agent did not offer. A `Synthetic` responder
+ does not report it: submitting an edited argument means typing a payload into
+ the agent's own card, which is text entry, not an indexed keystroke. The
+ affordance is therefore absent in `pty` mode rather than disabled, and the
+ client tests `supports_edit` — it does not infer the answer from
+ `deliverable`. Tapping it switches the
+ input pane from read-only pretty-printed JSON to an editor: schema-aware
+ (typed fields, enums, required keys) where the channel supplied the tool's own
+ input schema, a plain JSON editor otherwise, with the same
+ [13 §8](13-security.md#8-secret-redaction) redaction rules and no client-side
+ "fixing up". Before submit the card shows a **diff of original versus edited
+ input**, rendered by the §5.3 diff component, because approving a change you
+ cannot see is exactly the failure this feature exists to prevent. On a phone
+ the editor is a **full-height sheet**, never an inline field — JSON editing in
+ a 3-line box above a software keyboard is unusable. The submit button reads
+ **"Approve with changes"**, and the resolution is attributed as user-edited on
+ every surface.
 
 ```ts
 // InteractionResponse for permission (shape owned by 06 §5.0; `edit` +
 // `updated_input` semantics and who may offer them by 06 §5.4):
 { type: "permission";
-  decision: "allow" | "allow_always" | "deny" | "deny_always" | "edit";
-  updated_input?: unknown;
-  reason?: string }               // shown to the agent; required for deny_always
+ decision: "allow" | "allow_always" | "deny" | "deny_always" | "edit";
+ updated_input?: unknown;
+ reason?: string } // shown to the agent; required for deny_always
 ```
 
 Every permission resolution requires a **deliberate** gesture on mobile: the
@@ -1351,13 +1351,13 @@ The agent's plan arrives as Markdown. Rendered with a strict Markdown pipeline
 (no raw HTML, no external images) into a scrollable sheet with:
 
 - a **step checklist** when the plan parses as a task list, mirroring the
-  `Plan { steps: [{title, status}] }` payload so status updates from the agent
-  animate in live;
+ `Plan { steps: [{title, status}] }` payload so status updates from the agent
+ animate in live;
 - actions: **Approve**, **Approve and switch mode** (a dropdown of the agent's
-  `permission_modes` from the `Capabilities` event — `acceptEdits`, `auto`, …),
-  **Request changes** (opens a text sheet; resolves as
-  `{ type: "text", value }` semantics carried in `reason`), **Reject** —
-  **rendered only when `deliverable.type === "native"`.**
+ `permission_modes` from the `Capabilities` event — `acceptEdits`, `auto`, …),
+ **Request changes** (opens a text sheet; resolves as
+ `{ type: "text", value }` semantics carried in `reason`), **Reject** —
+ **rendered only when `deliverable.type === "native"`.**
 
 **In `pty` mode a plan is read-only here.** The normalizer sets
 `deliverable = None { NotPositionIndependent }` for every `PlanReview` on a
@@ -1398,29 +1398,29 @@ a voice button (§7), and `⌘/Ctrl+Enter` to submit. Draft text is persisted pe
 
 ```tsx
 export interface InteractionCardProps {
-  /** The generated `Interaction` type verbatim — 06 §5 owns the shape:
-   *  { id, session, binding, kind, opened_at, timeout_at, state, responder,
-   *    deliverable, viewers }. Note **`binding`, not `agent`**: the card is bound to an
-   *  `AgentBinding`, and the agent kind and label are read from it. There is no
-   *  `agent` field, and no `OpenInteraction` type — the card renders every
-   *  state in §5.1.1, not only the open one. */
-  interaction: Interaction;
-  variant: "inline" | "sheet" | "list";      // block view / focused / dashboard
-  /** Called only while `interaction.state.type === "open"` **and**
-   *  `interaction.deliverable.type !== "none"` (§5.1.2). The client mints the
-   *  `intent_id` (§5.1) and the outbox owns it (§8.5). */
-  onResolve(response: InteractionResponse): void;
+ /** The generated `Interaction` type verbatim — 06 §5 owns the shape:
+ * { id, session, binding, kind, opened_at, timeout_at, state, responder,
+ * deliverable, viewers }. Note **`binding`, not `agent`**: the card is bound to an
+ * `AgentBinding`, and the agent kind and label are read from it. There is no
+ * `agent` field, and no `OpenInteraction` type — the card renders every
+ * state in §5.1.1, not only the open one. */
+ interaction: Interaction;
+ variant: "inline" | "sheet" | "list"; // block view / focused / dashboard
+ /** Called only while `interaction.state.type === "open"` **and**
+ * `interaction.deliverable.type !== "none"` (§5.1.2). The client mints the
+ * `intent_id` (§5.1) and the outbox owns it (§8.5). */
+ onResolve(response: InteractionResponse): void;
 }
 
 export function InteractionCard(props: InteractionCardProps) {
-  return (
-    <Switch fallback={<UnknownInteraction kind={props.interaction.kind} />}>
-      <Match when={props.interaction.kind.type === "choice"}>      <ChoiceCard …/></Match>
-      <Match when={props.interaction.kind.type === "permission"}>  <PermissionCard …/></Match>
-      <Match when={props.interaction.kind.type === "plan_review"}> <PlanCard …/></Match>
-      <Match when={props.interaction.kind.type === "text"}>        <TextCard …/></Match>
-    </Switch>
-  );
+ return (
+ <Switch fallback={<UnknownInteraction kind={props.interaction.kind} />}>
+ <Match when={props.interaction.kind.type === "choice"}> <ChoiceCard …/></Match>
+ <Match when={props.interaction.kind.type === "permission"}> <PermissionCard …/></Match>
+ <Match when={props.interaction.kind.type === "plan_review"}> <PlanCard …/></Match>
+ <Match when={props.interaction.kind.type === "text"}> <TextCard …/></Match>
+ </Switch>
+ );
 }
 ```
 
@@ -1452,24 +1452,24 @@ The dashboard answers one question: **what needs me right now, anywhere?**
 Rows are `UnifiedSession` (§3.3) grouped into three sections:
 
 1. **Needs you** — any session with an open `Interaction`, or an agent in
-   `AgentState::Blocked`. (A `blocked` agent with no interaction id is a
-   "needs you" omt can see but not render — 06 §4 — and the row says so, offering
-   "open the terminal view". On a `native` session that fallback does not exist
-   (§4), so the row instead says the agent is blocked on something its ACP
-   connection did not describe, and offers the transcript; this is rare by
-   construction, because `native` sessions have only a structured source.) Or
-   `agent.state === "blocked"`. Rows here render a compact preview of
-   the interaction (the first question's `header` chips, or the permission's
-   tool name) and a **primary action inline** — for a single-question,
-   single-select choice with ≤3 options **whose `deliverable.type !== "none"`**,
-   the options render as buttons directly in the row. Answering a question from
-   the list without opening the session is the entire point. Where `deliverable`
-   is `none` the row still appears — it *does* need you, and hiding it would be
-   the worst possible reading of §5.1.3 — but its inline action is
-   `Open terminal view` and its subtitle is the reason (§5.1.3), so the dashboard
-   never offers an answer the card itself would refuse.
+ `AgentState::Blocked`. (A `blocked` agent with no interaction id is a
+ "needs you" omt can see but not render — 06 §4 — and the row says so, offering
+ "open the terminal view". On a `native` session that fallback does not exist
+ (§4), so the row instead says the agent is blocked on something its ACP
+ connection did not describe, and offers the transcript; this is rare by
+ construction, because `native` sessions have only a structured source.) Or
+ `agent.state === "blocked"`. Rows here render a compact preview of
+ the interaction (the first question's `header` chips, or the permission's
+ tool name) and a **primary action inline** — for a single-question,
+ single-select choice with ≤3 options **whose `deliverable.type !== "none"`**,
+ the options render as buttons directly in the row. Answering a question from
+ the list without opening the session is the entire point. Where `deliverable`
+ is `none` the row still appears — it *does* need you, and hiding it would be
+ the worst possible reading of §5.1.3 — but its inline action is
+ `Open terminal view` and its subtitle is the reason (§5.1.3), so the dashboard
+ never offers an answer the card itself would refuse.
 2. **Working** — `working` sessions, with the current tool call, elapsed time, and
-   a token/cost readout from the `Usage` payload.
+ a token/cost readout from the `Usage` payload.
 3. **Idle** — everything else, most recent first.
 
 Each row: instance chip · workspace/branch · agent glyph + model · state ·
@@ -1484,26 +1484,26 @@ verbatim under a busy session:
 
 ```
 ▸ claude · botim-eclipse · working (2m14s) · Edit(src/lib.rs)
-    Queue (2)
-    1. run the migration script after this        [×]
-    2. then push and open a PR                    [×]
-    + add to queue…
+ Queue (2)
+ 1. run the migration script after this [×]
+ 2. then push and open a PR [×]
+ + add to queue…
 ```
 
 - `+ add to queue…` calls `agent.queue.enqueue`; `[×]` calls
-  `agent.queue.remove`. Both are ordinary catalog capabilities, so they work
-  from the CLI too.
+ `agent.queue.remove`. Both are ordinary catalog capabilities, so they work
+ from the CLI too.
 - Reordering calls `agent.queue.reorder`, and is offered **only** where that
-  capability reports itself supported. It is **not** implemented as
-  remove+enqueue: [06 §8](06-agent-layer.md) rules that out, because those are
-  two separate externally-confirmed intents and the removal is the unconfirmable
-  one — a failure in the middle loses the message with no record of what it was.
-  Claude Code's observed operations are `enqueue` and `remove` only, so on a
-  mirrored queue the capability returns `unsupported` and the client **hides the
-  drag handles** rather than offering a reorder it cannot complete.
+ capability reports itself supported. It is **not** implemented as
+ remove+enqueue: [06 §8](06-agent-layer.md) rules that out, because those are
+ two separate externally-confirmed intents and the removal is the unconfirmable
+ one — a failure in the middle loses the message with no record of what it was.
+ Claude Code's observed operations are `enqueue` and `remove` only, so on a
+ mirrored queue the capability returns `unsupported` and the client **hides the
+ drag handles** rather than offering a reorder it cannot complete.
 - Editing a queued item calls `agent.queue.edit` where supported. The inline
-  rendering above invites it, which is why the capability exists; where the
-  queue is mirrored rather than owned, the row is read-only and says so.
+ rendering above invites it, which is why the capability exists; where the
+ queue is mirrored rather than owned, the row is read-only and says so.
 - For agents that emit no queue events, the section is absent — not shown empty.
 
 ### 6.2 Slash commands as a real completion popup
@@ -1516,13 +1516,13 @@ The web composer implements it as a true completion popup, not a menu:
 
 - Typing `/` in the prompt composer opens a filtered list above the keyboard.
 - Each entry shows `name`, `description`, and `argument-hint` (from the command
-  `.md` frontmatter, which the daemon enriches the list with).
+ `.md` frontmatter, which the daemon enriches the list with).
 - Fuzzy matching on name and description; arrow keys / swipe to move; Enter or
-  tap to insert.
+ tap to insert.
 - Selecting a command with an `argument-hint` inserts it and places the caret in
-  an argument slot, showing the hint as placeholder text.
+ an argument slot, showing the hint as placeholder text.
 - Commands are also invocable directly via `agent.commands.run` from a long-press
-  menu on the session row, for the "just run /compact" case.
+ menu on the session row, for the "just run /compact" case.
 
 The list refreshes on `Capabilities` events, so installing a skill on the laptop
 makes it appear on the phone without a reload.
@@ -1564,11 +1564,11 @@ Tapping `+` opens a sheet — not three inline icons — with five rows:
 
 ```
 ┌ attach ──────────────────────────────┐
-│ ⧉  Photo library                     │
-│ ⌾  Take a photo                      │
-│ ⛁  Files                             │
-│ ⌘  Paste from clipboard              │
-│ ⌂  Workspace file on `mini`          │
+│ ⧉ Photo library │
+│ ⌾ Take a photo │
+│ ⛁ Files │
+│ ⌘ Paste from clipboard │
+│ ⌂ Workspace file on `mini` │
 └──────────────────────────────────────┘
 ```
 
@@ -1585,9 +1585,9 @@ and drag-and-drop makes the menu mostly unnecessary.
 The three inputs themselves are
 [09 §4.3.4](09-ssh-and-media.md#434-mobile-capture-specifics)'s verbatim
 (`accept="image/*"`, `accept="image/*" capture="environment"`, and an unfiltered
-`multiple`), and every row funnels into its single `ingest()`.
+`multiple`), and every row funnels into its single `ingest`.
 
-**`Paste from clipboard`** calls `navigator.clipboard.read()`, which prompts for
+**`Paste from clipboard`** calls `navigator.clipboard.read`, which prompts for
 permission. It is shown only where `navigator.clipboard.read` exists, and it is
 explicitly the *fallback*: the `paste` event path below is always preferred
 because it needs no permission at all.
@@ -1619,20 +1619,20 @@ the universal fallback for exactly this reason.
 
 - Image items stage immediately.
 - **Text above 32 KiB** (09's `media.inline_max_bytes`) becomes a text
-  attachment rather than 400 KB of composer content, matching what Claude Code's
-  own `paste-cache` does. Because that is omt making a decision on the user's
-  behalf, it is reversible: the tray entry appears with an inline
-  **`keep as text`** chip for 10 seconds that puts the content back in the field.
-  A silent conversion with no undo is the version of this feature people hate.
+ attachment rather than 400 KB of composer content, matching what Claude Code's
+ own `paste-cache` does. Because that is omt making a decision on the user's
+ behalf, it is reversible: the tray entry appears with an inline
+ **`keep as text`** chip for 10 seconds that puts the content back in the field.
+ A silent conversion with no undo is the version of this feature people hate.
 - Mobile keyboards deliver `paste` events with image data inconsistently, so the
-  handler is bound but not advertised (09 §4.3.3); the sheet row is what the UI
-  promises.
+ handler is bound but not advertised (09 §4.3.3); the sheet row is what the UI
+ promises.
 
 **Drag and drop (desktop web).** `dragenter` on the session view, with
 `DataTransfer.types` containing `Files`, raises a full-view overlay reading
 *"Drop to attach to `claude`"* — full-view because a small drop target is a
 coordination test, and a drop that lands 20 px off and navigates the browser to
-`file:///…` loses the user's work. Directories arrive via `webkitGetAsEntry()`
+`file:///…` loses the user's work. Directories arrive via `webkitGetAsEntry`
 and are walked under 09 §4.3.9's caps (depth ≤ 6, ≤ 500 entries, symlinks not
 followed) with a visible count while walking, because a dropped `node_modules`
 must fail fast and say why. Dropping onto a **block card** instead offers 09
@@ -1645,19 +1645,19 @@ interception are [09 §4.3.4](09-ssh-and-media.md#434-mobile-capture-specifics)'
 What this document owns is the landing screen at `/#/share`:
 
 - It renders **before** the session list, from the bytes already in the
-  `share-inbox` cache, so there is nothing to fetch and it paints in one frame.
+ `share-inbox` cache, so there is nothing to fetch and it paints in one frame.
 - The file is already staged and preprocessed; the continuity guess
-  ([09 §4.3.4](09-ssh-and-media.md#434-mobile-capture-specifics), ranked by
-  [remote continuity §2.3](../design/remote-continuity.md#23-the-continuity-ranking))
-  appears as a header chip — `→ botim-eclipse on mini` — with a one-tap
-  **not this one** that falls back to the ranked session list.
+ ([09 §4.3.4](09-ssh-and-media.md#434-mobile-capture-specifics), ranked by
+ [remote continuity §2.3](../design/remote-continuity.md#23-the-continuity-ranking))
+ appears as a header chip — `→ botim-eclipse on mini` — with a one-tap
+ **not this one** that falls back to the ranked session list.
 - Shared `text`/`title` seed the composer, and the composer is focused, so a
-  screenshot shared from a browser arrives with the page URL as context and the
-  cursor ready.
+ screenshot shared from a browser arrives with the page URL as context and the
+ cursor ready.
 - **The tip is only shown where registration succeeded.** Share Target is
-  Chromium-only and absent from iOS Safari; onboarding does not advertise it
-  there, and `navigator.share` presence is not treated as evidence — that is
-  share-*from*, not share-*to*.
+ Chromium-only and absent from iOS Safari; onboarding does not advertise it
+ there, and `navigator.share` presence is not treated as evidence — that is
+ share-*from*, not share-*to*.
 
 #### 6.3.3 What the user is shown before sending
 
@@ -1669,40 +1669,40 @@ metadata — **GPS explicitly** — stripped client-side and again on the instan
 This surface adds three things:
 
 1. **It runs off the main thread** (`Worker` + `OffscreenCanvas`), and the tray
-   entry appears *before* the upload starts. A composer that looks empty for
-   three seconds after you pick a photo reads as broken.
+ entry appears *before* the upload starts. A composer that looks empty for
+ three seconds after you pick a photo reads as broken.
 2. **The transforms are shown in plain words.** The entry's subtitle reads
-   `4032×3024 HEIC 11.4 MB → 1568×1176 JPEG 412 KB · location data removed`.
-   This is the only moment at which a user can learn that omt did this, and
-   "location data removed" is worth more to them than "EXIF stripped" — 09
-   §4.3.2's finding 4 is that no agent CLI in the covered set does this, so it is
-   also the only place in the chain where it happens.
+ `4032×3024 HEIC 11.4 MB → 1568×1176 JPEG 412 KB · location data removed`.
+ This is the only moment at which a user can learn that omt did this, and
+ "location data removed" is worth more to them than "EXIF stripped" — 09
+ §4.3.2's finding 4 is that no agent CLI in the covered set does this, so it is
+ also the only place in the chain where it happens.
 3. **The insertion is one tap away, not a column.** 09 §4.3.8 makes *"exactly
-   what will be inserted into the prompt"* an honesty requirement, and the
-   desktop list has a column for it. A 390 px phone does not. So the strip is
-   followed by a single **`what will be sent ⌄`** disclosure listing every
-   entry's `insertion` string in order, in monospace, with
-   [13 §8](13-security.md#8-secret-redaction)'s redaction already applied to
-   inlined content. It auto-expands the **first three times** the user ever
-   attaches anything, then collapses and remembers. A requirement that is
-   satisfied only by a control nobody finds is not satisfied.
+ what will be inserted into the prompt"* an honesty requirement, and the
+ desktop list has a column for it. A 390 px phone does not. So the strip is
+ followed by a single **`what will be sent ⌄`** disclosure listing every
+ entry's `insertion` string in order, in monospace, with
+ [13 §8](13-security.md#8-secret-redaction)'s redaction already applied to
+ inlined content. It auto-expands the **first three times** the user ever
+ attaches anything, then collapses and remembers. A requirement that is
+ satisfied only by a control nobody finds is not satisfied.
 
 **The tray on mobile.** The model and the operations — reorder, remove, retry,
 preview, copy path, change disposition — are 09 §4.3.8's, unchanged. Its mobile
 shape:
 
 - A horizontally scrolling strip of **64 px** thumbnails above the text field and
-  above the key bar; each chip is ≥ 44 px tall with an `×` at its corner.
+ above the key bar; each chip is ≥ 44 px tall with an `×` at its corner.
 - **Progress is a ring around the thumbnail**, not a bar. A 64 px progress bar
-  conveys about four states.
+ conveys about four states.
 - Tap opens a preview (`<dialog>` lightbox for images, first 200 lines for text,
-  page count and page 1 for PDFs, the entry listing for archives).
+ page count and page 1 for PDFs, the entry listing for archives).
 - **Reorder is press-and-hold-then-drag with a 200 ms arming delay**, so a
-  horizontal scroll of the strip is never mistaken for a reorder. Order is
-  preserved into the prompt: "the first screenshot shows the error, the second
-  shows the fix" is meaningful and silently reordering it would be a lie.
+ horizontal scroll of the strip is never mistaken for a reorder. Order is
+ preserved into the prompt: "the first screenshot shows the error, the second
+ shows the fix" is meaningful and silently reordering it would be a lie.
 - Attachments cap at **8 per prompt** (09 §4.3.8), refused at the ninth with the
-  limit named.
+ limit named.
 
 **Send is gated, with the reason on the button.** While any entry is
 `uploading`, `failed` or `waiting_network`, the send button is disabled and its
@@ -1716,28 +1716,28 @@ replayed.
 
 #### 6.3.4 When the agent takes nothing
 
-`AgentAdapter::attachment_reference()` returning `None` for a class
+`AgentAdapter::attachment_reference` returning `None` for a class
 ([09 §4.3.7](09-ssh-and-media.md#437-what-the-agent-finally-receives)) is a
 normal state — Goose has no CLI attach path at all, and Codex accepts images only
 at launch. The rule is §3.4's: **disabled with a reason, never hidden.**
 
 - **The agent accepts nothing.** `+` renders disabled. Tapping it opens the same
-  sheet with every capture row inert and one line at the top: *"`goose` can't
-  take attachments in a running session."* Below it, the two things that are
-  actually true: **Save to the workspace instead** (`media.file.push`, which puts
-  the file where the agent's own read tool can reach it — a real answer, not a
-  consolation) and, where `attachment_at_launch_only` holds, **restart this
-  session with the file attached**. Either way the blob is stored, listed on the
-  session, and has a path the user can copy: it is never silently dropped.
+ sheet with every capture row inert and one line at the top: *"`goose` can't
+ take attachments in a running session."* Below it, the two things that are
+ actually true: **Save to the workspace instead** (`media.file.push`, which puts
+ the file where the agent's own read tool can reach it — a real answer, not a
+ consolation) and, where `attachment_at_launch_only` holds, **restart this
+ session with the file attached**. Either way the blob is stored, listed on the
+ session, and has a path the user can copy: it is never silently dropped.
 - **The agent accepts some classes and not this one.** The capture rows stay
-  live; the *staged entry* carries the warning, before send, in the tray — the
-  point at which the user can still do something about it.
+ live; the *staged entry* carries the warning, before send, in the tray — the
+ point at which the user can still do something about it.
 - **The session has no agent binding at all.** Attachments are scoped to an agent
-  turn, so `+` is disabled with *"this session has no agent — attach is for
-  prompts"*, and offers `media.file.push` as the useful thing a plain shell
-  session can do with a file. The control is present on every session for the
-  same reason every unavailable control is: a phone that hides controls the
-  laptop shows looks like a different product (§3.4).
+ turn, so `+` is disabled with *"this session has no agent — attach is for
+ prompts"*, and offers `media.file.push` as the useful thing a plain shell
+ session can do with a file. The control is present on every session for the
+ same reason every unavailable control is: a phone that hides controls the
+ laptop shows looks like a different product (§3.4).
 
 Files the agent produces travel the other way and are already specified in
 [09 §4.3.10](09-ssh-and-media.md#4310-the-reverse-direction--files-the-agent-produces):
@@ -1759,26 +1759,26 @@ browser, transcribes in the instance via `SttProvider`, and injects text.
 
 ```ts
 const stream = await navigator.mediaDevices.getUserMedia({
-  audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true,
-           noiseSuppression: true, autoGainControl: true },
+ audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true,
+ noiseSuppression: true, autoGainControl: true },
 });
 const rec = new MediaRecorder(stream, {
-  mimeType: pickMime(),                 // audio/webm;codecs=opus → audio/mp4 on Safari
-  audioBitsPerSecond: 24_000,
+ mimeType: pickMime, // audio/webm;codecs=opus → audio/mp4 on Safari
+ audioBitsPerSecond: 24_000,
 });
-rec.ondataavailable = (e) => sttSocket.send(e.data);   // binary frames on the same WS
-rec.start(250);                                        // 250 ms chunks
+rec.ondataavailable = (e) => sttSocket.send(e.data); // binary frames on the same WS
+rec.start(250); // 250 ms chunks
 ```
 
-- **Safari does not support `audio/webm`.** `pickMime()` falls back to
-  `audio/mp4` (AAC); the daemon's `SttProvider` receives a container hint in
-  `stt.session.start` and transcodes if the provider needs PCM. Tested on iOS 17+.
+- **Safari does not support `audio/webm`.** `pickMime` falls back to
+ `audio/mp4` (AAC); the daemon's `SttProvider` receives a container hint in
+ `stt.session.start` and transcodes if the provider needs PCM. Tested on iOS 17+.
 - Audio frames ride the **existing WebSocket** as binary frames tagged with the
-  STT session id — no second connection, no CORS, works over the same Tailscale
-  path as everything else.
+ STT session id — no second connection, no CORS, works over the same Tailscale
+ path as everything else.
 - A `<canvas>` waveform is driven by an `AnalyserNode` on the same stream for
-  "is it hearing me" feedback. It is cheap and it is the difference between
-  users trusting the feature and not.
+ "is it hearing me" feedback. It is cheap and it is the difference between
+ users trusting the feature and not.
 
 ### 7.2 Transcript UX
 
@@ -1809,27 +1809,27 @@ Interim results require a streaming provider (Deepgram
 
 ```ts
 interface SttProviderInfo {
-  id: string;                     // "deepgram" | "openai" | "whisper-local" | …
-  label: string;
-  streaming: boolean;             // drives interim-text availability
-  configured: boolean;            // credential present on the instance
-  languages: string[] | "auto";
-  note: string | null;            // "audio leaves this machine" for hosted providers
+ id: string; // "deepgram" | "openai" | "whisper-local" | …
+ label: string;
+ streaming: boolean; // drives interim-text availability
+ configured: boolean; // credential present on the instance
+ languages: string[] | "auto";
+ note: string | null; // "audio leaves this machine" for hosted providers
 }
 ```
 
 The picker is a sheet from the mic button's long-press. Rules:
 
 - **Keys never touch the browser.** Credentials are configured on the instance
-  (`config.set` → `stt.providers.<id>.api_key`, stored outside the main config
-  file per [P8](01-principles.md#p8--security-by-default-no-ambient-trust)). The
-  web UI can *set* a key through the config capability but never stores or
-  echoes one.
+ (`config.set` → `stt.providers.<id>.api_key`, stored outside the main config
+ file per [P8](01-principles.md#p8--security-by-default-no-ambient-trust)). The
+ web UI can *set* a key through the config capability but never stores or
+ echoes one.
 - Hosted providers show `note` prominently the first time they are selected —
-  "audio is sent to Deepgram" is information the user is entitled to before
-  speaking, not buried in settings.
+ "audio is sent to Deepgram" is information the user is entitled to before
+ speaking, not buried in settings.
 - If no provider is configured, the mic button is disabled with a link to the
-  config form, per the §3.4 degradation rule.
+ config form, per the §3.4 degradation rule.
 
 ---
 
@@ -1838,22 +1838,22 @@ The picker is a sheet from the mic button's long-press. Rules:
 ### 8.1 Touch targets and reach
 
 - Minimum hit target **44×44 CSS px**, 8 px minimum gutter. Enforced by a
-  Playwright audit that walks every interactive element in every view at
-  390×844 and fails on violations (§10).
+ Playwright audit that walks every interactive element in every view at
+ 390×844 and fails on violations (§10).
 - **Thumb zone.** Primary actions live in the bottom third. The header carries
-  identity and navigation only; nothing destructive is reachable in the top
-  ~15% of the screen where a stretching thumb lands unpredictably.
+ identity and navigation only; nothing destructive is reachable in the top
+ ~15% of the screen where a stretching thumb lands unpredictably.
 - Sheets are the default modal, always dismissible by downward drag, always with
-  the confirm action on the right at the bottom.
+ the confirm action on the right at the bottom.
 - Destructive actions are press-and-hold, never a bare tap (§5.3).
 
 ### 8.2 Safe areas and viewport
 
 ```css
 :root {
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --kb: 0px;                     /* keyboard height, set from visualViewport */
+ --safe-top: env(safe-area-inset-top, 0px);
+ --safe-bottom: env(safe-area-inset-bottom, 0px);
+ --kb: 0px; /* keyboard height, set from visualViewport */
 }
 .app { height: 100dvh; padding-top: var(--safe-top); }
 .dock { bottom: calc(var(--kb) + var(--safe-bottom)); }
@@ -1907,94 +1907,94 @@ dashboard row remains as the fast path for someone triaging several sessions.
 ### 8.5 Offline and reconnect
 
 - A single connection-state banner, per instance, at the top: `connecting…`,
-  `reconnecting in 4s (attempt 3)`, `offline`. Exponential backoff with jitter,
-  capped at 30 s, reset on any successful frame.
+ `reconnecting in 4s (attempt 3)`, `offline`. Exponential backoff with jitter,
+ capped at 30 s, reset on any successful frame.
 - **The durable outbox.** A capability call made while disconnected is queued if
-  its intent class permits a retry
-  ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism):
-  `interaction.resolve`, `agent.queue.enqueue`, `config.set`, drafts) and
-  rejected immediately otherwise (`session.write_bytes` — the raw-byte-stream
-  class is never replayed; typing into a dead socket must fail loudly).
+ its intent class permits a retry
+ ([D15](decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism):
+ `interaction.resolve`, `agent.queue.enqueue`, `config.set`, drafts) and
+ rejected immediately otherwise (`session.write_bytes` — the raw-byte-stream
+ class is never replayed; typing into a dead socket must fail loudly).
 
-  This is the owner of requirement **R19**, which was previously unassigned. The
-  outbox is **backed by IndexedDB, not by memory** — a phone's tab is evicted by
-  the OS without warning, and an in-memory queue silently loses the user's
-  answer while showing them that it was accepted. Each entry stores:
+ This is the owner of requirement **R19**, which was previously unassigned. The
+ outbox is **backed by IndexedDB, not by memory** — a phone's tab is evicted by
+ the OS without warning, and an in-memory queue silently loses the user's
+ answer while showing them that it was accepted. Each entry stores:
 
-  ```ts
-  interface OutboxEntry {
-    intent_id: string;        // stable; survives reconnect and reload
-    request_id: string;       // `${deviceId}:${n}`, per 07 §3.5
-    capability: string;
-    input: unknown;
-    created_at: number;
-    valid_until: number;      // default created_at + 15 min
-    binding?: BindingId;      // required for agent-targeted calls — see below
-  }
-  ```
+ ```ts
+ interface OutboxEntry {
+ intent_id: string; // stable; survives reconnect and reload
+ request_id: string; // `${deviceId}:${n}`, per 07 §3.5
+ capability: string;
+ input: unknown;
+ created_at: number;
+ valid_until: number; // default created_at + 15 min
+ binding?: BindingId; // required for agent-targeted calls — see below
+ }
+ ```
 
-  - **`binding` is mandatory for anything targeting a running agent.**
-    `agent.queue.enqueue` without it can land in a shell prompt and be executed
-    as a command if the agent exited during the offline gap
-    ([06 §8](06-agent-layer.md#8-ancillary-semantics)). The server enforces it;
-    the client must not construct such an entry at all.
-  - **Age is visible and discarding is manual.** The pending pill shows count
-    *and* age ("2 actions pending · oldest 6 min"), expands to a list, and every
-    entry has a discard control. A user must never be unable to see or cancel
-    something the app will do on their behalf.
-  - **Expiry requires re-confirmation, never silent replay.** On reconnect, an
-    entry past `valid_until` is **not** sent. It is presented as *"queued 40
-    minutes ago — send now?"* with its full text, and expires from the outbox on
-    dismissal. Replaying a stale mutation into a session that has moved on is the
-    failure mode this rule exists to prevent.
-  - On reconnect, live entries are replayed in order; a `conflict` from
-    `interaction.resolve` renders as "already answered by X", and the stable
-    `request_id` means a repeat of an already-applied call returns the original
-    result rather than executing twice (07 §3.5).
-  - **The outbox never retries an injection's delivery.** `interaction.resolve`
-    is retry-safe as a *capability call* (it is CAS'd), but if the ledger reports
-    `Undelivered` the client shows that state and offers the terminal view — it
-    does not re-queue ([06 §5.1](06-agent-layer.md#51-lifecycle)). The card's
-    rendering of `Undelivered`, and of every other state, is
-    [§5.1.1](#511-the-cards-state-machine)'s single table — this section defines
-    no state set of its own.
+ - **`binding` is mandatory for anything targeting a running agent.**
+ `agent.queue.enqueue` without it can land in a shell prompt and be executed
+ as a command if the agent exited during the offline gap
+ ([06 §8](06-agent-layer.md#8-ancillary-semantics)). The server enforces it;
+ the client must not construct such an entry at all.
+ - **Age is visible and discarding is manual.** The pending pill shows count
+ *and* age ("2 actions pending · oldest 6 min"), expands to a list, and every
+ entry has a discard control. A user must never be unable to see or cancel
+ something the app will do on their behalf.
+ - **Expiry requires re-confirmation, never silent replay.** On reconnect, an
+ entry past `valid_until` is **not** sent. It is presented as *"queued 40
+ minutes ago — send now?"* with its full text, and expires from the outbox on
+ dismissal. Replaying a stale mutation into a session that has moved on is the
+ failure mode this rule exists to prevent.
+ - On reconnect, live entries are replayed in order; a `conflict` from
+ `interaction.resolve` renders as "already answered by X", and the stable
+ `request_id` means a repeat of an already-applied call returns the original
+ result rather than executing twice (07 §3.5).
+ - **The outbox never retries an injection's delivery.** `interaction.resolve`
+ is retry-safe as a *capability call* (it is CAS'd), but if the ledger reports
+ `Undelivered` the client shows that state and offers the terminal view — it
+ does not re-queue ([06 §5.1](06-agent-layer.md#51-lifecycle)). The card's
+ rendering of `Undelivered`, and of every other state, is
+ [§5.1.1](#511-the-cards-state-machine)'s single table — this section defines
+ no state set of its own.
 - On reconnect the client resumes with `since_seq` per session; on `Resync` it
-  fetches a snapshot and rebuilds. The user sees a brief
-  skeleton, never a wrong state.
+ fetches a snapshot and rebuilds. The user sees a brief
+ skeleton, never a wrong state.
 - `navigator.onLine` is used only as a hint to shorten backoff, never as truth.
 - A wake lock (`navigator.wakeLock`) is held while a session is `busy` **and**
-  the user opted in (`busy` here meaning `AgentState::Working`), so watching a
-  long agent run does not require tapping the
-  screen.
+ the user opted in (`busy` here meaning `AgentState::Working`), so watching a
+ long agent run does not require tapping the
+ screen.
 
 ### 8.6 PWA — installable, with no push
 
 - **Installable**: web app manifest with maskable icons, `display:
-  "standalone"`, `theme_color` synced to the active theme.
+ "standalone"`, `theme_color` synced to the active theme.
 - The **service worker caches the app shell only** (precache the Vite build
-  manifest, network-first for `index.html`). It never caches API responses or
-  event data — stale session state is worse than no session state. The one
-  exception is the durable outbox (§8.5), which is user intent rather than
-  server state and lives in IndexedDB.
+ manifest, network-first for `index.html`). It never caches API responses or
+ event data — stale session state is worse than no session state. The one
+ exception is the durable outbox (§8.5), which is user intent rather than
+ server state and lives in IndexedDB.
 - **No Web Push.** [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)
-  ships no notification backend, so there is no `pushManager.subscribe`, no
-  VAPID key in `instance.info`, no `notification.push.subscribe` capability, no
-  `push` or `notificationclick` handler in the service worker, and no
-  lock-screen answer path. The reason is in [07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1):
-  reaching a closed browser tab requires the browser vendor's relay, which means
-  omt making an outbound connection and leaking *"this machine needs its owner,
-  now"*.
+ ships no notification backend, so there is no `pushManager.subscribe`, no
+ VAPID key in `instance.info`, no `notification.push.subscribe` capability, no
+ `push` or `notificationclick` handler in the service worker, and no
+ lock-screen answer path. The reason is in [07 §8](07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1):
+ reaching a closed browser tab requires the browser vendor's relay, which means
+ omt making an outbound connection and leaking *"this machine needs its owner,
+ now"*.
 - **What the user is told.** Onboarding says it plainly: *omt does not notify
-  you when the app is closed. Open it and it will show you what needs you
-  first.* Not a footnote — a stated limitation, because the alternative is a
-  user who believes they will be alerted and is not.
+ you when the app is closed. Open it and it will show you what needs you
+ first.* Not a footnote — a stated limitation, because the alternative is a
+ user who believes they will be alerted and is not.
 - **What replaces it is the open path.** Cold start → reconnect → `Resync` →
-  refetch the attention log and attention state (07 §5.2) → rank → present. That
-  sequence is designed in [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen)
-  and it is the client's most important flow, not a fallback.
+ refetch the attention log and attention state (07 §5.2) → rank → present. That
+ sequence is designed in [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen)
+ and it is the client's most important flow, not a fallback.
 - The service worker is still worth having for the app-shell precache alone: it
-  is what makes the cold start fast enough for that flow to feel like a
-  notification tap used to.
+ is what makes the cold start fast enough for that flow to feel like a
+ notification tap used to.
 
 ---
 
@@ -2003,24 +2003,24 @@ dashboard row remains as the fast path for someone triaging several sessions.
 ### 9.1 Accessibility
 
 - Every card is a landmark with a heading; the interaction sheet is a
-  `role="dialog"` with focus trapping and `aria-modal`.
+ `role="dialog"` with focus trapping and `aria-modal`.
 - Choice options are a real `role="radiogroup"` / `role="group"` with
-  `aria-checked`; descriptions are wired with `aria-describedby`. A screen
-  reader hears the same information the sighted user sees, which is exactly the
-  information the terminal card *cannot* convey.
+ `aria-checked`; descriptions are wired with `aria-describedby`. A screen
+ reader hears the same information the sighted user sees, which is exactly the
+ information the terminal card *cannot* convey.
 - New interactions announce via a polite live region; a session going to
-  `blocked` announces via an assertive one.
+ `blocked` announces via an assertive one.
 - The terminal view uses xterm.js's screen-reader mode when a screen reader is
-  detected, and always exposes "read last block" as an explicit action, because
-  a live VT grid is hostile to assistive tech.
+ detected, and always exposes "read last block" as an explicit action, because
+ a live VT grid is hostile to assistive tech.
 - Full keyboard operation on desktop: every gesture has a key binding, and the
-  binding table is generated from the same config the TUI uses where the actions
-  overlap.
+ binding table is generated from the same config the TUI uses where the actions
+ overlap.
 - Respect `prefers-reduced-motion` (no auto-advance flash, no sheet spring),
-  `prefers-contrast: more` (thicker borders, no low-contrast meta text), and
-  `prefers-color-scheme`.
+ `prefers-contrast: more` (thicker borders, no low-contrast meta text), and
+ `prefers-color-scheme`.
 - Color is never the sole signal: the exit-code chip carries a glyph, the diff
-  carries `+`/`-` gutters, the agent-state dot carries a shape.
+ carries `+`/`-` gutters, the agent-state dot carries a shape.
 - Target: WCAG 2.2 AA, verified with `axe-core` in the Playwright suite.
 
 ### 9.2 Theming
@@ -2031,30 +2031,30 @@ laptop TUI and the phone look like the same product.
 
 ```ts
 interface Theme {
-  name: string;
-  mode: "light" | "dark";
-  terminal: { background: string; foreground: string; cursor: string;
-              selection: string; ansi: string[16]; brightAnsi?: string[16] };
-  ui: { surface: string; surfaceAlt: string; text: string; textMuted: string;
-        accent: string; danger: string; success: string; warning: string; border: string };
-  agentAccents: Record<AgentKind, string>;
+ name: string;
+ mode: "light" | "dark";
+ terminal: { background: string; foreground: string; cursor: string;
+ selection: string; ansi: string[16]; brightAnsi?: string[16] };
+ ui: { surface: string; surfaceAlt: string; text: string; textMuted: string;
+ accent: string; danger: string; success: string; warning: string; border: string };
+ agentAccents: Record<AgentKind, string>;
 }
 ```
 
 - The client fetches `config.get { path: "theme" }` and writes every value into
-  CSS custom properties on `:root`; the same object seeds xterm.js's `theme`.
+ CSS custom properties on `:root`; the same object seeds xterm.js's `theme`.
 - A config carrying **both** a light and a dark theme lets the client follow
-  `prefers-color-scheme`; a config with one theme pins it. A per-device override
-  ("always dark on my phone") is stored locally and clearly marked as an
-  override in settings.
+ `prefers-color-scheme`; a config with one theme pins it. A per-device override
+ ("always dark on my phone") is stored locally and clearly marked as an
+ override in settings.
 - Contrast is validated at load: if a theme's UI text/background pair falls
-  below 4.5:1, the client keeps the theme's colors for the *terminal* and falls
-  back to a built-in accessible UI palette, with a one-time warning. A pretty
-  terminal theme should not make the permission card unreadable.
-- another terminal-style YAML themes and iTerm2 `.itermcolors` are importable — those are
-  file *formats*, i.e. interface facts
-  ([P9](01-principles.md#p9--clean-room-with-respect-to-studied-code)); the
-  conversion lives in `omt-config`, not the browser.
+ below 4.5:1, the client keeps the theme's colors for the *terminal* and falls
+ back to a built-in accessible UI palette, with a one-time warning. A pretty
+ terminal theme should not make the permission card unreadable.
+- other terminals-style YAML themes and iTerm2 `.itermcolors` are importable — those are
+ file *formats*, i.e. interface facts
+ ([P9](01-principles.md#p9--clean-room-with-respect-to-studied-code)); the
+ conversion lives in `omt-config`, not the browser.
 
 ---
 
@@ -2065,28 +2065,28 @@ interface Theme {
 Vitest + `@solidjs/testing-library`, no browser.
 
 - **Fixture-driven interaction cards.** The verbatim `AskUserQuestion` JSON from
-  [agent-clis §1.3.1](../research/agent-clis.md#131-askuserquestion--the-structured-interaction-case)
-  is a checked-in fixture. Tests assert: three header chips render, the wizard
-  advances on single-select, `multi_select` on a `native` binding requires
-  explicit Next, "Other…" produces `{ other: "…" }`, and the comment path
-  produces `{ comment: "…" }`.
+ [agent-clis §1.3.1](../research/agent-clis.md#131-askuserquestion--the-structured-interaction-case)
+ is a checked-in fixture. Tests assert: three header chips render, the wizard
+ advances on single-select, `multi_select` on a `native` binding requires
+ explicit Next, "Other…" produces `{ other: "…" }`, and the comment path
+ produces `{ comment: "…" }`.
 - **The `deliverable` matrix, for every card kind.** Each of `<ChoiceCard>`,
-  `<PermissionCard>`, `<PlanCard>` and `<TextCard>` is rendered against all three
-  `Deliverable` shapes (§5.1.2). For `{ type: "none" }` the test asserts the
-  question, options and descriptions are all **present** in the DOM (D11's
-  mirroring survives), that the reason copy for that `NotDeliverableReason` is
-  rendered, that `Open terminal view` is the only action — and that **no element
-  inside the card body carries a click handler**, which is the assertion that
-  catches a disabled-but-tappable regression. For `<PermissionCard>` the matrix
-  additionally covers the per-option split of §5.3: allow rows active, deny rows
-  inert, one `Esc` footer action. A parallel Rust test asserts the normalizer
-  produces exactly these shapes from D16's table, so the two ends cannot drift.
+ `<PermissionCard>`, `<PlanCard>` and `<TextCard>` is rendered against all three
+ `Deliverable` shapes (§5.1.2). For `{ type: "none" }` the test asserts the
+ question, options and descriptions are all **present** in the DOM (D11's
+ mirroring survives), that the reason copy for that `NotDeliverableReason` is
+ rendered, that `Open terminal view` is the only action — and that **no element
+ inside the card body carries a click handler**, which is the assertion that
+ catches a disabled-but-tappable regression. For `<PermissionCard>` the matrix
+ additionally covers the per-option split of §5.3: allow rows active, deny rows
+ inert, one `Esc` footer action. A parallel Rust test asserts the normalizer
+ produces exactly these shapes from D16's table, so the two ends cannot drift.
 - **Resolution shape tests** compare the produced `InteractionResponse` against
-  a JSON fixture shared with the Rust side, so both ends test the same bytes.
+ a JSON fixture shared with the Rust side, so both ends test the same bytes.
 - **Reducer tests** for the event stream: out-of-order `seq` is rejected, gaps
-  trigger resync, `InteractionResolved` for an unknown id is ignored.
+ trigger resync, `InteractionResolved` for an unknown id is ignored.
 - Snapshot tests are used only for the diff renderer and the block card, where
-  the DOM shape *is* the contract.
+ the DOM shape *is* the contract.
 
 ### 10.2 Mock instance harness
 
@@ -2094,12 +2094,12 @@ Vitest + `@solidjs/testing-library`, no browser.
 against the generated schemas. It can:
 
 - serve a scripted session (a JSONL of `EventEnvelope`s with timestamps, replayed
-  at real speed or instantly);
+ at real speed or instantly);
 - inject an interaction on demand and assert the `interaction.resolve` payload;
 - simulate transport faults: drop the socket, delay frames, force
-  `Resync`, return `conflict` on resolve, report a **reduced catalog**
-  (for §3.4 degradation tests) and a **newer catalog** (for
-  `<UnknownInteraction>`);
+ `Resync`, return `conflict` on resolve, report a **reduced catalog**
+ (for §3.4 degradation tests) and a **newer catalog** (for
+ `<UnknownInteraction>`);
 - run multiple instances at once, so federation is tested for real.
 
 Scripted sessions are recorded from real agent runs by an `omt record` command,
@@ -2113,13 +2113,13 @@ against a real `omt` daemon (not the mock) on a Linux runner.
 
 ```
 for each capability C in registry, where C ∉ PARITY_EXEMPT:
-    h := handlers[C]
-    if h.surface.kind == "implicit":
-        assert h.surface.by ∈ registry and is itself covered   # transitively reachable
-    else:
-        drive the UI along h.surface's declared route
-        assert the daemon observed a dispatch of C
-        assert the resulting UI state matches the capability's declared output
+ h := handlers[C]
+ if h.surface.kind == "implicit":
+ assert h.surface.by ∈ registry and is itself covered # transitively reachable
+ else:
+ drive the UI along h.surface's declared route
+ assert the daemon observed a dispatch of C
+ assert the resulting UI state matches the capability's declared output
 ```
 
 The daemon runs with a dispatch recorder that logs every `(name, actor)`. The
@@ -2130,14 +2130,14 @@ the recorder distinguishes them by `Actor`.
 Complementary suites in the same run:
 
 - **Touch-target audit** at 390×844 (iPhone 14), 360×800 (Android), 768×1024
-  (tablet): every interactive element ≥ 44×44 with adequate spacing.
+ (tablet): every interactive element ≥ 44×44 with adequate spacing.
 - **Axe accessibility scan** on every top-level view, in both themes.
 - **Reconnect chaos**: kill the WebSocket at random points during an
-  interaction resolve; assert exactly-once semantics and no lost answers.
+ interaction resolve; assert exactly-once semantics and no lost answers.
 - **Offline queue**: go offline, resolve an interaction, come back, assert the
-  resolution landed once.
+ resolution landed once.
 - **Visual regression** on the block card, the choice card, and the diff
-  renderer at three widths, in both themes.
+ renderer at three widths, in both themes.
 
 ### 10.4 What is deliberately not tested here
 
@@ -2151,41 +2151,41 @@ the server's grid for a set of fixtures.
 ## 11. OPEN QUESTIONS
 
 1. ~~**Notification action buttons on iOS.**~~ **Retired** by
-   [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead):
-   there is no push and therefore no lock-screen answer path to degrade. What
-   replaces it as the measurable question is **cold-start to a useful screen**
-   (§8.6, [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen)).
+ [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead):
+ there is no push and therefore no lock-screen answer path to degrade. What
+ replaces it as the measurable question is **cold-start to a useful screen**
+ (§8.6, [`../design/remote-continuity.md` §5](../design/remote-continuity.md#5-open-and-replay--from-cold-start-to-the-right-screen)).
 2. **How long does an agent's own card stay answerable?** Under
-   [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
-   the call is not parked — the agent's CLI is showing its own live card, and the
-   remote answer is delivered into it. So the budget is not "how long does
-   `defer` hold", it is "how long before the card times out or the agent moves
-   on", which differs per agent and is undocumented
-   ([agent-clis §12.5 Q1](../research/agent-clis.md#125-open-questions-to-resolve-before-implementation)).
-   Where it is short, the card must **expire** on every surface rather than
-   linger — a late remote answer lands in whatever the agent is doing now
-   ([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)).
+ [D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+ the call is not parked — the agent's CLI is showing its own live card, and the
+ remote answer is delivered into it. So the budget is not "how long does
+ `defer` hold", it is "how long before the card times out or the agent moves
+ on", which differs per agent and is undocumented
+ ([agent-clis §12.5 Q1](../research/agent-clis.md#125-open-questions-to-resolve-before-implementation)).
+ Where it is short, the card must **expire** on every surface rather than
+ linger — a late remote answer lands in whatever the agent is doing now
+ ([D13](decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)).
 3. **`caller` enum on `AskUserQuestion`.** Only `{"type":"direct"}` is observed.
-   Subagent callers presumably use another value; the card should attribute the
-   asking subagent when it does, and today it cannot.
+ Subagent callers presumably use another value; the card should attribute the
+ asking subagent when it does, and today it cannot.
 4. **Solid vs. the terminal's update rate.** Signals are the right shape for the
-   card UI; the block list under a `yes`-style firehose still needs a coalescing
-   layer (rAF-batched appends). Whether that layer belongs in the store or the
-   view is unresolved.
+ card UI; the block list under a `yes`-style firehose still needs a coalescing
+ layer (rAF-batched appends). Whether that layer belongs in the store or the
+ view is unresolved.
 5. **Safari `audio/mp4` chunking.** `MediaRecorder` on Safari emits fragmented
-   MP4 whose first chunk carries the init segment; streaming providers that
-   expect a continuous container may need server-side remuxing. The cost of that
-   remux in `omt-stt` is unmeasured.
+ MP4 whose first chunk carries the init segment; streaming providers that
+ expect a continuous container may need server-side remuxing. The cost of that
+ remux in `omt-stt` is unmeasured.
 6. **Diff rendering budget.** `shiki`'s WASM is ~1 MB. Acceptable on a laptop,
-   questionable as part of the initial bundle on LTE. Likely answer: lazy-load
-   it on first diff render and ship a plain-text diff until it arrives.
+ questionable as part of the initial bundle on LTE. Likely answer: lazy-load
+ it on first diff render and ship a plain-text diff until it arrives.
 7. **Block-body transport format.** Sending styled cells rather than raw bytes
-   avoids a second VT parser but is more verbose on the wire. The crossover
-   point (where raw bytes + a WASM `omt-term` build wins) is unknown; a WASM
-   build of the real terminal core is the more principled long-term answer and
-   is not in scope for v1.
+ avoids a second VT parser but is more verbose on the wire. The crossover
+ point (where raw bytes + a WASM `omt-term` build wins) is unknown; a WASM
+ build of the real terminal core is the more principled long-term answer and
+ is not in scope for v1.
 8. **Federated identity.** Today each instance is a separate credential. A user
-   with eight machines has eight credentials to manage. Whether omt should offer
-   a client-side credential bundle (export/import a signed set) or lean entirely
-   on tailnet identity is unresolved and belongs to
-   [13 — Security](13-security.md).
+ with eight machines has eight credentials to manage. Whether omt should offer
+ a client-side credential bundle (export/import a signed set) or lean entirely
+ on tailnet identity is unresolved and belongs to
+ [13 — Security](13-security.md).

@@ -205,7 +205,8 @@ impl BlockTracker {
     /// Note that output appeared at a row.
     ///
     /// The whole of `EarlyOutput`: output with no open block opens one. Every
-    /// case another terminal handles separately — a shell with no integration, `ssh` to a
+    /// case that would otherwise need separate machinery — a shell with no
+    /// integration, `ssh` to a
     /// host that has none, output racing its own mark, a background job — is
     /// this one case, and one rule covers them all.
     ///
@@ -354,7 +355,7 @@ mod tests {
     fn a_shell_with_no_marks_still_produces_a_block_from_its_output() {
         // The gap this closes. `ssh` to a host with no shell integration used
         // to produce nothing at all, so the session looked empty — which is
-        // what another terminal's EarlyOutput exists to prevent.
+        // which is the case this rule exists to prevent.
         let mut t = BlockTracker::new();
         t.output_at(0);
         assert_eq!(t.blocks().len(), 1);

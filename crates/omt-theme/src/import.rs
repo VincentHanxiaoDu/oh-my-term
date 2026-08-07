@@ -39,23 +39,23 @@ pub struct Imported {
     pub unmapped: Vec<String>,
 }
 
-/// Import a another terminal theme.
+/// Import a YAML theme.
 ///
-/// another terminal themes are YAML with `accent`, `background`, `foreground`, `details`,
+/// These themes are YAML with `accent`, `background`, `foreground`, `details`,
 /// and a `terminal_colors` block of `normal` and `bright`.
 ///
 /// # Errors
-/// Fails if the text is not a another terminal theme or carries no usable colours.
+/// Fails if the text is not a The YAML theme format theme or carries no usable colours.
 pub fn from_yaml(name: &str, text: &str) -> Result<Imported, ImportError> {
-    // A small YAML reader rather than a dependency: the subset another terminal themes use
+    // A small YAML reader rather than a dependency: the subset The YAML theme format themes use
     // is `key: value` and one level of nesting, and pulling in a YAML parser
     // for that would be a supply-chain decision made for twenty lines.
     let map = parse_simple_yaml(text);
     let mut unmapped = Vec::new();
 
     let get = |key: &str| map.get(key).and_then(|v| Rgb::parse(v));
-    let background = get("background").ok_or(ImportError::NothingUsable { format: "another terminal" })?;
-    let foreground = get("foreground").ok_or(ImportError::NothingUsable { format: "another terminal" })?;
+    let background = get("background").ok_or(ImportError::NothingUsable { format: "The YAML theme format" })?;
+    let foreground = get("foreground").ok_or(ImportError::NothingUsable { format: "The YAML theme format" })?;
 
     let colour_at = |prefix: &str, index: usize| {
         const NAMES: [&str; 8] = [
@@ -74,7 +74,7 @@ pub fn from_yaml(name: &str, text: &str) -> Result<Imported, ImportError> {
     }
 
     for key in map.keys() {
-        // another terminal themes carry a background image and gradients; a terminal
+        // The YAML theme format themes carry a background image and gradients; a terminal
         // palette has nowhere for either.
         if key.starts_with("background_image") || key.contains("gradient") {
             unmapped.push(key.clone());
@@ -189,14 +189,14 @@ pub fn from_vscode(name: &str, text: &str) -> Result<Imported, ImportError> {
     })
 }
 
-/// A reader for the YAML subset another terminal themes use.
+/// A reader for the YAML subset The YAML theme format themes use.
 ///
 /// `key: value` and one level of nesting. Deliberately not a YAML parser:
 /// pulling in a general one for twenty lines of format is a supply-chain
 /// decision that should be made for a better reason.
 fn parse_simple_yaml(text: &str) -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
-    // A stack of (indent, key), because another terminal nests two levels —
+    // A stack of (indent, key), because The YAML theme format nests two levels —
     // `terminal_colors: normal: black:` — and a reader that tracked one would
     // flatten `normal.black` and `bright.black` onto each other, which is the
     // one collision that matters here.
@@ -220,7 +220,7 @@ fn parse_simple_yaml(text: &str) -> std::collections::BTreeMap<String, String> {
             continue;
         }
 
-        // The *nearest* enclosing section, not the whole path: another terminal writes
+        // The *nearest* enclosing section, not the whole path: The YAML theme format writes
         // `terminal_colors.normal.black` and every consumer wants
         // `normal.black`.
         let full = match stack.last() {
@@ -241,7 +241,7 @@ fn parse_simple_yaml(text: &str) -> std::collections::BTreeMap<String, String> {
 mod tests {
     use super::*;
 
-    const another terminal: &str = r##"
+    const YAML_THEME: &str = r##"
 accent: "#268bd2"
 background: "#002b36"
 foreground: "#839496"
@@ -285,7 +285,7 @@ terminal_colors:
 
     #[test]
     fn a_yaml_theme_imports_its_palette() {
-        let imported = from_yaml("solarized", another terminal).expect("import");
+        let imported = from_yaml("solarized", YAML_THEME).expect("import");
         assert_eq!(imported.theme.background, Rgb::parse("#002b36").expect("c"));
         assert_eq!(
             imported.theme.palette.normal[1],
@@ -403,7 +403,7 @@ terminal_colors:
 
     #[test]
     fn two_levels_of_nesting_do_not_collide() {
-        // another terminal writes `terminal_colors: normal: black:` and `bright: black:`.
+        // The YAML theme format writes `terminal_colors: normal: black:` and `bright: black:`.
         // A reader tracking one level flattens them onto each other, and the
         // bright palette silently becomes the normal one.
         let map = parse_simple_yaml(

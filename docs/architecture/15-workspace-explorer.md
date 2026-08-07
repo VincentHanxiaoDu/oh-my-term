@@ -18,7 +18,7 @@ Related: [00](00-overview.md) · [01](01-principles.md) ·
 Prior art studied: `sst/opencode`'s server (§12 records what was verified by
 execution versus read versus inferred), plus
 [iTerm2](../research/iterm2.md) `sources/SemanticHistory/` and
-[another terminal](../research/another terminal.md)'s in-process `grep`/`ignore` file search. Per
+'s in-process `grep`/`ignore` file search. Per
 [P9](01-principles.md#p9--clean-room-with-respect-to-studied-code) no code is
 copied; only interface facts are reused.
 
@@ -37,23 +37,23 @@ session's agent touched (§8.3).
 **Out, with reasons:**
 
 - **Editing file contents.** omt is not an editor
-  ([00 §8](00-overview.md#8-what-omt-is-not)). A usable editor needs an undo
-  model, a save model, conflict handling against the watcher, encoding
-  negotiation and LSP — each its own subsystem. `workspace.files.reveal` hands
-  off to the real editor instead.
+ ([00 §8](00-overview.md#8-what-omt-is-not)). A usable editor needs an undo
+ model, a save model, conflict handling against the watcher, encoding
+ negotiation and LSP — each its own subsystem. `workspace.files.reveal` hands
+ off to the real editor instead.
 - **Commit, amend, rebase, merge, cherry-pick, stash, branch, push, pull.**
-  Multi-step, history-rewriting, frequently irreversible. The terminal is right
-  there, with the writer token making every keystroke attributable
-  ([05 §5](05-session-model.md#5-the-writer-token)). A half-built git client is
-  worse than none.
+ Multi-step, history-rewriting, frequently irreversible. The terminal is right
+ there, with the writer token making every keystroke attributable
+ ([05 §5](05-session-model.md#5-the-writer-token)). A half-built git client is
+ worse than none.
 - **Merge-conflict resolution.** Needs editing plus a three-way model.
-  Conflicted files are *shown* (`conflicted: true`, hunks readable); resolving
-  is the editor's job.
+ Conflicted files are *shown* (`conflicted: true`, hunks readable); resolving
+ is the editor's job.
 - **File management** (create/rename/move/delete/chmod/upload). File transfer
-  already exists and is scoped in [09](09-ssh-and-media.md); the explorer links
-  to it rather than duplicating it.
+ already exists and is scoped in [09](09-ssh-and-media.md); the explorer links
+ to it rather than duplicating it.
 - **Repository-wide content search.** A ripgrep-shaped subsystem with its own
-  index, budget and result model. See §13.2.
+ index, budget and result model. See §13.2.
 
 ### 1.1 Decision: no VCS mutation in v1, including stage/unstage
 
@@ -89,8 +89,8 @@ Revisiting is §13.1, not a TODO.
 ## 2. The crate: `omt-workspace-fs`, at L2
 
 ```
-L2  subsystems   omt-term · omt-pty · omt-agent-adapters · omt-transport
-                 omt-auth · omt-stt · omt-media · omt-workspace-fs   ← new
+L2 subsystems omt-term · omt-pty · omt-agent-adapters · omt-transport
+ omt-auth · omt-stt · omt-media · omt-workspace-fs ← new
 ```
 
 L2 is right: an independently useful, independently testable subsystem owning no
@@ -127,32 +127,32 @@ each a trait plus a `Registry`.
 
 ```rust
 pub trait FileTreeProvider: Send + Sync {
-    fn id(&self) -> ProviderId;
-    /// Direct children of `rel` only. Never recurses.
-    fn list(&self, rel: &RelPath, opts: &ListOptions) -> Result<Listing, WorkspaceFsError>;
-    fn stat(&self, rel: &RelPath) -> Result<NodeMeta, WorkspaceFsError>;
-    /// Enforces `max_bytes`; sniffs binary *before* decoding (§9.2).
-    fn read(&self, rel: &RelPath, opts: &ReadOptions) -> Result<FileContent, WorkspaceFsError>;
-    /// Fuzzy filename search. Budgeted; returns `truncated` rather than blocking.
-    fn find(&self, q: &str, opts: &FindOptions) -> Result<FindResult, WorkspaceFsError>;
-    /// `Ok(None)` when this provider cannot watch (§4.4) — the surface then
-    /// shows manual refresh and says why.
-    fn watch(&self, d: &dyn WatchDriver, sink: FsEventSink)
-        -> Result<Option<WatchHandle>, WorkspaceFsError>;
+ fn id(&self) -> ProviderId;
+ /// Direct children of `rel` only. Never recurses.
+ fn list(&self, rel: &RelPath, opts: &ListOptions) -> Result<Listing, WorkspaceFsError>;
+ fn stat(&self, rel: &RelPath) -> Result<NodeMeta, WorkspaceFsError>;
+ /// Enforces `max_bytes`; sniffs binary *before* decoding (§9.2).
+ fn read(&self, rel: &RelPath, opts: &ReadOptions) -> Result<FileContent, WorkspaceFsError>;
+ /// Fuzzy filename search. Budgeted; returns `truncated` rather than blocking.
+ fn find(&self, q: &str, opts: &FindOptions) -> Result<FindResult, WorkspaceFsError>;
+ /// `Ok(None)` when this provider cannot watch (§4.4) — the surface then
+ /// shows manual refresh and says why.
+ fn watch(&self, d: &dyn WatchDriver, sink: FsEventSink)
+ -> Result<Option<WatchHandle>, WorkspaceFsError>;
 }
 
 pub trait VcsProvider: Send + Sync {
-    fn id(&self) -> ProviderId;
-    fn kind(&self) -> VcsKind;                      // Git | Jujutsu | Mercurial | None
-    /// Cheap: branch, HEAD, ahead/behind, dirty counts. No per-file work.
-    fn summary(&self) -> Result<VcsSummary, WorkspaceFsError>;
-    fn status(&self, scope: &StatusScope) -> Result<VcsStatus, WorkspaceFsError>;
-    fn diff_file(&self, rel: &RelPath, base: DiffBase, opts: &DiffOptions)
-        -> Result<FileDiff, WorkspaceFsError>;
-    fn is_ignored(&self, rel: &RelPath) -> Result<bool, WorkspaceFsError>;
-    /// `.git`, `.jj`, `.hg` — never listed as content, fed to the watcher's
-    /// ignore set.
-    fn internal_paths(&self) -> Vec<RelPath>;
+ fn id(&self) -> ProviderId;
+ fn kind(&self) -> VcsKind; // Git | Jujutsu | Mercurial | None
+ /// Cheap: branch, HEAD, ahead/behind, dirty counts. No per-file work.
+ fn summary(&self) -> Result<VcsSummary, WorkspaceFsError>;
+ fn status(&self, scope: &StatusScope) -> Result<VcsStatus, WorkspaceFsError>;
+ fn diff_file(&self, rel: &RelPath, base: DiffBase, opts: &DiffOptions)
+ -> Result<FileDiff, WorkspaceFsError>;
+ fn is_ignored(&self, rel: &RelPath) -> Result<bool, WorkspaceFsError>;
+ /// `.git`, `.jj`, `.hg` — never listed as content, fed to the watcher's
+ /// ignore set.
+ fn internal_paths(&self) -> Vec<RelPath>;
 }
 ```
 
@@ -165,37 +165,37 @@ three surfaces than two.
 
 ```rust
 pub struct Listing {
-    pub dir: RelPath,
-    pub nodes: Vec<Node>,
-    pub truncated: bool,          // cut off at ListOptions::limit (§4.3)
-    pub total_seen: u32,
-    /// Opaque, changes iff content changed. Enables a 304-style short circuit.
-    pub etag: DirEtag,
+ pub dir: RelPath,
+ pub nodes: Vec<Node>,
+ pub truncated: bool, // cut off at ListOptions::limit (§4.3)
+ pub total_seen: u32,
+ /// Opaque, changes iff content changed. Enables a 304-style short circuit.
+ pub etag: DirEtag,
 }
 
 pub struct Node {
-    pub name: String,
-    pub rel: RelPath,             // workspace-relative, `/`-separated, no trailing slash
-    pub kind: NodeKind,
-    pub meta: NodeMeta,
-    pub vcs: Option<VcsFileState>,   // only when the caller asked for the overlay
-    pub agent_touched: bool,         // §8.3
+ pub name: String,
+ pub rel: RelPath, // workspace-relative, `/`-separated, no trailing slash
+ pub kind: NodeKind,
+ pub meta: NodeMeta,
+ pub vcs: Option<VcsFileState>, // only when the caller asked for the overlay
+ pub agent_touched: bool, // §8.3
 }
 
 pub enum NodeKind {
-    File,
-    Dir { children_hint: Option<u32> },
-    Symlink { target: SymlinkTarget },     // Inside(RelPath) | Outside | Broken
-    Other,                                  // socket/fifo/device: listed, never readable
-    /// A submodule or an unrelated `.git`. Not descended into by the parent's
-    /// status; expandable as its own root (§5.5).
-    NestedRepo { vcs: VcsKind },
+ File,
+ Dir { children_hint: Option<u32> },
+ Symlink { target: SymlinkTarget }, // Inside(RelPath) | Outside | Broken
+ Other, // socket/fifo/device: listed, never readable
+ /// A submodule or an unrelated `.git`. Not descended into by the parent's
+ /// status; expandable as its own root (§5.5).
+ NestedRepo { vcs: VcsKind },
 }
 
 pub struct NodeMeta {
-    pub size: Option<u64>, pub modified: Option<Timestamp>, pub mode: Option<u32>,
-    pub ignored: bool,
-    pub sensitivity: Sensitivity,          // Normal | Sensitive — §9.4
+ pub size: Option<u64>, pub modified: Option<Timestamp>, pub mode: Option<u32>,
+ pub ignored: bool,
+ pub sensitivity: Sensitivity, // Normal | Sensitive — §9.4
 }
 ```
 
@@ -207,49 +207,49 @@ form plus an explicit `kind` is strictly better and free.
 
 ```rust
 pub struct VcsSummary {
-    pub kind: VcsKind,
-    pub head: Head,                     // Branch(String) | Detached { short, describe }
-    pub upstream: Option<String>,
-    pub ahead: Option<u32>, pub behind: Option<u32>,
-    pub dirty: DirtyCount,              // { staged, unstaged, untracked, conflicted }
-    pub is_worktree: bool,
-    pub worktree_group: Option<WorkspaceId>,
-    pub operation: Option<InProgress>,  // Merge | Rebase | CherryPick | Bisect | Revert
-    pub computed_at: Timestamp,
+ pub kind: VcsKind,
+ pub head: Head, // Branch(String) | Detached { short, describe }
+ pub upstream: Option<String>,
+ pub ahead: Option<u32>, pub behind: Option<u32>,
+ pub dirty: DirtyCount, // { staged, unstaged, untracked, conflicted }
+ pub is_worktree: bool,
+ pub worktree_group: Option<WorkspaceId>,
+ pub operation: Option<InProgress>, // Merge | Rebase | CherryPick | Bisect | Revert
+ pub computed_at: Timestamp,
 }
 
 pub struct VcsFileState {
-    /// Two independent axes: a file can be staged *and* further modified.
-    pub index: ChangeKind,      // Unmodified|Added|Modified|Deleted|Renamed|Copied|TypeChanged
-    pub worktree: ChangeKind,
-    pub conflicted: bool, pub untracked: bool, pub ignored: bool,
-    pub lines: Option<LineStat>,        // { added, removed }; None when binary/uncomputed
-    pub orig_rel: Option<RelPath>,      // rename/copy source
+ /// Two independent axes: a file can be staged *and* further modified.
+ pub index: ChangeKind, // Unmodified|Added|Modified|Deleted|Renamed|Copied|TypeChanged
+ pub worktree: ChangeKind,
+ pub conflicted: bool, pub untracked: bool, pub ignored: bool,
+ pub lines: Option<LineStat>, // { added, removed }; None when binary/uncomputed
+ pub orig_rel: Option<RelPath>, // rename/copy source
 }
 
 pub struct FileDiff { pub rel: RelPath, pub base: DiffBase, pub state: VcsFileState,
-                      pub body: DiffBody, pub truncated: bool }
+ pub body: DiffBody, pub truncated: bool }
 
 pub enum DiffBody {
-    Text { hunks: Vec<Hunk>, old_path: RelPath, new_path: RelPath, eof_newline: EofNewline },
-    Binary { old_size: Option<u64>, new_size: Option<u64> },
-    /// Over `diff.max_file_bytes`. Carries the stat so the UI can say
-    /// "+18402 −3, too large to display" and offer `files.read`.
-    TooLarge { bytes: u64, lines: LineStat },
-    Redacted { reason: RedactReason },   // §9.4
+ Text { hunks: Vec<Hunk>, old_path: RelPath, new_path: RelPath, eof_newline: EofNewline },
+ Binary { old_size: Option<u64>, new_size: Option<u64> },
+ /// Over `diff.max_file_bytes`. Carries the stat so the UI can say
+ /// "+18402 −3, too large to display" and offer `files.read`.
+ TooLarge { bytes: u64, lines: LineStat },
+ Redacted { reason: RedactReason }, // §9.4
 }
 
 pub struct Hunk { pub old_start: u32, pub old_lines: u32,
-                  pub new_start: u32, pub new_lines: u32,
-                  pub header: Option<String>, pub lines: Vec<DiffLine> }
+ pub new_start: u32, pub new_lines: u32,
+ pub header: Option<String>, pub lines: Vec<DiffLine> }
 
 pub struct DiffLine {
-    pub kind: DiffLineKind,             // Context | Added | Removed
-    pub old_no: Option<u32>, pub new_no: Option<u32>,
-    pub text: String,
-    /// Byte ranges within `text` differing from the paired line. Computed
-    /// server-side so all three surfaces highlight identically (§7.4).
-    pub intra: SmallVec<[Range<u32>; 4]>,
+ pub kind: DiffLineKind, // Context | Added | Removed
+ pub old_no: Option<u32>, pub new_no: Option<u32>,
+ pub text: String,
+ /// Byte ranges within `text` differing from the paired line. Computed
+ /// server-side so all three surfaces highlight identically (§7.4).
+ pub intra: SmallVec<[Range<u32>; 4]>,
 }
 ```
 
@@ -341,7 +341,7 @@ Ignored entries are **listed but greyed and sorted last**, never hidden —
 hiding them makes "why can't I see `dist/`" a support question. A `show_ignored`
 toggle (default on) filters them per client.
 
-VCS internals are never listed as content (`internal_paths()`). opencode returns
+VCS internals are never listed as content (`internal_paths`). opencode returns
 `.git` with `ignored: false` (verified live); that is a bug we are not copying,
 and it matters more for us because our tree is remotely reachable.
 
@@ -396,13 +396,13 @@ invalidation unit is a *directory* and its unit is a path, and because of the
 overflow behaviour below.
 
 - FSEvents is recursive and directory-granular: one root registration covers
-  everything, and its events name a directory rather than a file — which *is*
-  our invalidation unit, so nothing is lost. macOS is the cheap case.
+ everything, and its events name a directory rather than a file — which *is*
+ our invalidation unit, so nothing is lost. macOS is the cheap case.
 - inotify is per-directory and non-recursive. Registration is O(directories) and
-  consumes `max_user_watches` (commonly 8 192, shared with every editor the user
-  has open) — hence the 8 000 cap and the denylist. On `ENOSPC` we do not fail:
-  we drop to coarse mode and emit `WatchDegraded` naming
-  `fs.inotify.max_user_watches` and the value to raise it to.
+ consumes `max_user_watches` (commonly 8 192, shared with every editor the user
+ has open) — hence the 8 000 cap and the denylist. On `ENOSPC` we do not fail:
+ we drop to coarse mode and emit `WatchDegraded` naming
+ `fs.inotify.max_user_watches` and the value to raise it to.
 
 **What is watched:** only directories currently expanded by some client plus
 their direct children; plus, for VCS, exactly `HEAD`, `index`, `refs/**`,
@@ -414,7 +414,7 @@ their direct children; plus, for VCS, exactly `HEAD`, `index`, `refs/**`,
 `getmntinfo`): NFS, SMB/CIFS, SSHFS, 9p, virtiofs, any FUSE. inotify and
 FSEvents do not observe remote writers there, so watching would produce a tree
 that is silently, confidently stale — the worst outcome. **Decision: no watcher
-on a networked mount.** `watch()` returns `Ok(None)`, the capability replies
+on a networked mount.** `watch` returns `Ok(None)`, the capability replies
 `{ "mode": "manual" }`, and the surface shows a refresh control and says why. An
 opt-in `watch.network_poll` (default `off`) exists for users who want it and
 know what it costs. Same path when the backend is unavailable in a container.
@@ -442,13 +442,13 @@ space so a gap resolves to `TreeResyncRequired`, which is always safe):
 
 ```rust
 pub enum WorkspaceFsEvent {
-    TreeInvalidated { dirs: Vec<RelPath> },
-    TreeResyncRequired { reason: CoarseReason },
-    VcsStatusChanged { summary: VcsSummary, changed: Vec<RelPath>, full: Option<VcsStatus> },
-    /// Branch/HEAD/operation only — cheap and frequent enough to deserve its
-    /// own variant so a header updates without a status recompute.
-    VcsHeadChanged { summary: VcsSummary },
-    WatchDegraded { mode: WatchMode, reason: String, remedy: Option<String> },
+ TreeInvalidated { dirs: Vec<RelPath> },
+ TreeResyncRequired { reason: CoarseReason },
+ VcsStatusChanged { summary: VcsSummary, changed: Vec<RelPath>, full: Option<VcsStatus> },
+ /// Branch/HEAD/operation only — cheap and frequent enough to deserve its
+ /// own variant so a header updates without a status recompute.
+ VcsHeadChanged { summary: VcsSummary },
+ WatchDegraded { mode: WatchMode, reason: String, remedy: Option<String> },
 }
 ```
 
@@ -588,56 +588,56 @@ fails the build when paired with `Viewer`.
 
 ```rust
 capability! {
-    /// List the direct children of one directory. Never recurses (§4.2).
-    name  = "workspace.files.list",
-    group = "workspace", verb = "files-list",
-    kind  = Query, role = Role::Viewer,
-    input  = FilesList { workspace: WorkspaceId, path: RelPath, include_vcs: bool,
-                         include_ignored: bool, limit: Option<u32>,
-                         if_none_match: Option<DirEtag> },
-    output = FilesListOut { listing: Listing, not_modified: bool },
-    effects = [Effects::READS_FS],
-    since = "0.4",
+ /// List the direct children of one directory. Never recurses (§4.2).
+ name = "workspace.files.list",
+ group = "workspace", verb = "files-list",
+ kind = Query, role = Role::Viewer,
+ input = FilesList { workspace: WorkspaceId, path: RelPath, include_vcs: bool,
+ include_ignored: bool, limit: Option<u32>,
+ if_none_match: Option<DirEtag> },
+ output = FilesListOut { listing: Listing, not_modified: bool },
+ effects = [Effects::READS_FS],
+ since = "0.4",
 }
 
 capability! {
-    /// Read a bounded slice of one file. Binary is detected before decoding
-    /// and returned base64 with a sniffed media type (§9.2).
-    name  = "workspace.files.read",
-    group = "workspace", verb = "files-read",
-    kind  = Query, role = Role::Viewer,
-    input  = FilesRead { workspace: WorkspaceId, path: RelPath,
-                         range: Option<LineRange>, max_bytes: Option<u64> },
-    output = FilesReadOut { content: FileContent, total_lines: Option<u64>, truncated: bool },
-    effects = [Effects::READS_FS],
-    since = "0.4",
+ /// Read a bounded slice of one file. Binary is detected before decoding
+ /// and returned base64 with a sniffed media type (§9.2).
+ name = "workspace.files.read",
+ group = "workspace", verb = "files-read",
+ kind = Query, role = Role::Viewer,
+ input = FilesRead { workspace: WorkspaceId, path: RelPath,
+ range: Option<LineRange>, max_bytes: Option<u64> },
+ output = FilesReadOut { content: FileContent, total_lines: Option<u64>, truncated: bool },
+ effects = [Effects::READS_FS],
+ since = "0.4",
 }
 
 capability! {
-    /// Structured unified diff for one file (§3.2). Never a raw patch string.
-    name  = "workspace.vcs.diff",
-    group = "workspace", verb = "vcs-diff",
-    kind  = Query, role = Role::Viewer,
-    input  = VcsDiffIn { workspace: WorkspaceId, path: RelPath, base: DiffBase,
-                         context_lines: Option<u32>, max_bytes: Option<u64>,
-                         intra_line: bool },
-    output = FileDiff,
-    effects = [Effects::READS_FS, Effects::SPAWNS_PROCESS],
-    since = "0.4",
+ /// Structured unified diff for one file (§3.2). Never a raw patch string.
+ name = "workspace.vcs.diff",
+ group = "workspace", verb = "vcs-diff",
+ kind = Query, role = Role::Viewer,
+ input = VcsDiffIn { workspace: WorkspaceId, path: RelPath, base: DiffBase,
+ context_lines: Option<u32>, max_bytes: Option<u64>,
+ intra_line: bool },
+ output = FileDiff,
+ effects = [Effects::READS_FS, Effects::SPAWNS_PROCESS],
+ since = "0.4",
 }
 
 capability! {
-    /// Begin watching on behalf of this client. Ref-counted: the 0→1 transition
-    /// constructs the watcher, the 1→0 drops it (§4.6). A Command, not a Query,
-    /// because it mutates instance state — declaring it a Query would assert it
-    /// is "cacheable and safe to retry", which is false.
-    name  = "workspace.files.watch",
-    group = "workspace", verb = "files-watch",
-    kind  = Command, role = Role::Viewer,
-    input  = FilesWatch { workspace: WorkspaceId, lease_secs: Option<u32> },
-    output = FilesWatchOut { mode: WatchMode, lease_expires_at: Timestamp, note: Option<String> },
-    effects = [Effects::READS_FS],
-    since = "0.4",
+ /// Begin watching on behalf of this client. Ref-counted: the 0→1 transition
+ /// constructs the watcher, the 1→0 drops it (§4.6). A Command, not a Query,
+ /// because it mutates instance state — declaring it a Query would assert it
+ /// is "cacheable and safe to retry", which is false.
+ name = "workspace.files.watch",
+ group = "workspace", verb = "files-watch",
+ kind = Command, role = Role::Viewer,
+ input = FilesWatch { workspace: WorkspaceId, lease_secs: Option<u32> },
+ output = FilesWatchOut { mode: WatchMode, lease_expires_at: Timestamp, note: Option<String> },
+ effects = [Effects::READS_FS],
+ since = "0.4",
 }
 ```
 
@@ -673,8 +673,8 @@ resume and schema generation apply unchanged:
 
 ```json
 { "t": "subscribe", "id": "r7", "sub": "sub_3",
-  "filter": { "workspaces": ["w_9f3c2a1b"], "kinds": ["workspace_fs"] },
-  "since_seq": { "w_9f3c2a1b": 41208 } }
+ "filter": { "workspaces": ["w_9f3c2a1b"], "kinds": ["workspace_fs"] },
+ "since_seq": { "w_9f3c2a1b": 41208 } }
 ```
 
 The frame shape is [07 §3.7](07-remote-protocol.md#37-subscriptions)'s — a
@@ -690,62 +690,62 @@ the cheap ref watch the session layer already carries) and is told
 
 ```json
 { "t": "call", "id": "r1", "name": "workspace.files.list",
-  "input": { "workspace": "w_9f3c2a1b", "path": "crates/omt-term/src",
-             "include_vcs": true, "include_ignored": true } }
+ "input": { "workspace": "w_9f3c2a1b", "path": "crates/omt-term/src",
+ "include_vcs": true, "include_ignored": true } }
 ```
 ```json
 { "t": "result", "id": "r1", "ok": true, "output": {
-  "not_modified": false,
-  "listing": { "dir": "crates/omt-term/src", "etag": "d1:8a41c0e2",
-    "truncated": false, "total_seen": 6, "nodes": [
-      { "name": "grid", "rel": "crates/omt-term/src/grid",
-        "kind": { "type": "dir", "children_hint": 4 },
-        "meta": { "modified": "2026-08-03T09:14:02Z", "ignored": false, "sensitivity": "normal" },
-        "vcs": { "index": "unmodified", "worktree": "modified", "conflicted": false,
-                 "untracked": false, "ignored": false, "lines": null },
-        "agent_touched": true },
-      { "name": "lib.rs", "rel": "crates/omt-term/src/lib.rs", "kind": { "type": "file" },
-        "meta": { "size": 4211, "modified": "2026-08-03T09:14:02Z", "mode": 33188,
-                  "ignored": false, "sensitivity": "normal" },
-        "vcs": { "index": "unmodified", "worktree": "modified", "conflicted": false,
-                 "untracked": false, "ignored": false, "lines": { "added": 12, "removed": 3 } },
-        "agent_touched": true } ] } } }
+ "not_modified": false,
+ "listing": { "dir": "crates/omt-term/src", "etag": "d1:8a41c0e2",
+ "truncated": false, "total_seen": 6, "nodes": [
+ { "name": "grid", "rel": "crates/omt-term/src/grid",
+ "kind": { "type": "dir", "children_hint": 4 },
+ "meta": { "modified": "2026-08-03T09:14:02Z", "ignored": false, "sensitivity": "normal" },
+ "vcs": { "index": "unmodified", "worktree": "modified", "conflicted": false,
+ "untracked": false, "ignored": false, "lines": null },
+ "agent_touched": true },
+ { "name": "lib.rs", "rel": "crates/omt-term/src/lib.rs", "kind": { "type": "file" },
+ "meta": { "size": 4211, "modified": "2026-08-03T09:14:02Z", "mode": 33188,
+ "ignored": false, "sensitivity": "normal" },
+ "vcs": { "index": "unmodified", "worktree": "modified", "conflicted": false,
+ "untracked": false, "ignored": false, "lines": { "added": 12, "removed": 3 } },
+ "agent_touched": true } ] } } }
 ```
 ```json
 { "t": "result", "id": "r2", "ok": true, "output": {
-  "rel": "crates/omt-term/src/lib.rs", "base": { "type": "head" }, "truncated": false,
-  "state": { "index": "unmodified", "worktree": "modified", "conflicted": false,
-             "untracked": false, "ignored": false, "lines": { "added": 2, "removed": 1 } },
-  "body": { "type": "text", "old_path": "crates/omt-term/src/lib.rs",
-    "new_path": "crates/omt-term/src/lib.rs", "eof_newline": "both",
-    "hunks": [ { "old_start": 88, "old_lines": 5, "new_start": 88, "new_lines": 6,
-      "header": "impl Terminal", "lines": [
-        { "kind": "context", "old_no": 88, "new_no": 88, "text": "    pub fn resize(&mut self, size: GridSize) {", "intra": [] },
-        { "kind": "removed", "old_no": 89, "new_no": null, "text": "        self.reflow(size);", "intra": [[8, 14]] },
-        { "kind": "added",   "old_no": null, "new_no": 89, "text": "        self.reflow_budgeted(size);", "intra": [[8, 23]] },
-        { "kind": "added",   "old_no": null, "new_no": 90, "text": "        self.damage.mark_all();", "intra": [] },
-        { "kind": "context", "old_no": 90, "new_no": 91, "text": "        self.cursor.clamp(size);", "intra": [] }
-      ] } ] } } }
+ "rel": "crates/omt-term/src/lib.rs", "base": { "type": "head" }, "truncated": false,
+ "state": { "index": "unmodified", "worktree": "modified", "conflicted": false,
+ "untracked": false, "ignored": false, "lines": { "added": 2, "removed": 1 } },
+ "body": { "type": "text", "old_path": "crates/omt-term/src/lib.rs",
+ "new_path": "crates/omt-term/src/lib.rs", "eof_newline": "both",
+ "hunks": [ { "old_start": 88, "old_lines": 5, "new_start": 88, "new_lines": 6,
+ "header": "impl Terminal", "lines": [
+ { "kind": "context", "old_no": 88, "new_no": 88, "text": " pub fn resize(&mut self, size: GridSize) {", "intra": [] },
+ { "kind": "removed", "old_no": 89, "new_no": null, "text": " self.reflow(size);", "intra": [[8, 14]] },
+ { "kind": "added", "old_no": null, "new_no": 89, "text": " self.reflow_budgeted(size);", "intra": [[8, 23]] },
+ { "kind": "added", "old_no": null, "new_no": 90, "text": " self.damage.mark_all;", "intra": [] },
+ { "kind": "context", "old_no": 90, "new_no": 91, "text": " self.cursor.clamp(size);", "intra": [] }
+ ] } ] } } }
 ```
 ```json
 { "t": "event", "sub": "sub_3", "session": null, "workspace": "w_9f3c2a1b", "seq": 41211,
-  "ts": "2026-08-03T09:14:02.418Z", "source": "workspace_fs",
-  "payload": { "type": "vcs_status_changed",
-    "summary": { "kind": "git", "head": { "type": "branch", "name": "feat/reflow" },
-      "upstream": "origin/feat/reflow", "ahead": 2, "behind": 0,
-      "dirty": { "staged": 0, "unstaged": 3, "untracked": 1, "conflicted": 0 },
-      "is_worktree": true, "worktree_group": "w_11ab77e0", "operation": null,
-      "computed_at": "2026-08-03T09:14:02.410Z" },
-    "changed": ["crates/omt-term/src/lib.rs", "crates/omt-term/src/grid/mod.rs"],
-    "full": null } }
+ "ts": "2026-08-03T09:14:02.418Z", "source": "workspace_fs",
+ "payload": { "type": "vcs_status_changed",
+ "summary": { "kind": "git", "head": { "type": "branch", "name": "feat/reflow" },
+ "upstream": "origin/feat/reflow", "ahead": 2, "behind": 0,
+ "dirty": { "staged": 0, "unstaged": 3, "untracked": 1, "conflicted": 0 },
+ "is_worktree": true, "worktree_group": "w_11ab77e0", "operation": null,
+ "computed_at": "2026-08-03T09:14:02.410Z" },
+ "changed": ["crates/omt-term/src/lib.rs", "crates/omt-term/src/grid/mod.rs"],
+ "full": null } }
 ```
 
 A confinement failure — note the code, not a 500 (§9.1):
 
 ```json
 { "t": "result", "id": "r3", "ok": false,
-  "error": { "code": "not_found", "message": "No such path in this workspace.",
-             "detail": { "path": "../../etc/passwd" } } }
+ "error": { "code": "not_found", "message": "No such path in this workspace.",
+ "detail": { "path": "../../etc/passwd" } } }
 ```
 
 ---
@@ -826,43 +826,43 @@ matching [08 §8.1](08-web-client.md#81-touch-targets-and-reach). Reached from
 the session header's workspace chip and from the dashboard.
 
 - **Rows are 48 px tall** with a 44 px minimum target; the chevron and the label
-  are *separate* targets so expanding and opening are never confused.
+ are *separate* targets so expanding and opening are never confused.
 - **Indentation is capped at 4 levels**, then the sheet **reroots** at the
-  current directory and shows a tappable `… / omt-term / src` breadcrumb. This
-  is the most important mobile-specific choice here: a phone browses by
-  drilling, not by indenting — deep nesting at 390 px is unreadable.
+ current directory and shows a tappable `… / omt-term / src` breadcrumb. This
+ is the most important mobile-specific choice here: a phone browses by
+ drilling, not by indenting — deep nesting at 390 px is unreadable.
 - **Swipe** left reveals `Diff` and `Copy path`; right reveals `Insert @` and
-  `Open`. All four also live in the long-press menu, per
-  [08 §8.4](08-web-client.md#84-gestures) — no gesture is the only path.
+ `Open`. All four also live in the long-press menu, per
+ [08 §8.4](08-web-client.md#84-gestures) — no gesture is the only path.
 - **Pull-to-refresh** issues a manual refresh, which doubles as the affordance
-  carrying the `mode: "manual"` case (§4.6).
+ carrying the `mode: "manual"` case (§4.6).
 - **The default mobile view is "changed files", not the tree** — a flat grouped
-  list (`Agent-touched` / `Staged` / `Modified` / `Untracked`) with a `+12 −3`
-  chip per row. Browsing a full tree on a phone is rarely the goal; reviewing
-  what changed is. The tree is one tap away in the same sheet.
+ list (`Agent-touched` / `Staged` / `Modified` / `Untracked`) with a `+12 −3`
+ chip per row. Browsing a full tree on a phone is rarely the goal; reviewing
+ what changed is. The tree is one tap away in the same sheet.
 
 ### 7.4 Reading a diff on a phone
 
 Where a naive port fails, so it is specified concretely.
 
 - **Unified only.** Side-by-side at 390 px means two 20-column columns. Unified
-  plus intra-line highlighting carries the same information in one column.
+ plus intra-line highlighting carries the same information in one column.
 - **No horizontal scroll by default.** Long lines soft-wrap with a hanging
-  indent and a continuation marker. A per-diff `wrap`/`scroll` toggle exists for
-  code where alignment matters; `scroll` puts each line in its own
-  `overflow-x: auto` container so the page never scrolls sideways.
+ indent and a continuation marker. A per-diff `wrap`/`scroll` toggle exists for
+ code where alignment matters; `scroll` puts each line in its own
+ `overflow-x: auto` container so the page never scrolls sideways.
 - **Line numbers are a narrow dimmed gutter**, and `+`/`-` are conveyed by
-  background tint *and* a leading sign, never color alone
-  ([08 §9.1](08-web-client.md#91-accessibility)).
+ background tint *and* a leading sign, never color alone
+ ([08 §9.1](08-web-client.md#91-accessibility)).
 - **Hunks collapse to headers** when a file has more than 3, each showing
-  `+n −m`. You tap the one you care about.
+ `+n −m`. You tap the one you care about.
 - **Intra-line ranges are the payoff.** On a small screen "this line changed" is
-  not useful; "this identifier changed" is. Computed server-side (§3.2), so it
-  costs the phone nothing.
+ not useful; "this identifier changed" is. Computed server-side (§3.2), so it
+ costs the phone nothing.
 - **Sticky header** with filename, `+/−` stat, and prev/next-file chevrons, so
-  reviewing 8 changed files is 8 swipes rather than 8 navigations.
+ reviewing 8 changed files is 8 swipes rather than 8 navigations.
 - Fetched at `context_lines: 3`; a "more context" control refetches at 12. The
-  common payload is a few KB, which is what matters on LTE.
+ common payload is a few KB, which is what matters on LTE.
 
 ---
 
@@ -878,7 +878,7 @@ document contributes one type to it:
 
 ```rust
 pub struct ExplorerRef { pub workspace: WorkspaceId, pub rel: RelPath,
-                         pub line: Option<u32>, pub col: Option<u32> }
+ pub line: Option<u32>, pub col: Option<u32> }
 ```
 
 `ResolvedTarget` carries `explorer: Option<ExplorerRef>`. The struct itself is
@@ -934,7 +934,7 @@ and maintains a per-*binding* set of touched paths.
 `change` is `Created | Modified | Deleted | Renamed { from }`.
 
 The set is keyed by `BindingId` and **cleared when the binding ends**, matching
-the `clear_retained()` discipline in [06 §2](06-agent-layer.md#2-the-two-axis-model)
+the `clear_retained` discipline in [06 §2](06-agent-layer.md#2-the-two-axis-model)
 so a new agent never inherits the previous one's attribution. `agent_touched` is
 *attribution*, not truth about the filesystem — git status is the truth. When
 they disagree (agent wrote a file then reverted it), the UI shows the git status
@@ -956,7 +956,7 @@ the capability surface — so the explorer's "open in editor" and
 `open.activate { handler: "editor" }` cannot diverge in behaviour.
 
 The template substitutes **positional argv values, never a shell string** — no
-`sh -c`, so a path containing `;` or `$()` is inert. The program is resolved
+`sh -c`, so a path containing `;` or `$` is inert. The program is resolved
 from `PATH` once and the resolved path is shown in the confirmation. Because it
 is `SPAWNS_PROCESS` and `Operator`, the web client's generic effects wrapper
 ([08 §2.3](08-web-client.md#23-effects-drive-ui-policy-not-just-audit)) already
@@ -1006,18 +1006,18 @@ fn confine(root: &CanonicalPath, rel: &RelPath) -> Result<PathBuf, WorkspaceFsEr
 ```
 
 1. **Reject at parse.** `RelPath` has a validating constructor: no leading `/`,
-   no `.`/`..` component, no NUL, no backslash on Unix, no ADS/`\\?\`/device
-   names on Windows, no component over 255 bytes, total under 4 096. Absolute
-   and traversal inputs are rejected before any syscall.
+ no `.`/`..` component, no NUL, no backslash on Unix, no ADS/`\\?\`/device
+ names on Windows, no component over 255 bytes, total under 4 096. Absolute
+ and traversal inputs are rejected before any syscall.
 2. **Lexical join**, then assert `root` is still a prefix.
 3. **`realpath` the join** and assert `realpath(root)` is still a prefix. This
-   catches a symlink inside the workspace pointing at `/etc` or another user's
-   home.
+ catches a symlink inside the workspace pointing at `/etc` or another user's
+ home.
 4. **`openat` from a retained root fd, `O_NOFOLLOW` on the final component**,
-   closing the TOCTOU window between 3 and the open. A symlink is *listed*
-   (`NodeKind::Symlink`), its target followed only when inside the root;
-   `SymlinkTarget::Outside` renders as an explained dead end rather than being
-   silently omitted.
+ closing the TOCTOU window between 3 and the open. A symlink is *listed*
+ (`NodeKind::Symlink`), its target followed only when inside the root;
+ `SymlinkTarget::Outside` renders as an explained dead end rather than being
+ silently omitted.
 Steps 2–3 mirror the two-step check verified in opencode's core (lexical
 containment then a post-`realpath` test); 1 and 4 are ours.
 
@@ -1029,7 +1029,7 @@ a Linux filesystem through Linux syscalls, so `openat`/`O_NOFOLLOW` and
 
 A **native**-Windows backend would need a fifth step — reparse points resolving
 outside the root are NTFS's version of the symlink escape, and comparison must be
-case-normalized per volume, since `confine()`'s prefix assertions are
+case-normalized per volume, since `confine`'s prefix assertions are
 byte-comparisons that a case-insensitive volume defeats. That step is **reserved,
 not promised**: native Windows is not a v1 target, and the seam for it is the
 same `WatchDriver`/path-backend boundary §4.6 names. Recording it here means the
@@ -1060,7 +1060,7 @@ Binary returns base64 with a sniffed media type, capped at
 file-transfer channel; larger routes to `media.file.pull`
 ([09](09-ssh-and-media.md)) with its own quotas.
 
-Content is returned **byte-exact**. opencode `.trim()`s text content before
+Content is returned **byte-exact**. opencode `.trim`s text content before
 returning it (verified live — the trailing newline is gone), which silently
 corrupts anything that round-trips. `read` never follows a fifo, socket or
 device, so a `mkfifo` in the tree cannot hang a handler.
@@ -1156,7 +1156,7 @@ editor pattern), 40 000 files touched at once (expects exactly one `Coarse`),
 injected inotify `ENOSPC` (expects `WatchDegraded` with the remedy string), and
 a subscribe/unsubscribe cycle asserting the fd count returns to its start.
 
-**Traversal-attack tests** are a table-driven corpus against `confine()`:
+**Traversal-attack tests** are a table-driven corpus against `confine`:
 `../`, `..\\`, `%2e%2e/`, `....//`, absolute and UNC paths, `CON`/`NUL` on
 Windows, NUL bytes, over-long components, a symlink to `/etc` created *between*
 the `realpath` and the open (injected), a symlink loop, and a `.git/config` read
@@ -1188,7 +1188,7 @@ repo: the route set (`GET /file`, `/file/content`, `/file/status`, `/find`,
 `/vcs/diff/raw`, `POST /vcs/apply`, `/api/fs/*`, SSE `/event`); that
 `/file/status` and `/find/symbol` are stubs returning `[]` despite published
 schemas; that `/file/content` never populates its declared `diff`/`patch`
-fields, `.trim()`s text, and base64s binary with a sniffed mime type; that
+fields, `.trim`s text, and base64s binary with a sniffed mime type; that
 traversal and absolute paths both return an opaque HTTP 500; that `/file` lists
 `.git` with `ignored: false`; that directory `path` values carry a trailing `/`;
 that `/vcs/diff` returns literal `git diff` output as a per-file string; and
@@ -1216,8 +1216,8 @@ events fired (most likely the native binding failing to load; not isolated).
 **From iTerm2:** `sources/SemanticHistory/` owns Cmd-click path resolution, and
 OSC 7 plus OSC 133 supply the `cwd` a relative path resolves against — omt
 already encodes both in [04 §8.4](04-terminal-core.md#84-semantic-click-targets),
-so §8.1 only adds the workspace-relative hop. **From another terminal:** a `FileTree`
-feature flag exists, and its palette does file search via `crates/a ripgrep crate`
+so §8.1 only adds the workspace-relative hop. **From other terminals:** a `FileTree`
+feature flag exists, and its palette does file search via a ripgrep crate
 using the `grep`/`ignore` crates **in-process** rather than spawning `rg` — the
 precedent for using `ignore` directly in §4.4 instead of `git check-ignore`.
 
@@ -1226,59 +1226,59 @@ precedent for using `ignore` directly in §4.4 instead of `git check-ignore`.
 ## 13. OPEN QUESTIONS
 
 1. **Does `stage`/`unstage` ever earn its way in?** §1.1 says no for v1. The
-   strongest counter-case is the phone review flow: read the agent's diff, stage
-   the good files, tell the agent to commit. If revisited, the shape is
-   `workspace.vcs.stage` at `Operator` with `WRITES_FS`, reachable to any
-   `Operator` credential (there is no per-credential approval policy — see
-   [13 §7.2](13-security.md#72-remotely-resolving-an-agent-interaction)), and a
-   refusal when the path has a partially-staged state `git add` would destroy.
-   `discard` and `commit` stay out regardless. Needs v1 usage data.
+ strongest counter-case is the phone review flow: read the agent's diff, stage
+ the good files, tell the agent to commit. If revisited, the shape is
+ `workspace.vcs.stage` at `Operator` with `WRITES_FS`, reachable to any
+ `Operator` credential (there is no per-credential approval policy — see
+ [13 §7.2](13-security.md#72-remotely-resolving-an-agent-interaction)), and a
+ refusal when the path has a partially-staged state `git add` would destroy.
+ `discard` and `commit` stay out regardless. Needs v1 usage data.
 
 2. **Repository-wide content search.** Out of scope (§1), but the obvious next
-   request, and it interacts with these caps and the watcher. another terminal does it
-   in-process with the `grep` crate; opencode ships a vendored ripgrep plus a
-   native indexer. Leaning: a `workspace.files.grep` over the `grep` crate,
-   budgeted like `find`, no index. Deciding late is cheap (a new capability, not
-   a change to these) — but it must be decided before v1 if we want the tree
-   filter to search contents.
+ request, and it interacts with these caps and the watcher. other terminals does it
+ in-process with the `grep` crate; opencode ships a vendored ripgrep plus a
+ native indexer. Leaning: a `workspace.files.grep` over the `grep` crate,
+ budgeted like `find`, no index. Deciding late is cheap (a new capability, not
+ a change to these) — but it must be decided before v1 if we want the tree
+ filter to search contents.
 
 3. **Should the watcher survive a brief unsubscribe?** §4.6 tears down at 1→0
-   with no grace, so a user toggling the panel repeatedly pays full
-   re-registration (~30 ms on 20k dirs). A 5 s grace would fix that at the cost
-   of violating "free when hidden" for 5 s. Leaning: keep the hard teardown,
-   because the property *is* the feature; revisit if re-arm measures worse than
-   budget on Linux.
+ with no grace, so a user toggling the panel repeatedly pays full
+ re-registration (~30 ms on 20k dirs). A 5 s grace would fix that at the cost
+ of violating "free when hidden" for 5 s. Leaning: keep the hard teardown,
+ because the property *is* the feature; revisit if re-arm measures worse than
+ budget on Linux.
 
 4. **`vcs.status` on a 500k-file monorepo without fsmonitor.** §4.5 budgets
-   400 ms p99 *with* it. Without, `git status` is multi-second, making
-   `include_vcs: true` a trap. Options: detect the cost on first call and
-   disable the overlay with a `status_too_slow` flag (symmetric with
-   `status_too_large`); or offer to enable fsmonitor, which is a config write to
-   the user's repo and needs consent. Needs a measurement on a real monorepo.
+ 400 ms p99 *with* it. Without, `git status` is multi-second, making
+ `include_vcs: true` a trap. Options: detect the cost on first call and
+ disable the overlay with a `status_too_slow` flag (symmetric with
+ `status_too_large`); or offer to enable fsmonitor, which is a config write to
+ the user's repo and needs consent. Needs a measurement on a real monorepo.
 
 5. **Redaction over capability outputs.** §9.4 extends
-   [13 §8](13-security.md#8-secret-redaction) from logs/audit/events to file and
-   diff outputs — a scope change to the security model with a real performance
-   cost (regex over every diff line) and a real false-positive cost (a redacted
-   line in a diff is confusing). Needs a call with the security-model owner:
-   always on, non-`Admin` only, or name-pattern gating alone.
+ [13 §8](13-security.md#8-secret-redaction) from logs/audit/events to file and
+ diff outputs — a scope change to the security model with a real performance
+ cost (regex over every diff line) and a real false-positive cost (a redacted
+ line in a diff is confusing). Needs a call with the security-model owner:
+ always on, non-`Admin` only, or name-pattern gating alone.
 
 6. **Resolved — `AgentEvent::FileChanged`** is now declared in
-   [06 §8](06-agent-layer.md#8-ancillary-semantics). Until adapters emit it,
-   `agent_touched` is always `false` and the mobile "Agent" group does not
-   appear — a clean degradation.
+ [06 §8](06-agent-layer.md#8-ancillary-semantics). Until adapters emit it,
+ `agent_touched` is always `false` and the mobile "Agent" group does not
+ appear — a clean degradation.
 
 7. **Resolved — `AgentAdapter::path_mention`** is now a *defaulted* method on the
-   trait in [06 §7](06-agent-layer.md#7-adapters), which keeps it compatible per
-   [P2](01-principles.md#p2--pluggable-extension-without-modification). The
-   rejected alternative was a central `MentionStyle` table keyed by `AgentKind`;
-   the adapter won because mention syntax is agent-native knowledge (P4) and a
-   plugin-contributed adapter must be able to supply it without editing
-   `omt-core`.
+ trait in [06 §7](06-agent-layer.md#7-adapters), which keeps it compatible per
+ [P2](01-principles.md#p2--pluggable-extension-without-modification). The
+ rejected alternative was a central `MentionStyle` table keyed by `AgentKind`;
+ the adapter won because mention syntax is agent-native knowledge (P4) and a
+ plugin-contributed adapter must be able to supply it without editing
+ `omt-core`.
 
 8. **What is the default diff base on the mobile changed-files screen?**
-   `Worktree` (uncommitted only) or `MergeBase(default_branch)` (the whole
-   branch)? The latter is the question a reviewer actually asks and is constant
-   in a worktree-per-branch workflow, and costs one extra `merge-base` call.
-   Leaning `Worktree` for the agent-review case with a one-tap toggle. Needs a
-   UX call alongside [08](08-web-client.md).
+ `Worktree` (uncommitted only) or `MergeBase(default_branch)` (the whole
+ branch)? The latter is the question a reviewer actually asks and is constant
+ in a worktree-per-branch workflow, and costs one extra `merge-base` call.
+ Leaning `Worktree` for the agent-review case with a one-tap toggle. Needs a
+ UX call alongside [08](08-web-client.md).

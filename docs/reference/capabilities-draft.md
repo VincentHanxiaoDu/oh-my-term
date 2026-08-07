@@ -256,15 +256,15 @@ generated doc entry.
 | `interaction.get` | `get` | Query | V | — | One interaction, including its `viewers`. |
 | `interaction.resolve` | `resolve` | Command | **O** | `WRITES_PTY`¹ | The flagship path. Exactly-once; idempotent by `(interaction_id, identity_or_device, intent_id)` — **not** by the actor, which changes on every reconnect ([D15](../architecture/decisions.md#d15--five-classes-of-pending-intent-each-with-its-own-delivery-mechanism) c6, [12 §4.1](../architecture/12-collaboration.md#4-interaction-ownership)). A losing caller gets `conflict` with a discriminating `detail.state` of `already_resolved` / `cancelled` / `abandoned` (D15 c10). Writer-token gating follows the interaction's `deliverable` ([12 §3.1](../architecture/12-collaboration.md#31-what-it-governs)): `Native` is exempt, `Synthetic` is delivered as [D13](../architecture/decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s gated transaction and **is** token-gated, and `None` is not answerable at all. An `Operator` may resolve **any** interaction the agent posed (D1, D2). |
 <!-- `interaction.cancel` was removed. A human cannot withdraw an agent's
-     question — only the agent can ([D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):
-     omt mirrors, it does not intercept). What a user means by "cancel" is
-     answering with the escape hatch, which is `interaction.resolve` carrying a
-     `Cancelled` response — `Esc`, D16's universal safe negative, and exactly
-     what 08 §5.3's "Cancel this request" footer already sends. Keeping a
-     separate capability would have contradicted 12 §4.1's invariant that
-     `resolve` is the only mutation path, and implied omt can do something it
-     cannot. Dismissing a card from a client's own view is client-local state
-     (08 §8.4's swipe-down), not a capability. -->
+ question — only the agent can ([D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):
+ omt mirrors, it does not intercept). What a user means by "cancel" is
+ answering with the escape hatch, which is `interaction.resolve` carrying a
+ `Cancelled` response — `Esc`, D16's universal safe negative, and exactly
+ what 08 §5.3's "Cancel this request" footer already sends. Keeping a
+ separate capability would have contradicted 12 §4.1's invariant that
+ `resolve` is the only mutation path, and implied omt can do something it
+ cannot. Dismissing a card from a client's own view is client-local state
+ (08 §8.4's swipe-down), not a capability. -->
 
 ¹ `WRITES_PTY` is the declared maximum and is narrowed by `refine_effects` to nothing when `deliverable` is `Native` — a native response channel touches no PTY.
 | `interaction.focus_latest` | `focus-latest` | Command | O | — | Jump to the most recent open interaction ([16 §11](../architecture/16-input-and-keymap.md#11-capabilities-introduced-here)). |
@@ -559,7 +559,7 @@ and every exchange is audited.
 | Name | Kind | Role | Effects | Description |
 |---|---|---|---|---|
 | `theme.list` / `theme.get` | Query | V | `READS_FS` | Built-in and user themes. |
-| `theme.import` | Command | A | `READS_FS`, `WRITES_FS` | another terminal YAML / iTerm2 `.itermcolors` → an omt theme file. Schema is an interface fact (P9). |
+| `theme.import` | Command | A | `READS_FS`, `WRITES_FS` | the YAML format / iTerm2 `.itermcolors` → an omt theme file. Schema is an interface fact (P9). |
 | `workflow.list` / `workflow.get` | Query | V | `READS_FS` | Saved parameterized commands; the argument schema renders a mobile form. |
 | `workflow.run` | Command | O | `WRITES_PTY` | Render placeholders and run in the PTY, or send to the agent when `kind: prompt`. |
 | `workflow.save` / `workflow.delete` | Command | O | `WRITES_FS` | — |
@@ -811,20 +811,20 @@ easiest to mistake for a declared capability.
 **Unresolved.**
 
 - **`since` versions are omitted.** Only [15 §6](../architecture/15-workspace-explorer.md#6-capabilities)
-  (`since = "0.4"`) and [18 §9](../architecture/18-semantic-open.md#9-capabilities)
-  (`since = "0.5"`) state them; every other document omits the field. The
-  generator emits them from the declarations.
+ (`since = "0.4"`) and [18 §9](../architecture/18-semantic-open.md#9-capabilities)
+ (`since = "0.5"`) state them; every other document omits the field. The
+ generator emits them from the declarations.
 - **`ui.copy_mode.*` is a wildcard, and no longer a catalog concern.** 16 §11
-  declares the family without enumerating leaves; the individual
-  motion/selection/yank names are in 16 §6.6–6.7 prose. They are client-local
-  actions, so the generator will not emit them and this file does not list them.
+ declares the family without enumerating leaves; the individual
+ motion/selection/yank names are in 16 §6.6–6.7 prose. They are client-local
+ actions, so the generator will not emit them and this file does not list them.
 - **Two rows still need their source document updated**, and the update is
-  editorial rather than a decision to re-take: `job.*` belongs in
-  [22 §10](../architecture/22-operations.md#10-capabilities), and `upgrade.apply`
-  / `remote.bootstrap` must return a `JobId` rather than block, so that
-  `job.cancel` reaches them.
+ editorial rather than a decision to re-take: `job.*` belongs in
+ [22 §10](../architecture/22-operations.md#10-capabilities), and `upgrade.apply`
+ / `remote.bootstrap` must return a `JobId` rather than block, so that
+ `job.cancel` reaches them.
 - **`instance.shutdown`'s parity exemption was removed here**; the sentence in
-  [03 §5](../architecture/03-capability-catalog.md#5-the-parity-contract) naming
-  it as a legitimate example has not been.
+ [03 §5](../architecture/03-capability-catalog.md#5-the-parity-contract) naming
+ it as a legitimate example has not been.
 - Input/output type names are given in the owning documents, not repeated here.
 - The `debug.*` group is not enumerated beyond its one exemption.

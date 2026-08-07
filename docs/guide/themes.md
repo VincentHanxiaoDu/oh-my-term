@@ -13,14 +13,14 @@ appearance = "dark"
 
 foreground = "#839496"
 background = "#002b36"
-cursor     = "#268bd2"
-selection  = "#073642"
+cursor = "#268bd2"
+selection = "#073642"
 
 [palette]
 normal = ["#073642", "#dc322f", "#859900", "#b58900",
-          "#268bd2", "#d33682", "#2aa198", "#eee8d5"]
+ "#268bd2", "#d33682", "#2aa198", "#eee8d5"]
 bright = ["#002b36", "#cb4b16", "#586e75", "#657b83",
-          "#839496", "#6c71c4", "#93a1a1", "#fdf6e3"]
+ "#839496", "#6c71c4", "#93a1a1", "#fdf6e3"]
 ```
 
 Drop it in `~/.config/omt/themes/` and set `appearance.theme = "Solarized Dark"`.
@@ -37,17 +37,17 @@ then propagates into every contrast decision the UI makes.
 ## Importing
 
 ```sh
-omt theme import ~/.another terminal/themes/solarized.yaml
-omt theme import ~/Downloads/dracula.json      # VS Code
+omt theme import ~/.other terminals/themes/solarized.yaml
+omt theme import ~/Downloads/dracula.json # VS Code
 ```
 
 Both formats are read. Each import reports what it could **not** map:
 
 ```
 imported "Dracula" — 3 keys have no terminal equivalent:
-  activityBar.background
-  statusBar.background
-  editorGroup.border
+ activityBar.background
+ statusBar.background
+ editorGroup.border
 ```
 
 Reported rather than dropped. Somebody who spent an hour on a VS Code theme
@@ -57,10 +57,10 @@ looks different.
 Two details worth knowing:
 
 - **VS Code themes without `terminal.*` keys fall back to the editor colours.**
-  Most themes never set the terminal ones, and refusing them would reject most
-  of the ecosystem.
+ Most themes never set the terminal ones, and refusing them would reject most
+ of the ecosystem.
 - **Eight-digit colours are truncated to their RGB.** A terminal palette has no
-  alpha channel, and truncating is closer to the author's intent than refusing.
+ alpha channel, and truncating is closer to the author's intent than refusing.
 
 ## Contrast
 

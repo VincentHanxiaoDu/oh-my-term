@@ -230,30 +230,30 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Trigger.** `brew install omt`, then `omt`.
 - **Steps.** Type `omt` ⏎.
 - **Shows.** A terminal. Bottom line: a one-line status bar showing
-  `omt · ~/code/app · main · ⟨Ctrl+B⟩ ?` where `?` is literally the help hint.
-  Above the prompt, a single dismissible line: *"Shell integration not
-  installed — blocks, history and `file:line` clicking are limited. Press
-  ⟨leader⟩ i to install."*
+ `omt · ~/code/app · main · ⟨Ctrl+B⟩ ?` where `?` is literally the help hint.
+ Above the prompt, a single dismissible line: *"Shell integration not
+ installed — blocks, history and `file:line` clicking are limited. Press
+ ⟨leader⟩ i to install."*
 - **Success.** Sam types `ls` and it works exactly like his old terminal. He
-  presses `Ctrl+B ?` within the first session and sees a searchable key list.
+ presses `Ctrl+B ?` within the first session and sees a searchable key list.
 - **Failure.** No hint at all (he never learns anything). A modal wizard (Kenji
-  uninstalls). The hint reappears every launch after dismissal.
+ uninstalls). The hint reappears every launch after dismissal.
 - **Coverage.** **NO OWNER.** 10 covers config, 04 §7.1 covers what the shell
-  integration *is*, 06 §7.1 covers the *agent* integration installer. Nothing
-  owns first-run experience, the status bar, or `⟨leader⟩ ?`. See G1.
+ integration *is*, 06 §7.1 covers the *agent* integration installer. Nothing
+ owns first-run experience, the status bar, or `⟨leader⟩ ?`. See G1.
 
 ### J2 — Discovering a feature without reading docs
 
 - **Trigger.** Sam wonders if omt can split panes.
 - **Steps.** `Ctrl+B` then pause 500 ms.
 - **Shows.** The pending-leader hint overlay
-  ([16 §3.3](../architecture/16-input-and-keymap.md#33-pending-leader-ui)): a
-  grouped list of the leader namespace with descriptions.
+ ([16 §3.3](../architecture/16-input-and-keymap.md#33-pending-leader-ui)): a
+ grouped list of the leader namespace with descriptions.
 - **Success.** He presses `%`, gets a vertical split, and never opened a
-  browser.
+ browser.
 - **Failure.** The overlay lists 60 bindings unfiltered. The overlay appears
-  instantly and flickers for expert users (must be delayed and must be
-  suppressible).
+ instantly and flickers for expert users (must be delayed and must be
+ suppressible).
 - **Coverage.** 16 §3.3, 16 §6.10. Good.
 
 ### J3 — Command palette as the discovery path
@@ -261,145 +261,145 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Trigger.** "There must be a way to do X."
 - **Steps.** `Ctrl+B` `p` (or `Ctrl+Shift+P` where deliverable).
 - **Shows.** A fuzzy list of **every capability in the catalog** with its
-  description, keybinding, and effects glyphs — generated, not hand-maintained
-  ([03](../architecture/03-capability-catalog.md), 16 §3.5).
+ description, keybinding, and effects glyphs — generated, not hand-maintained
+ ([03](../architecture/03-capability-catalog.md), 16 §3.5).
 - **Success.** Every feature in the product is reachable by typing a word.
 - **Failure.** The palette lists internal capabilities (`session.__replay`) with
-  no human name. Capability declarations need a `hidden` flag and a mandatory
-  human-readable summary; verify 03 has one.
+ no human name. Capability declarations need a `hidden` flag and a mandatory
+ human-readable summary; verify 03 has one.
 
 ### J4 — Migrating from tmux (Kenji) — the adoption barrier
 
 - **Trigger.** Kenji tries omt on a Saturday.
 - **Steps.** `omt`; immediately `Ctrl+A c` (his prefix) — nothing happens.
-  He runs `omt migrate tmux`.
+ He runs `omt migrate tmux`.
 - **Shows.** A report: *"Read `~/.tmux.conf` (74 lines). Mapped 41 settings.
-  Wrote `~/.config/omt/keybindings.toml` and `config.toml`. 9 settings have no
-  omt equivalent, listed below with reasons. 4 need review."* Including:
-  `prefix C-a` → `leader = "ctrl+a"`; `mode-keys vi` → `copy_mode.keymap =
-  "vim"`; `set -sg escape-time 0`; `bind -n C-h select-pane -L` → an
-  **unprefixed** binding, with a conflict warning that `nvim` also uses `C-h`
-  and a pointer to 16 §5.
+ Wrote `~/.config/omt/keybindings.toml` and `config.toml`. 9 settings have no
+ omt equivalent, listed below with reasons. 4 need review."* Including:
+ `prefix C-a` → `leader = "ctrl+a"`; `mode-keys vi` → `copy_mode.keymap =
+ "vim"`; `set -sg escape-time 0`; `bind -n C-h select-pane -L` → an
+ **unprefixed** binding, with a conflict warning that `nvim` also uses `C-h`
+ and a pointer to 16 §5.
 - **Success.** His muscle memory works within ten minutes. Unmappable settings
-  are named, not silently dropped.
+ are named, not silently dropped.
 - **Failure.** No migration path at all — he closes it in five minutes. A
-  migration that silently drops `bind -n` bindings, which are the ones he cares
-  about most.
+ migration that silently drops `bind -n` bindings, which are the ones he cares
+ about most.
 - **Coverage.** **NO OWNER.** 16 defines the keymap format and 10 the config;
-  neither owns tmux/zellij import. See G6.
+ neither owns tmux/zellij import. See G6.
 
 ### J5 — Coexisting with a tmux he refuses to give up
 
 - **Trigger.** Kenji's team's deploy runbook is `tmux attach -t deploy`.
 - **Steps.** Inside an omt pane he runs `tmux attach`.
 - **Shows.** The tmux session, working. omt's status bar shows the pane as
-  `nested: tmux` and the agent binding for that pane goes `Unknown` with a
-  tooltip *"observation unavailable inside a nested multiplexer"*
-  (06 §9 states this; it must be *visible*, not only documented).
+ `nested: tmux` and the agent binding for that pane goes `Unknown` with a
+ tooltip *"observation unavailable inside a nested multiplexer"*
+ (06 §9 states this; it must be *visible*, not only documented).
 - **Success.** Terminal fidelity is perfect. omt's leader does not collide:
-  omt's `Ctrl+B` is consumed by omt, so Kenji rebinds omt's leader to `Ctrl+A`
-  or uses `⟨leader⟩ ⟨leader⟩` passthrough (16 §3.4 escape hatches).
+ omt's `Ctrl+B` is consumed by omt, so Kenji rebinds omt's leader to `Ctrl+A`
+ or uses `⟨leader⟩ ⟨leader⟩` passthrough (16 §3.4 escape hatches).
 - **Failure.** Double-prefix hell with no documented resolution. omt claims an
-  agent state inside the tmux (it must not — 06 caps this correctly).
+ agent state inside the tmux (it must not — 06 caps this correctly).
 - **Coverage.** 16 §3.4, 06 §9, 04 §1.5. Adequate but the *visible* nested
-  indicator is unowned.
+ indicator is unowned.
 
 ### J6 — Starting an agent
 
 - **Trigger.** Mara wants an agent on a new feature.
 - **Steps.** `⟨leader⟩ w` → workspace picker → `../repo-featX` →
-  `⟨leader⟩ a` → agent picker (`claude`, `codex`, `opencode` — from
-  `[agents]` config) → ⏎.
+ `⟨leader⟩ a` → agent picker (`claude`, `codex`, `opencode` — from
+ `[agents]` config) → ⏎.
 - **Shows.** A new session, `claude` starting in a real PTY, session card in the
-  dashboard flips to `starting → idle` within ~2 s. The session chip shows
-  `claude · sonnet-4.5 · featX · permissionMode: default`.
+ dashboard flips to `starting → idle` within ~2 s. The session chip shows
+ `claude · sonnet-4.5 · featX · permissionMode: default`.
 - **Success.** It is the real CLI, with its real config and its real slash
-  commands. The agent binding is established at tier ≥3 within 2 s.
+ commands. The agent binding is established at tier ≥3 within 2 s.
 - **Failure.** Hooks were never installed, so it silently drops to tier 0 and
-  Mara does not know. The **degradation must be visible on the session card**,
-  with a one-key fix (06 §7.1 installer). `agent.explain` (06 §4) covers the
-  diagnosis; surfacing it prominently is the part at risk.
+ Mara does not know. The **degradation must be visible on the session card**,
+ with a one-key fix (06 §7.1 installer). `agent.explain` (06 §4) covers the
+ diagnosis; surfacing it prominently is the part at risk.
 
 ### J7 — Agent blocks while the user is looking at that pane
 
 - **Trigger.** `AskUserQuestion` fires.
 - **Steps.** Nothing — Mara is watching.
 - **Shows.** The agent's own TUI card, unmodified (P4). omt additionally paints
-  the pane border in the `needs-you` color and updates the status bar. omt does
-  **not** overlay its own card on top of the agent's — that would double the UI.
+ the pane border in the `needs-you` color and updates the status bar. omt does
+ **not** overlay its own card on top of the agent's — that would double the UI.
 - **Success.** She arrow-keys and hits ⏎ in the agent, exactly as before. omt
-  observes the resolution via hook/transcript and closes its `Interaction`
-  ledger entry as `ResolvedExternally`.
+ observes the resolution via hook/transcript and closes its `Interaction`
+ ledger entry as `ResolvedExternally`.
 - **Failure.** omt renders a competing card and the two disagree.
-  **Resolved by [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):**
-  omt does not park the tool call and never draws a card in the pane, so the
-  agent's own card always renders at the desk exactly as it would without omt.
-  The remaining hazard is not a competing card but a competing *writer* — her
-  keystrokes racing an injected answer — which is
-  [D13](../architecture/decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s
-  gated transaction and 12 §4.5's conflict case.
+ **Resolved by [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it):**
+ omt does not park the tool call and never draws a card in the pane, so the
+ agent's own card always renders at the desk exactly as it would without omt.
+ The remaining hazard is not a competing card but a competing *writer* — her
+ keystrokes racing an injected answer — which is
+ [D13](../architecture/decisions.md#d13--synthetic-delivery-is-a-gated-transaction-never-a-bare-write)'s
+ gated transaction and 12 §4.5's conflict case.
 
 ### J8 — Agent blocks while the user is in another pane
 
 - **Trigger.** Same, Mara is in pane 3.
 - **Steps.** She notices the dashboard indicator; `⟨leader⟩ n` = jump to next
-  session needing attention.
+ session needing attention.
 - **Shows.** Status bar: `⚠ 1 needs you · claude/featX`. Optional bell/OSC 9.
 - **Success.** `⟨leader⟩ n` is a single key away and cycles by urgency, oldest
-  first.
+ first.
 - **Failure.** No cross-pane attention affordance except reading a bar. There
-  must be a jump-to-next-blocked binding. Not currently in 16 §8.2's namespace —
-  verify.
+ must be a jump-to-next-blocked binding. Not currently in 16 §8.2's namespace —
+ verify.
 
 ### J9 — Agent blocks while the user is away entirely
 
 - **Trigger.** Ana is on a walk. No client attached.
 - **Steps.** Nothing buzzes — no notification backend ships in v1
-  ([07 §8](../architecture/07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1)).
-  She learns of it when she next opens a client.
+ ([07 §8](../architecture/07-remote-protocol.md#8-notifications-to-a-closed-tab--none-in-v1)).
+ She learns of it when she next opens a client.
 - **Shows.** Opening the PWA → authenticated WS → resync → replay → the ranked
-  list puts the blocked session first, with the card
-  ([07 §8.2](../architecture/07-remote-protocol.md#82-what-replaces-it-open-and-replay)).
+ list puts the blocked session first, with the card
+ ([07 §8.2](../architecture/07-remote-protocol.md#82-what-replaces-it-open-and-replay)).
 - **Success.** Under 10 s from opening to a readable card with tappable options.
 - **Failure.** The interaction timed out
-  (12 §4.3) before she got there — the card must then show *"this expired and
-  the agent proceeded with its default"* rather than vanishing. C7 in 12 covers
-  "interaction while nobody attached"; the *user-facing expiry explanation* is
-  weakly specified.
+ (12 §4.3) before she got there — the card must then show *"this expired and
+ the agent proceeded with its default"* rather than vanishing. C7 in 12 covers
+ "interaction while nobody attached"; the *user-facing expiry explanation* is
+ weakly specified.
 
 ### J10 — Answering a question card from the TUI
 
 - **Steps.** `⟨leader⟩ n` to the blocked session; the card owns the keyboard
-  (16 §4.4); `j`/`k` or `1`/`2`/`3`; ⏎.
+ (16 §4.4); `j`/`k` or `1`/`2`/`3`; ⏎.
 - **Shows.** Selection, then a resolution line: `resolved by you (this device) ·
-  native hook`.
+ native hook`.
 - **Success.** Fidelity is `Native`, not `Synthetic` (D3). The card closes for
-  every attached client simultaneously.
+ every attached client simultaneously.
 - **Failure.** Card keyboard ownership conflicts with an inner vim mode
-  (16 §4.4 handles). Two options with identical labels.
+ (16 §4.4 handles). Two options with identical labels.
 
 ### J11 — Answering from desktop web
 
 - **Steps.** Browser tab, dashboard, click the option button inline in the row
-  ([08 §6](../architecture/08-web-client.md#6-agent-session-dashboard)).
+ ([08 §6](../architecture/08-web-client.md#6-agent-session-dashboard)).
 - **Shows.** Optimistic selection, then confirmed by the event
-  (12 §7). Row moves out of "Needs you".
+ (12 §7). Row moves out of "Needs you".
 - **Success.** Answering without opening the session — explicitly the design
-  intent, and correct.
+ intent, and correct.
 - **Failure.** Optimistic UI shows success and the server rejects because
-  someone else won the race (12 §4.2). The correction must be *visible*
-  (12 §7.3), not a silent revert.
+ someone else won the race (12 §4.2). The correction must be *visible*
+ (12 §7.3), not a silent revert.
 
 ### J12 — Answering from a phone
 
 - **Steps.** Open the PWA → the ranked list surfaces the blocked session → card
-  sheet → thumb-reachable option buttons at the bottom third (08 §8.1) → tap.
+ sheet → thumb-reachable option buttons at the bottom third (08 §8.1) → tap.
 - **Shows.** Question header, full option descriptions (the thing the terminal
-  card truncates), agent + workspace + branch chips, permission mode.
+ card truncates), agent + workspace + branch chips, permission mode.
 - **Success.** No horizontal scrolling, no pinch-zoom, no 40-column terminal.
 - **Failure.** Multi-select questions rendered as single-select. Option
-  descriptions truncated to one line — on a phone there is room, and this is
-  where omt beats the native TUI; do not waste it.
+ descriptions truncated to one line — on a phone there is room, and this is
+ where omt beats the native TUI; do not waste it.
 
 ### J13 — Answering with free text
 
@@ -407,13 +407,13 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Steps.** Tap **"Something else…"** → keyboard → type → Send.
 - **Shows.** A text field with the original question above it.
 - **Success.** The free-text answer is delivered through the same native
-  channel. For Claude Code's `AskUserQuestion` this requires knowing whether the
-  hook response schema accepts an arbitrary string or only a listed option.
+ channel. For Claude Code's `AskUserQuestion` this requires knowing whether the
+ hook response schema accepts an arbitrary string or only a listed option.
 - **Failure.** **This is an open question the design does not answer.** If free
-  text is not natively expressible, the only path is synthetic PTY input, which
-  D3 permits (free text is position-independent) but which must be labelled. 06
-  §5.0 `InteractionResponse` needs an explicit `Freeform(String)` variant with a
-  per-adapter declaration of whether it is supported. See G21.
+ text is not natively expressible, the only path is synthetic PTY input, which
+ D3 permits (free text is position-independent) but which must be labelled. 06
+ §5.0 `InteractionResponse` needs an explicit `Freeform(String)` variant with a
+ per-adapter declaration of whether it is supported. See G21.
 
 ### J14 — Adding a comment rather than picking an option
 
@@ -421,144 +421,144 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Steps.** Long-press option 2 → "Answer with note" → type → Send.
 - **Shows.** Option 2 selected + a note field.
 - **Success.** The note reaches the agent. For most agents this means: resolve
-  with option 2 natively, **then** enqueue the note as the next user message
-  (06 §8 message queue), presented to the user as one action.
+ with option 2 natively, **then** enqueue the note as the next user message
+ (06 §8 message queue), presented to the user as one action.
 - **Failure.** The note is silently dropped because the hook schema has no slot
-  for it. The compose-then-queue behaviour is not described anywhere. See G21.
+ for it. The compose-then-queue behaviour is not described anywhere. See G21.
 
 ### J15 — Changing your mind after answering
 
 - **Trigger.** Ana taps "Yes" and immediately realises she meant "No".
 - **Steps.** She looks for undo.
 - **Shows.** An **Undo** affordance is only honest while the answer has not been
-  written — the `Resolving` window between the CAS and the injection, which is
-  milliseconds under [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
-  because nothing is parked. Keystrokes already typed cannot be retracted.
+ written — the `Resolving` window between the CAS and the injection, which is
+ milliseconds under [D11](../architecture/decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)
+ because nothing is parked. Keystrokes already typed cannot be retracted.
 - **Success.** omt does not offer a fake undo. Once the state is `Submitted` it
-  says plainly *"already sent to the agent — press Esc/interrupt to stop it"* and
-  offers `agent.interrupt` as the honest next action. R18's retraction window is
-  re-scoped accordingly.
+ says plainly *"already sent to the agent — press Esc/interrupt to stop it"* and
+ offers `agent.interrupt` as the honest next action. R18's retraction window is
+ re-scoped accordingly.
 - **Failure.** 12 §4.1 makes interactions resolve-once and irreversible with no
-  grace window. That is correct for consistency and **wrong for a phone**, where
-  fat-fingering is the norm. A short, explicitly-modelled *pending* state before
-  commit is needed. See G8.
+ grace window. That is correct for consistency and **wrong for a phone**, where
+ fat-fingering is the norm. A short, explicitly-modelled *pending* state before
+ commit is needed. See G8.
 
 ### J16 — Queueing follow-up work mid-turn
 
 - **Steps.** Session is `working`. In the dashboard row, `+ add to queue…` →
-  "run the migration after this" → ⏎.
+ "run the migration after this" → ⏎.
 - **Shows.** `Queue (1)` under the row (08 §6.1).
 - **Success.** Works from phone, TUI and `omt agent queue enqueue`.
 - **Failure.** For a non-Claude agent, omt falls back to an omt-managed queue
-  flushed on idle. It must be *labelled* omt-managed and must state what happens
-  if the agent never goes idle or the session dies with items pending. The
-  latter is unspecified — pending items should be persisted and surfaced, never
-  silently lost.
+ flushed on idle. It must be *labelled* omt-managed and must state what happens
+ if the agent never goes idle or the session dies with items pending. The
+ latter is unspecified — pending items should be persisted and surfaced, never
+ silently lost.
 
 ### J17 — Interrupting an agent
 
 - **Steps.** `⟨leader⟩ Esc`, or swipe-left on the dashboard row, or
-  `omt agent interrupt <session>`.
+ `omt agent interrupt <session>`.
 - **Shows.** The agent's own interrupt behaviour (Claude Code: Esc). omt sends
-  the agent-native interrupt where one exists, else `Ctrl+C` to the PTY tagged
-  `Synthetic`.
+ the agent-native interrupt where one exists, else `Ctrl+C` to the PTY tagged
+ `Synthetic`.
 - **Success.** Identical result on all three surfaces.
 - **Failure.** Double-Esc semantics differ per agent; a phone user cannot
-  express "Esc twice". Per-adapter interrupt modelling is needed
-  (06 §7 adapter trait) — verify it exists.
+ express "Esc twice". Per-adapter interrupt modelling is needed
+ (06 §7 adapter trait) — verify it exists.
 
 ### J18 — Resuming after `/compact`
 
 - **Trigger.** Context window fills; Claude Code compacts.
 - **Shows.** A visible marker in omt's timeline: `context compacted · 187k → 42k
-  tokens`, from the normalized `Usage`/compaction `AgentEvent` (06 §8).
+ tokens`, from the normalized `Usage`/compaction `AgentEvent` (06 §8).
 - **Success.** The user understands why the agent "forgot". Scrollback is
-  untouched — omt never rewrites output (P4).
+ untouched — omt never rewrites output (P4).
 - **Failure.** Compaction is invisible and the user thinks omt lost state.
 
 ### J19 — Running several agents across worktrees
 
 - **Steps.** `omt launch review` — a launch configuration
-  ([10 §9.1](../architecture/10-configuration.md#91-launch-configurations))
-  creating 3 worktrees + 3 agent sessions + 1 shell in a saved layout.
+ ([10 §9.1](../architecture/10-configuration.md#91-launch-configurations))
+ creating 3 worktrees + 3 agent sessions + 1 shell in a saved layout.
 - **Shows.** A 2×2 layout, each pane titled `branch · agent · state`.
 - **Success.** Reproducible multi-agent setup in one command; the tmuxinator
-  replacement.
+ replacement.
 - **Failure.** The launch config cannot *create* git worktrees, because 15 §1.1
-  forbids VCS mutation in v1. So `omt launch` must be able to run arbitrary
-  setup commands — confirm 10 §9.1 supports a pre-command hook. If it does not,
-  this journey fails.
+ forbids VCS mutation in v1. So `omt launch` must be able to run arbitrary
+ setup commands — confirm 10 §9.1 supports a pre-command hook. If it does not,
+ this journey fails.
 
 ### J20 — Comparing what three agents produced
 
 - **Trigger.** Three agents finished the same task differently.
 - **Steps.** Dashboard → select 3 sessions → **Compare**.
 - **Shows.** Ideally: side-by-side changed-file sets, diff stats per branch, and
-  each agent's final summary.
+ each agent's final summary.
 - **Success.** Decide in two minutes which branch to keep.
 - **Failure.** **Not designed.** 15 §8.3 gives "files the agent changed this
-  session" per session; there is no multi-session comparison view. A minimum
-  honest answer is a diff-stat table across selected sessions. See G18.
+ session" per session; there is no multi-session comparison view. A minimum
+ honest answer is a diff-stat table across selected sessions. See G18.
 
 ### J21 — Noticing an agent is stuck
 
 - **Trigger.** Session has been `working` for 22 minutes.
 - **Shows.** Dashboard "Working" section sorted by elapsed, with an amber chip
-  past a configurable threshold, and the current tool call + repeat count
-  (`Bash(npm test) ×7`).
+ past a configurable threshold, and the current tool call + repeat count
+ (`Bash(npm test) ×7`).
 - **Success.** Loop detection by *repetition of identical tool calls*, which is
-  observed data, not a guess.
+ observed data, not a guess.
 - **Failure.** No such affordance exists in 08 §6 beyond elapsed time. Repeat
-  counting is cheap and high-value. See G19.
+ counting is cheap and high-value. See G19.
 
 ### J22 — Working over SSH with the thin client
 
 - **Steps.** `omt ssh prod-3` from the laptop.
 - **Shows.** A local omt TUI driving the remote instance over an SSH stdio
-  transport (07 §2.4). Local clipboard, local editor, local screenshot paste.
+ transport (07 §2.4). Local clipboard, local editor, local screenshot paste.
 - **Success.** Feels local. `⟨leader⟩` handled locally; everything else
-  forwarded (16 §7.1).
+ forwarded (16 §7.1).
 - **Failure.** omt is not installed remotely. There must be a `omt ssh
-  --bootstrap` that offers to scp a static binary, or a precise error naming the
-  install command. Unspecified.
+ --bootstrap` that offers to scp a static binary, or a precise error naming the
+ install command. Unspecified.
 
 ### J23 — Pasting a screenshot to a remote agent
 
 - **Steps.** Screenshot on macOS → focus omt pane → `Cmd+V`.
 - **Shows.** `📎 screenshot-2026-08-03.png (412 KB) → /tmp/omt-blob/…` inserted
-  into the agent prompt as a path.
+ into the agent prompt as a path.
 - **Success.** Tier 1 reverse socket (09 §5.2) when using `omt ssh`.
 - **Failure.** Plain `ssh` in Ghostty → tier 4: QR code / `omt paste` with a
-  named reason (D7). The failure message quality *is* the feature here.
+ named reason (D7). The failure message quality *is* the feature here.
 
 ### J24 — Opening a remote file locally from a stack trace
 
 - **Steps.** Test fails; `src/api/handler.rs:214:9` in output. `⟨leader⟩ f` →
-  hint labels → press `a`.
+ hint labels → press `a`.
 - **Shows.** The file opens in the local editor at line 214, fetched to a
-  mirrored path (18 §6.3).
+ mirrored path (18 §6.3).
 - **Success.** No `scp`, no path guessing; cwd resolved from OSC 133/7
-  (18 §3.1).
+ (18 §3.1).
 - **Failure.** The snapshot problem — he edits the local copy and it is not the
-  remote file (18 §6.5 recommends read-only-by-default). The read-only default
-  must be loud, or he loses work.
+ remote file (18 §6.5 recommends read-only-by-default). The read-only default
+ must be loud, or he loses work.
 
 ### J25 — Copying remote output to the local clipboard
 
 - **Steps.** `⟨leader⟩ [` copy mode → `v` select → `y`. Or: focus a block and
-  press `y` (block-level copy, no selection needed).
+ press `y` (block-level copy, no selection needed).
 - **Shows.** `copied 1.2 KB to local clipboard`.
 - **Success.** Works over `omt ssh` (09 §3.1) and in a foreign terminal via
-  OSC 52 where supported, with a size-limit fallback (09 §3.3).
+ OSC 52 where supported, with a size-limit fallback (09 §3.3).
 - **Failure.** OSC 52 truncation at ~74 KB in some terminals, silently. Must be
-  detected and reported.
+ detected and reported.
 
 ### J26 — Reviewing a diff before approving a permission card
 
 - **Trigger.** Agent asks to edit `Cargo.toml`.
 - **Steps.** Card shows the tool + arguments; tap **View diff**.
 - **Shows.** Inline diff inside the permission card (15 §8.5), word-level on
-  desktop, unified with a `→` line-wrap on mobile (15 §7.4).
+ desktop, unified with a `→` line-wrap on mobile (15 §7.4).
 - **Success.** Approve with the actual change in front of you, on a phone.
 - **Failure.** Very large diffs. Needs a cap with "open full diff" escape.
 
@@ -568,326 +568,326 @@ Keys are literal. `⟨leader⟩` is `Ctrl+B` by default
 - **Shows.** Opens in `$EDITOR` at the line, or in the omt file viewer.
 - **Success.** 18 covers this thoroughly.
 - **Failure.** Rust's `-->` prefix, Python tracebacks, Jest's paths and Go's
-  `file.go:12` all need rules; 18 §2.7 has a default table — confirm it covers
-  the top ~10 toolchains.
+ `file.go:12` all need rules; 18 §2.7 has a default table — confirm it covers
+ the top ~10 toolchains.
 
 ### J28 — Phone loses network mid-answer
 
 - **Trigger.** Subway.
 - **Shows.** A connection chip goes amber → red. The card stays rendered,
-  greyed, with `will send when reconnected` or `cannot send offline` — one of
-  the two, never ambiguous.
+ greyed, with `will send when reconnected` or `cannot send offline` — one of
+ the two, never ambiguous.
 - **Success.** On reconnect, resume by sequence number (07 §5); if the
-  interaction was resolved by someone else meanwhile, an explicit
-  *"already answered by laptop"* message.
+ interaction was resolved by someone else meanwhile, an explicit
+ *"already answered by laptop"* message.
 - **Failure.** Queued writes replayed blindly after 20 minutes offline — a
-  stale approval sent into a changed world. **Queued mutations must expire.**
-  08 §8.5 covers reconnect; mutation staleness is unspecified. See G8.
+ stale approval sent into a changed world. **Queued mutations must expire.**
+ 08 §8.5 covers reconnect; mutation staleness is unspecified. See G8.
 
 ### J29 — Laptop sleeps and wakes
 
 - **Trigger.** Lid closed 3 hours.
 - **Shows.** On wake, the TUI reattaches; a banner if the replay window was
-  exceeded (07 §5.2) saying *"3h of output was not replayed; scrollback is
-  intact"*.
+ exceeded (07 §5.2) saying *"3h of output was not replayed; scrollback is
+ intact"*.
 - **Success.** Sessions and agents kept running (the daemon never stopped).
 - **Failure.** Silent full-screen redraw hiding the fact that output was
-  dropped. Agents that themselves died on sleep (network-dependent CLIs) must be
-  distinguishable from omt's own gap.
+ dropped. Agents that themselves died on sleep (network-dependent CLIs) must be
+ distinguishable from omt's own gap.
 
 ### J30 — The daemon restarts
 
 - **Trigger.** `omt upgrade`, or a crash.
 - **Shows.** Sessions return as `Orphaned`; scrollback and history intact; each
-  offers **restart** re-spawning the same argv/cwd/env (05 §8.2).
+ offers **restart** re-spawning the same argv/cwd/env (05 §8.2).
 - **Success.** Nothing is lost except the processes.
 - **Failure.** **The processes are lost.** For P1 and P4 this is the difference
-  between omt and tmux, and tmux wins. An `omt upgrade` that kills five running
-  agents mid-turn is close to disqualifying. See G12.
+ between omt and tmux, and tmux wins. An `omt upgrade` that kills five running
+ agents mid-turn is close to disqualifying. See G12.
 
 ### J31 — The machine reboots
 
 - **Shows.** After login, `omt` shows the previous workspaces and their
-  orphaned sessions with full history, and a **restore layout** action.
+ orphaned sessions with full history, and a **restore layout** action.
 - **Success.** Layout + history + block log survive.
 - **Failure.** The daemon does not autostart, so a phone attaching after a
-  reboot finds nothing. There is no launchd/systemd unit story. See G13.
+ reboot finds nothing. There is no launchd/systemd unit story. See G13.
 
 ### J32 — Sharing a read-only view with a colleague
 
 - **Steps.** `⟨leader⟩ s` on a session → **Share read-only** → expiry (1 h) →
-  copy link, or `omt share create --session s_4b2f --role viewer --ttl 1h`.
+ copy link, or `omt share create --session s_4b2f --role viewer --ttl 1h`.
 - **Shows.** A signed invite URL scoped to that session.
 - **Success.** The colleague sees live output and cards, cannot type, cannot see
-  other sessions or other workspaces. Presence shows him watching (12 §2).
+ other sessions or other workspaces. Presence shows him watching (12 §2).
 - **Failure.** **Credential scope is per-workspace in 13 §4.1, not
-  per-session.** A single-session share is exactly the common case and must be
-  expressible. Verify; if absent, it is a gap.
+ per-session.** A single-session share is exactly the common case and must be
+ expressible. Verify; if absent, it is a gap.
 
 ### J33 — Revoking the share
 
 - **Steps.** `⟨leader⟩ s` → active shares list → **Revoke**, or
-  `omt auth revoke <cred-id>`.
+ `omt auth revoke <cred-id>`.
 - **Shows.** The colleague's client disconnects within one second with a clear
-  message.
+ message.
 - **Success.** Revocation is immediate on the live socket, not just at next
-  auth.
+ auth.
 - **Failure.** Revocation only takes effect on token expiry. 13 §5.2 covers
-  rotation; live-socket termination on revoke must be explicit.
+ rotation; live-socket termination on revoke must be explicit.
 
 ### J34 — Voice input while walking
 
 - **Steps.** In the phone composer, press-and-hold the mic → speak → release.
 - **Shows.** Live partial transcript; on release, an editable final transcript
-  with **Send** and **Re-record** (08 §7.2). Never auto-send.
+ with **Send** and **Re-record** (08 §7.2). Never auto-send.
 - **Success.** Hands-busy answering of a free-text question.
 - **Failure.** Street noise → garbage. The always-editable transcript is the
-  right mitigation. Code identifiers dictate badly (`snake_case`,
-  `Vec<Option<T>>`) — a per-workspace vocabulary hint from the file index /
-  recent identifiers would help materially and is not designed.
+ right mitigation. Code identifiers dictate badly (`snake_case`,
+ `Vec<Option<T>>`) — a per-workspace vocabulary hint from the file index /
+ recent identifiers would help materially and is not designed.
 
 ### J35 — Voice in a noisy office / dictation errors
 
 - **Steps.** Same; the transcript reads "add a unit test for the reset
-  handler" as "add a unit test for the recept handler".
+ handler" as "add a unit test for the recept handler".
 - **Success.** He edits the one word and sends. Because omt never auto-sends,
-  the error costs 3 seconds.
+ the error costs 3 seconds.
 - **Failure.** An STT provider outage. Must degrade to the keyboard with a
-  message, and the BYOK key must never be shipped to the browser (08 §7.3 —
-  confirm the daemon proxies STT rather than exposing the key client-side).
+ message, and the BYOK key must never be shipped to the browser (08 §7.3 —
+ confirm the daemon proxies STT rather than exposing the key client-side).
 
 ### J36 — Configuring omt three ways
 
 - **(a) File.** `$EDITOR ~/.config/omt/config.toml`; save; omt live-reloads
-  (10 §6) and shows `config reloaded · 3 keys changed`.
-- **(b) TUI.** `⟨leader⟩ ,` → generated settings editor from the schema
-  (10 §4.1) with descriptions and validation as you type.
+ (10 §6) and shows `config reloaded · 3 keys changed`.
+- **(b) TUI.** `⟨leader⟩,` → generated settings editor from the schema
+ (10 §4.1) with descriptions and validation as you type.
 - **(c) Web.** Settings page, same schema, same validation, writing to the same
-  file with the same layering (10 §2.3).
+ file with the same layering (10 §2.3).
 - **Success.** All three produce byte-identical results, and (b)/(c) preserve
-  comments and formatting in the TOML they rewrite.
+ comments and formatting in the TOML they rewrite.
 - **Failure.** Comment-destroying round-trips through a TOML writer. 10 §2.3
-  must commit to a format-preserving edit (`toml_edit`); confirm it does.
+ must commit to a format-preserving edit (`toml_edit`); confirm it does.
 
 ### J37 — Making a config mistake and recovering
 
 - **Steps.** He sets `terminal.scrollback_lines = "lots"`.
 - **Shows.** On save: a diagnostic with file, line, column, the value, the
-  expected type, and a suggestion (`OMT-C1xx`), and **omt keeps running on the
-  last good config** (10 §6.4).
+ expected type, and a suggestion (`OMT-C1xx`), and **omt keeps running on the
+ last good config** (10 §6.4).
 - **Success.** He can never brick omt from the config file. `omt config check`
-  and `omt config reset <key>` exist.
+ and `omt config reset <key>` exist.
 - **Failure.** A config error at *startup* (not reload) with no prior good
-  config — omt must start with defaults and a loud banner rather than refuse.
-  10 §6.4 covers reload; the cold-start case must be equally forgiving.
+ config — omt must start with defaults and a loud banner rather than refuse.
+ 10 §6.4 covers reload; the cold-start case must be equally forgiving.
 
 ### J38 — Adding a second machine
 
 - **Steps.** On the laptop: `omt instance add` → shows a QR + `omt://` invite.
-  On the phone: scan → instance appears in the switcher (07 §1.3).
+ On the phone: scan → instance appears in the switcher (07 §1.3).
 - **Shows.** A federated session list across both (07 §1.6).
 - **Success.** Under 60 seconds, no account, no cloud.
 - **Failure.** The desktop machine is not reachable (NAT). The Tailscale path
-  must be a first-class documented flow, not an afterthought (13 §10 checklist).
+ must be a first-class documented flow, not an afterthought (13 §10 checklist).
 
 ### J39 — The two machines run different omt versions
 
 - **Steps.** Laptop `0.9`, server `0.7`.
 - **Shows.** The instance chip carries a version badge; capabilities the older
-  instance lacks are hidden, not broken, with a tooltip *"requires omt ≥ 0.8 on
-  this instance"* (07 §1.5, 08 §3.4).
+ instance lacks are hidden, not broken, with a tooltip *"requires omt ≥ 0.8 on
+ this instance"* (07 §1.5, 08 §3.4).
 - **Success.** Graceful, explicit degradation.
 - **Failure.** Handled well in the design. Remaining risk: no `omt upgrade
-  --all-instances` for P4's 30 boxes.
+ --all-instances` for P4's 30 boxes.
 
 ### J40 — Long-running agent overnight
 
 - **Trigger.** Mara starts a big refactor at 23:00 and goes to bed.
 - **Steps.** Morning: opens the laptop.
 - **Shows.** Ideally: *"claude · featX — ran 4 h 12 m, 3 questions answered by
-  the timeout default, 47 files changed, 2 test runs failed then passed,
-  $4.18 spent, finished at 03:24."*
+ the timeout default, 47 files changed, 2 test runs failed then passed,
+ $4.18 spent, finished at 03:24."*
 - **Success.** She understands the night in 30 seconds.
 - **Failure.** **Not designed.** 12 §8 claims the audit log answers "what
-  happened while I was away", but the audit log excludes PTY output *and* agent
-  tool calls that did not go through a capability, is Admin-role-gated, and is
-  a forensic record, not a digest. Claude Code's own `away_summary` (06 §8) is
-  displayed verbatim but only exists for one agent and only describes *state*.
-  See G3.
+ happened while I was away", but the audit log excludes PTY output *and* agent
+ tool calls that did not go through a capability, is Admin-role-gated, and is
+ a forensic record, not a digest. Claude Code's own `away_summary` (06 §8) is
+ displayed verbatim but only exists for one agent and only describes *state*.
+ See G3.
 
 ### J41 — Reviewing what an agent actually did
 
 - **Steps.** Session → **Timeline** tab.
 - **Shows.** A chronological, collapsible list: turns, tool calls with
-  arguments, file changes, command blocks with exit codes, interactions and how
-  they were resolved, compaction events, errors.
+ arguments, file changes, command blocks with exit codes, interactions and how
+ they were resolved, compaction events, errors.
 - **Success.** Constructible entirely from data omt already has
-  (`AgentEvent::FileChanged`, block log, interaction ledger).
+ (`AgentEvent::FileChanged`, block log, interaction ledger).
 - **Failure.** No document owns it. The pieces exist in 04/05/06/12 and are
-  never assembled into a user-facing artifact. See G3.
+ never assembled into a user-facing artifact. See G3.
 
 ### J42 — "Which session was I doing the auth refactor in?"
 
 - **Steps.** `⟨leader⟩ /` global search → type `refactor auth middleware`.
 - **Shows.** Ideally: hits across *all* sessions' scrollback, command history,
-  and agent transcripts, on all connected instances, ranked, with a jump.
+ and agent transcripts, on all connected instances, ranked, with a jump.
 - **Success.** Finds it in one query.
 - **Failure.** **Not designed.** 04 §8.1 is within-session terminal search.
-  05 §9 is command-*text* history search (SQLite FTS on the command string
-  only), explicitly per-instance, and explicitly not cross-instance in v1.
-  Nothing indexes scrollback content or agent transcripts. See G2.
+ 05 §9 is command-*text* history search (SQLite FTS on the command string
+ only), explicitly per-instance, and explicitly not cross-instance in v1.
+ Nothing indexes scrollback content or agent transcripts. See G2.
 
 ### J43 — A terminal purist doing ordinary non-agent work all day
 
 - **Steps.** `nvim`, `git`, `cargo`, `rg`, `less`, `htop`, `psql`, `man`, all
-  day. Splits, zooms `⟨leader⟩ z`, detaches `⟨leader⟩ d`, reattaches
-  `omt attach`.
+ day. Splits, zooms `⟨leader⟩ z`, detaches `⟨leader⟩ d`, reattaches
+ `omt attach`.
 - **Shows.** A terminal. Nothing agent-related, because no agent is running.
 - **Success.** Every agent affordance is *absent*, not greyed out, when no agent
-  is bound. Latency indistinguishable from the host terminal. `TERM`,
-  `COLORTERM`, `terminfo` correct. Mouse reporting passes through (18 §5.1).
-  Sixel/kitty images work in `nvim` plugins.
+ is bound. Latency indistinguishable from the host terminal. `TERM`,
+ `COLORTERM`, `terminfo` correct. Mouse reporting passes through (18 §5.1).
+ Sixel/kitty images work in `nvim` plugins.
 - **Failure.** Any agent chrome in a shell-only session. A `TERM` value nothing
-  recognizes — omt must ship or reuse a real terminfo entry and document the
-  fallback. Not stated anywhere; 04 §5 defines the sequence surface but not the
-  advertised `TERM`. Small but load-bearing gap.
+ recognizes — omt must ship or reuse a real terminfo entry and document the
+ fallback. Not stated anywhere; 04 §5 defines the sequence surface but not the
+ advertised `TERM`. Small but load-bearing gap.
 
 ### J44 — Automation: driving omt from a script
 
 - **Steps.**
-  ```sh
-  export OMT_TOKEN=$(cat ~/.omt-ci-token)
-  sid=$(omt session create --workspace "$PWD" --command claude --json | jq -r .id)
-  omt session send-text --session "$sid" --text "fix the failing test" --submit
-  omt agent wait --session "$sid" --for idle --timeout 30m --json
-  omt session export --session "$sid" --format jsonl > run.jsonl
-  omt session kill --session "$sid"
-  ```
+ ```sh
+ export OMT_TOKEN=$(cat ~/.omt-ci-token)
+ sid=$(omt session create --workspace "$PWD" --command claude --json | jq -r .id)
+ omt session send-text --session "$sid" --text "fix the failing test" --submit
+ omt agent wait --session "$sid" --for idle --timeout 30m --json
+ omt session export --session "$sid" --format jsonl > run.jsonl
+ omt session kill --session "$sid"
+ ```
 - **Shows.** JSON on stdout, diagnostics on stderr, documented exit codes.
 - **Success.** The CLI tree is generated from the catalog (03), so this is
-  mostly free — *if* `--json`, `wait`, `export` and an exit-code contract exist.
+ mostly free — *if* `--json`, `wait`, `export` and an exit-code contract exist.
 - **Failure.** `agent wait` and `session export` are not in the catalog groups.
-  Non-interactive auth via env var is not specified. Without these, CI use is
-  impossible. See G14.
+ Non-interactive auth via env var is not specified. Without these, CI use is
+ impossible. See G14.
 
 ### J45 — CI answering an interaction non-interactively
 
 - **Trigger.** An unattended run blocks on a permission card.
 - **Steps.** `omt interaction list --json`, then
-  `omt interaction resolve --id int_88 --option 1`.
+ `omt interaction resolve --id int_88 --option 1`.
 - **Success.** Scriptable, audited, attributed to the CI credential.
 - **Failure.** This is a *policy engine* by the back door and sits close to D1's
-  line. The honest position: omt exposes the capability, and any auto-answer
-  logic lives in the user's script or a plugin (11), never in omt. That should
-  be stated explicitly, because someone will ask for `auto_approve = true` in
-  `config.toml` and the answer must be a documented no.
+ line. The honest position: omt exposes the capability, and any auto-answer
+ logic lives in the user's script or a plugin (11), never in omt. That should
+ be stated explicitly, because someone will ask for `auto_approve = true` in
+ `config.toml` and the answer must be a documented no.
 
 ### J46 — Sensitive output on screen
 
 - **Trigger.** `cat .env` or an agent printing an API key in a tool result.
 - **Shows.** The terminal shows it (P4 — omt never rewrites output). But omt
-  *persists* it: scrollback snapshots, block records, the blob store.
+ *persists* it: scrollback snapshots, block records, the blob store.
 - **Success.** The user can mark a session `no-persist`, and a workspace can be
-  configured to never write scrollback to disk.
+ configured to never write scrollback to disk.
 - **Failure.** **Not designed.** 13 §8 redacts *logs and events*; 05 §9 redacts
-  *command text* in history and explicitly says *"the block's output is not
-  redacted — that is a different problem"*. That different problem is unowned.
-  See G9.
+ *command text* in history and explicitly says *"the block's output is not
+ redacted — that is a different problem"*. That different problem is unowned.
+ See G9.
 
 ### J47 — "Delete everything about this project"
 
 - **Steps.** `omt workspace purge ~/code/client-x --yes`.
 - **Shows.** A report of what was removed: N sessions, N blocks, N MB of
-  scrollback, N history rows, N blobs, N audit entries.
+ scrollback, N history rows, N blobs, N audit entries.
 - **Success.** A single, verifiable, complete deletion.
 - **Failure.** **Not designed.** 05 §8.2 has size-based eviction and a 1-year
-  block retention; 12 §8 has 90-day audit retention. Nothing offers targeted
-  deletion or export. See G4.
+ block retention; 12 §8 has 90-day audit retention. Nothing offers targeted
+ deletion or export. See G4.
 
 ### J48 — Multiple humans on one Linux box
 
 - **Trigger.** Two developers ssh into a shared build server, both run `omt`.
 - **Shows.** Two independent daemons, per-uid socket paths, per-uid state
-  directories, no interference.
+ directories, no interference.
 - **Success.** Obvious and correct — but must be *specified* (socket path,
-  `XDG_RUNTIME_DIR`, port allocation when both want a web server).
+ `XDG_RUNTIME_DIR`, port allocation when both want a web server).
 - **Failure.** A fixed default port collides for the second user with a
-  confusing error. See G13.
+ confusing error. See G13.
 
 ### J49 — Screen-reader user on the TUI
 
-- **Trigger.** A blind engineer using another tool/NVDA + a terminal.
+- **Trigger.** A blind engineer using other terminals/NVDA + a terminal.
 - **Success.** He can operate omt: bindings are announceable, the pending-leader
-  overlay is a list, cards can be read linearly, and a `--plain` or
-  low-chrome mode exists that avoids continuous redraws.
+ overlay is a list, cards can be read linearly, and a `--plain` or
+ low-chrome mode exists that avoids continuous redraws.
 - **Failure.** **Not designed.** 08 §9.1 is a genuinely good *web* a11y section.
-  16 §9 is about layouts and IME, not assistive tech. A ratatui full-screen app
-  is close to unusable with a screen reader unless designed for it, and the
-  honest answer may be "use the web client" — but that must be *stated*. See G10.
+ 16 §9 is about layouts and IME, not assistive tech. A ratatui full-screen app
+ is close to unusable with a screen reader unless designed for it, and the
+ honest answer may be "use the web client" — but that must be *stated*. See G10.
 
 ### J50 — CJK user
 
 - **Trigger.** A developer typing Chinese in an agent prompt via an IME, with
-  CJK filenames in the file tree.
+ CJK filenames in the file tree.
 - **Success.** Width handling per 04 §2.2; IME composition per 16 §9.3; the web
-  client's composition events handled. File tree and diff alignment correct.
+ client's composition events handled. File tree and diff alignment correct.
 - **Failure.** Ambiguous-width characters (box drawing, ✓/✗) rendered at a
-  different width than the user's terminal chose — the classic misalignment.
-  04 §2.2 must expose an `ambiguous_width` setting. UI *strings* remain English
-  by P10, which is a deliberate and acceptable no.
+ different width than the user's terminal chose — the classic misalignment.
+ 04 §2.2 must expose an `ambiguous_width` setting. UI *strings* remain English
+ by P10, which is a deliberate and acceptable no.
 
 ### J51 — Windows
 
 - **Trigger.** A Windows developer tries omt.
 - **Success/Failure.** Unclear. Windows appears incidentally across 02, 09, 10,
-  16 (ConPTY, `%APPDATA%`, clipboard formats) but **no document states whether
-  Windows is a supported target**, and the agent-integration story (shell
-  integration for bash/zsh/fish, Unix-socket hooks, `/proc` inspection for the
-  process tier) is Unix-shaped throughout. See G11.
+ 16 (ConPTY, `%APPDATA%`, clipboard formats) but **no document states whether
+ Windows is a supported target**, and the agent-integration story (shell
+ integration for bash/zsh/fish, Unix-socket hooks, `/proc` inspection for the
+ process tier) is Unix-shaped throughout. See G11.
 
 ### J52 — Air-gapped install
 
 - **Trigger.** P4 installs on a network with no egress.
 - **Success.** omt works fully: no telemetry (10 §7.11), no required egress
-  (00 §8). There is no notification backend to configure at all (D12), and the
-  daemon opens no outbound connection.
+ (00 §8). There is no notification backend to configure at all (D12), and the
+ daemon opens no outbound connection.
 - **Failure.** Plugin distribution (11 §6), STT providers (08 §7.3), and the web
-  client's asset delivery must all be verified offline-clean, and the web client
-  must load no CDN fonts. Minor but worth an explicit statement. See G16.
+ client's asset delivery must all be verified offline-clean, and the web client
+ must load no CDN fonts. Minor but worth an explicit statement. See G16.
 
 ### J53 — omt itself is slow
 
 - **Trigger.** Typing feels laggy.
 - **Steps.** `omt doctor` / `⟨leader⟩ ⇧D`.
 - **Shows.** Daemon uptime, per-session PTY throughput, parser time, render FPS,
-  event-bus backpressure state (07 §6), store write latency, memory per session,
-  attached clients and their round-trip times, degraded observation sources.
+ event-bus backpressure state (07 §6), store write latency, memory per session,
+ attached clients and their round-trip times, degraded observation sources.
 - **Success.** A user (or a bug report) can answer "why is this slow" without a
-  profiler.
+ profiler.
 - **Failure.** `omt doctor keys` (16 §7.5) and media doctoring (09) exist, but
-  there is no general health/diagnostics surface, no crash-report path, and no
-  documented log location beyond a config key. See G5.
+ there is no general health/diagnostics surface, no crash-report path, and no
+ documented log location beyond a config key. See G5.
 
 ### J54 — omt crashes
 
 - **Trigger.** A panic in the VT parser on a hostile byte sequence.
 - **Success.** The daemon survives (parser panics are caught per session and the
-  session is marked degraded, not the instance killed); a crash record is
-  written with the offending bytes quarantined; the user is told how to report
-  it.
+ session is marked degraded, not the instance killed); a crash record is
+ written with the offending bytes quarantined; the user is told how to report
+ it.
 - **Failure.** One malformed sequence takes down every session on the machine.
-  05 §8.2 covers *restore* after a crash but nothing states the blast radius of
-  a per-session fault. Should be an explicit invariant.
+ 05 §8.2 covers *restore* after a crash but nothing states the blast radius of
+ a per-session fault. Should be an explicit invariant.
 
 ### J55 — Handing a session to a colleague
 
 - **Trigger.** Priya pairs with an engineer, then hands over.
 - **Steps.** Share link (Operator role) → `⟨leader⟩ W` release writer token →
-  he acquires it.
+ he acquires it.
 - **Shows.** Both see who is driving (12 §3.4, mandatory on every surface).
 - **Success.** Clean, visible handoff with attribution in the audit log.
 - **Failure.** No way to leave a note for the person taking over, no threaded
-  comment on a session, no "@mention". Beyond D4's scope today; see G7.
+ comment on a session, no "@mention". Beyond D4's scope today; see G7.
 
 ---
 
@@ -1475,46 +1475,46 @@ Stated as refusals, with reasons, so that scope creep has to argue against a
 written position.
 
 1. **No policy layer over agent permissions.** No allow-list, deny-list, danger
-   classifier, or `auto_approve`. D1. A second gate means two mental models and
-   false confidence about cases omt cannot see.
+ classifier, or `auto_approve`. D1. A second gate means two mental models and
+ false confidence about cases omt cannot see.
 2. **omt never talks to a model.** No summarisation, no "explain this error",
-   no naming sessions with an LLM. Every digest number in G3 is counted, not
-   generated. P4. The moment omt calls an API it inherits keys, cost, latency
-   and a trust problem.
+ no naming sessions with an LLM. Every digest number in G3 is counted, not
+ generated. P4. The moment omt calls an API it inherits keys, cost, latency
+ and a trust problem.
 3. **No hosted service, no cloud sync, no telemetry, no account.** 00 §8.
-   Federation is client-side; there is no omt backend to compromise.
+ Federation is client-side; there is no omt backend to compromise.
 4. **No re-implementation of an agent's prompt loop or UI.** omt renders the
-   agent's own structured data; it does not build a better Claude Code.
+ agent's own structured data; it does not build a better Claude Code.
 5. **No arrow-key-counting synthetic input by default.** D3. Selecting the
-   wrong option on a phone, invisibly, is worse than not offering the feature.
+ wrong option on a phone, invisibly, is worse than not offering the feature.
 6. **No VCS mutation in v1** — no commit, no stage, no branch, no worktree
-   creation from the explorer. 15 §1.1. Read-only git is a bounded, safe,
-   testable surface; mutation is where a terminal tool starts destroying work.
+ creation from the explorer. 15 §1.1. Read-only git is a bounded, safe,
+ testable surface; mutation is where a terminal tool starts destroying work.
 7. **No organizations, teams, roles beyond share-scoping, or SSO.** D4. One
-   `session.note` is the entire concession (G7).
+ `session.note` is the entire concession (G7).
 8. **No editor.** omt opens `$EDITOR` and views files; it does not become one.
-   The workspace explorer is navigation and review, not authoring.
+ The workspace explorer is navigation and review, not authoring.
 9. **No shell.** 00 §8. omt integrates with zsh/bash/fish; it does not
-   implement completion, aliases or a prompt.
+ implement completion, aliases or a prompt.
 10. **No translated UI.** English only, P10. Input i18n (IME, width, layouts)
-    is fully supported; string localisation is not.
+ is fully supported; string localisation is not.
 11. **No native Windows in v1.** WSL2 only (G11). Half-working PTY, hook and
-    shell-integration paths on Windows would cost more than they return.
+ shell-integration paths on Windows would cost more than they return.
 12. **No claim to sandbox or contain an agent.** 13 §1.3. omt observes; if your
-    agent is malicious, omt faithfully shows you what it does.
+ agent is malicious, omt faithfully shows you what it does.
 13. **No undo of an agent's file edits.** omt does not own the filesystem and
-    will not pretend to. The honest offering is: surface *what changed* (15
-    §8.3), surface the agent's own checkpoint/rewind feature where it has one,
-    and point at git. Anything more would be a backup product wearing a
-    terminal's clothes.
+ will not pretend to. The honest offering is: surface *what changed* (15
+ §8.3), surface the agent's own checkpoint/rewind feature where it has one,
+ and point at git. Anything more would be a backup product wearing a
+ terminal's clothes.
 14. **No observation through a nested multiplexer.** 00 §8. The terminal works;
-    the agent state is `Unknown` and says so.
+ the agent state is `Unknown` and says so.
 15. **No at-rest encryption promise for scrollback.** The key would live beside
-    the data on the same machine, under the same uid. `persist_scrollback =
-    false` (R55) is the honest control instead.
+ the data on the same machine, under the same uid. `persist_scrollback =
+ false` (R55) is the honest control instead.
 16. **No adoption of processes omt did not spawn.** G24. The observation tiers
-    depend on injected env and known argv.
+ depend on injected env and known argv.
 17. **No plugin permitted to bypass the capability catalog.** 11 §4. A plugin
-    that needs a private door means the catalog is wrong.
+ that needs a private door means the catalog is wrong.
 18. **No feature that exists on only one surface.** P3. If it cannot be
-    expressed in the catalog and rendered on a phone, it does not ship.
+ expressed in the catalog and rendered on a phone, it does not ship.

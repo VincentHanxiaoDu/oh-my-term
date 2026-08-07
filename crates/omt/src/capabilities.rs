@@ -2585,7 +2585,7 @@ pub struct LayoutOpenIn {
     pub workspace: String,
     /// The panes, in the order they should appear.
     ///
-    /// A flat list rather than another terminal's recursive split tree, and the reason is
+    /// A flat list rather than a recursive split tree, and the reason is
     /// worth stating: omt's own geometry tiles a flat list, so a tree would be
     /// a shape the renderer immediately flattens. When the renderer grows
     /// nested splits this grows with it, and not before — a schema that

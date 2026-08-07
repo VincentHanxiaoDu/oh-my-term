@@ -27,17 +27,17 @@ Not installed here (docs-only): Amp, Aider, Goose, Qwen Code, Crush.
 
 ```
 CLAUDECODE=1
-CLAUDE_CODE_ENTRYPOINT=cli            # "cli" | "sdk-ts" | "sdk-py" | "vscode" ... (values UNCERTAIN beyond "cli")
+CLAUDE_CODE_ENTRYPOINT=cli # "cli" | "sdk-ts" | "sdk-py" | "vscode" ... (values UNCERTAIN beyond "cli")
 CLAUDE_CODE_EXECPATH=/Users/hanxiao.du/.local/share/claude/versions/2.1.220
 CLAUDE_CODE_SESSION_ID=5129fa43-a66a-4b4d-8c27-481a4701a652
-CLAUDE_CODE_CHILD_SESSION=1           # set for subagent/teammate sessions
+CLAUDE_CODE_CHILD_SESSION=1 # set for subagent/teammate sessions
 CLAUDE_PID=5013
 CLAUDE_EFFORT=low
-CLAUDE_CODE_BRIDGE_SESSION_ID=session_01UZ...   # claude.ai session link
-AI_AGENT=claude-code_2-1-220_agent    # NOT official — set by a local wrapper on this machine, do not depend on it
+CLAUDE_CODE_BRIDGE_SESSION_ID=session_01UZ... # claude.ai session link
+AI_AGENT=claude-code_2-1-220_agent # NOT official — set by a local wrapper on this machine, do not depend on it
 ```
 
-  For omt this matters twice over: (a) `omt` spawns the agent, so it can read `/proc`-equivalent env (on macOS: `ps -E -p <pid>`, or better, `libproc`/`sysctl KERN_PROCARGS2`) to classify the PTY child; (b) `CLAUDE_CODE_SESSION_ID` gives the session UUID *directly*, which is the join key to the transcript file — no slug-guessing needed.
+ For omt this matters twice over: (a) `omt` spawns the agent, so it can read `/proc`-equivalent env (on macOS: `ps -E -p <pid>`, or better, `libproc`/`sysctl KERN_PROCARGS2`) to classify the PTY child; (b) `CLAUDE_CODE_SESSION_ID` gives the session UUID *directly*, which is the join key to the transcript file — no slug-guessing needed.
 - Argv detection: `claude`, `claude -p ...`, `claude --resume <uuid>`.
 - Terminal title: Claude Code sets the terminal title (OSC 0/2) to the session name / current task. Hooks can also emit arbitrary OSC via the `terminalSequence` output field (see 1.4) — this is the officially sanctioned OSC channel.
 
@@ -139,24 +139,24 @@ Real `system` lines (verified locally):
 ```json
 {"type":"tool_use","id":"toolu_01EN58Za9e39k51vnxWzV5c3","name":"AskUserQuestion",
  "input":{"questions":[
-   {"question":"Which GitHub org should the Botim Eclipse repo be created under? (Your Astratech account has access to these.)",
-    "header":"GitHub Org","multiSelect":false,
-    "options":[
-      {"label":"BotimMoney","description":"Botim product / money org — natural home for a product named Botim Eclipse."},
-      {"label":"AstraPlayGround","description":"Experimentation / playground org."},
-      {"label":"FintechBU-CoE","description":"Fintech BU Center of Excellence org."},
-      {"label":"AI-Infra-Gurus","description":"AI infrastructure org — fits an agentic platform."}]},
-   {"question":"Repository visibility?","header":"Visibility","multiSelect":false,
-    "options":[
-      {"label":"Private (Recommended)","description":"Only org members with access can see it. Standard for internal enterprise projects."},
-      {"label":"Internal","description":"Visible to all members of the enterprise."},
-      {"label":"Public","description":"Visible to everyone on the internet."}]},
-   {"question":"What language should the official docs be written in? (The source drafts are in Chinese.)",
-    "header":"Doc Language","multiSelect":false,
-    "options":[
-      {"label":"English (Recommended)","description":"Rewrite all docs in English for broad collaboration. Identifiers/terms already English."},
-      {"label":"Bilingual","description":"English prose with key Chinese context retained where helpful."},
-      {"label":"Chinese","description":"Keep Chinese prose as in the source drafts, with English identifiers."}]}]},
+ {"question":"Which GitHub org should the Botim Eclipse repo be created under? (Your Astratech account has access to these.)",
+ "header":"GitHub Org","multiSelect":false,
+ "options":[
+ {"label":"BotimMoney","description":"Botim product / money org — natural home for a product named Botim Eclipse."},
+ {"label":"AstraPlayGround","description":"Experimentation / playground org."},
+ {"label":"FintechBU-CoE","description":"Fintech BU Center of Excellence org."},
+ {"label":"AI-Infra-Gurus","description":"AI infrastructure org — fits an agentic platform."}]},
+ {"question":"Repository visibility?","header":"Visibility","multiSelect":false,
+ "options":[
+ {"label":"Private (Recommended)","description":"Only org members with access can see it. Standard for internal enterprise projects."},
+ {"label":"Internal","description":"Visible to all members of the enterprise."},
+ {"label":"Public","description":"Visible to everyone on the internet."}]},
+ {"question":"What language should the official docs be written in? (The source drafts are in Chinese.)",
+ "header":"Doc Language","multiSelect":false,
+ "options":[
+ {"label":"English (Recommended)","description":"Rewrite all docs in English for broad collaboration. Identifiers/terms already English."},
+ {"label":"Bilingual","description":"English prose with key Chinese context retained where helpful."},
+ {"label":"Chinese","description":"Keep Chinese prose as in the source drafts, with English identifiers."}]}]},
  "caller":{"type":"direct"}}
 ```
 
@@ -182,7 +182,7 @@ Config in `settings.json` (user `~/.claude/settings.json`, project `.claude/sett
 
 ```json
 {"hooks":{"SessionStart":[{"matcher":"*","hooks":[
-  {"type":"command","command":"bash '/Users/hanxiao.du/.claude/hooks/another tool-agent-state.sh' session","timeout":10}]}]}}
+ {"type":"command","command":"bash '/Users/hanxiao.du/.claude/hooks/other terminals-agent-state.sh' session","timeout":10}]}]}}
 ```
 
 **Full event list (30, from official docs):** `SessionStart`, `Setup`, `UserPromptSubmit`, `UserPromptExpansion`, `PreToolUse`, `PermissionRequest`, `PermissionDenied`, `PostToolUse`, `PostToolUseFailure`, `PostToolBatch`, `Notification`, `MessageDisplay`, `SubagentStart`, `SubagentStop`, `TaskCreated`, `TaskCompleted`, `Stop`, `StopFailure`, `TeammateIdle`, `InstructionsLoaded`, `ConfigChange`, `CwdChanged`, `DirectoryAdded`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`, `PreCompact`, `PostCompact`, `Elicitation`, `ElicitationResult`.
@@ -275,7 +275,7 @@ Official, documented (`/docs/en/voice-dictation`):
 
 - Binary: `codex` (Rust, single static binary — process name is reliably `codex`).
 - Env vars it sets/reads (extracted from the binary, verified locally): `CODEX_HOME`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `CODEX_NON_INTERACTIVE`, `CODEX_CI`, `CODEX_EXEC_SERVER_URL`, `CODEX_ESCALATE_SOCKET`, `CODEX_INTERNAL_ORIGINATOR_OVERRIDE`, `CODEX_TUI_DISABLE_KEYBOARD_ENHANCEMENT`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `CODEX_SQLITE_HOME`, `CODEX_MANAGED_PACKAGE_ROOT`.
-  `CODEX_SANDBOX` (set inside sandboxed child commands) and `CODEX_THREAD_ID` are the useful detection/correlation keys.
+ `CODEX_SANDBOX` (set inside sandboxed child commands) and `CODEX_THREAD_ID` are the useful detection/correlation keys.
 - `CODEX_HOME` defaults to `~/.codex`.
 
 ### 2.2 Machine-readable modes
@@ -318,7 +318,7 @@ Every line is `{"timestamp": ISO, "type": <above>, "payload": {...}}`.
  "forked_from_id":"019facdb-...","parent_thread_id":"019facdb-...","timestamp":"2026-07-29T08:04:16.068Z",
  "cwd":"/Users/hanxiao.du/Desktop/botim-eclipse","originator":"Codex Desktop","cli_version":"0.145.0-alpha.18",
  "source":{"subagent":{"thread_spawn":{"parent_thread_id":"019facdb-...","depth":1,
-   "agent_path":"/root/control_plane_consistency","agent_nickname":"Ramanujan","agent_role":null}}},
+ "agent_path":"/root/control_plane_consistency","agent_nickname":"Ramanujan","agent_role":null}}},
  "thread_source":"subagent","agent_nickname":"Ramanujan","agent_path":"/root/control_plane_consistency",
  "model_provider":"openai","base_instructions":{"text":"You are Codex, an agent based on GPT-5. ..."}}
 ```
@@ -347,7 +347,7 @@ Real payloads (verbatim):
 `~/.codex/hooks.json`, **structurally identical to Claude Code's** (verified local file):
 
 ```json
-{"hooks":{"SessionStart":[{"hooks":[{"command":"bash '/Users/hanxiao.du/.codex/another tool-agent-state.sh' session","timeout":10,"type":"command"}]}]}}
+{"hooks":{"SessionStart":[{"hooks":[{"command":"bash '/Users/hanxiao.du/.codex/other terminals-agent-state.sh' session","timeout":10,"type":"command"}]}]}}
 ```
 
 Event names present in the binary (verified by string extraction): `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `PreCompact`. So Codex has deliberately adopted the Claude Code hook vocabulary — **omt can ship one hook handler for both**. Note `codex exec --dangerously-bypass-hook-trust` and the persisted "hook trust" concept: Codex requires hooks to be trusted before they run, so omt's installer must account for a trust prompt.
@@ -476,7 +476,7 @@ Events: `BeforeTool`, `AfterTool`, `BeforeAgent`, `AfterAgent`, `BeforeModel`, `
 
 ```json
 {"hooks":{"BeforeTool":[{"matcher":"regex-for-tools","sequential":true,
-  "hooks":[{"type":"command","command":"...","name":"...","timeout":60000,"description":"..."}]}]}}
+ "hooks":[{"type":"command","command":"...","name":"...","timeout":60000,"description":"..."}]}]}}
 ```
 
 Common stdin: `{"session_id","transcript_path","cwd","hook_event_name","timestamp"}` — note `timestamp` is extra vs Claude Code, and there is no `permission_mode`.
@@ -503,7 +503,7 @@ Per-event: `BeforeTool` adds `tool_name`, `tool_input`, `mcp_context`, `original
 
 - Binary: `cursor-agent`. Node bundle at `/opt/homebrew/Caskroom/cursor-cli/<ver>/dist-package/index.js` (~9.5 MB).
 - Env vars (extracted from the bundle, verified): `CURSOR_AGENT`, `CURSOR_CLI`, `CURSOR_CONVERSATION_ID`, `CURSOR_CONFIG_DIR`, `CURSOR_DATA_DIR`, `CURSOR_AGENT_STORE`, `CURSOR_AGENT_STORE_FILES_DIR`, `CURSOR_AGENT_WORKER_ID`, `CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`, `CURSOR_API_BASE_URL`, `CURSOR_AGENT_DISABLE_DEBUG_LOG`, `CURSOR_AGENT_DEBUG_PORT`, `CURSOR_ASKPASS`/`_SOCKET`/`_SECRET`, `CURSOR_FORCED_SHELL_EGRESS[_ALLOW|_DENY]_DOMAINS`.
-  **`CURSOR_AGENT` + `CURSOR_CONVERSATION_ID` are the detection and correlation keys.**
+ **`CURSOR_AGENT` + `CURSOR_CONVERSATION_ID` are the detection and correlation keys.**
 - Debug logs: `$TMPDIR/cursor-agent-logs-<uid>/session-<ISO>-<pid>-<n>.log` (rotation: keeps newest 50, max age 7 days — decoded from the bundle). Suppressed by `CURSOR_AGENT_DISABLE_DEBUG_LOG`. Useful as a last-resort state source.
 
 ### 5.2 Machine-readable modes
@@ -519,7 +519,7 @@ Documented usage is `cursor-agent -p "prompt" --output-format json|stream-json|t
 `~/.cursor/hooks.json` (verified local file):
 
 ```json
-{"hooks":{"sessionStart":[{"command":"bash '/Users/hanxiao.du/.cursor/another tool-agent-state.sh' session"}]},"version":1}
+{"hooks":{"sessionStart":[{"command":"bash '/Users/hanxiao.du/.cursor/other terminals-agent-state.sh' session"}]},"version":1}
 ```
 
 **camelCase event names** (extracted from the bundle, verified): `sessionStart`, `sessionEnd`, `beforeSubmitPrompt`, `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`, `afterFileEdit`, `stop`, `preCompact`.
@@ -540,14 +540,14 @@ Note there is a top-level `"version": 1` field — Cursor versions its hook conf
 
 - Binary: `amp`. Env: `AMP_API_KEY`, `AMP_REMOTE_CONTROL_TERMINAL`, `AMP_FORCE_BEL`, `AMP_SKIP_UPDATE_CHECK`.
 - Modes:
-  - `amp` — TUI.
-  - `amp -x/--execute "prompt"` — one-shot, prints final response.
-  - `amp --no-tui --runner-id <id>` — **runner mode: accepts remotely created threads with no TUI**. Directly relevant to omt's remote-client story.
-  - `--stream-json` (requires `--execute`) — newline-delimited JSON message events. **Documented as Claude-Code-compatible**, with `--stream-json-thinking` adding thinking blocks and explicitly noted as *incompatible with Claude Code* when enabled. So Amp's default stream-json is a deliberate clone of Claude Code's schema — omt can share a parser.
-  - `--stream-json-input` — newline-delimited JSON user messages on stdin (text + image blocks) for multi-turn.
-  - `--remote-control-terminal` / `--no-remote-control-terminal` — web/app terminal interaction, gated by `AMP_REMOTE_CONTROL_TERMINAL=1|0`.
-  - `--mcp-config`, `--settings-file <path>`, `--fast`, `--jetbrains`, `--plugin-ready-timeout`.
-  - `amp mcp add|approve|oauth login`.
+ - `amp` — TUI.
+ - `amp -x/--execute "prompt"` — one-shot, prints final response.
+ - `amp --no-tui --runner-id <id>` — **runner mode: accepts remotely created threads with no TUI**. Directly relevant to omt's remote-client story.
+ - `--stream-json` (requires `--execute`) — newline-delimited JSON message events. **Documented as Claude-Code-compatible**, with `--stream-json-thinking` adding thinking blocks and explicitly noted as *incompatible with Claude Code* when enabled. So Amp's default stream-json is a deliberate clone of Claude Code's schema — omt can share a parser.
+ - `--stream-json-input` — newline-delimited JSON user messages on stdin (text + image blocks) for multi-turn.
+ - `--remote-control-terminal` / `--no-remote-control-terminal` — web/app terminal interaction, gated by `AMP_REMOTE_CONTROL_TERMINAL=1|0`.
+ - `--mcp-config`, `--settings-file <path>`, `--fast`, `--jetbrains`, `--plugin-ready-timeout`.
+ - `amp mcp add|approve|oauth login`.
 - Settings: `~/.config/amp/settings.json[c]`; workspace `.amp/settings.json[c]`; managed `/Library/Application Support/ampcode/managed-settings.json` (macOS), `/etc/ampcode/managed-settings.json` (Linux).
 - **Threads are server-side** (`ampcode.com/feed`, referenced as `@T-<id>`). There is no rich local transcript file to tail — omt must use `--stream-json` or the Amp API. Confirmed by the manual: "persistent storage occurs server-side."
 - Skills: `.agents/skills/*/mcp.json` for skill-bundled MCP servers.
@@ -573,7 +573,7 @@ Note there is a top-level `"version": 1` field — Cursor versions its hook conf
 
 - Binary: `goose` (Rust). Config `~/.config/goose/config.yaml`.
 - Modes: `goose session` (interactive), **`goose run`** (headless: one user message in, one agent turn out, then exit — for CI), `goose run --recipe <file>` (parameterized recipes), `goose mcp`, `goose web` / server mode, `goose bench`.
-  `--no-session` suppresses writing session state to disk. `--path <PATH>` selects a legacy file-based session (e.g. `./playground.jsonl`).
+ `--no-session` suppresses writing session state to disk. `--path <PATH>` selects a legacy file-based session (e.g. `./playground.jsonl`).
 - **Session storage changed in v1.10.0: SQLite `sessions.db` replaced per-session `.jsonl` files.** Location is `~/.local/share/goose/sessions/` on Linux/macOS per XDG (docs also reference `~/.config/goose/sessions/`) — **UNCERTAIN** which is current; omt should probe both.
 - Export/import: `SessionManager::get_session(id, true)` returns full state serializable to JSON; there is a JSON-based session export/import path.
 - **ACP: `goose-acp-server` wraps the agent behind the Agent Client Protocol** — this is the recommended integration surface for omt.
@@ -644,7 +644,7 @@ Three of the ten agents speak ACP natively today: **opencode (`opencode acp`)**,
 | Crush | none confirmed | — | `crush` |
 | Qwen | none confirmed | — | `qwen` |
 
-  Env markers beat process names because four of the ten ship as Node bundles that appear as `node`.
+ Env markers beat process names because four of the ten ship as Node bundles that appear as `node`.
 
 **Layer 2 — omt-injected environment + OSC markers.** Because omt spawns the PTY, it should inject its own correlation env (`OMT_SESSION=<uuid>`, `OMT_SOCK=/path`) so that *any* hook, plugin, or wrapper the agent runs can phone home already knowing which omt pane it belongs to. Complementarily, Claude Code hooks can emit `terminalSequence` (OSC 777/9/99) which omt's terminal parser intercepts — a zero-dependency backchannel that survives when the socket doesn't. Codex/Cursor/Gemini hooks can `printf` OSC to their own stdout for the same effect, though whether that reaches omt's PTY depends on how the CLI wires hook stdout (**UNCERTAIN** — verify per agent).
 
@@ -656,7 +656,7 @@ Three of the ten agents speak ACP natively today: **opencode (`opencode acp`)**,
 - opencode: JS plugin API (`tool.execute.before/after`, `permission.ask`, `event`).
 - Amp / Aider / Goose / Crush: nothing. Fall through to layers 4–5.
 
-  omt should ship **one hook binary** (`omt-agent-hook`) that reads JSON on stdin, normalizes it (see 12.2), POSTs to `$OMT_SOCK`, and echoes back either `{}` or a decision omt's remote client supplied. Install it into all four hook config files, merging rather than overwriting (users already have hooks — this machine has `another tool-agent-state.sh` wired into all three of `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.cursor/hooks.json`).
+ omt should ship **one hook binary** (`omt-agent-hook`) that reads JSON on stdin, normalizes it (see 12.2), POSTs to `$OMT_SOCK`, and echoes back either `{}` or a decision omt's remote client supplied. Install it into all four hook config files, merging rather than overwriting (users already have hooks — this machine has `other terminals-agent-state.sh` wired into all three of `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.cursor/hooks.json`).
 
 **Layer 4 — protocol/API attach where available.** Prefer this over file-tailing when the agent offers it:
 - opencode: `opencode serve` REST+SSE, or `opencode acp`.
@@ -679,7 +679,7 @@ Three of the ten agents speak ACP natively today: **opencode (`opencode acp`)**,
 | Aider | `<repo>/.aider.chat.history.md` | Markdown |
 | Amp | none local | server-side |
 
-  Implementation notes: use `notify`/FSEvents on the parent directory (not the file) so newly created sessions are caught; keep a byte offset per file and handle truncation-on-rewrite for Gemini's whole-file JSON; for SQLite, prefer polling `max(rowid)`/`seq` over WAL parsing, and open **read-only with `immutable=0`** to avoid interfering with the agent's writers.
+ Implementation notes: use `notify`/FSEvents on the parent directory (not the file) so newly created sessions are caught; keep a byte offset per file and handle truncation-on-rewrite for Gemini's whole-file JSON; for SQLite, prefer polling `max(rowid)`/`seq` over WAL parsing, and open **read-only with `immutable=0`** to avoid interfering with the agent's writers.
 
 **Layer 6 — PTY output heuristics (fallback only).** For Aider, Amp, Crush, Goose in TUI mode, and any agent whose hooks the user refused to install. Practical signals, in rough order of robustness:
 - **Cursor position + alternate screen** (`\e[?1049h`) tells you the agent is running a full-screen TUI.
@@ -695,83 +695,83 @@ Three of the ten agents speak ACP natively today: **opencode (`opencode acp`)**,
 
 ```rust
 struct AgentEvent {
-    // --- identity ---
-    omt_session: Uuid,            // omt pane/session
-    agent: AgentKind,             // ClaudeCode | Codex | OpenCode | Gemini | Cursor | Amp | Aider | Goose | Qwen | Crush | Unknown
-    agent_version: Option<String>,
-    agent_session: Option<String>,// native session id (uuid / ses_xxx / thread id)
-    thread: ThreadRef,            // { id, parent: Option<id>, is_subagent: bool, label: Option<String> }
-    seq: u64,                     // monotonic per omt_session
-    ts: DateTime<Utc>,
-    source: Source,               // Hook | Protocol | Transcript | Pty | Process   (== confidence tier)
-    cwd: PathBuf,
-    git_branch: Option<String>,
+ // --- identity ---
+ omt_session: Uuid, // omt pane/session
+ agent: AgentKind, // ClaudeCode | Codex | OpenCode | Gemini | Cursor | Amp | Aider | Goose | Qwen | Crush | Unknown
+ agent_version: Option<String>,
+ agent_session: Option<String>,// native session id (uuid / ses_xxx / thread id)
+ thread: ThreadRef, // { id, parent: Option<id>, is_subagent: bool, label: Option<String> }
+ seq: u64, // monotonic per omt_session
+ ts: DateTime<Utc>,
+ source: Source, // Hook | Protocol | Transcript | Pty | Process (== confidence tier)
+ cwd: PathBuf,
+ git_branch: Option<String>,
 
-    payload: Payload,
+ payload: Payload,
 }
 
 enum Payload {
-    // ---- lifecycle ----
-    SessionStart { reason: StartReason /* Startup|Resume|Clear|Compact|Fork */, model: Option<String>,
-                   permission_mode: Option<PermissionMode>, transcript_path: Option<PathBuf> },
-    SessionEnd   { reason: String },
-    Capabilities { tools: Vec<String>, slash_commands: Vec<SlashCommand>,
-                   mcp_servers: Vec<McpServer /* {name, status: Ok|Pending|Failed|NeedsAuth} */>,
-                   models: Vec<String>, permission_modes: Vec<PermissionMode> },
+ // ---- lifecycle ----
+ SessionStart { reason: StartReason /* Startup|Resume|Clear|Compact|Fork */, model: Option<String>,
+ permission_mode: Option<PermissionMode>, transcript_path: Option<PathBuf> },
+ SessionEnd { reason: String },
+ Capabilities { tools: Vec<String>, slash_commands: Vec<SlashCommand>,
+ mcp_servers: Vec<McpServer /* {name, status: Ok|Pending|Failed|NeedsAuth} */>,
+ models: Vec<String>, permission_modes: Vec<PermissionMode> },
 
-    // ---- turn state (drives the pane badge) ----
-    TurnStart    { turn_id: Option<String>, trigger: Trigger /* Human|Queued|Hook|Remote */ },
-    TurnEnd      { turn_id: Option<String>, outcome: Outcome /* Completed|Aborted|Error */,
-                   last_message: Option<String>, turn_count: Option<u32> },
-    Thinking     { delta_tokens: Option<u64>, text: Option<String> },
-    Usage        { input: u64, output: u64, cache_read: u64, cache_write: u64, reasoning: u64,
-                   context_window: Option<u64>, cost_usd: Option<f64> },
-    RateLimit    { status: String, resets_at: Option<DateTime<Utc>>, kind: Option<String> },
-    Compaction   { phase: Phase /* Before|After */, trigger: String, token_count: Option<u64> },
+ // ---- turn state (drives the pane badge) ----
+ TurnStart { turn_id: Option<String>, trigger: Trigger /* Human|Queued|Hook|Remote */ },
+ TurnEnd { turn_id: Option<String>, outcome: Outcome /* Completed|Aborted|Error */,
+ last_message: Option<String>, turn_count: Option<u32> },
+ Thinking { delta_tokens: Option<u64>, text: Option<String> },
+ Usage { input: u64, output: u64, cache_read: u64, cache_write: u64, reasoning: u64,
+ context_window: Option<u64>, cost_usd: Option<f64> },
+ RateLimit { status: String, resets_at: Option<DateTime<Utc>>, kind: Option<String> },
+ Compaction { phase: Phase /* Before|After */, trigger: String, token_count: Option<u64> },
 
-    // ---- content ----
-    UserMessage  { text: String, origin: Origin /* Human|Queue|Remote|Synthetic */, images: Vec<Blob> },
-    AssistantText{ text: String, partial: bool, phase: Option<String> /* codex: commentary|final */ },
-    Reasoning    { text: String, partial: bool },
+ // ---- content ----
+ UserMessage { text: String, origin: Origin /* Human|Queue|Remote|Synthetic */, images: Vec<Blob> },
+ AssistantText{ text: String, partial: bool, phase: Option<String> /* codex: commentary|final */ },
+ Reasoning { text: String, partial: bool },
 
-    // ---- tools ----
-    ToolCall     { call_id: String, name: String, input: serde_json::Value,
-                   status: ToolStatus /* Pending|Running|Completed|Error */, parent_call_id: Option<String> },
-    ToolResult   { call_id: String, output: ToolOutput, error: Option<String>, duration_ms: Option<u64> },
-    Plan         { steps: Vec<PlanStep /* {title, status} */> },
-    FileChanged  { path: PathBuf, change: Change /* Created|Modified|Deleted */, diff: Option<String> },
+ // ---- tools ----
+ ToolCall { call_id: String, name: String, input: serde_json::Value,
+ status: ToolStatus /* Pending|Running|Completed|Error */, parent_call_id: Option<String> },
+ ToolResult { call_id: String, output: ToolOutput, error: Option<String>, duration_ms: Option<u64> },
+ Plan { steps: Vec<PlanStep /* {title, status} */> },
+ FileChanged { path: PathBuf, change: Change /* Created|Modified|Deleted */, diff: Option<String> },
 
-    // ---- interaction: THE core of omt's remote-mirroring feature ----
-    Interaction  { id: String, kind: InteractionKind, prompt: String, timeout_ms: Option<u64> },
-    InteractionResolved { id: String, response: InteractionResponse, by: Actor /* Local|Remote|Timeout|Policy */ },
+ // ---- interaction: THE core of omt's remote-mirroring feature ----
+ Interaction { id: String, kind: InteractionKind, prompt: String, timeout_ms: Option<u64> },
+ InteractionResolved { id: String, response: InteractionResponse, by: Actor /* Local|Remote|Timeout|Policy */ },
 
-    // ---- queue ----
-    QueueChanged { op: QueueOp /* Enqueue|Remove|Consume */, index: Option<usize>, text: String,
-                   pending: Vec<String> },
+ // ---- queue ----
+ QueueChanged { op: QueueOp /* Enqueue|Remove|Consume */, index: Option<usize>, text: String,
+ pending: Vec<String> },
 
-    // ---- fallback ----
-    Notification { kind: String, message: String },
-    RawPty       { state_guess: PtyState /* Busy|Idle|NeedsAttention|Unknown */ },
+ // ---- fallback ----
+ Notification { kind: String, message: String },
+ RawPty { state_guess: PtyState /* Busy|Idle|NeedsAttention|Unknown */ },
 }
 
 enum InteractionKind {
-    /// Claude Code AskUserQuestion; ACP's structured elicitation; MCP elicitation
-    Choice { questions: Vec<ChoiceQuestion> },   // { question, header, multi_select, options:[{label, description}] }
-    /// Tool/command approval
-    Permission { tool: String, input: serde_json::Value,
-                 suggestions: Vec<PermissionOption /* Allow|AllowAlways|Deny|DenyAlways|Edit */>,
-                 diff: Option<String>, command: Option<String> },
-    /// Free-text follow-up
-    Text { placeholder: Option<String>, multiline: bool },
-    /// Plan / mode confirmation
-    PlanReview { plan: String },
+ /// Claude Code AskUserQuestion; ACP's structured elicitation; MCP elicitation
+ Choice { questions: Vec<ChoiceQuestion> }, // { question, header, multi_select, options:[{label, description}] }
+ /// Tool/command approval
+ Permission { tool: String, input: serde_json::Value,
+ suggestions: Vec<PermissionOption /* Allow|AllowAlways|Deny|DenyAlways|Edit */>,
+ diff: Option<String>, command: Option<String> },
+ /// Free-text follow-up
+ Text { placeholder: Option<String>, multiline: bool },
+ /// Plan / mode confirmation
+ PlanReview { plan: String },
 }
 
 enum InteractionResponse {
-    Choices(Vec<Vec<String>>),       // per-question selected labels
-    Permission { decision: PermissionDecision, updated_input: Option<serde_json::Value>, reason: Option<String> },
-    Text(String),
-    Cancelled,
+ Choices(Vec<Vec<String>>), // per-question selected labels
+ Permission { decision: PermissionDecision, updated_input: Option<serde_json::Value>, reason: Option<String> },
+ Text(String),
+ Cancelled,
 }
 ```
 
@@ -844,7 +844,7 @@ and `--share`/`--share-gist` for exporting a session.
 ### 13.3 Hooks
 
 `~/.copilot/hooks/*.json`, one file per integration — this machine has
-`another tool.json` alongside a `another tool-agent-state.sh`, which is how both of those tools
+`other terminals.json` alongside a `other terminals-agent-state.sh`, which is how both of those tools
 attach. The vocabulary is Claude Code's plus four:
 
 | | |

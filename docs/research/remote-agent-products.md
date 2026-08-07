@@ -36,7 +36,7 @@ Claude Code on the web, Codex cloud, Cursor cloud agents, Devin.
 full local trust, and phone-hostile. Members: Sculptor, Conductor local, Droid
 CLI, Claude Code Desktop, crystal, claude-squad, uzi, container-use.
 
-**The bridge products** — happy, Omnara, another terminal remote-control, Anthropic's own
+**The bridge products** — happy, Omnara, other terminals remote-control, Anthropic's own
 Remote Control, Codex Remote — run the agent locally but stream *structured
 state*, not bytes, to the phone. This is the fastest-moving part of the
 category and the part omt competes with most directly.
@@ -111,7 +111,7 @@ scripts/claude_local_launcher.cjs [args]` with `--append-system-prompt`,
 `DISABLE_AUTOUPDATER=1`, **monkey-patches `global.fetch`** to emit
 `{type:'fetch-start'|'fetch-end', id, hostname, path, method, timestamp}` JSON
 lines to fd 3, then in-processes the user's globally installed `claude` via
-`require('./claude_version_utils.cjs').runClaudeCli(getClaudeCliPath())`. Only
+`require('./claude_version_utils.cjs').runClaudeCli(getClaudeCliPath)`. Only
 hostname and path are emitted, never bodies — deliberately privacy-conscious.
 
 **Hooks:** exactly one [V `src/claude/utils/generateHookSettings.ts`]. It writes
@@ -132,19 +132,19 @@ No use of `--remote-control` anywhere.
 ### 1.3 State capture
 
 - **Thinking (local mode)** is inferred from the fd-3 fetch events: `fetch-start`
-  → `activeFetches.set(...)`, `updateThinking(true)`; `fetch-end` → when the set
-  empties, `setTimeout(() => updateThinking(false), 500)` [V `claudeLocal.ts`].
-  In other words, **"thinking" means an in-flight HTTP request from the Claude
-  process.** Elegant, high-signal, and completely free of PTY scraping.
+ → `activeFetches.set(...)`, `updateThinking(true)`; `fetch-end` → when the set
+ empties, `setTimeout( => updateThinking(false), 500)` [V `claudeLocal.ts`].
+ In other words, **"thinking" means an in-flight HTTP request from the Claude
+ process.** Elegant, high-signal, and completely free of PTY scraping.
 - **Content** comes from transcript tailing [V `src/claude/utils/sessionScanner.ts`]:
-  watches `~/.claude/projects/<slug>/<sessionId>.jsonl`, parses each line against
-  `RawJSONLinesSchema`, dedupes by `messageKey()`, and handles session-id
-  switching on compaction/fork with a `deadSessions` blacklist for phantom ids
-  whose `.jsonl` never materializes.
+ watches `~/.claude/projects/<slug>/<sessionId>.jsonl`, parses each line against
+ `RawJSONLinesSchema`, dedupes by `messageKey`, and handles session-id
+ switching on compaction/fork with a `deadSessions` blacklist for phantom ids
+ whose `.jsonl` never materializes.
 - **Fork backfill** [V `src/claude/runClaude.ts` ~295–331]: on resume the SDK
-  reads the JSONL silently and never re-emits it, so happy reads the file itself
-  and replays every line to the phone, content-deduping against SDK-emitted
-  messages. This is a real-world bug class omt will hit too.
+ reads the JSONL silently and never re-emits it, so happy reads the file itself
+ and replays every line to the phone, content-deduping against SDK-emitted
+ messages. This is a real-world bug class omt will hit too.
 - **Blocked** = a pending entry in `PermissionHandler.pendingRequests`.
 
 This is a tier-3/4/5 architecture in omt's own vocabulary. **happy has
@@ -205,23 +205,23 @@ socket; the CLI opens caller sockets to `spawn`/`resume` sessions remotely.
 
 - Legacy: `tweetnacl.secretbox` (XSalsa20-Poly1305), layout `[nonce(24) | ct+tag]`.
 - Current "dataKey": **AES-256-GCM**, layout `[version(1) | nonce(12) | ct | tag(16)]`,
-  per-session or per-machine content keys.
+ per-session or per-machine content keys.
 - Content key wrapped with `tweetnacl.box` + ephemeral keypair:
-  `[ephPub(32) | nonce(24) | ct]`, version-byte prefixed, base64.
+ `[ephPub(32) | nonce(24) | ct]`, version-byte prefixed, base64.
 - Key tree is **BIP32-style HMAC-SHA512** [V `src/utils/deriveKey.ts`]:
-  `deriveSecretKeyTreeRoot(seed, usage)` = `HMAC(usage + ' Master Seed', seed)`
-  → `{key: I[0:32], chainCode: I[32:]}`; children `HMAC(chainCode, 0x00||index)`.
+ `deriveSecretKeyTreeRoot(seed, usage)` = `HMAC(usage + ' Master Seed', seed)`
+ → `{key: I[0:32], chainCode: I[32:]}`; children `HMAC(chainCode, 0x00||index)`.
 - Auth is challenge/response with `tweetnacl.sign.detached` → `POST /v1/auth`
-  [V `src/api/auth.ts`].
+ [V `src/api/auth.ts`].
 - **Pairing:** the CLI prints a QR encoding `handy://<base64url(secret)>`
-  [V `auth.ts:generateAppUrl`] — **the QR literally carries the root secret**;
-  the phone scans and derives everything. Simple, and a real threat-model
-  consideration (shoulder-surf, screenshot, screen-share).
+ [V `auth.ts:generateAppUrl`] — **the QR literally carries the root secret**;
+ the phone scans and derives everything. Simple, and a real threat-model
+ consideration (shoulder-surf, screenshot, screen-share).
 - App-side crypto is **libsodium** (`@more-tech/react-native-libsodium`,
-  `libsodium-wrappers`, `rn-encryption`), not tweetnacl.
+ `libsodium-wrappers`, `rn-encryption`), not tweetnacl.
 - The server stores session metadata, messages, machine state, artifacts, and KV
-  as **opaque base64**. Server-side encryption exists only for third-party
-  tokens (GitHub OAuth) under a KeyTree from `HANDY_MASTER_SECRET` — not E2E.
+ as **opaque base64**. Server-side encryption exists only for third-party
+ tokens (GitHub OAuth) under a KeyTree from `HANDY_MASTER_SECRET` — not E2E.
 
 **Self-hosting: yes, genuinely.** `HAPPY_SERVER_URL` (default
 `https://api.cluster-fluster.com`), `HAPPY_WEBAPP_URL` (default
@@ -272,8 +272,8 @@ traversal, plus `src/utils/tmux.ts` and `caffeinate` to keep the Mac awake.
 ### 1.7 Notifications
 
 **Expo Push** [V `src/api/pushNotifications.ts`]: `expo-server-sdk ^3.15.0`,
-`Expo.isExpoPushToken()` filter → `chunkPushNotifications()` →
-`sendPushNotificationsAsync()`, exponential backoff `min(1000*2**attempt, 30000)`
+`Expo.isExpoPushToken` filter → `chunkPushNotifications` →
+`sendPushNotificationsAsync`, exponential backoff `min(1000*2**attempt, 30000)`
 retried for five minutes. No direct APNs/FCM/VAPID.
 
 ### 1.8 Other agents
@@ -341,11 +341,11 @@ servers,integrations,relay_server,shared,backend,mcp-installer}` (legacy Python)
 
 **(a) Legacy interactive wrapper — real PTY plus screen scraping**
 [V `src/integrations/cli_wrappers/claude_code/claude_wrapper_v3.py`, 1633 lines]:
-`import pty`; `self.child_pid, self.master_fd = pty.fork()`; the child sets
+`import pty`; `self.child_pid, self.master_fd = pty.fork`; the child sets
 `CLAUDE_CODE_ENTRYPOINT="jsonlog-wrapper"` and `os.execvp(cmd[0], cmd)`
 [V lines 899–904]. Command is `[claude_path, "--session-id",
 <agent_instance_id>]` plus optional permission-mode flags [V lines 868–879].
-`find_claude_cli()` probes `which claude` and six fallback paths. Window size is
+`find_claude_cli` probes `which claude` and six fallback paths. Window size is
 set with `fcntl.ioctl(master_fd, TIOCSWINSZ, ...)` using per-OS constants
 (0x5414 Linux, 0x80087467 macOS). **No MCP permission tool, no hooks, no
 stream-json.** Sibling wrappers exist for Amp and Codex.
@@ -362,16 +362,16 @@ an added `src/run-omnara.ts` [V].
 
 ### 2.3 State capture and permission prompts — the fragile path, documented
 
-Content comes from transcript tailing: `monitor_claude_jsonl()` [V line 429]
+Content comes from transcript tailing: `monitor_claude_jsonl` [V line 429]
 waits for `~/.claude/projects/**/<agent_instance_id>.jsonl` (it *forced* the id
 via `--session-id`, so the filename is known) and follows session-file switches
 via `session_reset_handler.py`.
 
-**Idle detection is pure PTY screen-scraping**: `is_claude_idle()` means "hasn't
+**Idle detection is pure PTY screen-scraping**: `is_claude_idle` means "hasn't
 shown `esc to interrupt` for `idle_delay` seconds" [V lines 631–635], also
 matching `ctrl+b to run in background` [V lines 1069–1071]. Default delay 3.5 s.
 The composite trigger for "ask the human" is `last_was_tool_use and
-is_claude_idle()` [V line 940].
+is_claude_idle` [V line 940].
 
 **Permission prompts are parsed by regex over ANSI box-drawing** [V lines
 712–860]: strip `│ ╭ ─ ╮ ╰ ╯ ❯` and ANSI codes from `self.terminal_buffer`, scan
@@ -860,7 +860,7 @@ core. Crypto [V `crates/sshx/src/encrypt.rs`]: **Argon2id** (v0x13, 19,456 KiB,
 2 iterations, 1 thread, 16-byte output) over a **fixed public salt** (source
 comment: "non-random salt for sshx.io, since we want to stretch the security of
 83-bit keys!") → AES-128 key; cipher is **AES-128-CTR (Ctr64BE)** with nonce =
-8-byte BE stream number + 8 zero bytes, using `seek()` for random-access
+8-byte BE stream number + 8 zero bytes, using `seek` for random-access
 encryption at arbitrary offsets. The key lives only in the **URL fragment**, so
 the relay sees ciphertext only. **Weakness** [C https://news.ycombinator.com/item?id=38152109]:
 CTR with **no AEAD/integrity** — a malicious relay can bit-flip terminal output
@@ -925,14 +925,14 @@ mobile story sidesteps the soft-keyboard problem entirely.
 **opencode is the strongest architectural precedent for omt's "TUI is just
 another client" invariant, and it is already shipped.**
 
-**another terminal** — closed-source Rust GPU terminal positioned as an "agentic dev
+**other terminals** — closed-source Rust GPU terminal positioned as an "agentic dev
 environment". The **`/remote-control` chip** publishes a live session link
-[D docs.another terminal.dev/agent-platform/cli-agents/remote-control/]; viewers get
+[D docs.other terminals.dev/agent-platform/cli-agents/remote-control/]; viewers get
 view-only **or edit access — they can steer and approve commands** from a web
-browser, the desktop app, or a **mobile/tablet browser with no install**. another terminal
+browser, the desktop app, or a **mobile/tablet browser with no install**. other terminals
 orchestrates multiple third-party agents (Claude Code, Codex, OpenCode) in
 side-by-side agent panels. **Cloud-only, no self-host** — sessions upload to
-another terminal's service. Like opencode, it renders structured agent activity rather than a
+the service. Like opencode, it renders structured agent activity rather than a
 raw PTY.
 
 ---
@@ -1002,7 +1002,7 @@ alternatives, several of which are MIT-licensed and shipping today.
 | 7 | **Git worktree per parallel session, with untracked files carried over** | Claude Desktop (`.worktreeinclude`), Factory (`-w/--worktree`), Conductor, Codex cloud | The single loudest orchestrator complaint is reinstalling dependencies and losing `.env` per worktree. `.worktreeinclude` is the reference solution — copy it. |
 | 8 | **Multi-session fleet view with per-session status** | claude-squad, uzi (`ls -w`), Conductor, Omnara (`AgentFleetStatus`), Claude Desktop sidebar | Status, project, and "needs attention" filters. Anthropic's own Desktop **cannot see CLI or cloud sessions** — that gap is omt's opening, not an excuse. |
 | 9 | **Structured diff rendering with inline comments** | Claude mobile (`+42 -18` cards, comments batched into the next message), happy (`@pierre/diffs`), Factory | Reviewing a diff on a phone is the second most common remote action after answering a question. |
-| 10 | **Multi-agent support beyond Claude Code** | happy (Claude + Codex + Gemini + generic ACP backend), Omnara (claude/amp/codex), Conductor, another terminal, claude-squad | omt's six-tier model is stronger, but the *coverage* bar is already set by an MIT project. |
+| 10 | **Multi-agent support beyond Claude Code** | happy (Claude + Codex + Gemini + generic ACP backend), Omnara (claude/amp/codex), Conductor, other terminals, claude-squad | omt's six-tier model is stronger, but the *coverage* bar is already set by an MIT project. |
 | 11 | **Session survives detach, reattach, daemon restart, network loss** | tmux (the baseline everyone already has), Mosh | Claude Remote Control dies on >10 min network loss — beat that, don't match it. |
 | 12 | **Self-hostable with no mandatory relay** | VibeTunnel (BYO tunnel, no relay), happy (`HAPPY_SERVER_URL`, `happy-server-self-host` with PGlite) | happy already ships a single-binary self-host path. omt's "no omt cloud" stance only differentiates against the hosted tier, not against happy or VibeTunnel. |
 | 13 | **End-to-end encryption where a relay exists** | happy (AES-256-GCM + BIP32-ish key tree + libsodium) | *"The lack of E2E encryption was why I didn't chose Omnara"* [C]. If omt ever adds a relay, E2EE is required on day one. |
@@ -1018,7 +1018,7 @@ Things nobody does well. This is where omt should spend its effort.
 
 **10.1 The hybrid — structured cards *and* a real terminal on the same session.**
 This is the clearest open seam in the entire category. The split is total: the
-structured camp (happy, another terminal, opencode share, Claude mobile, Codex mobile,
+structured camp (happy, other terminals, opencode share, Claude mobile, Codex mobile,
 Cursor, Devin, Factory) has no terminal on the phone; the raw-PTY camp (ttyd,
 gotty, wetty, sshx, VibeTunnel, tmux+Blink) has *only* a terminal and therefore
 inherits the soft-keyboard problem. happy is the sharpest illustration: it has a
@@ -1115,7 +1115,7 @@ Against the peers it is thinner than it looks:
 
 - Claude Code on the web already runs the real binary with your `.claude/` settings, hooks, MCP config, skills, and plugins.
 - Factory Droid's pitch is stronger than omt's: *"does not require uploading or indexing a static copy of your repository."*
-- Omnara's legacy wrapper `pty.fork()`s the real `claude` — it just scrapes the screen afterwards.
+- Omnara's legacy wrapper `pty.fork`s the real `claude` — it just scrapes the screen afterwards.
 - happy's local mode inherits your real TTY and in-processes your globally installed `claude` — arguably *more* unmodified than omt's plan, since it does not even open a new PTY.
 
 But note the qualifier every one of these violates: **unmodified**. happy
@@ -1160,7 +1160,7 @@ mobile client. The closest attempts each miss:
 - Claude Desktop has a real terminal — local sessions only, never on the phone.
 - happy has `node-pty` — Electron desktop only.
 - Conductor has "Big Terminal Mode" — macOS desktop, explicitly without notifications.
-- another terminal is a real terminal but cloud-only, closed, and its remote view is structured, not a tty.
+- other terminals is a real terminal but cloud-only, closed, and its remote view is structured, not a tty.
 - coder/mux claims "mobile-compatible server mode" but is AGPL and unverified on permissions.
 
 The **block model is the specific unclaimed idea.** OSC 133 segmentation turning
@@ -1170,7 +1170,7 @@ that the whole category is stuck on. Nobody has shipped it.
 
 Caveat, and it is not small: this is also the most expensive thing on omt's
 roadmap. A correct VT parser with grid, scrollback, and reflow is a multi-month
-project that competes directly against iTerm2 and another terminal on their home ground, and
+project that competes directly against iTerm2 and other terminals on their home ground, and
 the payoff is only realized once the mobile block view exists. Sequencing
 matters: **a mediocre terminal plus great cards loses to happy; a great terminal
 with no cards loses to VibeTunnel.**

@@ -14,8 +14,8 @@ Sources, with licence and how they were consulted:
 | `tmux/tmux` | ISC | **Source read** — `.research/tmux/`, HEAD at clone time (files dated 2026-07) |
 | `zellij-org/zellij` | MIT | **Source read** — `.research/zellij/` |
 | `wez/wezterm` | MIT | **Source read** — `.research/wezterm/mux/src/tab.rs` |
-| `another tool/another tool` | Apache-2.0 | **Source read** — `.research/another tool/src/layout.rs` |
-| another terminal | AGPL-3.0 | **Source read, interfaces only.** Never copied. See [another terminal.md](another terminal.md) |
+| `other terminals/other terminals` | Apache-2.0 | **Source read** — `.research/other terminals/src/layout.rs` |
+| other terminals | AGPL-3.0 | **Source read, interfaces only.** Never copied. See [other terminals.md] |
 | kitty | GPL-3.0 | **Docs only** — <https://sw.kovidgoyal.net/kitty/layouts/>. No source read |
 
 Every claim below is tagged **[verified]** (I read the code and can point at the
@@ -33,39 +33,39 @@ execute).
 
 ```c
 struct layout_cell {
-    enum layout_type type;      /* LEFTRIGHT | TOPBOTTOM | WINDOWPANE */
-    int flags;                  /* LAYOUT_CELL_FLOATING 0x1 */
-    struct layout_cell *parent;
-    struct layout_geometry g;   /* { u_int sx, sy; int xoff, yoff; } */
-    struct layout_geometry fg;  /* saved geometry for a floating cell */
-    struct window_pane *wp;     /* set iff type == WINDOWPANE */
-    struct layout_cells cells;  /* TAILQ of children */
-    TAILQ_ENTRY(layout_cell) entry;
+ enum layout_type type; /* LEFTRIGHT | TOPBOTTOM | WINDOWPANE */
+ int flags; /* LAYOUT_CELL_FLOATING 0x1 */
+ struct layout_cell *parent;
+ struct layout_geometry g; /* { u_int sx, sy; int xoff, yoff; } */
+ struct layout_geometry fg; /* saved geometry for a floating cell */
+ struct window_pane *wp; /* set iff type == WINDOWPANE */
+ struct layout_cells cells; /* TAILQ of children */
+ TAILQ_ENTRY(layout_cell) entry;
 };
 ```
 
 Four facts that matter more than the shape:
 
 1. **It is n-ary, not binary.** `cells` is a queue, so `LEFTRIGHT` with five
-   children is one node. This is what makes `layout_spread_cell` (§2.5) a local
-   operation rather than a tree rebalance.
+ children is one node. This is what makes `layout_spread_cell` (§2.5) a local
+ operation rather than a tree rebalance.
 2. **Geometry is absolute and stored, not derived.** `sx/sy/xoff/yoff` are cell
-   counts. There are no ratios anywhere in tmux's layout engine. Every operation
-   mutates integers directly, and `layout_fix_offsets` recomputes offsets from
-   sizes afterwards. **This is the single biggest divergence from every Rust
-   multiplexer**, and it is why tmux resize behaviour is so hard to predict
-   from the outside: proportions are an emergent property of a sequence of
-   integer adjustments, not a stored invariant.
+ counts. There are no ratios anywhere in tmux's layout engine. Every operation
+ mutates integers directly, and `layout_fix_offsets` recomputes offsets from
+ sizes afterwards. **This is the single biggest divergence from every Rust
+ multiplexer**, and it is why tmux resize behaviour is so hard to predict
+ from the outside: proportions are an emergent property of a sequence of
+ integer adjustments, not a stored invariant.
 3. **Borders are part of the arithmetic.** `layout_fix_offsets1`
-   (`layout.c:325`) advances `xoff += lcchild->g.sx + 1` — the `+1` *is* the
-   border column. A parent of width `sx` with `n` children satisfies
-   `sum(child.sx) + (n-1) == sx`. `layout_check` (`layout-custom.c:137`)
-   asserts exactly this when parsing a layout string. **[verified]**
+ (`layout.c:325`) advances `xoff += lcchild->g.sx + 1` — the `+1` *is* the
+ border column. A parent of width `sx` with `n` children satisfies
+ `sum(child.sx) + (n-1) == sx`. `layout_check` (`layout-custom.c:137`)
+ asserts exactly this when parsing a layout string. **[verified]**
 4. **The invariant "no child has the same type as its parent" is not enforced
-   in tmux** the way doc 05 proposes for omt. `layout_split_pane` reuses the
-   parent when types match (`layout.c:1337` ff.) so in practice it holds, but
-   `layout_resize_check`'s `lc->type == type` branch (below) is written to cope
-   either way.
+ in tmux** the way doc 05 proposes for omt. `layout_split_pane` reuses the
+ parent when types match (`layout.c:1337` ff.) so in practice it holds, but
+ `layout_resize_check`'s `lc->type == type` branch (below) is written to cope
+ either way.
 
 `PANE_MINIMUM` is the floor. Cells are also flagged floating; a floating cell is
 excluded from tiling arithmetic everywhere via `layout_cell_is_tiled` /
@@ -79,11 +79,11 @@ This was the most surprising finding, and the most useful one.
 
 ```rust
 pub struct PaneGeom {
-    pub x: usize, pub y: usize,
-    pub rows: Dimension, pub cols: Dimension,
-    pub stacked: Option<usize>,          // stack id
-    pub is_pinned: bool,                 // floating only
-    pub logical_position: Option<usize>, // for layout placement
+ pub x: usize, pub y: usize,
+ pub rows: Dimension, pub cols: Dimension,
+ pub stacked: Option<usize>, // stack id
+ pub is_pinned: bool, // floating only
+ pub logical_position: Option<usize>, // for layout placement
 }
 
 pub struct Dimension { pub constraint: Constraint, inner: usize }
@@ -95,11 +95,11 @@ no parent/child relationship in the runtime model. Structure is *recovered
 geometrically* when needed:
 
 - `PaneResizer::grid_boundaries(direction)`
-  (`zellij-server/src/panes/tiled_panes/pane_resizer.rs:226`) collects the
-  perpendicular spans' end edges, sorts and dedups them, and produces
-  `(last_edge, next_edge)` bands. **[verified]**
+ (`zellij-server/src/panes/tiled_panes/pane_resizer.rs:226`) collects the
+ perpendicular spans' end edges, sorts and dedups them, and produces
+ `(last_edge, next_edge)` bands. **[verified]**
 - `spans_in_boundary` then selects the panes whose perpendicular extent falls in
-  a band, giving a row (or column) of panes that must share `space`.
+ a band, giving a row (or column) of panes that must share `space`.
 
 So zellij reconstructs "these five panes form a column" from coordinates on
 every resize. The layout *file* format (§4.2) is a tree, but it is a
@@ -111,14 +111,14 @@ constructor, not the runtime representation.
 and returns the fractional leftover, so rounding error is a first-class return
 value rather than something swallowed. **[verified]**
 
-### 1.3 another tool — a strict binary BSP tree with `f32` ratios
+### 1.3 other terminals — a strict binary BSP tree with `f32` ratios
 
-`.research/another tool/src/layout.rs:73` **[verified]**
+`.research/other terminals/src/layout.rs:73` **[verified]**
 
 ```rust
 pub enum Node {
-    Pane(PaneId),
-    Split { direction: Direction, ratio: f32, first: Box<Node>, second: Box<Node> },
+ Pane(PaneId),
+ Split { direction: Direction, ratio: f32, first: Box<Node>, second: Box<Node> },
 }
 pub struct TileLayout { root: Node, focus: PaneId }
 ```
@@ -134,12 +134,12 @@ pure, trivially serializable, and every geometry question is a pure function of
 `(tree, area)`. Its two costs are real though:
 
 - **Binary means three equal columns is `Split(a, Split(b, c))` with ratios
-  1/3 and 1/2.** Closing `b` leaves `a | c` at 1/3 : 2/3, not 1/2 : 1/2. This is
-  exactly the failure doc 05 §2 calls out.
+ 1/3 and 1/2.** Closing `b` leaves `a | c` at 1/3 : 2/3, not 1/2 : 1/2. This is
+ exactly the failure doc 05 §2 calls out.
 - **`ratio` is clamped to `0.1..=0.9`** (`set_ratio_at`, `layout.rs:210`) rather
-  than enforcing a cell-count minimum, so on a 40-column phone a 0.1 ratio is
-  4 columns — under any usable minimum. Minimum sizes are a *display*-time
-  concern in another tool, not a layout-time one.
+ than enforcing a cell-count minimum, so on a 40-column phone a 0.1 ratio is
+ 4 columns — under any usable minimum. Minimum sizes are a *display*-time
+ concern elsewhere, not a layout-time one.
 
 ### 1.4 wezterm — binary tree, absolute sizes, in the wire protocol
 
@@ -147,9 +147,9 @@ pure, trivially serializable, and every geometry question is a pure function of
 
 ```rust
 pub enum PaneNode {
-    Empty,
-    Split { left: Box<PaneNode>, right: Box<PaneNode>, node: SplitDirectionAndSize },
-    Leaf(PaneEntry),
+ Empty,
+ Split { left: Box<PaneNode>, right: Box<PaneNode>, node: SplitDirectionAndSize },
+ Leaf(PaneEntry),
 }
 pub struct SplitDirectionAndSize { direction: SplitDirection, first: TerminalSize, second: TerminalSize }
 ```
@@ -164,10 +164,10 @@ Splits are requested with a richer intent than tmux's:
 
 ```rust
 pub struct SplitRequest {
-    direction: SplitDirection,
-    target_is_second: bool,   // new pane goes right/bottom?
-    top_level: bool,          // split the whole tab, not the active pane
-    size: SplitSize,          // Cells(usize) | Percent(u8), default Percent(50)
+ direction: SplitDirection,
+ target_is_second: bool, // new pane goes right/bottom?
+ top_level: bool, // split the whole tab, not the active pane
+ size: SplitSize, // Cells(usize) | Percent(u8), default Percent(50)
 }
 ```
 
@@ -180,9 +180,9 @@ window resize is handled by `adjust_x_size` / `adjust_y_size`
 "nudge by one until the change is consumed" shape as tmux's
 `layout_resize_adjust`. **[verified]**
 
-### 1.5 another terminal — n-ary flex tree (interfaces only, no code read into the design)
+### 1.5 other terminals — n-ary flex tree (interfaces only, no code read into the design)
 
-`.research/another terminal/app/src/pane_group/tree.rs:110` **[verified, interface only]**
+`.research/other terminals/app/src/pane_group/tree.rs:110` **[verified, interface only]**
 
 ```rust
 pub enum PaneNode { Branch(PaneBranch), Leaf(PaneId) }
@@ -196,7 +196,7 @@ returns `BranchRemoveResult::{NotFound, Removed, Collapse(PaneNode)}` — an
 explicit "this branch is now single-child, hoist me" signal, which is a clean
 way to express the normalization step. **[verified]**
 
-another terminal also carries a `HiddenPane` concept with reasons
+other terminals also carries a `HiddenPane` concept with reasons
 (`HiddenPaneReason::{Move, Job, TemporaryReplacement, Close, ChildAgent}`) —
 panes that exist in the model but are not laid out. Relevant to omt because
 "agent spawned a child pane you can reveal from its status card" is a shape omt
@@ -229,14 +229,14 @@ Four functions do all the work. All in `.research/tmux/layout.c`. **[verified]**
 cell shrink along `type` before something hits `PANE_MINIMUM`?" Three cases:
 
 - Leaf: `available = (dimension along type) - minimum`, saturating at 0. The
-  minimum is `PANE_MINIMUM`, plus the scrollbar width when scrollbars are
-  `always`, plus 1 when the cell needs a horizontal border for a pane status
-  line (`layout_add_horizontal_border`).
+ minimum is `PANE_MINIMUM`, plus the scrollbar width when scrollbars are
+ `always`, plus 1 when the cell needs a horizontal border for a pane status
+ line (`layout_add_horizontal_border`).
 - Node whose type **equals** the resize axis: **sum** over children. Shrinking a
-  row of columns can take slack from any of them.
+ row of columns can take slack from any of them.
 - Node whose type **differs**: **minimum** over children. Shrinking a column of
-  rows horizontally means every row must shrink by that amount, so the tightest
-  child governs.
+ rows horizontally means every row must shrink by that amount, so the tightest
+ child governs.
 
 That sum/min duality is the whole insight, and it is what any correct
 implementation needs, whatever its data structure.
@@ -246,23 +246,23 @@ the caller has *already bounded* by `layout_resize_check`. It adds `change` to
 the cell's own dimension, then recurses:
 
 - Different axis: pass the *same* `change` to every tiled child (they all span
-  the parent along this axis).
+ the parent along this axis).
 - Same axis: distribute. The loop is deliberately dumb — repeatedly walk the
-  children handing out **±1 cell at a time**, skipping children with no slack
-  (`layout_resize_check(child) == 0` when shrinking), until `change` reaches 0
-  or a full pass changes nothing. Growth never checks slack, so growth always
-  succeeds; shrink stops when everyone is at minimum.
+ children handing out **±1 cell at a time**, skipping children with no slack
+ (`layout_resize_check(child) == 0` when shrinking), until `change` reaches 0
+ or a full pass changes nothing. Growth never checks slack, so growth always
+ succeeds; shrink stops when everyone is at minimum.
 
 Two consequences worth internalizing:
 
 - **Remainder distribution is round-robin by construction.** Handing out one
-  cell at a time in child order means a 7-cell surplus over 3 children goes
-  3/2/2, favouring earlier children. There is no rounding step and no
-  accumulated error, because there are no fractions. This is a real advantage of
-  the integer model.
+ cell at a time in child order means a 7-cell surplus over 3 children goes
+ 3/2/2, favouring earlier children. There is no rounding step and no
+ accumulated error, because there are no fractions. This is a real advantage of
+ the integer model.
 - **It is O(change × children)** per call. Fine at terminal scale, and it makes
-  the "cannot shrink further" case fall out naturally rather than needing a
-  special path.
+ the "cannot shrink further" case fall out naturally rather than needing a
+ special path.
 
 **`layout_fix_offsets` / `layout_fix_offsets1`** (`:359`, `:325`) — after any
 size change, offsets are recomputed top-down: children of a `LEFTRIGHT` node get
@@ -294,14 +294,14 @@ famous "half the screen is dashes" comes from. **[verified]**
 **Manual resize — `layout_resize_pane(wp, type, change, opposite)`** (`:974`):
 
 1. Walk up from the pane's cell to the nearest ancestor whose type matches the
-   resize axis. If none, the resize is a no-op (you cannot widen a pane in a
-   window with no vertical divider).
+ resize axis. If none, the resize is a no-op (you cannot widen a pane in a
+ window with no vertical divider).
 2. **If the found cell is the last child, step back one.** This is the answer to
-   "what does dragging a border actually do": tmux does not resize a *pane*, it
-   moves *the border after cell `lc`*. The last cell has no border after it, so
-   the operation is rewritten as moving the previous border.
+ "what does dragging a border actually do": tmux does not resize a *pane*, it
+ moves *the border after cell `lc`*. The last cell has no border after it, so
+ the operation is rewritten as moving the previous border.
 3. `layout_resize_layout` then loops calling `layout_resize_pane_grow` or
-   `_shrink` until the requested change is consumed or no progress is made.
+ `_shrink` until the requested change is consumed or no progress is made.
 
 **`layout_resize_pane_grow`** (`:1000`): add to `lc`; find the donor by walking
 **towards the tail** for the first sibling with `layout_resize_check > 0`; if
@@ -326,8 +326,8 @@ last, else `new_size - size`). **[verified]**
 (`:1085`) is the only place tmux does proportional arithmetic. **[verified]**
 
 ```
-if count_left == 1: return size_left           /* last child absorbs everything */
-new_size = (lc.dim * size) / previous          /* integer division, truncates */
+if count_left == 1: return size_left /* last child absorbs everything */
+new_size = (lc.dim * size) / previous /* integer division, truncates */
 min = max((PANE_MINIMUM+1)*(count_left-1), lc.dim - resize_check(lc))
 max = size_left - min
 clamp new_size into [PANE_MINIMUM, max]
@@ -378,13 +378,13 @@ therefore 40 | *border* | 39, not 40/40. **[verified]**
 `layout_destroy_cell` (`:708`) **[verified]**:
 
 1. `layout_cell_get_neighbour(lc)` picks the recipient: **the next sibling,
-   falling back to the previous** (`layout_cell_get_neighbour_direction` skips
-   non-tiled cells). Preference for "after" is documented in the source as
-   defining redistribution order.
+ falling back to the previous** (`layout_cell_get_neighbour_direction` skips
+ non-tiled cells). Preference for "after" is documented in the source as
+ defining redistribution order.
 2. Give the recipient the dead cell's size **plus one for the reclaimed border**.
 3. Remove from the parent's queue.
 4. **Normalize:** if the parent now has exactly one child, splice that child
-   into the grandparent's position and free the parent.
+ into the grandparent's position and free the parent.
 
 So tmux does *not* redistribute proportionally on close — the whole space goes
 to one neighbour. Doc 05 §2.1 specifies proportional redistribution for omt
@@ -397,23 +397,23 @@ n-ary tree (see design §2.5).
 (`zellij-server/src/panes/tiled_panes/pane_resizer.rs:45`) **[verified]**:
 
 1. `solve` — build bands via `grid_boundaries`, and for each band emit
-   constraints into a `kasuari` (Cassowary) solver:
-   - `sum(span vars) == space` at strength **REQUIRED**;
-   - `Fixed(n)` spans pinned `== n` at **REQUIRED**;
-   - `Percent(p)` spans get `var / flex_space == p/100` at **STRONG**, where
-     `flex_space = space - sum(fixed sizes)`.
+ constraints into a `kasuari` (Cassowary) solver:
+ - `sum(span vars) == space` at strength **REQUIRED**;
+ - `Fixed(n)` spans pinned `== n` at **REQUIRED**;
+ - `Percent(p)` spans get `var / flex_space == p/100` at **STRONG**, where
+ `flex_space = space - sum(fixed sizes)`.
 2. `discretize_spans` — the solver returns `f64`. Round each with
-   `stable_round(x) = round(round(x*100)/100)` (a deliberate guard against
-   `x.4999999` rounding down). Then compute `error = space - sum(rounded)`, take
-   the **non-fixed, not-yet-finalised** spans, **sort them by rounded size** —
-   ascending when short, descending when over — and hand out `±1` to each in
-   turn until `error` is 0. Positions are then recomputed as a running offset,
-   and any span landing below 1 aborts with "Ran out of room for spans".
+ `stable_round(x) = round(round(x*100)/100)` (a deliberate guard against
+ `x.4999999` rounding down). Then compute `error = space - sum(rounded)`, take
+ the **non-fixed, not-yet-finalised** spans, **sort them by rounded size** —
+ ascending when short, descending when over — and hand out `±1` to each in
+ turn until `error` is 0. Positions are then recomputed as a running offset,
+ and any span landing below 1 aborts with "Ran out of room for spans".
 3. `is_layout_valid` — a stated hack: if a stacked pane's band is shorter than
-   `min_stack_height`, **abandon the entire resize** rather than apply a bad one.
+ `min_stack_height`, **abandon the entire resize** rather than apply a bad one.
 4. `apply_spans` — writes geometry; returns `Err(PaneSizeUnchanged)` when nothing
-   moved, with a source comment noting that this is an error for an explicit
-   user resize but not for a window resize.
+ moved, with a source comment noting that this is an error for an explicit
+ user resize but not for a window resize.
 
 Two takeaways for omt. First, **remainder distribution must be a specified,
 deterministic rule, not a byproduct of rounding** — zellij makes it a sorted
@@ -426,9 +426,9 @@ Minimums are constants `MIN_TERMINAL_WIDTH` / `MIN_TERMINAL_HEIGHT`, consulted
 directly in the floating-pane grid (`floating_pane_grid.rs:151` ff.) where
 resize saturates rather than refuses. **[verified]**
 
-### 2.7 another tool and wezterm
+### 2.7 other terminals and wezterm
 
-another tool: `resize_focused(nav, delta, area)` (`layout.rs:215`) finds the nearest
+other terminals: `resize_focused(nav, delta, area)` (`layout.rs:215`) finds the nearest
 split border in the requested direction (`nearest_resize_split`, falling back to
 the *opposite* direction when there is no border on that edge — the same
 last-child inversion tmux does, expressed geometrically), then adjusts that one
@@ -458,26 +458,26 @@ client and 'manual' a size set by the `resize-window` command."*
 (`resize.c:133`) **[verified]**:
 
 - Seeds `sx = sy = 0` for `largest`, `UINT_MAX` for `smallest`/`latest`, and the
-  stored `w->manual_sx/sy` for `manual` (which then skips the client loop
-  entirely).
+ stored `w->manual_sx/sy` for `manual` (which then skips the client loop
+ entirely).
 - For `latest`, first counts clients showing this window; **if more than one, all
-  clients except `w->latest` are skipped**, so "latest" degenerates to "the one
-  client that most recently touched this window". With exactly one client it
-  behaves as `smallest` — the source says so explicitly.
+ clients except `w->latest` are skipped**, so "latest" degenerates to "the one
+ client that most recently touched this window". With exactly one client it
+ behaves as `smallest` — the source says so explicitly.
 - Each client's size is `tty.sx × (tty.sy - status_line_size(client))`, unless a
-  control client declared a per-window size via `control_get_window_size`.
+ control client declared a per-window size via `control_get_window_size`.
 - `ignore_client_size` (`resize.c:86`) excludes clients with no session,
-  `CLIENT_NOSIZEFLAGS`, and — importantly — clients flagged `CLIENT_IGNORESIZE`
-  **only if at least one non-flagged client is attached**. So a `-x`/`-y`-pinned
-  or read-only client stops constraining the window, but if it is the *only*
-  client its size is used after all. That fallback is good design and omt should
-  copy the idea (see design §3).
+ `CLIENT_NOSIZEFLAGS`, and — importantly — clients flagged `CLIENT_IGNORESIZE`
+ **only if at least one non-flagged client is attached**. So a `-x`/`-y`-pinned
+ or read-only client stops constraining the window, but if it is the *only*
+ client its size is used after all. That fallback is good design and omt should
+ copy the idea (see design §3).
 - After the main loop there is a **second, unconditional clamp**: any client
-  with a per-window control size clamps the result *down*. Control-mode clients
-  can shrink the window regardless of `window-size`.
+ with a per-window control size clamps the result *down*. Control-mode clients
+ can shrink the window regardless of `window-size`.
 - `default_window_size` (`:284`) falls back to the session's `default-size`
-  option, then to hard-coded 80×24, and finally clamps into
-  `[WINDOW_MINIMUM, WINDOW_MAXIMUM]`.
+ option, then to hard-coded 80×24, and finally clamps into
+ `[WINDOW_MINIMUM, WINDOW_MAXIMUM]`.
 
 **`aggressive-resize`** (`options-table.c:1247`), window-scope, default **off**.
 Its text: *"When 'window-size' is 'smallest', whether the maximum size of a
@@ -521,51 +521,51 @@ directly relevant prior art omt has for its own problem. **[verified]**
 
 ```rust
 pub(crate) struct MobileState {
-    mobile_tab_for_client: HashMap<ClientId, usize>,
-    tab_before_mobile_for_client: HashMap<ClientId, usize>,
-    auto_entered_clients: HashSet<ClientId>,
-    fit_override_for_tab: HashMap<usize, FitOverride>,
+ mobile_tab_for_client: HashMap<ClientId, usize>,
+ tab_before_mobile_for_client: HashMap<ClientId, usize>,
+ auto_entered_clients: HashSet<ClientId>,
+ fit_override_for_tab: HashMap<usize, FitOverride>,
 }
 struct FitOverride {
-    owning_client: ClientId,
-    fullscreened_pane: PaneId,
-    embedded_content_size: Size,
-    pane_was_fullscreen_before_fit: bool,
+ owning_client: ClientId,
+ fullscreened_pane: PaneId,
+ embedded_content_size: Size,
+ pane_was_fullscreen_before_fit: bool,
 }
 ```
 
 The design, as the code implies it:
 
 - A mobile client gets **its own dedicated tab**, whose layout is a single
-  borderless pane running the `zellij:mobile` plugin
-  (`MobileState::mobile_tab_layout`). The phone is therefore *not* in the tab
-  the laptop is in, and does not constrain it. The client's previous tab is
-  remembered for exit.
+ borderless pane running the `zellij:mobile` plugin
+ (`MobileState::mobile_tab_layout`). The phone is therefore *not* in the tab
+ the laptop is in, and does not constrain it. The client's previous tab is
+ remembered for exit.
 - **Shadow focus**: `apply_shadow_focus(client, pane_id, tabs)` marks a pane in a
-  *non-mobile* tab as this client's focus without making the client active in
-  that tab, and `clear_shadow_focus` unwinds it. This is how a phone "is looking
-  at" a pane in the laptop's tab while formally living in its own tab — a
-  per-client focus pointer decoupled from the per-client viewport.
+ *non-mobile* tab as this client's focus without making the client active in
+ that tab, and `clear_shadow_focus` unwinds it. This is how a phone "is looking
+ at" a pane in the laptop's tab while formally living in its own tab — a
+ per-client focus pointer decoupled from the per-client viewport.
 - **Fit**: `set_fit(client, tab, pane, embedded_content_size, tabs)`
-  fullscreens the target pane and installs a `FitOverride`.
-  `compute_fit_size` then computes the tab size *backwards from the phone's
-  content box*: `embedded_content_size + tab_bar_rows/cols + pane frame
-  rows/cols`. `recompute_tab_size` iterates this at most `FIT_RESIZE_MAX_ITERS
-  = 3` times because changing the tab size changes the chrome sizes, so it is a
-  fixed-point search. While a fit is installed it **completely replaces** the
-  smallest-client rule for that tab.
+ fullscreens the target pane and installs a `FitOverride`.
+ `compute_fit_size` then computes the tab size *backwards from the phone's
+ content box*: `embedded_content_size + tab_bar_rows/cols + pane frame
+ rows/cols`. `recompute_tab_size` iterates this at most `FIT_RESIZE_MAX_ITERS
+ = 3` times because changing the tab size changes the chrome sizes, so it is a
+ fixed-point search. While a fit is installed it **completely replaces** the
+ smallest-client rule for that tab.
 - **Render gating** (`MobileRenderGate`): a newly attached client is *blanked*
-  (`\x1b[2J\x1b[H`) until its reported size matches the size actually painted
-  for it — for web clients, `size_settled && reported_size == paint_size`. This
-  exists because a browser reports a viewport, gets a render, then reflows and
-  reports a different viewport; showing the intermediate frames looks broken.
-  omt's web client will hit exactly this and should plan for it.
+ (`\x1b[2J\x1b[H`) until its reported size matches the size actually painted
+ for it — for web clients, `size_settled && reported_size == paint_size`. This
+ exists because a browser reports a viewport, gets a render, then reflows and
+ reports a different viewport; showing the intermediate frames looks broken.
+ omt's web client will hit exactly this and should plan for it.
 
 So zellij's real answer is: **the phone gets its own layout container, and the
 shared one is left alone** — with an explicit escape hatch for "make the shared
 tab fit my phone", owned by one client and reversible.
 
-### 3.3 wezterm and another tool
+### 3.3 wezterm and other terminals
 
 wezterm **[verified, partial]**: panes live in a mux; a GUI window attaches to a
 tab and `PaneEntry` carries `size: TerminalSize` plus `top_row`/`left_col`.
@@ -576,12 +576,12 @@ workspace rather than mirror the same tab, so the conflict usually does not
 arise. I did not find a size-negotiation policy comparable to tmux's
 `window-size`.
 
-another tool **[verified]**: `clamp_terminal_size(cols, rows)`
+other terminals **[verified]**: `clamp_terminal_size(cols, rows)`
 (`src/server/client_transport.rs:358`) is simply
 `(cols.max(MIN_CLIENT_COLS), rows.max(MIN_CLIENT_ROWS))` — clamp up to a floor
 and use it. Its own tests assert `clamp_terminal_size(40, 12) == (40, 12)`, i.e.
 a narrow client is preserved as-is. The layout is recomputed per render from
-`(tree, area)`, so another tool can and does render the same workspace at different
+`(tree, area)`, so other terminals can and does render the same workspace at different
 areas — but the PTY still has one size, so the terminal content is authored for
 whichever size was last pushed. There is no negotiation policy; last writer wins.
 
@@ -623,25 +623,25 @@ grammar, worth adopting as an interchange format:
 
 ```
 layout-string := checksum "," cell [ "<" floating-cells ">" ]
-checksum      := 4 lowercase hex digits
-cell          := SX "x" SY "," XOFF "," YOFF [ pane-id | children ]
-children      := "[" cell ("," cell)* "]"      ; top-bottom split
-               | "{" cell ("," cell)* "}"      ; left-right split
-pane-id       := "," decimal                    ; leaf only
+checksum := 4 lowercase hex digits
+cell := SX "x" SY "," XOFF "," YOFF [ pane-id | children ]
+children := "[" cell ("," cell)* "]" ; top-bottom split
+ | "{" cell ("," cell)* "}" ; left-right split
+pane-id := "," decimal ; leaf only
 ```
 
 - Emitted by `layout_dump`; the leaf form is `%ux%u,%d,%d,%u` (size, offsets,
-  pane id) and the node form drops the pane id.
+ pane id) and the node form drops the pane id.
 - `[`…`]` is `LAYOUT_TOPBOTTOM`, `{`…`}` is `LAYOUT_LEFTRIGHT`. (In the source
-  the string `"]["` / `"}{"` is indexed backwards, so the *open* bracket is
-  `brackets[1]`.)
+ the string `"]["` / `"}{"` is indexed backwards, so the *open* bracket is
+ `brackets[1]`.)
 - The optional `<`…`>` suffix carries floating cells, appended in z-order.
 - The checksum is a 16-bit rotate-and-add over the body:
-  `csum = (csum >> 1) + ((csum & 1) << 15); csum += *c;` — not a real integrity
-  check, just a typo guard.
+ `csum = (csum >> 1) + ((csum & 1) << 15); csum += *c;` — not a real integrity
+ check, just a typo guard.
 - `layout_check` validates on parse: for a `{}` node every child's `sy` equals
-  the parent's and `sum(child.sx + 1) - 1 == parent.sx`; transposed for `[]`.
-  A string with inconsistent arithmetic is rejected outright.
+ the parent's and `sum(child.sx + 1) - 1 == parent.sx`; transposed for `[]`.
+ A string with inconsistent arithmetic is rejected outright.
 
 Example: `bb62,158x48,0,0{79x48,0,0,0,78x48,80,0,1}` — checksum `bb62`, a
 158×48 root at origin, left-right, two 79/78-wide leaves being panes 0 and 1,
@@ -661,38 +661,38 @@ re-proportioning (convert each child's share of its parent into a ratio; the
 
 ```kdl
 layout {
-    default_tab_template {
-        pane size=1 borderless=true { plugin location="zellij:tab-bar" }
-        children
-        pane size=2 borderless=true { plugin location="zellij:status-bar" }
-    }
-    tab split_direction="Vertical" {
-        pane split_direction="Vertical" {
-            pane size="50%"
-            pane size="50%" split_direction="Horizontal" { pane size="50%"; pane size="50%" }
-        }
-    }
+ default_tab_template {
+ pane size=1 borderless=true { plugin location="zellij:tab-bar" }
+ children
+ pane size=2 borderless=true { plugin location="zellij:status-bar" }
+ }
+ tab split_direction="Vertical" {
+ pane split_direction="Vertical" {
+ pane size="50%"
+ pane size="50%" split_direction="Horizontal" { pane size="50%"; pane size="50%" }
+ }
+ }
 }
 ```
 
 Key features:
 - `size` is `SplitSize::{Fixed(usize), Percent(usize)}` — bare integer is cells,
-  quoted `"NN%"` is a percentage. Mixed fixed/percent siblings are exactly what
-  the Cassowary solver's `flex_space` exists to handle.
+ quoted `"NN%"` is a percentage. Mixed fixed/percent siblings are exactly what
+ the Cassowary solver's `flex_space` exists to handle.
 - **Templates with a `children` hole.** `default_tab_template` / `tab_template`
-  wrap every tab in chrome; `children` marks where the tab's own panes are
-  spliced. This is a much better answer to "every layout needs a status bar" than
-  repeating it.
+ wrap every tab in chrome; `children` marks where the tab's own panes are
+ spliced. This is a much better answer to "every layout needs a status bar" than
+ repeating it.
 - **Swap layouts** (`*.swap.kdl`) — the most interesting idea here. A
-  `swap_tiled_layout` is a named *sequence* of layouts each guarded by a
-  `LayoutConstraint`: `max_panes=N`, `min_panes=N`, `exact_panes=N`. zellij picks
-  the applicable one automatically as panes are added, so "vertical" means a
-  different arrangement at 2, 5, 8 and 12 panes. `swap_layouts.rs` tracks
-  `is_tiled_damaged` — once the user manually resizes, the layout is marked
-  damaged and auto-swapping stops until the user asks for it. There is also
-  `swap_tiled_layout name="stacked" { ui min_panes=4 { pane stacked=true { children; } } }`,
-  i.e. a preset that degrades a many-pane layout into a *stack*. This is
-  precisely the mechanism omt needs for phone degradation, generalized.
+ `swap_tiled_layout` is a named *sequence* of layouts each guarded by a
+ `LayoutConstraint`: `max_panes=N`, `min_panes=N`, `exact_panes=N`. zellij picks
+ the applicable one automatically as panes are added, so "vertical" means a
+ different arrangement at 2, 5, 8 and 12 panes. `swap_layouts.rs` tracks
+ `is_tiled_damaged` — once the user manually resizes, the layout is marked
+ damaged and auto-swapping stops until the user asks for it. There is also
+ `swap_tiled_layout name="stacked" { ui min_panes=4 { pane stacked=true { children; } } }`,
+ i.e. a preset that degrades a many-pane layout into a *stack*. This is
+ precisely the mechanism omt needs for phone degradation, generalized.
 
 **Session serialization** (`zellij-utils/src/session_serialization.rs`)
 **[verified]**: `serialize_session_layout(GlobalLayoutManifest) -> (String, BTreeMap<String,String>)`
@@ -704,13 +704,13 @@ round-trip property (dump → the format you can hand-edit → reload) is the th
 that makes the format worth maintaining; doc 10 §9.1 already makes the same bet
 for omt's launch configs.
 
-### 4.3 wezterm and another terminal
+### 4.3 wezterm and other terminals
 
 wezterm: `PaneNode` is serde-serializable and shipped over the codec; `.wezterm.lua`
 builds workspaces programmatically rather than declaratively. **[verified]**
 
-another terminal: launch configurations are YAML with a recursive `layout: {split, ratio,
-panes: [...]}` shape — already documented in [another terminal.md](another terminal.md) §5.2 and adopted
+other terminals: launch configurations are YAML with a recursive `layout: {split, ratio,
+panes: [...]}` shape — already documented in [other terminals.md] §5.2 and adopted
 in [10 — Configuration](../architecture/10-configuration.md) §9.1. **[docs +
 verified interface]**
 
@@ -793,7 +793,7 @@ kitty `splits` has `rotate`, `equalize`, `maximize`, and directional
 `move_window`. **[docs]**
 
 zellij `move_pane`, `break_pane_out_of_stack`, and moving panes between tabs.
-another terminal: `PaneData::move_pane(id, target_pane_id, direction)` plus a
+other terminals: `PaneData::move_pane(id, target_pane_id, direction)` plus a
 `PaneDragDropLocation::{TabBar, PaneGroup(PaneId), Other}` for drag-and-drop
 between tabs. **[verified]**
 
@@ -820,41 +820,41 @@ so it is inherently shared across clients.
 **tmux** `window_pane_find_up(wp)` (`window.c`) **[verified]**:
 
 1. Compute the pane's full-size offset/size; the "edge" is `yoff`, with special
-   cases mapping `yoff == 0` (or 1 with a top status line) to `w->sy + 1` so that
-   moving up from the top row **wraps to the bottom**.
+ cases mapping `yoff == 0` (or 1 with a top status line) to `w->sy + 1` so that
+ moving up from the top row **wraps to the bottom**.
 2. Candidate filter: `next.yoff + next.sy + 1 == edge` — an *exact* adjacency
-   test using the border row. Only panes whose bottom border is this pane's top
-   edge qualify.
+ test using the border row. Only panes whose bottom border is this pane's top
+ edge qualify.
 3. Overlap filter, on the perpendicular axis, three accepted cases: candidate
-   spans the whole of the source (`xoff < left && end > right`), candidate's
-   start is inside the source's range, or candidate's end is inside it.
+ spans the whole of the source (`xoff < left && end > right`), candidate's
+ start is inside the source's range, or candidate's end is inside it.
 4. **Tie-break: `window_pane_choose_best` picks the candidate with the greatest
-   `active_point`** — a monotonically increasing counter stamped whenever a pane
-   is activated. That is, **most-recently-used among the eligible neighbours**.
+ `active_point`** — a monotonically increasing counter stamped whenever a pane
+ is activated. That is, **most-recently-used among the eligible neighbours**.
 
 **zellij** `next_selectable_pane_id_to_the_left`
-(`tiled_pane_grid.rs`) **[verified]**: filter to `selectable()` panes satisfying
+(`tiled_pane_grid.rs`) **[verified]**: filter to `selectable` panes satisfying
 `is_directly_left_of(current) && horizontally_overlaps_with(current)`, then
-`max_by_key(|c| c.active_at())` — literally the same rule, including the
+`max_by_key(|c| c.active_at)` — literally the same rule, including the
 recency tie-break. If the winner is stacked, redirect to
 `flexible_pane_id_in_stack`.
 
-**another tool** `find_in_direction(focused, direction, panes)` (`layout.rs:280`)
+**other terminals** `find_in_direction(focused, direction, panes)` (`layout.rs:280`)
 **[verified]** — the most explicit version, and the one worth reimplementing:
 
 - Filter: for `Left`, `r.x + r.width <= fr.x && ranges_overlap(r.y, r.height, fr.y, fr.height)`;
-  transposed for the other three. Note `<=` rather than an exact border match, so
-  a candidate need not be *immediately* adjacent.
+ transposed for the other three. Note `<=` rather than an exact border match, so
+ a candidate need not be *immediately* adjacent.
 - Rank by the tuple `(edge_distance, Reverse(overlap_amount), center_distance, index)`:
-  nearest edge first; among equals, **largest perpendicular overlap**; then
-  closest centre; then a stable index. `min_by_key` over that tuple.
+ nearest edge first; among equals, **largest perpendicular overlap**; then
+ closest centre; then a stable index. `min_by_key` over that tuple.
 
-another tool's tuple is strictly better than "most recently used" for predictability:
+the tuple is strictly better than "most recently used" for predictability:
 the same keypress from the same layout always goes to the same pane, whereas
 tmux/zellij's recency tie-break means the same keypress can go two different
-places depending on history. omt should take another tool's ranking and drop recency.
+places depending on history. omt should take the ranking and drop recency.
 
-another terminal has the same shape: `panes_by_direction` returns
+other terminals has the same shape: `panes_by_direction` returns
 `FindPaneByDirectionResult::Found(HashSet<PaneId>)` — a *set* of candidates,
 disambiguated above. **[verified]**
 
@@ -877,9 +877,9 @@ at every `TOPBOTTOM` ancestor to decide whether a cell touches the window edge,
 which is how tmux knows whether to draw a border there.
 
 `layout_search_by_border(lc, x, y)` (`:159`) maps a mouse coordinate to the cell
-whose border was hit — the hit-test for drag-resize. another tool's equivalent is
+whose border was hit — the hit-test for drag-resize. the equivalent is
 `splits(area) -> Vec<SplitBorder{pos, direction, ratio, area, path}>`, where
-`path: Vec<bool>` addresses the split node directly. another tool's is the better
+`path: Vec<bool>` addresses the split node directly. the is the better
 interface for a networked client: the border is a nameable object with a stable
 address, not a coordinate to be re-hit-tested server-side. **[verified]**
 
@@ -905,7 +905,7 @@ the serialized form is the authorable form, restore has no separate code path.
 **wezterm** has `resurrect.wezterm` (third-party) doing the same trick over its
 `PaneNode` serde form. **[docs]**
 
-**another tool** persists a serializable BSP tree (`src/persist/snapshot.rs:126`,
+**other terminals** persists a serializable BSP tree (`src/persist/snapshot.rs:126`,
 "Serializable BSP tree") and `PaneId::from_raw` exists specifically so ids
 survive a reload. **[verified]**
 
@@ -919,24 +919,24 @@ ecosystem rather than a feature.
 ## 8. Alt-screen panes during resize
 
 - **tmux** keeps a separate `alternate_screen` save and, on resize, does not
-  attempt to reflow it — it resizes the alternate grid and lets `SIGWINCH` drive
-  the application's redraw. **[inferred from structure; the definitive statement
-  for omt is already in [04 §3.3](../architecture/04-terminal-core.md#33-algorithm)
-  step 3, which independently specifies exactly this.]**
+ attempt to reflow it — it resizes the alternate grid and lets `SIGWINCH` drive
+ the application's redraw. **[inferred from structure; the definitive statement
+ for omt is already in [04 §3.3](../architecture/04-terminal-core.md#33-algorithm)
+ step 3, which independently specifies exactly this.]**
 - **zellij** `PaneResizer::is_layout_valid` refuses a resize outright when it
-  would violate a stack's minimum, i.e. **"don't resize" is preferred to "resize
-  badly"**. **[verified]** Its render gate additionally blanks a client until its
-  size has settled, precisely so an alt-screen app's half-reflowed frame is never
-  shown. **[verified]**
+ would violate a stack's minimum, i.e. **"don't resize" is preferred to "resize
+ badly"**. **[verified]** Its render gate additionally blanks a client until its
+ size has settled, precisely so an alt-screen app's half-reflowed frame is never
+ shown. **[verified]**
 - **doc 07 §4.3** already states omt's position bluntly and correctly: *"an agent
-  that drew a box at 120 columns cannot be re-rendered at 40; the information is
-  gone."* Nothing in any of these codebases contradicts that. There is no
-  multiplexer that re-renders an alt-screen app per client.
+ that drew a box at 120 columns cannot be re-rendered at 40; the information is
+ gone."* Nothing in any of these codebases contradicts that. There is no
+ multiplexer that re-renders an alt-screen app per client.
 - The practical consequence everywhere: **a resize of a pane hosting an
-  alt-screen app is a visible, disruptive event**, so the number of resizes
-  matters more than their cost. Debouncing (doc 05 §2.2's 250 ms) and
-  DECSET 2026 quiescing (doc 04 §3.3 step 1) are the mitigations, and
-  `window-size manual` / pinning is the escape hatch.
+ alt-screen app is a visible, disruptive event**, so the number of resizes
+ matters more than their cost. Debouncing (doc 05 §2.2's 250 ms) and
+ DECSET 2026 quiescing (doc 04 §3.3 step 1) are the mitigations, and
+ `window-size manual` / pinning is the escape hatch.
 
 ---
 
@@ -945,41 +945,41 @@ ecosystem rather than a feature.
 **Take:**
 
 1. tmux's **sum/min duality** in `resize_check`. Any correct resize algorithm
-   needs it whatever the data structure.
+ needs it whatever the data structure.
 2. tmux's **"a drag moves the border, i.e. exactly two adjacent cells"**
-   semantics, including the last-child inversion. This is the single most
-   important behavioural detail in this document.
+ semantics, including the last-child inversion. This is the single most
+ important behavioural detail in this document.
 3. tmux's **layout string** as an *import* format, with a documented
-   re-proportioning step.
+ re-proportioning step.
 4. zellij's **explicit, deterministic remainder distribution**, and its
-   willingness to **refuse** a resize that cannot be satisfied.
+ willingness to **refuse** a resize that cannot be satisfied.
 5. zellij's **swap layouts with pane-count constraints** — generalized, this is
-   responsive layout, which is what a phone needs.
+ responsive layout, which is what a phone needs.
 6. zellij's **per-client container + shadow focus** as the answer to
-   multi-client sizing, and its **render gate** for web clients whose reported
-   viewport is unstable at attach.
+ multi-client sizing, and its **render gate** for web clients whose reported
+ viewport is unstable at attach.
 7. zellij's **floats and stacks as parallel layers**, never as tiling-tree nodes.
-8. another tool's **deterministic navigation ranking tuple** in place of recency.
-9. another tool's **`SplitBorder` with a stable path** as the addressable handle for a
-   resize, rather than a screen coordinate.
+8. the **deterministic navigation ranking tuple** in place of recency.
+9. the **`SplitBorder` with a stable path** as the addressable handle for a
+ resize, rather than a screen coordinate.
 10. zellij's **serialized form == authorable form** for persistence.
 
 **Do not take:**
 
 1. tmux's **absolute-cell storage**. Ratios survive a container resize; absolute
-   cells require the whole `layout_new_pane_size` proportional-rebuild machinery
-   to fake it, and still let the layout exceed the window.
+ cells require the whole `layout_new_pane_size` proportional-rebuild machinery
+ to fake it, and still let the layout exceed the window.
 2. tmux's **`window-size latest` default**. A size that flaps as attention moves
-   is the worst of the options when one client is a phone.
+ is the worst of the options when one client is a phone.
 3. tmux's **give-everything-to-one-neighbour close**. Proportional
-   redistribution is correct in an n-ary tree.
+ redistribution is correct in an n-ary tree.
 4. **Recency tie-breaks in navigation.** Non-deterministic keybindings.
 5. zellij's **runtime geometric structure recovery**. Rediscovering "these panes
-   form a column" from coordinates on every resize is clever but it makes the
-   invariants unstateable, which is fatal for a crate whose selling point is
-   property-tested determinism ([05 §12](../architecture/05-session-model.md#12-testing)).
+ form a column" from coordinates on every resize is clever but it makes the
+ invariants unstateable, which is fatal for a crate whose selling point is
+ property-tested determinism ([05 §12](../architecture/05-session-model.md#12-testing)).
 6. A **Cassowary solver**. It is the right tool when constraints are
-   user-authored and heterogeneous; for a tree of ratios with minimums it is a
-   large dependency, a non-obvious failure mode (`is_layout_valid`'s "abandon
-   ship" hack exists because of it), and non-trivially non-deterministic to
-   test.
+ user-authored and heterogeneous; for a tree of ratios with minimums it is a
+ large dependency, a non-obvious failure mode (`is_layout_valid`'s "abandon
+ ship" hack exists because of it), and non-trivially non-deterministic to
+ test.

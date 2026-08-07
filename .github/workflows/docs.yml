@@ -61,9 +61,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # omt is Apache-2.0. The studied codebases are not: another terminal is AGPL-3.0 and
-      # iTerm2 is GPL-2.0. Their interfaces are facts we may reimplement; their
-      # code is not. `.research/` is gitignored and must never be committed.
+      # omt is Apache-2.0. Several codebases studied for interface facts are
+      # AGPL-3.0 or GPL-2.0. An interface is a fact and may be reimplemented;
+      # the code is not, and a checkout of it must never reach this repository.
+      # `.research/` is gitignored and this refuses it anyway, because a
+      # gitignore is a default and this is a rule.
       # See docs/architecture/14-licensing.md.
       - name: Refuse vendored research checkouts
         run: |

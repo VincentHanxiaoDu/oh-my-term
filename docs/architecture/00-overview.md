@@ -42,14 +42,13 @@ Cross-cutting notes that validate the architecture rather than specify part of
 it:
 
 - [`design/scenarios.md`](../design/scenarios.md) — the user-facing scenario and
-  requirement catalogue the architecture is checked against, including the gaps
-  it does not yet describe.
+ requirement catalogue the architecture is checked against, including the gaps
+ it does not yet describe.
 - [`design/remote-continuity.md`](../design/remote-continuity.md) — working
-  across devices as one continuous session rather than as a second screen.
+ across devices as one continuous session rather than as a second screen.
 
 Background research that informed these decisions lives in
-[`docs/research/`](../research/): [another tool](../research/another tool.md),
-[another terminal](../research/another terminal.md), [iTerm2](../research/iterm2.md),
+[`docs/research/`](../research/): [iTerm2](../research/iterm2.md),
 [coding-agent CLIs](../research/agent-clis.md).
 
 ---
@@ -61,21 +60,21 @@ Coding agents moved into the terminal, and the terminal did not move with them.
 Three gaps follow from that:
 
 1. **The terminal does not know what the agent is doing.** A pane that is
-   thinking, a pane that finished twenty minutes ago, and a pane that has been
-   blocked on a permission prompt since then all look the same from the outside.
-   With ten panes across four projects, the human becomes the scheduler.
+ thinking, a pane that finished twenty minutes ago, and a pane that has been
+ blocked on a permission prompt since then all look the same from the outside.
+ With ten panes across four projects, the human becomes the scheduler.
 
 2. **Structured agent interactions are trapped in ANSI.** Claude Code's
-   `AskUserQuestion` is a real data structure — a list of questions, each with a
-   header, a multi-select flag, and labelled options with descriptions. By the
-   time it reaches the screen it is a box drawn out of Unicode, answerable only
-   by a human at that keyboard. It cannot be answered from a phone, forwarded,
-   or automated.
+ `AskUserQuestion` is a real data structure — a list of questions, each with a
+ header, a multi-select flag, and labelled options with descriptions. By the
+ time it reaches the screen it is a box drawn out of Unicode, answerable only
+ by a human at that keyboard. It cannot be answered from a phone, forwarded,
+ or automated.
 
 3. **Leaving the desk means leaving the work.** Agents run for minutes at a
-   time and block on questions that take five seconds to answer. Existing
-   remote options are either a raw terminal on a phone screen (unusable) or a
-   separate product with its own agent runtime (not your CLI, not your config).
+ time and block on questions that take five seconds to answer. Existing
+ remote options are either a raw terminal on a phone screen (unusable) or a
+ separate product with its own agent runtime (not your CLI, not your config).
 
 `omt` addresses all three without replacing anything the user already runs.
 
@@ -99,56 +98,56 @@ over the same catalog, and CI fails if they drift apart.
 ## 3. Shape of the system
 
 ```
-                        ┌──────────────────────────────────────────┐
-                        │              omt daemon                  │
-                        │                                          │
-  PTY ◄──── bytes ─────►│  terminal core   session/workspace tree  │
-  (agent CLI, shell)    │  (VT parser,     (workspace → session →  │
-       ▲                │   grid, blocks)   pane, layout, history) │
-       │                │        │                    │            │
-       │                │        └────────┬───────────┘            │
-  hooks / OSC / env     │                 ▼                        │
-       │                │        capability catalog                │
-       ├───────────────►│     (commands + queries + events)        │
-       │                │        ▲        ▲         ▲              │
-  agent observers       │        │        │         │              │
-  (hooks, ACP,          │      TUI    API server   plugin host     │
-   transcripts,         │   (ratatui)   (WS/HTTP)   (wasm/proc)    │
-   process, heuristics) │                 │                        │
-                        └─────────────────┼────────────────────────┘
-                                          │
-                        ┌─────────────────┴────────────────────────┐
-                        │  web client (TS + xterm.js, mobile-first)│
-                        │  attaches to N omt instances on N devices│
-                        └──────────────────────────────────────────┘
+ ┌──────────────────────────────────────────┐
+ │ omt daemon │
+ │ │
+ PTY ◄──── bytes ─────►│ terminal core session/workspace tree │
+ (agent CLI, shell) │ (VT parser, (workspace → session → │
+ ▲ │ grid, blocks) pane, layout, history) │
+ │ │ │ │ │
+ │ │ └────────┬───────────┘ │
+ hooks / OSC / env │ ▼ │
+ │ │ capability catalog │
+ ├───────────────►│ (commands + queries + events) │
+ │ │ ▲ ▲ ▲ │
+ agent observers │ │ │ │ │
+ (hooks, ACP, │ TUI API server plugin host │
+ transcripts, │ (ratatui) (WS/HTTP) (wasm/proc) │
+ process, heuristics) │ │ │
+ └─────────────────┼────────────────────────┘
+ │
+ ┌─────────────────┴────────────────────────┐
+ │ web client (TS + xterm.js, mobile-first)│
+ │ attaches to N omt instances on N devices│
+ └──────────────────────────────────────────┘
 ```
 
 Two hard rules are visible in that diagram and enforced everywhere:
 
 - **The TUI is a client.** It sits beside the API server, not above it. It has
-  no privileged path into the core.
+ no privileged path into the core.
 - **The capability catalog is the only door.** Every mutation and every read
-  goes through it, which is what makes parity mechanically checkable.
+ goes through it, which is what makes parity mechanically checkable.
 
 ## 4. Domain model
 
 ```
-Instance          one omt daemon on one machine
- └─ Workspace     a project root (usually a git repo or worktree)
-     └─ Session   one logical terminal (a PTY + its scrollback + its agent)
-         └─ Pane  a viewport onto a session inside a layout
+Instance one omt daemon on one machine
+ └─ Workspace a project root (usually a git repo or worktree)
+ └─ Session one logical terminal (a PTY + its scrollback + its agent)
+ └─ Pane a viewport onto a session inside a layout
 ```
 
 - **Workspace** is identified by its canonical path. Multiple sessions in the
-  same directory is the normal case, not an edge case — that is how people run
-  an agent next to a dev server next to a shell.
+ same directory is the normal case, not an edge case — that is how people run
+ an agent next to a dev server next to a shell.
 - **Session** owns the PTY and the terminal state. It survives detach,
-  reattach, client disconnect, and daemon restart (via replayable state).
+ reattach, client disconnect, and daemon restart (via replayable state).
 - **Pane** is presentation only. Layouts are a BSP tree; a session may be shown
-  in several panes, on several clients, at once.
+ in several panes, on several clients, at once.
 - **Agent** is not a separate object — it is an observed property of a session,
-  because a session's foreground process changes over time (shell → agent →
-  shell). A session therefore has an *agent binding* with a lifetime.
+ because a session's foreground process changes over time (shell → agent →
+ shell). A session therefore has an *agent binding* with a lifetime.
 
 ## 5. The agent observation pipeline
 
@@ -181,7 +180,7 @@ rather than inferred.
 Tier 0 is deliberately capped: heuristics may never produce structured content.
 Anything omt renders as a card must come from tier 3, 4 or 5, so that a locale
 change or a version bump degrades attentiveness, never correctness. This is the
-main departure from another tool, whose entire state model is tier 0.
+main departure from other terminals, whose entire state model is tier 0.
 
 The flagship mechanism is **mirroring, not interception**
 ([D11](decisions.md#d11--omt-mirrors-the-agents-own-card-it-does-not-intercept-or-replace-it)).
@@ -231,8 +230,8 @@ Tailscale tailnet. See [07](07-remote-protocol.md) and [13](13-security.md).
 
 - Not an agent. omt never talks to a model; it runs your CLI.
 - Not a replacement for tmux inside a pane — but it will not pretend to see
-  through one either (an agent inside tmux inside omt is explicitly unsupported
-  for observation; the terminal still works).
+ through one either (an agent inside tmux inside omt is explicitly unsupported
+ for observation; the terminal still works).
 - Not a hosted service. There is no omt cloud, no telemetry, and no required
-  network egress.
+ network egress.
 - Not a shell. omt integrates with your shell; it does not implement one.

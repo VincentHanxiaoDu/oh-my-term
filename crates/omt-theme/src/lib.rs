@@ -5,7 +5,7 @@
 //! adds nothing to it, deliberately: a theme that only omt can read is a theme
 //! nobody ports, and the point of a theme format is that people share them.
 //!
-//! Importers exist for the formats people already have — another terminal's YAML, VS Code's
+//! Importers exist for the formats people already have — the YAML format's YAML, VS Code's
 //! JSON, and iTerm2's plist — because "bring your own colours" is worth more
 //! than "here are ours".
 
