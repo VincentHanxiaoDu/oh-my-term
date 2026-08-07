@@ -1442,6 +1442,13 @@ pub struct BlockSummary {
     pub exit_code: Option<i32>,
     /// Whether a surface should show this as a failure.
     pub failed: bool,
+    /// Whether omt ever saw the command this block belongs to.
+    ///
+    /// False for a block opened from output alone — a shell with no OSC 133, a
+    /// bare `ssh`, a container. A surface must not offer "re-run" for one of
+    /// these: there is no command, and the alternative is scraping the screen
+    /// for something that looks like a prompt.
+    pub attributed: bool,
 }
 
 /// What `session.blocks` reports.
@@ -1515,14 +1522,15 @@ impl CapabilityHandler<SessionBlocks> for SessionBlocksHandler {
                     _ => None,
                 },
                 failed: b.outcome.is_failure(),
+                attributed: b.attributed,
             })
             .collect();
 
         Ok(SessionBlocksOut {
-            // Whether any block has ever been seen. A shell with no integration
-            // never produces one, and a UI showing an empty list without saying
-            // why looks like "you have run nothing".
-            shell_integration: !terminal.blocks().is_empty(),
+            // Whether the shell marks its commands. Blocks appear either way
+            // now, but an unattributed one cannot be re-run and a UI should say
+            // why rather than showing a button that does nothing.
+            shell_integration: terminal.blocks().iter().any(|b| b.attributed),
             blocks,
         })
     }
@@ -2551,6 +2559,214 @@ impl CapabilityHandler<AgentConnect> for AgentConnectHandler {
 // ---------------------------------------------------------------------------
 // Protocol agents
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Layouts
+// ---------------------------------------------------------------------------
+
+/// One pane in a launch configuration.
+#[derive(Serialize, Deserialize, schemars::JsonSchema, Clone)]
+pub struct PaneTemplate {
+    /// What to run. Absent means the user's shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    /// Where to run it, relative to the workspace. Absent means its root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// What to call it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+/// Input to `layout.open`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct LayoutOpenIn {
+    /// Which workspace.
+    pub workspace: String,
+    /// The panes, in the order they should appear.
+    ///
+    /// A flat list rather than another terminal's recursive split tree, and the reason is
+    /// worth stating: omt's own geometry tiles a flat list, so a tree would be
+    /// a shape the renderer immediately flattens. When the renderer grows
+    /// nested splits this grows with it, and not before — a schema that
+    /// describes something nothing can draw is a promise to nobody.
+    pub panes: Vec<PaneTemplate>,
+}
+
+/// What became of one pane.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct PaneOutcome {
+    /// Its position in the request, so a caller can say *which* one.
+    pub index: u32,
+    /// The session, when it started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    /// Why it did not, when it did not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What `layout.open` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct LayoutOpenOut {
+    /// One entry per requested pane, in order.
+    ///
+    /// Every pane, not just the failures: a layout that half-opened and said
+    /// "error" leaves somebody to work out which of six panes is missing.
+    pub panes: Vec<PaneOutcome>,
+    /// How many started.
+    pub opened: u32,
+}
+
+capability! {
+    /// Open a workspace as a layout.
+    pub struct LayoutOpen;
+    input  = LayoutOpenIn,
+    output = LayoutOpenOut,
+    decl = Decl {
+        name: "layout.open",
+        group: "layout",
+        verb: "open",
+        title: "Open a layout",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::SPAWNS_PROCESS,
+        intent: Some(Intent::Append {
+            dedup: DedupKey::IntentIdAndTarget,
+            ttl_secs: 600,
+        }),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed.",
+    },
+}
+
+struct LayoutOpenHandler(State);
+
+impl CapabilityHandler<LayoutOpen> for LayoutOpenHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: LayoutOpenIn,
+    ) -> Result<LayoutOpenOut, CapabilityError> {
+        let workspace = workspace_id(&input.workspace)?;
+        if input.panes.is_empty() {
+            return Err(CapabilityError::invalid_input("a layout needs a pane"));
+        }
+
+        let root = {
+            let instance = self.0.lock()?;
+            instance
+                .workspace_root(workspace)
+                .ok_or_else(|| CapabilityError::not_found("no such workspace"))?
+        };
+
+        let mut outcomes = Vec::with_capacity(input.panes.len());
+        let mut opened = 0u32;
+        for (index, pane) in input.panes.iter().enumerate() {
+            // Resolved through the workspace so a template cannot point a pane
+            // outside it — a layout file is something people share, and a
+            // shared file that opens a shell in somebody's home directory is a
+            // different kind of thing from a layout.
+            let cwd = match pane.cwd.as_deref() {
+                Some(rel) => match resolve_for_write(&self.0, &input.workspace, rel) {
+                    Ok(path) if path.is_dir() => path.display().to_string(),
+                    Ok(path) => {
+                        outcomes.push(PaneOutcome {
+                            index: index as u32,
+                            session: None,
+                            error: Some(format!("{} is not a directory", path.display())),
+                        });
+                        continue;
+                    }
+                    Err(e) => {
+                        outcomes.push(PaneOutcome {
+                            index: index as u32,
+                            session: None,
+                            error: Some(e.message.clone()),
+                        });
+                        continue;
+                    }
+                },
+                None => root.clone(),
+            };
+
+            match self.start_pane(workspace, pane, &cwd) {
+                Ok(session) => {
+                    opened += 1;
+                    outcomes.push(PaneOutcome {
+                        index: index as u32,
+                        session: Some(session),
+                        error: None,
+                    });
+                }
+                Err(e) => outcomes.push(PaneOutcome {
+                    index: index as u32,
+                    session: None,
+                    error: Some(e.message),
+                }),
+            }
+        }
+
+        Ok(LayoutOpenOut {
+            panes: outcomes,
+            opened,
+        })
+    }
+}
+
+impl LayoutOpenHandler {
+    /// Start one pane's session and put a pane on it.
+    fn start_pane(
+        &self,
+        workspace: WorkspaceId,
+        pane: &PaneTemplate,
+        cwd: &str,
+    ) -> Result<String, CapabilityError> {
+        let program = pane
+            .program
+            .clone()
+            .or_else(|| std::env::var("SHELL").ok())
+            .unwrap_or_else(|| "/bin/sh".to_owned());
+
+        let mut instance = self.0.lock()?;
+        let id = instance
+            .create_session(
+                workspace,
+                omt_session::SessionKind::Shell,
+                omt_session::SessionMode::Pty,
+            )
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+
+        let runtime = omt_daemon::SessionRuntime::spawn(
+            id,
+            &omt_pty::PtyConfig {
+                program: program.into(),
+                args: Vec::new(),
+                cwd: Some(cwd.into()),
+                size: omt_pty::PtySize::new(default_cols(), default_rows()),
+                env: vec![("OMT_SESSION".to_owned(), id.to_wire())],
+                ..omt_pty::PtyConfig::default()
+            },
+            omt_term::ScrollbackLimits::default(),
+        )
+        .map_err(|e| CapabilityError::internal(e.to_string()))?;
+        instance
+            .attach(runtime)
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+
+        if let Some(title) = &pane.title
+            && let Some(session) = instance.session_mut(id)
+        {
+            session.title = title.clone();
+        }
+        instance.add_pane(workspace, id);
+        Ok(id.to_wire())
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Panes
@@ -4497,6 +4713,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<SessionWrite, _>(SessionWriteHandler(state.clone()))?;
     r.register::<SessionResize, _>(SessionResizeHandler(state.clone()))?;
     r.register::<AgentConnect, _>(AgentConnectHandler(state.clone()))?;
+    r.register::<LayoutOpen, _>(LayoutOpenHandler(state.clone()))?;
     r.register::<PaneList, _>(PaneListHandler(state.clone()))?;
     r.register::<PaneOpen, _>(PaneOpenHandler(state.clone()))?;
     r.register::<PaneClose, _>(PaneCloseHandler(state.clone()))?;

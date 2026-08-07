@@ -57,6 +57,7 @@ export const HANDLERS = {
         cols,
         rows,
     }),
+    'layout.open': (request, workspace, panes) => call(request, 'layout.open', { workspace, panes }),
     'pane.list': (request, workspace) => call(request, 'pane.list', { workspace }),
     'pane.open': (request, workspace, session) => call(request, 'pane.open', { workspace, session }),
     'pane.close': (request, workspace, pane) => call(request, 'pane.close', { workspace, pane }),

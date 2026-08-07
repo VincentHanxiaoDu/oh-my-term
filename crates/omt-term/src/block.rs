@@ -68,6 +68,14 @@ pub struct Block {
     pub end_row: Option<u64>,
     /// How it ended.
     pub outcome: Outcome,
+    /// Whether omt ever saw the command this block belongs to.
+    ///
+    /// False for a block opened from output alone — a shell with no OSC 133, a
+    /// bare `ssh`, output that arrived before the mark. A surface offering to
+    /// re-run a command must not offer it here, because there is no command:
+    /// scraping the line above for something that "looks like" a prompt is the
+    /// heuristic the tier ladder exists to keep out.
+    pub attributed: bool,
 }
 
 impl Block {
@@ -162,6 +170,7 @@ impl BlockTracker {
                     output_row: None,
                     end_row: None,
                     outcome: Outcome::Running,
+                    attributed: true,
                 };
                 let id = block.id;
                 self.blocks.push(block);
@@ -191,6 +200,34 @@ impl BlockTracker {
                 Some(block.id)
             }
         }
+    }
+
+    /// Note that output appeared at a row.
+    ///
+    /// The whole of `EarlyOutput`: output with no open block opens one. Every
+    /// case another terminal handles separately — a shell with no integration, `ssh` to a
+    /// host that has none, output racing its own mark, a background job — is
+    /// this one case, and one rule covers them all.
+    ///
+    /// Returns the block it opened, if it opened one.
+    pub fn output_at(&mut self, row: u64) -> Option<BlockId> {
+        if self.blocks.last().is_some_and(|b| !b.outcome.is_finished()) {
+            return None;
+        }
+        let block = Block {
+            id: BlockId::new(),
+            command: String::new(),
+            prompt_row: row,
+            output_row: Some(row),
+            end_row: None,
+            outcome: Outcome::Running,
+            // No command was ever marked, and none is invented.
+            attributed: false,
+        };
+        let id = block.id;
+        self.blocks.push(block);
+        self.trim();
+        Some(id)
     }
 
     /// Record command text seen between `CommandStart` and `OutputStart`.
@@ -314,11 +351,56 @@ mod tests {
     }
 
     #[test]
-    fn a_shell_with_no_marks_produces_no_blocks_rather_than_wrong_ones() {
-        // The property that makes this safe to run against every shell: no
-        // OSC 133, no guessing.
-        let t = BlockTracker::new();
-        assert!(t.blocks().is_empty());
+    fn a_shell_with_no_marks_still_produces_a_block_from_its_output() {
+        // The gap this closes. `ssh` to a host with no shell integration used
+        // to produce nothing at all, so the session looked empty — which is
+        // what another terminal's EarlyOutput exists to prevent.
+        let mut t = BlockTracker::new();
+        t.output_at(0);
+        assert_eq!(t.blocks().len(), 1);
+        assert!(!t.blocks()[0].attributed, "a command was invented");
+        assert_eq!(t.blocks()[0].command, "", "a command was guessed at");
+    }
+
+    #[test]
+    fn output_while_a_marked_block_is_open_does_not_open_a_second_one() {
+        // Otherwise every line of a command's output would start a block.
+        let mut t = BlockTracker::new();
+        t.apply(BlockEvent::PromptStart, 0);
+        t.apply(BlockEvent::OutputStart, 1);
+        assert!(t.output_at(2).is_none());
+        assert_eq!(t.blocks().len(), 1);
+    }
+
+    #[test]
+    fn an_early_block_is_closed_when_the_marks_finally_arrive() {
+        // Repaired forwards rather than by scanning back: a backwards scan
+        // needs a guess about where the previous command ended, and a guess
+        // there lands a boundary in the middle of somebody's output.
+        let mut t = BlockTracker::new();
+        t.output_at(0);
+        t.apply(BlockEvent::PromptStart, 5);
+        assert_eq!(t.blocks().len(), 2);
+        assert!(t.blocks()[0].outcome.is_finished(), "the early block never closed");
+        assert_eq!(t.blocks()[0].end_row, Some(5));
+        assert!(t.blocks()[1].attributed);
+    }
+
+    #[test]
+    fn an_early_block_that_ends_reports_no_exit_code_rather_than_success() {
+        // Nothing told omt how it ended, so nothing is claimed about it.
+        let mut t = BlockTracker::new();
+        t.output_at(0);
+        t.apply(BlockEvent::PromptStart, 5);
+        assert_eq!(t.blocks()[0].outcome, Outcome::Unknown);
+        assert!(!t.blocks()[0].outcome.is_failure());
+    }
+
+    #[test]
+    fn a_marked_block_says_it_is_attributed() {
+        let mut t = BlockTracker::new();
+        run(&mut t, "ls", Some(0), 0);
+        assert!(t.blocks()[0].attributed);
     }
 
     #[test]

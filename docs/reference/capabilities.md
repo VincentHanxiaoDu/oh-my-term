@@ -26,6 +26,7 @@ vanishing.
 | `job.create` | command | operator | Create a scheduled job, replacing any job of the same name. A missed window is skipped rather than caught up. |
 | `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
+| `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
 | `pane.close` | command | operator | Close a pane. The session it showed keeps running — closing a view of something is not ending it. |
 | `pane.focus` | command | operator | Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored. |
@@ -57,4 +58,4 @@ vanishing.
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-47 capabilities.
+48 capabilities.

@@ -48,6 +48,7 @@ Working, and honest about what is not:
 - ✅ TLS: `omt web --bind HOST:PORT --tls-cert C --tls-key K` (loopback by default)
 - ⚠️ Hook installation reformats JSON configs (content is preserved exactly)
 - ✅ Panes: `Ctrl-A s` splits, `Ctrl-A o` cycles, `Ctrl-A x` closes
+- ✅ Command blocks, including for shells that emit no OSC 133 at all
 
 ## Install
 

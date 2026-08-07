@@ -183,6 +183,12 @@ export const HANDLERS = {
       rows,
     }),
 
+  'layout.open': (
+    request: RequestId,
+    workspace: string,
+    panes: { program?: string; cwd?: string; title?: string }[],
+  ) => call(request, 'layout.open', { workspace, panes }),
+
   'pane.list': (request: RequestId, workspace: string) =>
     call(request, 'pane.list', { workspace }),
 

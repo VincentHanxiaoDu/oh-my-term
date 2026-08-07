@@ -6,6 +6,8 @@
 //! because a terminal where Ctrl+C does not interrupt is a terminal nobody can
 //! rescue.
 
+pub mod highlight;
+pub use highlight::{Class, Span, classify};
 pub mod key;
 pub mod keymap;
 

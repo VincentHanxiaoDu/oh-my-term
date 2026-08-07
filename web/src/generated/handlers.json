@@ -16,6 +16,7 @@
   "job.create",
   "job.list",
   "keys.cheatsheet",
+  "layout.open",
   "open.recognize",
   "pane.close",
   "pane.focus",

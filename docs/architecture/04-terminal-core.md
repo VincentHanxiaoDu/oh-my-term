@@ -95,6 +95,19 @@ split, chosen to stay under the 1200-line advisory limit from
 [P1](01-principles.md#p1--clean-small-crates-explicit-seams): `parser/`
 (`vte` glue, fast path, hooks) · `interp/{csi,osc,modes}.rs` · `grid/` ·
 `scrollback/` · `reflow/` · `block/` · `damage/` · `search/`, `select/`, `link/`
+
+**Blocks exist without shell integration.** `block/` opens one on output when
+none is open, marked `attributed: false` — which is what makes a bare `ssh`, a
+container, or any shell that emits no OSC 133 produce something rather than an
+empty session. An unattributed block carries no command and never guesses one:
+scraping the line above for something that "looks like" a prompt is the
+heuristic the tier ladder exists to keep out of structured content, and a
+"re-run" button wired to a guess is the failure it prevents.
+
+Exit codes 130 and 141 are not failures. 130 is Ctrl-C, which the user meant,
+and 141 is SIGPIPE, which is what `… | head` does to everything upstream of it
+every single time. A terminal that paints those red teaches people that red
+means nothing.
 · `graphics/`.
 
 ### 1.4 Where `vte` is not enough

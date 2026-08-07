@@ -442,6 +442,11 @@ impl Instance {
         Some((view.panes.clone(), view.focus))
     }
 
+    /// One session, mutably.
+    pub fn session_mut(&mut self, id: SessionId) -> Option<&mut omt_session::Session> {
+        self.tree.session_mut(id)
+    }
+
     /// A workspace's canonical root.
     #[must_use]
     pub fn workspace_root(&self, id: WorkspaceId) -> Option<String> {

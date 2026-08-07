@@ -348,6 +348,30 @@
     },
     {
       "aliases": [],
+      "doc": "Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed.",
+      "effects": [
+        "spawns_process"
+      ],
+      "group": "layout",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id_and_target",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "layout.open",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/layout/open",
+      "since": "0.1.0",
+      "title": "Open a layout",
+      "verb": "open"
+    },
+    {
+      "aliases": [],
       "doc": "Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern.",
       "effects": [],
       "group": "open",

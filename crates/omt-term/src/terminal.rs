@@ -72,6 +72,12 @@ struct State {
     stalled: Option<HostAction>,
     /// Shell-integration transitions the terminal has not positioned yet.
     pending_blocks: Vec<crate::action::BlockEvent>,
+    /// Set when a printable character was written since the last check.
+    ///
+    /// Only printables: an escape sequence that moves the cursor is not a
+    /// program producing output, and treating it as one would open a block
+    /// every time something repainted its status line.
+    wrote_output: bool,
 }
 
 /// The DEC private modes that are on.
@@ -108,6 +114,7 @@ impl Terminal {
                 title: None,
                 stalled: None,
                 pending_blocks: Vec::new(),
+                wrote_output: false,
             },
             blocks: crate::block::BlockTracker::new(),
         }
@@ -171,10 +178,20 @@ impl Terminal {
     /// queue: the host drains that one, and two consumers of a queue with one
     /// cursor is how one of them silently stops seeing things.
     fn track_blocks(&mut self) {
+        let row = self.state.scrollback.len() as u64 + u64::from(self.grid().cursor.row);
+
+        // Output with nothing open opens a block. This is what makes a shell
+        // with no OSC 133 — `ssh` to a host that has none, a container, an
+        // ancient login shell — produce something rather than an empty session
+        // that looks broken.
+        if self.state.wrote_output {
+            self.state.wrote_output = false;
+            self.blocks.output_at(row);
+        }
+
         if self.state.pending_blocks.is_empty() {
             return;
         }
-        let row = self.state.scrollback.len() as u64 + u64::from(self.grid().cursor.row);
         for event in std::mem::take(&mut self.state.pending_blocks) {
             self.blocks.apply(event, row);
         }
@@ -511,6 +528,10 @@ fn arg0(params: &Params, i: usize) -> u16 {
 
 impl Perform for State {
     fn print(&mut self, c: char) {
+        // A program produced something. Only printables count: a cursor move
+        // is not output, and treating it as one would open a block every time
+        // a status line repainted itself.
+        self.wrote_output = true;
         let width = unicode_width::UnicodeWidthChar::width(c).unwrap_or(1);
         if width == 0 {
             // A combining mark belongs to the character before it. Dropping it
@@ -999,12 +1020,37 @@ mod tests {
     }
 
     #[test]
-    fn a_shell_without_marks_produces_no_blocks() {
-        // The property that makes this safe against every shell: no OSC 133,
-        // no guessing at where a command began.
+    fn a_shell_without_marks_still_produces_a_block_from_its_output() {
+        // What `ssh` to a host with no shell integration looks like. It used to
+        // produce nothing, so the session appeared empty — the exact case
+        // another terminal's EarlyOutput exists for.
         let mut t = Terminal::new(TermConfig::default());
         t.advance(b"$ ls\r\nfile\r\n$ ");
-        assert!(t.blocks().is_empty());
+        let blocks = t.blocks();
+        assert_eq!(blocks.len(), 1, "{blocks:?}");
+        assert!(!blocks[0].attributed, "a command was invented for it");
+        assert_eq!(blocks[0].command, "", "a command was guessed from the screen");
+    }
+
+    #[test]
+    fn a_cursor_move_alone_does_not_open_a_block() {
+        // A status line repainting itself is not a command running, and a
+        // block per repaint would bury every real one.
+        let mut t = Terminal::new(TermConfig::default());
+        t.advance(b"\x1b[5;1H\x1b[2K");
+        assert!(t.blocks().is_empty(), "{:?}", t.blocks());
+    }
+
+    #[test]
+    fn a_marked_session_does_not_also_get_early_blocks() {
+        // Otherwise every command would produce two: the marked one and an
+        // unattributed twin.
+        let mut t = Terminal::new(TermConfig::default());
+        t.advance(b"\x1b]133;A\x07$ \x1b]133;B\x07ls\x1b]133;C\x07");
+        t.advance(b"file\r\n");
+        t.advance(b"\x1b]133;D;0\x07");
+        assert_eq!(t.blocks().len(), 1, "{:?}", t.blocks());
+        assert!(t.blocks()[0].attributed);
     }
 
     #[test]

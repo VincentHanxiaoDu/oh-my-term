@@ -578,6 +578,32 @@ unsafe fn child_exec(
             libc::_exit(125);
         }
 
+        // Everything above stderr is closed. A child inherits every descriptor
+        // its parent had open, and omt's parent is a daemon holding client
+        // sockets and listeners — so a shell spawned here keeps them open on
+        // the child's side, and a client that disconnects never produces the
+        // EOF the server is waiting for. The server then holds that connection
+        // for as long as the shell lives, which is forever.
+        //
+        // A loop rather than `closefrom`: that is not available on every
+        // platform omt builds for, and `close` on a descriptor that was never
+        // open simply fails, which is fine here. The bound is the soft limit,
+        // because that is the highest number the parent could have opened.
+        let mut limit = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        let highest = if libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) == 0 {
+            // Capped: a system with an enormous limit would otherwise spend
+            // millions of syscalls here, in the child, before every exec.
+            (limit.rlim_cur as libc::c_int).min(4096)
+        } else {
+            1024
+        };
+        for fd in 3..highest {
+            libc::close(fd);
+        }
+
         if let Some(dir) = cwd
             && libc::chdir(dir.as_ptr()) != 0
         {
@@ -609,6 +635,67 @@ unsafe fn child_exec(
     reason = "in a test, expect() is the assertion"
 )]
 mod tests {
+
+    #[test]
+    fn a_child_does_not_inherit_the_parents_descriptors() {
+        // The bug this caught: a shell spawned by the daemon kept the daemon's
+        // client sockets open, so a client that disconnected never produced the
+        // EOF the server was waiting for — and the server held that connection
+        // for as long as the shell lived. Which is forever, for a shell.
+        //
+        // A pipe is used as the witness. If the child inherits the write end,
+        // reading from this end blocks instead of returning EOF.
+        let mut fds = [0 as libc::c_int; 2];
+        #[allow(unsafe_code, reason = "pipe has no safe wrapper that keeps raw fds")]
+        let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+        assert_eq!(rc, 0, "pipe");
+        let (read_end, write_end) = (fds[0], fds[1]);
+
+        let mut pty = Pty::spawn(&sh("sleep 30")).expect("spawn");
+
+        // The parent's own copy goes; only the child could still hold one.
+        #[allow(unsafe_code, reason = "closing a raw fd this test opened")]
+        unsafe {
+            libc::close(write_end);
+        }
+
+        // Polled with a deadline rather than read immediately: the child may
+        // still be between fork and exec, and a bare non-blocking read would
+        // race it and report a descriptor it is about to close.
+        let mut poll = libc::pollfd {
+            fd: read_end,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        #[allow(unsafe_code, reason = "poll has no safe wrapper for raw fds")]
+        let ready = unsafe { libc::poll(&raw mut poll, 1, 2_000) };
+
+        // EOF is readable, so a ready descriptor means the write end is gone
+        // everywhere. A timeout means somebody still holds it — which is the
+        // failure this test exists for.
+        let n = if ready > 0 {
+            let mut byte = [0u8; 1];
+            #[allow(unsafe_code, reason = "reading a raw fd this test opened")]
+            unsafe {
+                libc::read(read_end, byte.as_mut_ptr().cast(), 1)
+            }
+        } else {
+            -1
+        };
+
+        #[allow(unsafe_code, reason = "closing a raw fd this test opened")]
+        unsafe {
+            libc::close(read_end);
+        }
+        pty.signal(Signal::Kill).ok();
+        pty.wait().ok();
+
+        assert_eq!(
+            n, 0,
+            "the child inherited a descriptor: read returned {n} rather than EOF"
+        );
+    }
+
     use super::*;
     use std::time::{Duration, Instant};
 

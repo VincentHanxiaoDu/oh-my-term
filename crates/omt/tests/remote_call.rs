@@ -2034,3 +2034,210 @@ fn an_agent_omt_cannot_drive_over_a_protocol_is_refused_by_name() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn a_layout_opens_every_pane_and_names_the_one_that_failed() {
+    // A layout that half-opened and reported "error" leaves somebody to work
+    // out which of six panes is missing. Every pane comes back, in order.
+    //
+    // The panes run `date` rather than a shell. What is being tested is which
+    // panes opened and which failed; a shell that never exits leaves a live
+    // process behind every run, and a test suite that accumulates those is one
+    // that hangs when enough of them are running at once.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join("sub")).expect("mkdir");
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+
+    let out = call_ok(
+        &mut client,
+        2,
+        "layout.open",
+        serde_json::json!({
+            "workspace": ws,
+            "panes": [
+                { "program": "/bin/date", "title": "clock" },
+                { "program": "/bin/date", "cwd": "sub" },
+                { "program": "/bin/date", "cwd": "not-there" }
+            ]
+        }),
+        true,
+    );
+
+    let panes = out["panes"].as_array().expect("panes");
+    assert_eq!(panes.len(), 3, "not every pane was reported: {out}");
+    assert_eq!(out["opened"], 2);
+    assert!(panes[0]["session"].is_string());
+    assert!(panes[1]["session"].is_string());
+    // The failure names its index, so a client can point at the right row.
+    assert_eq!(panes[2]["index"], 2);
+    assert!(
+        panes[2]["error"].is_string(),
+        "the missing directory was not reported: {out}"
+    );
+
+    // And the ones that opened are really panes, not just sessions.
+    let listed = call_ok(
+        &mut client,
+        3,
+        "pane.list",
+        serde_json::json!({ "workspace": ws }),
+        false,
+    );
+    assert_eq!(listed["panes"].as_array().expect("panes").len(), 2);
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_layout_pane_cannot_point_outside_its_workspace() {
+    // A layout file is something people share, and a shared file that opens a
+    // shell in somebody's home directory is a different kind of thing.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+
+    let out = call_ok(
+        &mut client,
+        2,
+        "layout.open",
+        serde_json::json!({
+            "workspace": ws,
+            "panes": [{ "program": "/bin/date", "cwd": "../.." }]
+        }),
+        true,
+    );
+    assert_eq!(out["opened"], 0, "a pane escaped its workspace: {out}");
+    assert!(out["panes"][0]["error"].is_string());
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_session_with_no_shell_integration_still_reports_blocks() {
+    // What `ssh` to a host with no marks looks like. It used to report nothing,
+    // so the session appeared empty — and `shell_integration` says plainly that
+    // these blocks cannot be re-run.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+    let session = call_ok(
+        &mut client,
+        2,
+        "session.create",
+        // `date` rather than `echo`: bare `echo` prints only a newline, and a
+        // newline is not output — a status line that repaints and ends with one
+        // must not open a block.
+        serde_json::json!({ "workspace": ws, "program": "/bin/date", "cols": 40, "rows": 10 }),
+        true,
+    )["session"]
+        .as_str()
+        .expect("session")
+        .to_owned();
+
+    // Pumped until something has been drawn — `/bin/echo` writes one line and
+    // exits, and it emits no OSC 133 at all.
+    let mut out = serde_json::Value::Null;
+    for _ in 0..100 {
+        {
+            let mut instance = state.lock().expect("lock");
+            let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
+            for each in ids {
+                let _ = instance.pump_session(each);
+            }
+        }
+        out = call_ok(
+            &mut client,
+            3,
+            "session.blocks",
+            serde_json::json!({ "session": session }),
+            false,
+        );
+        if !out["blocks"].as_array().is_none_or(std::vec::Vec::is_empty) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    let blocks = out["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty(), "a session with output reported no blocks");
+    assert_eq!(
+        blocks[0]["attributed"], false,
+        "a command was invented for a shell that marked none"
+    );
+    assert_eq!(
+        out["shell_integration"], false,
+        "a shell with no marks was reported as having integration"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
