@@ -1,6 +1,6 @@
 # Native clients
 
-**Status: an iOS app that compiles, and no app in a store.** The Swift package
+**Status: both apps build and run.** iOS launches on a simulator, Android produces an APK, and neither is signed or submitted. The Swift package
 builds a SwiftUI roster over a real WebSocket, and 15 checks drive it without a
 network — `cd ios && swift run omt-client-check`. The views live in a library
 target rather than an `.iOSApplication` product on purpose: a library is
