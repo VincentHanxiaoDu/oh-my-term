@@ -32,7 +32,17 @@ impl HeuristicFloor {
     }
 
     /// The agents that land here.
-    pub const COVERS: &'static [AgentKind] = &[AgentKind::Aider, AgentKind::Amp, AgentKind::Crush];
+    pub const COVERS: &'static [AgentKind] = &[
+        AgentKind::Aider,
+        AgentKind::Amp,
+        AgentKind::Crush,
+        // And anything omt has never heard of. This is the difference between
+        // "omt supports these eleven agents" and "omt supports agents": a CLI
+        // released next month gets a pane that shows whether it is working and
+        // a way to stop it, and says plainly that it is guessing — instead of
+        // getting no adapter at all and therefore nothing.
+        AgentKind::Unknown,
+    ];
 }
 
 impl AgentAdapter for HeuristicFloor {

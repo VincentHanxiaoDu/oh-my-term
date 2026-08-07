@@ -8,13 +8,10 @@ import SwiftUI
 
 /// The application.
 ///
-/// `@main` lives behind a flag because this target is also compiled as a
-/// library on machines without Xcode — which is where the checks run, and
-/// where most mistakes are actually found. With `OMT_APP` set, the same code
-/// is the app's entry point.
-#if OMT_APP
-@main
-#endif
+/// Deliberately without `@main`: the app target calls `OmtApplication.main()`
+/// from its own file, which keeps this a library that compiles on a machine
+/// with no Xcode at all — where the checks run, and where most mistakes are
+/// actually found.
 public struct OmtApplication: App {
     @StateObject private var client = Client()
     @AppStorage("omt.instance") private var instance = ""

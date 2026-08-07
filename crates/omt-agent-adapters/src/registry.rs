@@ -198,6 +198,42 @@ mod tests {
     }
 
     #[test]
+    fn an_agent_omt_has_never_heard_of_still_gets_the_floor() {
+        // The difference between "omt supports these eleven agents" and "omt
+        // supports agents". A CLI released next month gets activity detection
+        // and an interrupt — the whole remote surface at heuristic tier — and
+        // says it is guessing, rather than getting no adapter and therefore
+        // nothing at all.
+        let set = builtin();
+        let unknown = set
+            .get(AgentKind::Unknown)
+            .expect("an unrecognised agent has no adapter");
+        assert_eq!(unknown.best_tier(), Tier::Heuristic);
+        assert_eq!(
+            unknown.interrupt(),
+            Interrupt::ControlC,
+            "the one control a heuristic-tier agent has"
+        );
+    }
+
+    #[test]
+    fn the_floor_cannot_be_talked_into_claiming_structure() {
+        // A heuristic source that emitted a card would be a card assembled from
+        // pixels, which is the failure the whole tier ladder exists to prevent.
+        let set = builtin();
+        let unknown = set.get(AgentKind::Unknown).expect("unknown");
+        let payloads = unknown
+            .normalize("PreToolUse", &serde_json::json!({ "tool_name": "bash" }))
+            .unwrap_or_default();
+        assert!(
+            !payloads
+                .iter()
+                .any(|p| matches!(p, AgentPayload::Question { .. })),
+            "the floor produced a structured question"
+        );
+    }
+
+    #[test]
     fn a_dedicated_adapter_wins_over_the_generic_one_that_covers_it() {
         // `GenericAcp` also claims Gemini. If it were inserted last it would
         // replace the dedicated adapter, and Gemini's own hook names —

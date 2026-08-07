@@ -18,7 +18,11 @@ let package = Package(
         // An executable rather than a test target, so the assertions run with
         // the command line tools alone. XCTest needs a full Xcode, and a check
         // that only runs on one machine is a check nobody runs.
-        .executable(name: "omt-client-check", targets: ["OmtClientCheck"])
+        .executable(name: "omt-client-check", targets: ["OmtClientCheck"]),
+        // The app itself. Buildable with `xcodebuild -scheme Omt`, and the
+        // library targets above still build without Xcode at all — which is
+        // what keeps the checks runnable on a machine that has none.
+        .executable(name: "Omt", targets: ["OmtMain"])
     ],
     targets: [
         .target(name: "OmtClient", path: "Omt/Sources/Omt"),
@@ -34,6 +38,7 @@ let package = Package(
             // project file is not a place state hides.
             resources: [.copy("../../Resources/Assets.xcassets")]
         ),
+        .executableTarget(name: "OmtMain", dependencies: ["OmtApp"], path: "Omt/Main"),
         .executableTarget(
             name: "OmtClientCheck",
             dependencies: ["OmtClient", "OmtApp"],
