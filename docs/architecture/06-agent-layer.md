@@ -134,7 +134,9 @@ Implemented sources:
 | `OscBackchannel` | Marker | intercepts OSC emitted by `omt-hook` via `terminalSequence`, and omt's own OSC namespace |
 | `TranscriptTail` | Transcript | per-agent readers; watches the *directory* so new sessions are caught |
 | `HookBridge` | Hook | receives normalized payloads from the `omt-hook` binary over the local socket |
-| `AcpClient` | Protocol | generic ACP JSON-RPC client — covers opencode, Gemini, Goose, Qwen at once |
+| `AcpClient` | Protocol | generic ACP JSON-RPC client — covers opencode, Goose, Qwen at once |
+| `CopilotAcp` | Protocol | `copilot --acp`, plus Copilot's own hook vocabulary (Claude Code's, with `ErrorOccurred`, `SessionEnd`, `PreCompact` and a lowercase `subagentStart`) |
+| `GeminiAcp` | Protocol | `gemini --acp`, plus Gemini's *own* hook names — `BeforeAgent`/`AfterAgent`/`BeforeTool`/`AfterTool`, which are not Claude Code's despite `hooks migrate` existing |
 | `AppServerClient` | Protocol | Codex `app-server` |
 | `OpencodeHttp` | Protocol | opencode `serve` REST + SSE |
 | `PtyHeuristics` | Heuristic | activity only; structurally incapable of emitting structured content (§6). It implements `HeuristicSource`, not `EventSource` — the tier-0 ban is a type, not a rule ([§8.4](#84-which-tier-may-produce-which-payload)) |

@@ -822,3 +822,85 @@ Recommended for omt: capture in the browser, transcribe server-side in omt, inje
 8. Whether Amp's `--stream-json` is byte-compatible enough with Claude Code's that a single parser suffices, or only structurally similar.
 9. Cursor `--output-format` exact spelling (bundle shows `--print`, `--json`, `--stream-partial-output` but not the literal `--output-format`).
 10. Aider's current `.aider.*` filenames per version.
+
+---
+
+## 13. GitHub Copilot CLI
+
+Verified against `GitHub Copilot CLI 0.0.398` installed on this machine, 2026-08.
+
+### 13.1 Detection
+
+`copilot` on PATH, a Node bundle. Env markers `COPILOT_AGENT`,
+`GH_COPILOT_TOKEN`, `COPILOT_MODEL`; argv carries `@github/copilot`.
+
+### 13.2 Machine-readable modes
+
+**`copilot --acp` starts an Agent Client Protocol server.** This is in its own
+`--help` and is the reason Copilot reaches protocol tier rather than hook tier.
+Also present: `--resume [sessionId]`, `--continue`, `--log-dir`, `--log-level`,
+and `--share`/`--share-gist` for exporting a session.
+
+### 13.3 Hooks
+
+`~/.copilot/hooks/*.json`, one file per integration — this machine has
+`another tool.json` alongside a `another tool-agent-state.sh`, which is how both of those tools
+attach. The vocabulary is Claude Code's plus four:
+
+| | |
+|---|---|
+| Shared with Claude Code | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `SubagentStop`, `PermissionRequest`, `Notification` |
+| Copilot's own | `SessionEnd`, `ErrorOccurred`, `PreCompact`, `subagentStart` |
+
+`subagentStart` is lowercase-s in the file on disk. That is not a transcription
+error here: an adapter that "corrects" it stops seeing subagents start, and does
+so silently.
+
+`ErrorOccurred` matters more than it looks. Claude Code has no equivalent, so a
+Claude-shaped adapter infers failure from a missing `Stop` — with Copilot it is
+told, and a turn that ended badly can be red rather than green.
+
+### 13.4 Interactions
+
+`PermissionRequest` carries the options. They are taken verbatim: omt neither
+adds, removes nor reorders, because the labels are how an answer is delivered.
+A payload whose options cannot all be read raises no card at all — presenting
+three of four means somebody chooses without ever seeing the fourth.
+
+---
+
+## 14. Gemini CLI: the hook names are not Claude Code's
+
+§4.4 above says Gemini's hooks are "Claude-Code-compatible by design". Verified
+against `gemini 0.46.0` and a real `~/.gemini/settings.json`, that is not what
+compatible means here.
+
+**Gemini's native hook events are `BeforeAgent`, `AfterAgent`, `BeforeTool`,
+`AfterTool`.** Four events, none spelled the way Claude Code spells them. What
+exists is `gemini hooks migrate`, which *translates* a Claude configuration
+across — so a user who ran it has Claude's names and a user who did not has
+Gemini's.
+
+omt's adapter accepts both, because an adapter that knew only one vocabulary
+would work for exactly half the users and there is no way to tell which half
+from the outside.
+
+The payload field names differ too: Gemini says `args` and `call_id` where a
+migrated Claude config says `tool_input` and `tool_use_id`.
+
+ACP is `gemini --acp`. `--experimental-acp` still exists and the binary's own
+help marks it deprecated, so the adapter spawns the former.
+
+---
+
+## 15. What this leaves
+
+Every CLI in this document now has an adapter. The ones with a dedicated
+adapter — Claude Code, Codex, Copilot, Cursor, Gemini — have knowledge that is
+theirs alone: an environment marker, a hook vocabulary, a protocol flag. The
+rest are covered by the generic ACP client or, where there is nothing to speak
+to, by the heuristic floor, which says so rather than pretending.
+
+The dedicated adapters are registered *after* the generic ones, because
+registration replaces by kind and a dedicated adapter must win. There is a test
+for that, because a comment would not survive somebody tidying the function.

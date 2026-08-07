@@ -29,7 +29,7 @@ Six extension points are first-class, each a trait plus a registry:
 
 | Extension point | Trait | Examples |
 |---|---|---|
-| Agent adapter | `AgentAdapter` | Claude Code, Codex, opencode, Gemini, ACP-generic |
+| Agent adapter | `AgentAdapter` | Claude Code, Codex, Copilot, Cursor, Gemini, opencode, ACP-generic, heuristic floor |
 | Observation source | `EventSource` | hooks, ACP, transcript tail, process probe, PTY heuristics |
 | Transport | `Transport` | WebSocket, Unix socket, SSH stdio, (future) WebTransport |
 | Auth backend | `AuthBackend` | invite link, bearer token, password, tailnet identity |

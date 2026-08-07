@@ -38,6 +38,8 @@ pub enum AgentKind {
     QwenCode,
     /// Cursor's `cursor-agent`.
     Cursor,
+    /// GitHub Copilot CLI.
+    Copilot,
     /// Block's Goose.
     Goose,
     /// Sourcegraph's Amp.
@@ -76,6 +78,7 @@ impl AgentKind {
             Self::GeminiCli => "gemini_cli",
             Self::QwenCode => "qwen_code",
             Self::Cursor => "cursor",
+            Self::Copilot => "copilot",
             Self::Goose => "goose",
             Self::Amp => "amp",
             Self::Aider => "aider",

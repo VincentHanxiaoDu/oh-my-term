@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use omt_types::AgentKind;
 
 use crate::adapter::AgentAdapter;
-use crate::agents::{ClaudeCode, Codex, Cursor, GenericAcp, HeuristicFloor};
+use crate::agents::{ClaudeCode, Codex, Copilot, Cursor, Gemini, GenericAcp, HeuristicFloor};
 
 /// Every adapter available to an instance.
 ///
@@ -67,13 +67,20 @@ pub fn builtin() -> AdapterSet {
     let mut set = AdapterSet::new();
     set.insert(Box::new(ClaudeCode));
     set.insert(Box::new(Codex));
+    set.insert(Box::new(Copilot));
     set.insert(Box::new(Cursor));
+
+    // The generic sets go in first, and the dedicated adapters after — because
+    // `insert` replaces by kind, and an agent with a dedicated adapter must get
+    // it rather than the generic one that also claims its kind. Written in this
+    // order rather than trusted to a comment: the test below fails if it slips.
     for kind in GenericAcp::COVERS {
         set.insert(Box::new(GenericAcp::new(*kind)));
     }
     for kind in HeuristicFloor::COVERS {
         set.insert(Box::new(HeuristicFloor::new(*kind)));
     }
+    set.insert(Box::new(Gemini));
     set
 }
 
@@ -128,6 +135,7 @@ mod tests {
         for kind in [
             AgentKind::ClaudeCode,
             AgentKind::Codex,
+            AgentKind::Copilot,
             AgentKind::Cursor,
             AgentKind::Opencode,
             AgentKind::GeminiCli,
@@ -186,6 +194,21 @@ mod tests {
         assert_eq!(
             set.get(AgentKind::ClaudeCode).expect("present").best_tier(),
             Tier::Protocol
+        );
+    }
+
+    #[test]
+    fn a_dedicated_adapter_wins_over_the_generic_one_that_covers_it() {
+        // `GenericAcp` also claims Gemini. If it were inserted last it would
+        // replace the dedicated adapter, and Gemini's own hook names —
+        // BeforeTool, AfterTool — would stop being understood, silently.
+        let set = builtin();
+        let gemini = set.get(AgentKind::GeminiCli).expect("gemini");
+        assert!(
+            gemini
+                .normalize("BeforeTool", &serde_json::json!({}))
+                .is_ok(),
+            "the generic ACP adapter replaced the dedicated one"
         );
     }
 
