@@ -195,15 +195,9 @@ mod tests {
         // Counting at start time would count attempts, not failures.
         let state = state_with(vec![job("flaky", 60)]);
         due_now(&state, 1_000);
-        assert_eq!(
-            state.jobs().expect("jobs")[0].state.consecutive_failures,
-            0
-        );
+        assert_eq!(state.jobs().expect("jobs")[0].state.consecutive_failures, 0);
         finished(&state, "flaky", false);
-        assert_eq!(
-            state.jobs().expect("jobs")[0].state.consecutive_failures,
-            1
-        );
+        assert_eq!(state.jobs().expect("jobs")[0].state.consecutive_failures, 1);
     }
 
     #[test]
@@ -211,10 +205,7 @@ mod tests {
         let state = state_with(vec![job("flaky", 60)]);
         finished(&state, "flaky", false);
         finished(&state, "flaky", true);
-        assert_eq!(
-            state.jobs().expect("jobs")[0].state.consecutive_failures,
-            0
-        );
+        assert_eq!(state.jobs().expect("jobs")[0].state.consecutive_failures, 0);
     }
 
     #[test]

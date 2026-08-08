@@ -288,6 +288,10 @@ mod tests {
 
     #[test]
     fn an_unknown_event_is_an_error_not_a_silent_drop() {
-        assert!(Gemini.normalize("nonsense", &serde_json::json!({})).is_err());
+        assert!(
+            Gemini
+                .normalize("nonsense", &serde_json::json!({}))
+                .is_err()
+        );
     }
 }

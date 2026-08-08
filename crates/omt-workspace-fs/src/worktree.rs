@@ -156,8 +156,7 @@ fn has_changes(path: &Path) -> bool {
     // A failure to read is treated as "has changes": refusing to remove
     // something omt could not inspect is the safe direction, and the caller can
     // still force it.
-    crate::git::status(path)
-        .map_or(true, |s| s.modified > 0 || s.staged > 0 || s.untracked > 0)
+    crate::git::status(path).map_or(true, |s| s.modified > 0 || s.staged > 0 || s.untracked > 0)
 }
 
 /// Compare two paths without requiring both to exist.
@@ -233,7 +232,10 @@ mod tests {
         let added = add(dir.path(), &path.display().to_string(), "feature").expect("add");
 
         assert_eq!(added.branch.as_deref(), Some("feature"));
-        assert!(path.join("a.txt").is_file(), "the checkout has no files in it");
+        assert!(
+            path.join("a.txt").is_file(),
+            "the checkout has no files in it"
+        );
         assert_eq!(list(dir.path()).expect("list").len(), 2);
     }
 

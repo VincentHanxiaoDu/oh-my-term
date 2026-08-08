@@ -186,7 +186,10 @@ mod tests {
 
     #[test]
     fn an_edit_reports_the_file_it_touched() {
-        let out = norm("afterFileEdit", serde_json::json!({ "file_path": "src/a.rs" }));
+        let out = norm(
+            "afterFileEdit",
+            serde_json::json!({ "file_path": "src/a.rs" }),
+        );
         let AgentPayload::FileChanged { path, .. } = &out[0] else {
             panic!("expected a file change");
         };
@@ -196,7 +199,10 @@ mod tests {
     #[test]
     fn a_read_does_not_claim_to_have_changed_anything() {
         // The distinction a diff view is built on.
-        let out = norm("beforeReadFile", serde_json::json!({ "file_path": "src/a.rs" }));
+        let out = norm(
+            "beforeReadFile",
+            serde_json::json!({ "file_path": "src/a.rs" }),
+        );
         assert!(
             !out.iter()
                 .any(|p| matches!(p, AgentPayload::FileChanged { .. }))
@@ -217,6 +223,10 @@ mod tests {
 
     #[test]
     fn an_unknown_event_is_an_error_not_a_silent_drop() {
-        assert!(Cursor.normalize("nonsense", &serde_json::json!({})).is_err());
+        assert!(
+            Cursor
+                .normalize("nonsense", &serde_json::json!({}))
+                .is_err()
+        );
     }
 }

@@ -379,18 +379,24 @@ fn first_run_summary() {
 /// can act on, and the list is what makes it obvious omt already knows about
 /// the one they use.
 fn detected_agents() -> Vec<String> {
-    ["claude", "codex", "copilot", "gemini", "cursor-agent", "opencode"]
-        .iter()
-        .filter(|name| which(name))
-        .map(|name| (*name).to_owned())
-        .collect()
+    [
+        "claude",
+        "codex",
+        "copilot",
+        "gemini",
+        "cursor-agent",
+        "opencode",
+    ]
+    .iter()
+    .filter(|name| which(name))
+    .map(|name| (*name).to_owned())
+    .collect()
 }
 
 /// Whether a program is on PATH.
 fn which(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|path| {
-        std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
-    })
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }
 
 /// Where omt keeps its configuration.

@@ -37,9 +37,7 @@ fn main() -> Result<()> {
             }),
         ),
         ["attach"] => omt::attach::run(None, None),
-        ["attach", "--socket", path] => {
-            omt::attach::run(Some(std::path::Path::new(path)), None)
-        }
+        ["attach", "--socket", path] => omt::attach::run(Some(std::path::Path::new(path)), None),
         ["serve"] => {
             // The stable per-user path, so a terminal can find this daemon.
             // The old default had the process id in it, which meant nothing

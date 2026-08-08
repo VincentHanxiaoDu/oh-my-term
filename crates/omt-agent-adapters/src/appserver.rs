@@ -101,7 +101,10 @@ impl AppServer {
         mut sink: impl FnMut(ServerLine),
     ) -> std::io::Result<()> {
         let stdout = self.child.stdout.take().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "no stdout on the app-server")
+            std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "no stdout on the app-server",
+            )
         })?;
         for line in BufReader::new(stdout).lines() {
             let line = line?;
@@ -192,7 +195,9 @@ mod tests {
         .expect("spawn");
 
         let mut seen = Vec::new();
-        server.drive(&Codex, |incoming| seen.push(incoming)).expect("drive");
+        server
+            .drive(&Codex, |incoming| seen.push(incoming))
+            .expect("drive");
         server.stop().ok();
 
         // Two notifications, and the blank line between them ignored rather

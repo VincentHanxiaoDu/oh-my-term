@@ -54,8 +54,12 @@ pub fn from_yaml(name: &str, text: &str) -> Result<Imported, ImportError> {
     let mut unmapped = Vec::new();
 
     let get = |key: &str| map.get(key).and_then(|v| Rgb::parse(v));
-    let background = get("background").ok_or(ImportError::NothingUsable { format: "The YAML theme format" })?;
-    let foreground = get("foreground").ok_or(ImportError::NothingUsable { format: "The YAML theme format" })?;
+    let background = get("background").ok_or(ImportError::NothingUsable {
+        format: "The YAML theme format",
+    })?;
+    let foreground = get("foreground").ok_or(ImportError::NothingUsable {
+        format: "The YAML theme format",
+    })?;
 
     let colour_at = |prefix: &str, index: usize| {
         const NAMES: [&str; 8] = [

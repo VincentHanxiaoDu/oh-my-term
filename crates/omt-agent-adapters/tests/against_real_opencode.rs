@@ -112,9 +112,8 @@ fn the_real_event_stream_decodes_into_whole_events() {
     // fragment that parses as nothing, which is the failure this catches —
     // and a fragment that *does* parse is worse, because it becomes a card.
     for event in &events {
-        serde_json::from_str::<serde_json::Value>(&event.data).unwrap_or_else(|e| {
-            panic!("an event's data was not whole JSON: {e}\n{}", event.data)
-        });
+        serde_json::from_str::<serde_json::Value>(&event.data)
+            .unwrap_or_else(|e| panic!("an event's data was not whole JSON: {e}\n{}", event.data));
     }
 }
 

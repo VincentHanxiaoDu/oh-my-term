@@ -1029,7 +1029,10 @@ mod tests {
         let blocks = t.blocks();
         assert_eq!(blocks.len(), 1, "{blocks:?}");
         assert!(!blocks[0].attributed, "a command was invented for it");
-        assert_eq!(blocks[0].command, "", "a command was guessed from the screen");
+        assert_eq!(
+            blocks[0].command, "",
+            "a command was guessed from the screen"
+        );
     }
 
     #[test]

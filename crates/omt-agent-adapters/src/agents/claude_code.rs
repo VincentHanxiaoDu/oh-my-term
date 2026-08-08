@@ -122,17 +122,17 @@ impl AgentAdapter for ClaudeCode {
                 if name == ASK_USER_QUESTION
                     && let Some(questions) = questions_of(payload)
                 {
-                        return Ok(vec![
-                            AgentPayload::ToolCall {
-                                call: call.clone(),
-                                name,
-                                input: payload
-                                    .get("tool_input")
-                                    .cloned()
-                                    .unwrap_or(serde_json::Value::Null),
-                            },
-                            AgentPayload::Question { call, questions },
-                        ]);
+                    return Ok(vec![
+                        AgentPayload::ToolCall {
+                            call: call.clone(),
+                            name,
+                            input: payload
+                                .get("tool_input")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null),
+                        },
+                        AgentPayload::Question { call, questions },
+                    ]);
                 }
                 Ok(vec![AgentPayload::ToolCall {
                     call,

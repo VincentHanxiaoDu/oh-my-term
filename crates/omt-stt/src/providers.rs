@@ -61,7 +61,9 @@ impl SttProvider for Deepgram {
         // back as a confusing 400, and the user is left thinking their key is
         // wrong when the microphone simply produced nothing.
         if audio.is_empty() {
-            return Err(SttError::UnsupportedAudio("there was no audio to send".to_owned()));
+            return Err(SttError::UnsupportedAudio(
+                "there was no audio to send".to_owned(),
+            ));
         }
         // The config block comes first. Setting headers before it drops them:
         // `.config()` returns a different builder and `.build()` hands back a
@@ -154,7 +156,9 @@ impl SttProvider for OpenAi {
 
     fn transcribe(&self, audio: &[u8]) -> Result<Transcript, SttError> {
         if audio.is_empty() {
-            return Err(SttError::UnsupportedAudio("there was no audio to send".to_owned()));
+            return Err(SttError::UnsupportedAudio(
+                "there was no audio to send".to_owned(),
+            ));
         }
         let body = multipart_body(audio, &self.model);
         let response: serde_json::Value = ureq::post(&self.endpoint)
@@ -276,7 +280,10 @@ mod tests {
         assert!(text.contains("name=\"model\""), "{text}");
         assert!(text.contains("whisper-1"));
         assert!(text.contains("filename=\"audio.wav\""));
-        assert!(body.windows(8).any(|w| w == b"RIFFdata"), "the audio was lost");
+        assert!(
+            body.windows(8).any(|w| w == b"RIFFdata"),
+            "the audio was lost"
+        );
     }
 
     #[test]

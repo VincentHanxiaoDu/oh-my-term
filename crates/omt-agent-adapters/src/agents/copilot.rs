@@ -70,7 +70,12 @@ impl AgentAdapter for Copilot {
             env: self
                 .spawn_env(ctx)
                 .into_iter()
-                .map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))
+                .map(|(k, v)| {
+                    (
+                        k.to_string_lossy().into_owned(),
+                        v.to_string_lossy().into_owned(),
+                    )
+                })
                 .collect(),
         })
     }
@@ -319,7 +324,10 @@ mod tests {
         let AgentPayload::ToolResult { error, .. } = &out[0] else {
             panic!("expected a tool result");
         };
-        assert!(error.is_some(), "a failure came back looking like a success");
+        assert!(
+            error.is_some(),
+            "a failure came back looking like a success"
+        );
     }
 
     #[test]
@@ -374,7 +382,11 @@ mod tests {
     fn the_lowercase_subagent_start_is_understood() {
         // That is how `~/.copilot/hooks/*.json` spells it. An adapter that
         // "corrected" it would silently stop seeing subagents start.
-        assert!(Copilot.normalize("subagentStart", &serde_json::json!({})).is_ok());
+        assert!(
+            Copilot
+                .normalize("subagentStart", &serde_json::json!({}))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -395,6 +407,10 @@ mod tests {
 
     #[test]
     fn an_unknown_event_is_an_error_not_a_silent_drop() {
-        assert!(Copilot.normalize("nonsense", &serde_json::json!({})).is_err());
+        assert!(
+            Copilot
+                .normalize("nonsense", &serde_json::json!({}))
+                .is_err()
+        );
     }
 }

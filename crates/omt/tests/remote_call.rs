@@ -674,7 +674,11 @@ fn a_path_that_climbs_out_of_the_workspace_is_refused() {
         "the escape was allowed"
     );
     assert!(
-        !dir.path().parent().expect("parent").join("escaped.txt").exists(),
+        !dir.path()
+            .parent()
+            .expect("parent")
+            .join("escaped.txt")
+            .exists(),
         "a file landed outside the workspace"
     );
 
@@ -793,7 +797,13 @@ fn a_remote_client_answers_a_card_and_the_second_answer_is_refused() {
 
     let id = raise_card(&state, omt_events::Deliverable::Native);
 
-    let listed = call_ok(&mut client, 1, "interaction.list", serde_json::json!({}), false);
+    let listed = call_ok(
+        &mut client,
+        1,
+        "interaction.list",
+        serde_json::json!({}),
+        false,
+    );
     let cards = listed["interactions"].as_array().expect("interactions");
     assert_eq!(cards.len(), 1);
     // The command, not the tool name: "Bash" is not enough to decide on.
@@ -866,7 +876,13 @@ fn a_card_omt_cannot_deliver_is_refused_even_while_it_is_open() {
         },
     );
 
-    let listed = call_ok(&mut client, 1, "interaction.list", serde_json::json!({}), false);
+    let listed = call_ok(
+        &mut client,
+        1,
+        "interaction.list",
+        serde_json::json!({}),
+        false,
+    );
     let card = &listed["interactions"][0];
     assert_eq!(card["deliverable"], "none");
     assert!(
@@ -956,9 +972,9 @@ fn history_suggests_what_was_run_here_and_never_what_would_hurt() {
     let suggestions = out["suggestions"].as_array().expect("suggestions");
     assert!(!suggestions.is_empty(), "nothing was suggested");
     assert!(
-        suggestions
-            .iter()
-            .all(|s| s["command"].as_str().is_some_and(|c| c.starts_with("cargo"))),
+        suggestions.iter().all(|s| s["command"]
+            .as_str()
+            .is_some_and(|c| c.starts_with("cargo"))),
         "a suggestion did not match the prefix: {suggestions:?}"
     );
 
@@ -1175,7 +1191,13 @@ fn workspaces_survive_a_restart() {
     assert_eq!(restored["found"], true);
     assert_eq!(restored["workspaces"], 1);
 
-    let listed = call_ok(&mut client, 2, "workspace.list", serde_json::json!({}), false);
+    let listed = call_ok(
+        &mut client,
+        2,
+        "workspace.list",
+        serde_json::json!({}),
+        false,
+    );
     assert_eq!(
         listed["workspaces"][0]["id"], id_before,
         "the restored workspace got a new id, so anything referring to the old one is orphaned"
@@ -1467,7 +1489,10 @@ fn a_pane_is_a_view_of_a_session_and_closing_one_leaves_it_running() {
         false,
     );
     assert_eq!(listed["panes"].as_array().expect("panes").len(), 1);
-    assert_eq!(listed["panes"][0]["focused"], true, "the first pane took focus");
+    assert_eq!(
+        listed["panes"][0]["focused"], true,
+        "the first pane took focus"
+    );
 
     call_ok(
         &mut client,
@@ -1864,7 +1889,10 @@ fn a_configured_speech_provider_becomes_usable_and_its_key_never_leaves() {
         serde_json::json!({}),
         false,
     );
-    assert_eq!(out["usable"], true, "a configured key did not enable anything");
+    assert_eq!(
+        out["usable"], true,
+        "a configured key did not enable anything"
+    );
     assert_eq!(out["providers"][0]["id"], "deepgram");
     assert_eq!(out["providers"][0]["key_present"], true);
 
@@ -2232,7 +2260,10 @@ fn a_session_with_no_shell_integration_still_reports_blocks() {
     }
 
     let blocks = out["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty(), "a session with output reported no blocks");
+    assert!(
+        !blocks.is_empty(),
+        "a session with output reported no blocks"
+    );
     assert_eq!(
         blocks[0]["attributed"], false,
         "a command was invented for a shell that marked none"
@@ -2282,7 +2313,10 @@ fn a_shell_with_no_marks_is_offered_the_line_that_adds_them() {
     // A snippet, or an honest absence for a shell omt does not know. Returning
     // one shell's line for another puts an error in a terminal on every login.
     if let Some(snippet) = out["snippet"].as_object() {
-        assert!(snippet.contains_key("file"), "a snippet with no file: {out}");
+        assert!(
+            snippet.contains_key("file"),
+            "a snippet with no file: {out}"
+        );
         assert!(
             snippet["line"].as_str().is_some_and(|l| l.contains("133")),
             "the snippet does not emit the marks omt reads: {out}"
@@ -2315,7 +2349,13 @@ fn every_setting_is_listed_whether_or_not_anyone_set_it() {
         panic!("expected a welcome");
     };
 
-    let out = call_ok(&mut client, 1, "config.schema", serde_json::json!({}), false);
+    let out = call_ok(
+        &mut client,
+        1,
+        "config.schema",
+        serde_json::json!({}),
+        false,
+    );
     let settings = out["settings"].as_array().expect("settings");
     assert!(!settings.is_empty(), "no settings were reported");
 
@@ -2337,7 +2377,9 @@ fn every_setting_is_listed_whether_or_not_anyone_set_it() {
     assert!(!enums.is_empty(), "no enumerated setting to check");
     for setting in enums {
         assert!(
-            !setting["choices"].as_array().is_none_or(std::vec::Vec::is_empty),
+            !setting["choices"]
+                .as_array()
+                .is_none_or(std::vec::Vec::is_empty),
             "{} is an enum with no choices",
             setting["key"]
         );
@@ -2612,7 +2654,10 @@ fn a_worktree_is_created_and_is_immediately_a_workspace() {
     );
     let worktrees = listed["worktrees"].as_array().expect("worktrees");
     assert_eq!(worktrees.len(), 2);
-    assert_eq!(worktrees[0]["is_main"], true, "the main checkout is not first");
+    assert_eq!(
+        worktrees[0]["is_main"], true,
+        "the main checkout is not first"
+    );
 
     drop(client);
     worker.join().expect("worker");
@@ -2680,7 +2725,10 @@ fn removing_a_worktree_with_changes_is_refused_rather_than_losing_them() {
         "the refusal does not say what would be lost: {}",
         error.message
     );
-    assert!(std::path::Path::new(&path).is_dir(), "it was removed anyway");
+    assert!(
+        std::path::Path::new(&path).is_dir(),
+        "it was removed anyway"
+    );
 
     // With force it goes.
     let removed = call_ok(
@@ -2745,11 +2793,15 @@ fn the_lines_of_a_changed_file_are_available_not_only_its_name() {
         .filter_map(|l| l.as_str())
         .collect();
     assert!(
-        lines.iter().any(|l| l.starts_with('+') && l.contains("CHANGED")),
+        lines
+            .iter()
+            .any(|l| l.starts_with('+') && l.contains("CHANGED")),
         "the added line is missing: {lines:?}"
     );
     assert!(
-        lines.iter().any(|l| l.starts_with('-') && l.contains("two")),
+        lines
+            .iter()
+            .any(|l| l.starts_with('-') && l.contains("two")),
         "the removed line is missing: {lines:?}"
     );
 
@@ -2822,7 +2874,11 @@ fn a_fanout_gives_every_agent_its_own_worktree() {
     assert_eq!(arms.len(), 3, "not every arm was reported: {out}");
     let failed: Vec<_> = arms.iter().filter(|a| a["state"] == "failed").collect();
     assert_eq!(failed.len(), 1);
-    assert!(failed[0]["error"].as_str().is_some_and(|e| e.contains("not an agent")));
+    assert!(
+        failed[0]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("not an agent"))
+    );
 
     // Two real worktrees exist, each its own workspace.
     let listed = call_ok(
@@ -2841,10 +2897,16 @@ fn a_fanout_gives_every_agent_its_own_worktree() {
     // And every prepared arm reports the workspace its worktree opens as.
     for arm in arms.iter().filter(|a| a["state"] != "failed") {
         assert!(
-            arm["workspace"].as_str().is_some_and(|w| w.starts_with("wksp_")),
+            arm["workspace"]
+                .as_str()
+                .is_some_and(|w| w.starts_with("wksp_")),
             "an arm has no workspace id: {arm}"
         );
-        assert!(arm["branch"].as_str().is_some_and(|b| b.starts_with("omt/try/")));
+        assert!(
+            arm["branch"]
+                .as_str()
+                .is_some_and(|b| b.starts_with("omt/try/"))
+        );
     }
 
     drop(client);
@@ -2917,7 +2979,10 @@ fn choosing_an_arm_records_it_and_merges_nothing() {
     {
         let mut fanouts = state.fanouts().expect("fanouts");
         let fanout = fanouts.get_mut("pick").expect("the fan-out");
-        for agent in [omt_types::AgentKind::ClaudeCode, omt_types::AgentKind::Codex] {
+        for agent in [
+            omt_types::AgentKind::ClaudeCode,
+            omt_types::AgentKind::Codex,
+        ] {
             fanout
                 .set_state(agent, omt_session::ArmState::Finished { files_changed: 2 })
                 .expect("finish");

@@ -13,11 +13,11 @@ pub mod line;
 pub mod scrollback;
 pub mod terminal;
 
-pub use block::{Block, BlockTracker, Outcome};
 pub use action::{
     ActionQueue, Backpressure, BlockEvent, ClipboardSelection, ColorSlot, HostAction,
     HyperlinkEvent, TermMode, Warning, WindowOp,
 };
+pub use block::{Block, BlockTracker, Outcome};
 pub use cell::{Cell, Color, ColorKind, Flags, GraphemeId, Resolved, Underline};
 pub use grid::{Cursor, EraseExtent, Grid, GridSize, Margins};
 pub use line::{ExtraAttrs, Generation, HyperlinkId, ImagePlacementId, Line, Wrap, erase_template};

@@ -384,7 +384,10 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_an_object_imports_nothing_rather_than_panicking() {
-        assert_eq!(import(Source::FlatJson, &json!([1, 2, 3])), Imported::default());
+        assert_eq!(
+            import(Source::FlatJson, &json!([1, 2, 3])),
+            Imported::default()
+        );
         assert_eq!(import(Source::VsCode, &json!(null)), Imported::default());
     }
 

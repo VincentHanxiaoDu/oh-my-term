@@ -164,8 +164,10 @@ impl State {
     /// Fails if another thread panicked holding the lock.
     pub fn voice(
         &self,
-    ) -> Result<MutexGuard<'_, std::collections::BTreeMap<String, omt_stt::TranscriptBuffer>>, CapabilityError>
-    {
+    ) -> Result<
+        MutexGuard<'_, std::collections::BTreeMap<String, omt_stt::TranscriptBuffer>>,
+        CapabilityError,
+    > {
         self.voice
             .lock()
             .map_err(|_| CapabilityError::internal("the dictation lock was poisoned"))
@@ -279,8 +281,10 @@ impl State {
     /// Fails if another thread panicked holding the lock.
     pub fn fanouts(
         &self,
-    ) -> Result<MutexGuard<'_, std::collections::BTreeMap<String, omt_session::Fanout>>, CapabilityError>
-    {
+    ) -> Result<
+        MutexGuard<'_, std::collections::BTreeMap<String, omt_session::Fanout>>,
+        CapabilityError,
+    > {
         self.fanouts
             .lock()
             .map_err(|_| CapabilityError::internal("the fan-out lock was poisoned"))
@@ -320,4 +324,3 @@ mod provider_tests {
         assert_eq!(set.all().len(), 2);
     }
 }
-

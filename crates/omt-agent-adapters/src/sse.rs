@@ -90,7 +90,10 @@ impl Decoder {
     /// case that matters: a network hands over arbitrary slices, and an event
     /// split across two of them must not become two half events.
     pub fn feed(&mut self, chunk: &str) -> Vec<Event> {
-        chunk.split('\n').filter_map(|l| self.line(l.trim_end_matches('\r'))).collect()
+        chunk
+            .split('\n')
+            .filter_map(|l| self.line(l.trim_end_matches('\r')))
+            .collect()
     }
 }
 

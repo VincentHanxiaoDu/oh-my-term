@@ -54,7 +54,9 @@ pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()>
     // is that a token crossing a network in clear text is a token somebody
     // else now has.
     if tls.is_none() && !is_loopback(bind) {
-        println!("warning: no TLS on a non-loopback address — anyone on this network can read the token");
+        println!(
+            "warning: no TLS on a non-loopback address — anyone on this network can read the token"
+        );
     }
 
     omt_server::http::run_with_tls(bind, HttpState::new(registry, credentials), tls)
@@ -114,7 +116,12 @@ mod tests {
 
     #[test]
     fn loopback_addresses_are_recognised_in_every_spelling() {
-        for bind in ["127.0.0.1:7777", "localhost:7777", "[::1]:7777", "127.1.2.3:80"] {
+        for bind in [
+            "127.0.0.1:7777",
+            "localhost:7777",
+            "[::1]:7777",
+            "127.1.2.3:80",
+        ] {
             assert!(is_loopback(bind), "{bind} was treated as public");
         }
     }

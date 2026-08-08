@@ -36,7 +36,11 @@ members = [
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
+description = "An agent-aware terminal multiplexer with a remote web client."
 license = "Apache-2.0"
+readme = "README.md"
+keywords = ["terminal", "multiplexer", "tui", "agent", "remote"]
+categories = ["command-line-utilities", "development-tools"]
 repository = "https://github.com/VincentHanxiaoDu/oh-my-term"
 authors = ["oh-my-term contributors"]
 

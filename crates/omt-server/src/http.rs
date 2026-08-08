@@ -280,7 +280,10 @@ impl TlsFiles {
             std::fs::File::open(path).map_err(|e| {
                 std::io::Error::new(
                     e.kind(),
-                    format!("the TLS {what} at {} could not be read: {e}", path.display()),
+                    format!(
+                        "the TLS {what} at {} could not be read: {e}",
+                        path.display()
+                    ),
                 )
             })?;
         }
@@ -292,11 +295,7 @@ impl TlsFiles {
 ///
 /// # Errors
 /// Fails if the address cannot be bound or the certificate cannot be loaded.
-pub fn run_with_tls(
-    bind: &str,
-    state: HttpState,
-    tls: Option<TlsFiles>,
-) -> std::io::Result<()> {
+pub fn run_with_tls(bind: &str, state: HttpState, tls: Option<TlsFiles>) -> std::io::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -307,9 +306,12 @@ pub fn run_with_tls(
                 let config =
                     axum_server::tls_rustls::RustlsConfig::from_pem_file(&files.cert, &files.key)
                         .await?;
-                let addr: std::net::SocketAddr = bind
-                    .parse()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{bind} is not an address: {e}")))?;
+                let addr: std::net::SocketAddr = bind.parse().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("{bind} is not an address: {e}"),
+                    )
+                })?;
                 axum_server::bind_rustls(addr, config)
                     .serve(router(state).into_make_service())
                     .await
@@ -414,7 +416,9 @@ mod tests {
             cert: std::path::PathBuf::from("/definitely/not/here.pem"),
             key: std::path::PathBuf::from("/definitely/not/here.key"),
         };
-        let err = files.check().expect_err("a missing certificate was accepted");
+        let err = files
+            .check()
+            .expect_err("a missing certificate was accepted");
         assert!(
             err.to_string().contains("certificate"),
             "the error does not say which file: {err}"

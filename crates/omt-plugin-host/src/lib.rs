@@ -130,13 +130,13 @@ impl Installed {
                 plugin: self.manifest.id.clone(),
             });
         }
-        let (program, args) = self
-            .manifest
-            .entry
-            .split_first()
-            .ok_or_else(|| LaunchError::NothingToRun {
-                plugin: self.manifest.id.clone(),
-            })?;
+        let (program, args) =
+            self.manifest
+                .entry
+                .split_first()
+                .ok_or_else(|| LaunchError::NothingToRun {
+                    plugin: self.manifest.id.clone(),
+                })?;
         Ok(Launch {
             program: program.clone(),
             args: args.to_vec(),
@@ -339,9 +339,24 @@ mod tests {
         let launch = p.launch("/tmp/omt.sock", "tok").expect("launch");
         assert_eq!(launch.program, "/usr/bin/demo");
         assert_eq!(launch.args, vec!["--serve".to_owned()]);
-        assert!(launch.env.iter().any(|(k, v)| k == "OMT_SOCK" && v == "/tmp/omt.sock"));
-        assert!(launch.env.iter().any(|(k, v)| k == "OMT_TOKEN" && v == "tok"));
-        assert!(launch.env.iter().any(|(k, v)| k == "OMT_PLUGIN" && v == "demo"));
+        assert!(
+            launch
+                .env
+                .iter()
+                .any(|(k, v)| k == "OMT_SOCK" && v == "/tmp/omt.sock")
+        );
+        assert!(
+            launch
+                .env
+                .iter()
+                .any(|(k, v)| k == "OMT_TOKEN" && v == "tok")
+        );
+        assert!(
+            launch
+                .env
+                .iter()
+                .any(|(k, v)| k == "OMT_PLUGIN" && v == "demo")
+        );
     }
 
     #[test]

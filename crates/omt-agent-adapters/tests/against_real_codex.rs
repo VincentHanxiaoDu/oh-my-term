@@ -90,11 +90,7 @@ fn the_real_app_server_uses_slash_separated_method_names() {
     let methods: Vec<String> = real_notifications()
         .iter()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-        .filter_map(|v| {
-            v.get("method")
-                .and_then(|m| m.as_str())
-                .map(str::to_owned)
-        })
+        .filter_map(|v| v.get("method").and_then(|m| m.as_str()).map(str::to_owned))
         .collect();
 
     assert!(

@@ -63,7 +63,9 @@ fn deepgram_sends_the_key_the_way_deepgram_wants_it() {
         r#"{"results":{"channels":[{"alternatives":[{"transcript":"run the tests","confidence":0.9}]}]}}"#,
     );
     let provider = Deepgram::new("secret-key".to_owned()).at(url);
-    let transcript = provider.transcribe(b"RIFF....fake wav").expect("transcribe");
+    let transcript = provider
+        .transcribe(b"RIFF....fake wav")
+        .expect("transcribe");
     assert_eq!(transcript.text, "run the tests");
 
     // Compared lowercase, because header names are case-insensitive and a
@@ -86,11 +88,16 @@ fn openai_sends_a_multipart_body_a_server_can_actually_read() {
     // spends an afternoon on their key.
     let (url, server) = serve_once(r#"{"text":"hello there"}"#);
     let provider = OpenAi::new("sk-test".to_owned()).at(url);
-    let transcript = provider.transcribe(b"RIFF....fake wav").expect("transcribe");
+    let transcript = provider
+        .transcribe(b"RIFF....fake wav")
+        .expect("transcribe");
     assert_eq!(transcript.text, "hello there");
 
     let request = server.join().expect("server").to_lowercase();
-    assert!(request.contains("authorization: bearer sk-test"), "{request}");
+    assert!(
+        request.contains("authorization: bearer sk-test"),
+        "{request}"
+    );
     let boundary = request
         .lines()
         .find(|l| l.to_lowercase().starts_with("content-type: multipart"))

@@ -382,7 +382,10 @@ mod tests {
         t.output_at(0);
         t.apply(BlockEvent::PromptStart, 5);
         assert_eq!(t.blocks().len(), 2);
-        assert!(t.blocks()[0].outcome.is_finished(), "the early block never closed");
+        assert!(
+            t.blocks()[0].outcome.is_finished(),
+            "the early block never closed"
+        );
         assert_eq!(t.blocks()[0].end_row, Some(5));
         assert!(t.blocks()[1].attributed);
     }

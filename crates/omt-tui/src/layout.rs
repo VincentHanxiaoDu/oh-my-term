@@ -135,9 +135,9 @@ pub fn tile(cols: u16, rows: u16, split: Split, count: usize) -> Vec<Rect> {
 /// Which pane a click or tap landed in.
 #[must_use]
 pub fn pane_at(rects: &[Rect], col: u16, row: u16) -> Option<usize> {
-    rects.iter().position(|r| {
-        col >= r.col && col < r.col + r.cols && row >= r.row && row < r.row + r.rows
-    })
+    rects
+        .iter()
+        .position(|r| col >= r.col && col < r.col + r.cols && row >= r.row && row < r.row + r.rows)
 }
 
 #[cfg(test)]

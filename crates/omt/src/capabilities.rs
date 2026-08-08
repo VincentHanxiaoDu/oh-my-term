@@ -3,8 +3,7 @@
 use anyhow::Result;
 use omt_catalog::{
     CallContext, CapabilityError, CapabilityHandler, CapabilityRegistry, Decl, DedupKey, Effects,
-    Intent,
-    Kind, Parity, capability,
+    Intent, Kind, Parity, capability,
 };
 use omt_types::{Role, SessionId, WorkspaceId};
 use serde::{Deserialize, Serialize};
@@ -1228,9 +1227,7 @@ impl CapabilityHandler<SessionAcquire> for SessionAcquireHandler {
         let epoch = instance
             .acquire_writer(id, ctx.actor.clone(), input.force)
             .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
-        Ok(SessionAcquireOut {
-            epoch: epoch.0,
-        })
+        Ok(SessionAcquireOut { epoch: epoch.0 })
     }
 }
 
@@ -1616,7 +1613,12 @@ impl CapabilityHandler<SessionRestart> for SessionRestartHandler {
 
         let kept = instance
             .orphan_terminal(id)
-            .map(|t| t.screen_text().iter().filter(|l| !l.trim().is_empty()).count())
+            .map(|t| {
+                t.screen_text()
+                    .iter()
+                    .filter(|l| !l.trim().is_empty())
+                    .count()
+            })
             .unwrap_or(0);
 
         instance
@@ -2095,8 +2097,7 @@ fn resolve_in_workspace(
 
 /// Base64, because JSON cannot carry bytes.
 fn b64_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for group in bytes.chunks(3) {
         let b = [
@@ -2249,7 +2250,10 @@ fn summarize_interaction(i: &omt_events::Interaction) -> InteractionSummary {
     let (kind, prompt, options) = match &i.kind {
         omt_events::InteractionKind::Choice { questions } => (
             "choice",
-            questions.first().map(|q| q.question.clone()).unwrap_or_default(),
+            questions
+                .first()
+                .map(|q| q.question.clone())
+                .unwrap_or_default(),
             questions
                 .first()
                 .map(|q| q.options.iter().map(|o| o.label.clone()).collect())
@@ -2961,8 +2965,9 @@ impl CapabilityHandler<PaneClose> for PaneCloseHandler {
         input: PaneCloseIn,
     ) -> Result<PaneCloseOut, CapabilityError> {
         let workspace = workspace_id(&input.workspace)?;
-        let pane = omt_types::PaneId::from_wire(&input.pane)
-            .ok_or_else(|| CapabilityError::invalid_input(format!("`{}` is not a pane id", input.pane)))?;
+        let pane = omt_types::PaneId::from_wire(&input.pane).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a pane id", input.pane))
+        })?;
         let mut instance = self.0.lock()?;
         Ok(PaneCloseOut {
             closed: instance.remove_pane(workspace, pane),
@@ -3018,8 +3023,9 @@ impl CapabilityHandler<PaneFocus> for PaneFocusHandler {
         input: PaneFocusIn,
     ) -> Result<PaneFocusOut, CapabilityError> {
         let workspace = workspace_id(&input.workspace)?;
-        let pane = omt_types::PaneId::from_wire(&input.pane)
-            .ok_or_else(|| CapabilityError::invalid_input(format!("`{}` is not a pane id", input.pane)))?;
+        let pane = omt_types::PaneId::from_wire(&input.pane).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a pane id", input.pane))
+        })?;
         let mut instance = self.0.lock()?;
         if !instance.focus_pane(workspace, pane) {
             // Refused rather than ignored: silently keeping focus where it was
@@ -3215,8 +3221,7 @@ impl CapabilityHandler<StateSave> for StateSaveHandler {
                                 .first()
                                 .cloned()
                                 .unwrap_or_else(|| "/bin/sh".to_owned()),
-                            _ => std::env::var("SHELL")
-                                .unwrap_or_else(|_| "/bin/sh".to_owned()),
+                            _ => std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned()),
                         },
                         cwd: s.cwd.clone(),
                         screen: Vec::new(),
@@ -3246,7 +3251,8 @@ impl CapabilityHandler<StateSave> for StateSaveHandler {
             }
         };
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| CapabilityError::internal(e.to_string()))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| CapabilityError::internal(e.to_string()))?;
         }
         omt_store::write_snapshot(&path, &snapshot)
             .map_err(|e| CapabilityError::internal(e.to_string()))?;
@@ -4347,9 +4353,7 @@ impl CapabilityHandler<VoiceClear> for VoiceClearHandler {
     ) -> Result<VoiceClearOut, CapabilityError> {
         let session = session_id(&input.session)?;
         let mut voice = self.0.voice()?;
-        let had_text = voice
-            .get(&session.to_wire())
-            .is_some_and(|b| !b.is_empty());
+        let had_text = voice.get(&session.to_wire()).is_some_and(|b| !b.is_empty());
         voice.remove(&session.to_wire());
         Ok(VoiceClearOut { had_text })
     }
@@ -5310,12 +5314,9 @@ impl CapabilityHandler<FanoutStart> for FanoutStartHandler {
             ));
         }
 
-        let fanout = omt_session::Fanout::new(
-            &input.prompt,
-            input.base.as_deref().unwrap_or("HEAD"),
-            arms,
-        )
-        .map_err(|e| CapabilityError::invalid_input(e.to_string()))?;
+        let fanout =
+            omt_session::Fanout::new(&input.prompt, input.base.as_deref().unwrap_or("HEAD"), arms)
+                .map_err(|e| CapabilityError::invalid_input(e.to_string()))?;
 
         let mut summaries: Vec<ArmSummary> = fanout.arms().into_iter().map(summarize_arm).collect();
         let prepared = summaries.len() as u32;
@@ -5599,8 +5600,7 @@ impl CapabilityHandler<ConfigSchema> for ConfigSchemaHandler {
                         // Parsed rather than passed through as text: a client
                         // comparing the default against the current value would
                         // otherwise be comparing a string to a number.
-                        default: serde_json::from_str(s.default)
-                            .unwrap_or(serde_json::Value::Null),
+                        default: serde_json::from_str(s.default).unwrap_or(serde_json::Value::Null),
                         doc: s.doc.to_owned(),
                         choices: s.choices.iter().map(|c| (*c).to_owned()).collect(),
                         current: resolved.get(s.key).cloned(),

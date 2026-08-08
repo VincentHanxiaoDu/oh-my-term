@@ -178,7 +178,11 @@ mod tests {
                 Kind::Number => value.is_number(),
                 Kind::Text | Kind::Enumerated => value.is_string(),
             };
-            assert!(ok, "{} declares {:?} and defaults to {value}", s.key, s.kind);
+            assert!(
+                ok,
+                "{} declares {:?} and defaults to {value}",
+                s.key, s.kind
+            );
         }
     }
 
@@ -204,7 +208,11 @@ mod tests {
         // Choices on a free-text setting suggest a constraint that nothing
         // enforces.
         for s in SETTINGS.iter().filter(|s| s.kind != Kind::Enumerated) {
-            assert!(s.choices.is_empty(), "{} lists choices but is not an enum", s.key);
+            assert!(
+                s.choices.is_empty(),
+                "{} lists choices but is not an enum",
+                s.key
+            );
         }
     }
 

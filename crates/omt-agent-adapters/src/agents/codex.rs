@@ -206,7 +206,6 @@ impl AgentAdapter for Codex {
             }),
         }
     }
-
 }
 
 /// Turn a thread item into omt's vocabulary.
@@ -523,6 +522,9 @@ mod tests {
 
     #[test]
     fn a_path_is_mentioned_the_way_codex_spells_it() {
-        assert_eq!(Codex.path_mention("src/main.rs").as_deref(), Some("@src/main.rs"));
+        assert_eq!(
+            Codex.path_mention("src/main.rs").as_deref(),
+            Some("@src/main.rs")
+        );
     }
 }

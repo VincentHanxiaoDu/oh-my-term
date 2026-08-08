@@ -106,8 +106,7 @@ pub fn classify(line: &str) -> Vec<Span> {
                     }
                     i = (i + 1).min(bytes.len());
                 } else {
-                    while i < bytes.len()
-                        && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
+                    while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
                     {
                         i += 1;
                     }

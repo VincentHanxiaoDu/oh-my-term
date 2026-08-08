@@ -29,7 +29,10 @@ pub fn daemon_socket_path() -> PathBuf {
         .unwrap_or_else(|_| std::env::temp_dir());
     // The uid, so two people on one machine do not collide on a path — and so
     // one cannot connect to the other's by guessing it.
-    #[allow(unsafe_code, reason = "getuid has no safe wrapper in std and cannot fail")]
+    #[allow(
+        unsafe_code,
+        reason = "getuid has no safe wrapper in std and cannot fail"
+    )]
     let uid = unsafe { libc::getuid() };
     base.join(format!("omt-{uid}.sock"))
 }
@@ -153,11 +156,7 @@ pub fn run(socket: Option<&Path>, program: Option<String>) -> Result<()> {
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| ".".to_owned());
-    let workspace = daemon.call(
-        "workspace.open",
-        serde_json::json!({ "root": cwd }),
-        true,
-    )?;
+    let workspace = daemon.call("workspace.open", serde_json::json!({ "root": cwd }), true)?;
     let workspace_id = workspace["id"].clone();
 
     // The session already there, if there is one. Attaching to a fresh session

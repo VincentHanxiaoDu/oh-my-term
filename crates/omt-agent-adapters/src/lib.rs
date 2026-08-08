@@ -20,7 +20,8 @@ pub use adapter::{
     Fingerprint, Interrupt, SessionModeSet, SpawnCtx,
 };
 pub use agents::{
-    ClaudeCode, Codex, Copilot, Cursor, Gemini, GenericAcp, HeuristicFloor, ScreenSignals, guess_activity,
+    ClaudeCode, Codex, Copilot, Cursor, Gemini, GenericAcp, HeuristicFloor, ScreenSignals,
+    guess_activity,
 };
 pub use bounded::{
     BoundedError, MAX_FILE_BYTES, MAX_NESTING_DEPTH, MAX_STRUCTURAL_TOKENS, check_structure,
