@@ -128,6 +128,66 @@
     },
     {
       "aliases": [],
+      "doc": "Record which arm won, naming its branch. Merges nothing and deletes nothing: the losing worktrees are what you would look at to check the choice was right.",
+      "effects": [],
+      "group": "fanout",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "fanout.choose",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/fanout/choose",
+      "since": "0.1.0",
+      "title": "Choose an arm",
+      "verb": "choose"
+    },
+    {
+      "aliases": [],
+      "doc": "Create a worktree per agent and record them as one fan-out. Every arm is reported, including any that could not be prepared.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "fanout",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "fanout.start",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/fanout/start",
+      "since": "0.1.0",
+      "title": "Fan a prompt across agents",
+      "verb": "start"
+    },
+    {
+      "aliases": [],
+      "doc": "Every arm of every fan-out, with its worktree, branch and state.",
+      "effects": [],
+      "group": "fanout",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "fanout.status",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/fanout/status",
+      "since": "0.1.0",
+      "title": "Fan-out status",
+      "verb": "status"
+    },
+    {
+      "aliases": [],
       "doc": "List a directory inside a workspace. Paths are workspace-relative and cannot escape it.",
       "effects": [
         "reads_fs"
@@ -207,6 +267,24 @@
       "since": "0.1.0",
       "title": "Git diff",
       "verb": "diff"
+    },
+    {
+      "aliases": [],
+      "doc": "The changed lines of one file. `git.diff` reports which files changed; this is what changed in them. Returned as lines rather than rendered, because a terminal, a phone and a browser each want to draw it differently.",
+      "effects": [],
+      "group": "git",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "git.hunks",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/git/hunks",
+      "since": "0.1.0",
+      "title": "Diff a file",
+      "verb": "hunks"
     },
     {
       "aliases": [],
@@ -1027,6 +1105,68 @@
       "since": "0.1.0",
       "title": "Open a workspace",
       "verb": "open"
+    },
+    {
+      "aliases": [],
+      "doc": "Create a git worktree, which becomes a workspace by the id its path derives. Additive: it touches nothing that already exists, and a path already in use is refused rather than overwritten.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "worktree",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "worktree.add",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/worktree/add",
+      "since": "0.1.0",
+      "title": "Add a worktree",
+      "verb": "add"
+    },
+    {
+      "aliases": [],
+      "doc": "Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality.",
+      "effects": [],
+      "group": "worktree",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "worktree.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/worktree/list",
+      "since": "0.1.0",
+      "title": "List worktrees",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable.",
+      "effects": [
+        "destructive"
+      ],
+      "group": "worktree",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "worktree.remove",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/worktree/remove",
+      "since": "0.1.0",
+      "title": "Remove a worktree",
+      "verb": "remove"
     }
   ],
   "proto": 1,

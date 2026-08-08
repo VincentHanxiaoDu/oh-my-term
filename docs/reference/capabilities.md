@@ -15,10 +15,14 @@ vanishing.
 | `config.get` | query | viewer | Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable. |
 | `config.schema` | query | viewer | Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be. |
 | `events.subscribe` | query | viewer | Subscribe to the event stream. |
+| `fanout.choose` | command | operator | Record which arm won, naming its branch. Merges nothing and deletes nothing: the losing worktrees are what you would look at to check the choice was right. |
+| `fanout.start` | command | operator | Create a worktree per agent and record them as one fan-out. Every arm is reported, including any that could not be prepared. |
+| `fanout.status` | query | viewer | Every arm of every fan-out, with its worktree, branch and state. |
 | `fs.list` | query | viewer | List a directory inside a workspace. Paths are workspace-relative and cannot escape it. |
 | `fs.read` | query | viewer | Read one chunk of a file. Chunked so a large file over a slow link can show progress and resume rather than restarting. |
 | `fs.write` | command | operator | Write one chunk of a file into a workspace. The file appears only once every chunk has arrived. |
 | `git.diff` | query | viewer | Which files changed, with line counts. Staged and unstaged are separate answers. |
+| `git.hunks` | query | viewer | The changed lines of one file. `git.diff` reports which files changed; this is what changed in them. Returned as lines rather than rendered, because a terminal, a phone and a browser each want to draw it differently. |
 | `git.status` | query | viewer | Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches. |
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
 | `instance.info` | query | viewer | Version and protocol of this instance. |
@@ -60,5 +64,8 @@ vanishing.
 | `voice.providers` | query | viewer | Speech-to-text engines this instance can use, and whether each has a key. Presence only — a capability that returned a key would put it in the first log somebody captured. |
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
+| `worktree.add` | command | operator | Create a git worktree, which becomes a workspace by the id its path derives. Additive: it touches nothing that already exists, and a path already in use is refused rather than overwritten. |
+| `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
+| `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-51 capabilities.
+58 capabilities.

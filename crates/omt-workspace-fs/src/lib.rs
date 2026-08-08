@@ -7,6 +7,8 @@
 //! containment is checked against the *canonical* path and not against the
 //! string the caller sent.
 
+pub mod worktree;
+pub use worktree::{Worktree, WorktreeError};
 pub mod diff;
 pub mod git;
 

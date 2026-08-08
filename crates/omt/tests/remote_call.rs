@@ -2524,3 +2524,446 @@ fn a_reported_rate_limit_reaches_a_client_in_the_agents_own_words() {
     drop(client);
     worker.join().expect("worker");
 }
+
+/// A repository with one commit, which is the least git will work with.
+fn git_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .output()
+            .expect("git");
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "test"]);
+    std::fs::write(dir.path().join("a.txt"), "one\ntwo\nthree\n").expect("write");
+    git(&["add", "."]);
+    git(&["commit", "-qm", "first"]);
+    dir
+}
+
+#[test]
+fn a_worktree_is_created_and_is_immediately_a_workspace() {
+    // The payoff of deriving `WorkspaceId` from a canonical path: a worktree is
+    // a workspace the moment it exists, and nothing in the session tree, the
+    // pane model or the capability surface needs a case for it.
+    let dir = git_repo();
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+
+    let added = call_ok(
+        &mut client,
+        2,
+        "worktree.add",
+        serde_json::json!({ "workspace": ws, "path": "wt-feature", "branch": "feature" }),
+        true,
+    );
+    assert_eq!(added["worktree"]["branch"], "feature");
+    let wt_path = added["worktree"]["path"].as_str().expect("path").to_owned();
+    let wt_workspace = added["worktree"]["workspace"].clone();
+    assert!(
+        std::path::Path::new(&wt_path).join("a.txt").is_file(),
+        "the worktree has no files in it"
+    );
+
+    // The id it reported is the id opening that path actually produces.
+    let opened = call_ok(
+        &mut client,
+        3,
+        "workspace.open",
+        serde_json::json!({ "root": wt_path }),
+        true,
+    );
+    assert_eq!(
+        opened["id"], wt_workspace,
+        "the reported workspace id is not the one the path opens as"
+    );
+
+    let listed = call_ok(
+        &mut client,
+        4,
+        "worktree.list",
+        serde_json::json!({ "workspace": ws }),
+        false,
+    );
+    let worktrees = listed["worktrees"].as_array().expect("worktrees");
+    assert_eq!(worktrees.len(), 2);
+    assert_eq!(worktrees[0]["is_main"], true, "the main checkout is not first");
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn removing_a_worktree_with_changes_is_refused_rather_than_losing_them() {
+    // An agent's output is usually why the worktree was wanted. Deleting it on
+    // a tap is unrecoverable, so it refuses and says why.
+    let dir = git_repo();
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+    let path = call_ok(
+        &mut client,
+        2,
+        "worktree.add",
+        serde_json::json!({ "workspace": ws, "path": "wt-dirty", "branch": "dirty" }),
+        true,
+    )["worktree"]["path"]
+        .as_str()
+        .expect("path")
+        .to_owned();
+
+    std::fs::write(std::path::Path::new(&path).join("a.txt"), "changed\n").expect("write");
+
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(3),
+            capability: "worktree.remove".to_owned(),
+            input: serde_json::json!({ "workspace": ws, "path": path, "force": false }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(result) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    let CallOutcome::Err { error } = result.outcome else {
+        panic!("uncommitted changes were discarded");
+    };
+    assert!(
+        error.message.contains("uncommitted"),
+        "the refusal does not say what would be lost: {}",
+        error.message
+    );
+    assert!(std::path::Path::new(&path).is_dir(), "it was removed anyway");
+
+    // With force it goes.
+    let removed = call_ok(
+        &mut client,
+        4,
+        "worktree.remove",
+        serde_json::json!({ "workspace": ws, "path": path, "force": true }),
+        true,
+    );
+    assert_eq!(removed["remaining"], 1);
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn the_lines_of_a_changed_file_are_available_not_only_its_name() {
+    // `git.diff` reports which files changed. Reviewing what an agent did needs
+    // what changed in them, and that used to happen entirely outside omt.
+    let dir = git_repo();
+    std::fs::write(dir.path().join("a.txt"), "one\nCHANGED\nthree\n").expect("write");
+
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+
+    let out = call_ok(
+        &mut client,
+        2,
+        "git.hunks",
+        serde_json::json!({ "workspace": ws, "path": "a.txt" }),
+        false,
+    );
+    let hunks = out["hunks"].as_array().expect("hunks");
+    assert!(!hunks.is_empty(), "a changed file reported no hunks: {out}");
+
+    let lines: Vec<&str> = hunks[0]["lines"]
+        .as_array()
+        .expect("lines")
+        .iter()
+        .filter_map(|l| l.as_str())
+        .collect();
+    assert!(
+        lines.iter().any(|l| l.starts_with('+') && l.contains("CHANGED")),
+        "the added line is missing: {lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with('-') && l.contains("two")),
+        "the removed line is missing: {lines:?}"
+    );
+
+    // Staged is a separate answer, and nothing has been staged.
+    let staged = call_ok(
+        &mut client,
+        3,
+        "git.hunks",
+        serde_json::json!({ "workspace": ws, "path": "a.txt", "staged": true }),
+        false,
+    );
+    assert!(
+        staged["hunks"].as_array().expect("hunks").is_empty(),
+        "unstaged changes leaked into the staged answer: {staged}"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_fanout_gives_every_agent_its_own_worktree() {
+    // What people already do with three terminal windows and a lot of
+    // stashing. A worktree per agent is the correct shape, and omt was
+    // unusually close to it: a workspace id derived from a canonical path
+    // means N worktrees are already N workspaces.
+    let dir = git_repo();
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+
+    let out = call_ok(
+        &mut client,
+        2,
+        "fanout.start",
+        serde_json::json!({
+            "workspace": ws,
+            "name": "try",
+            "prompt": "fix the build",
+            "agents": ["claude", "codex", "not-a-real-agent"]
+        }),
+        true,
+    );
+
+    assert_eq!(out["prepared"], 2, "two agents should have been prepared");
+    let arms = out["arms"].as_array().expect("arms");
+    // Every arm, including the one that could not be prepared: a fan-out that
+    // half-started and said "error" leaves somebody guessing which is missing.
+    assert_eq!(arms.len(), 3, "not every arm was reported: {out}");
+    let failed: Vec<_> = arms.iter().filter(|a| a["state"] == "failed").collect();
+    assert_eq!(failed.len(), 1);
+    assert!(failed[0]["error"].as_str().is_some_and(|e| e.contains("not an agent")));
+
+    // Two real worktrees exist, each its own workspace.
+    let listed = call_ok(
+        &mut client,
+        3,
+        "worktree.list",
+        serde_json::json!({ "workspace": ws }),
+        false,
+    );
+    assert_eq!(
+        listed["worktrees"].as_array().expect("worktrees").len(),
+        3,
+        "the main checkout plus one worktree per prepared arm"
+    );
+
+    // And every prepared arm reports the workspace its worktree opens as.
+    for arm in arms.iter().filter(|a| a["state"] != "failed") {
+        assert!(
+            arm["workspace"].as_str().is_some_and(|w| w.starts_with("wksp_")),
+            "an arm has no workspace id: {arm}"
+        );
+        assert!(arm["branch"].as_str().is_some_and(|b| b.starts_with("omt/try/")));
+    }
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn choosing_an_arm_records_it_and_merges_nothing() {
+    // A tool that merges when you tap "choose" is one you stop trusting the
+    // first time it picks wrong. And the losing worktree is kept, because
+    // comparing the two is what you would do to check the choice was right.
+    let dir = git_repo();
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+    let ws = call_ok(
+        &mut client,
+        1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    )["id"]
+        .clone();
+    call_ok(
+        &mut client,
+        2,
+        "fanout.start",
+        serde_json::json!({
+            "workspace": ws,
+            "name": "pick",
+            "prompt": "go",
+            "agents": ["claude", "codex"]
+        }),
+        true,
+    );
+
+    // Choosing before anything has finished is refused, and rightly: picking a
+    // winner among attempts that have not run is picking at random.
+    send(
+        &mut client,
+        &ProtoMessage::Call(Call {
+            request: request(3),
+            capability: "fanout.choose".to_owned(),
+            input: serde_json::json!({ "name": "pick", "agent": "codex" }),
+            intent: Some(omt_types::IntentId::new()),
+        }),
+    );
+    let ProtoMessage::Result(early) = recv(&mut client) else {
+        panic!("expected a result");
+    };
+    assert!(
+        matches!(early.outcome, CallOutcome::Err { .. }),
+        "an arm was chosen before any had finished"
+    );
+
+    // Both finish, as they would once the agents were done.
+    {
+        let mut fanouts = state.fanouts().expect("fanouts");
+        let fanout = fanouts.get_mut("pick").expect("the fan-out");
+        for agent in [omt_types::AgentKind::ClaudeCode, omt_types::AgentKind::Codex] {
+            fanout
+                .set_state(agent, omt_session::ArmState::Finished { files_changed: 2 })
+                .expect("finish");
+        }
+    }
+
+    let chosen = call_ok(
+        &mut client,
+        4,
+        "fanout.choose",
+        serde_json::json!({ "name": "pick", "agent": "codex" }),
+        true,
+    );
+    assert_eq!(chosen["branch"], "omt/pick/codex");
+    assert_eq!(chosen["merged"], false, "something was merged");
+
+    // The main branch is untouched — nothing was merged into it.
+    let status = call_ok(
+        &mut client,
+        5,
+        "git.status",
+        serde_json::json!({ "workspace": ws }),
+        false,
+    );
+    assert_eq!(status["branch"], "main", "the checkout was moved");
+
+    // Both worktrees are still there. Deleting the loser at the moment of
+    // choosing destroys what you would look at to check.
+    let listed = call_ok(
+        &mut client,
+        6,
+        "worktree.list",
+        serde_json::json!({ "workspace": ws }),
+        false,
+    );
+    assert_eq!(listed["worktrees"].as_array().expect("worktrees").len(), 3);
+
+    let reported = call_ok(
+        &mut client,
+        7,
+        "fanout.status",
+        serde_json::json!({ "name": "pick" }),
+        false,
+    );
+    assert_eq!(reported["fanouts"][0]["chosen"], "codex");
+
+    drop(client);
+    worker.join().expect("worker");
+}

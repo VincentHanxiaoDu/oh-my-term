@@ -8,30 +8,31 @@ Each entry says what it is, why it is worth doing, and what it would cost.
 Nothing here is a promise; the list exists so the next decision is made against
 a written trade-off rather than against whatever was most recently discussed.
 
-## Worktree fan-out
+## ~~Worktree fan-out~~ — built, except the comparison view
 
-Run one prompt across several agents at once, each in its own git worktree, and
-compare the results.
+`worktree.add` / `list` / `remove` make real git worktrees, each a workspace by
+the id its path derives. `fanout.start` gives one prompt an agent per worktree
+and reports every arm including the ones that could not be prepared;
+`fanout.choose` records which won.
 
-Most of the machinery already exists: `WorkspaceId` is derived from a canonical
-path, so N worktrees are already N workspaces with no special case. What is
-missing is the fan-out itself, a view that compares the results, and a way to
-take one.
+Choosing **merges nothing**. A tool that merges when you tap "choose" is one you
+stop trusting the first time it picks wrong — it names the branch and `git
+merge` is one command away. The losing worktrees are kept, because comparing
+them is what you would do to check the choice was right.
 
-**Why it is worth it.** It is the thing people already do by hand with three
-terminal windows, badly. **What it costs**: a comparison UI, which is the
-expensive half — everything else is capability calls omt already has.
+What is still missing is the expensive half: a *view* that puts two attempts
+side by side. `git.hunks` supplies the content it would need.
 
-## Human-initiated review
+## Human-initiated review — half built
 
-omt models the interactions an *agent* raises. It has nothing for a human
-starting one: reading a diff, leaving a line comment, and sending that back as
-context.
+`git.hunks` reports the changed lines of a file, which is what reviewing an
+agent's work needs and what `git.diff` always stopped short of. Returned as
+lines rather than rendered: a terminal, a phone and a browser each want to draw
+a diff differently.
 
-**Why it is worth it.** Reviewing what an agent did is most of the work in using
-one, and it currently happens outside omt entirely. **What it costs**: a diff
-view with anchors that survive the file changing underneath, which is more
-subtle than it sounds.
+What is missing is the round trip — leaving a comment on a line and sending it
+back as context. **What it costs**: anchors that survive the file changing
+underneath, which is more subtle than it sounds and is the whole difficulty.
 
 ## Agents as callers
 

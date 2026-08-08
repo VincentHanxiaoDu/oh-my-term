@@ -5,10 +5,14 @@
   "config.get",
   "config.schema",
   "events.subscribe",
+  "fanout.choose",
+  "fanout.start",
+  "fanout.status",
   "fs.list",
   "fs.read",
   "fs.write",
   "git.diff",
+  "git.hunks",
   "git.status",
   "instance.catalog",
   "instance.info",
@@ -49,5 +53,8 @@
   "voice.clear",
   "voice.providers",
   "workspace.list",
-  "workspace.open"
+  "workspace.open",
+  "worktree.add",
+  "worktree.list",
+  "worktree.remove"
 ]

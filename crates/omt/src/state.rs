@@ -35,6 +35,12 @@ pub struct State {
     credentials: Arc<Mutex<omt_auth::CredentialStore>>,
     /// Speech engines this instance can use.
     stt: Arc<Mutex<omt_stt::ProviderSet>>,
+    /// Fan-outs in progress, by name.
+    ///
+    /// Named rather than numbered because a fan-out outlives the call that
+    /// started it and somebody has to be able to ask about it later — from a
+    /// different client, on a different device.
+    fanouts: Arc<Mutex<std::collections::BTreeMap<String, omt_session::Fanout>>>,
 }
 
 /// Where omt keeps its configuration.
@@ -70,6 +76,7 @@ impl State {
             // no key: a provider appears only once the user has supplied one,
             // which is the whole of BYOK.
             stt: Arc::new(Mutex::new(providers_from_env())),
+            fanouts: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             config: Arc::new(Mutex::new(None)),
         }
     }
@@ -265,6 +272,21 @@ impl State {
     }
 }
 
+impl State {
+    /// The fan-outs in progress.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn fanouts(
+        &self,
+    ) -> Result<MutexGuard<'_, std::collections::BTreeMap<String, omt_session::Fanout>>, CapabilityError>
+    {
+        self.fanouts
+            .lock()
+            .map_err(|_| CapabilityError::internal("the fan-out lock was poisoned"))
+    }
+}
+
 #[cfg(test)]
 mod provider_tests {
     use super::*;
@@ -298,3 +320,4 @@ mod provider_tests {
         assert_eq!(set.all().len(), 2);
     }
 }
+

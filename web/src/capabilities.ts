@@ -154,6 +154,32 @@ export const HANDLERS = {
   'git.status': (request: RequestId, workspace: string) =>
     call(request, 'git.status', { workspace }),
 
+  'fanout.start': (
+    request: RequestId,
+    workspace: string,
+    name: string,
+    prompt: string,
+    agents: string[],
+  ) => call(request, 'fanout.start', { workspace, name, prompt, agents }),
+
+  'fanout.status': (request: RequestId, name?: string) =>
+    call(request, 'fanout.status', name === undefined ? {} : { name }),
+
+  'fanout.choose': (request: RequestId, name: string, agent: string) =>
+    call(request, 'fanout.choose', { name, agent }),
+
+  'worktree.list': (request: RequestId, workspace: string) =>
+    call(request, 'worktree.list', { workspace }),
+
+  'worktree.add': (request: RequestId, workspace: string, path: string, branch: string) =>
+    call(request, 'worktree.add', { workspace, path, branch }),
+
+  'worktree.remove': (request: RequestId, workspace: string, path: string, force = false) =>
+    call(request, 'worktree.remove', { workspace, path, force }),
+
+  'git.hunks': (request: RequestId, workspace: string, path: string, staged = false) =>
+    call(request, 'git.hunks', { workspace, path, staged }),
+
   'git.diff': (request: RequestId, workspace: string, staged = false) =>
     call(request, 'git.diff', { workspace, staged }),
 

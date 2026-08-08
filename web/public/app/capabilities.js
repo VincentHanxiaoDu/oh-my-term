@@ -44,6 +44,13 @@ export const HANDLERS = {
     'agent.interrupt': (request, session) => call(request, 'agent.interrupt', { session }),
     'fs.list': (request, workspace, path = '') => call(request, 'fs.list', { workspace, path }),
     'git.status': (request, workspace) => call(request, 'git.status', { workspace }),
+    'fanout.start': (request, workspace, name, prompt, agents) => call(request, 'fanout.start', { workspace, name, prompt, agents }),
+    'fanout.status': (request, name) => call(request, 'fanout.status', name === undefined ? {} : { name }),
+    'fanout.choose': (request, name, agent) => call(request, 'fanout.choose', { name, agent }),
+    'worktree.list': (request, workspace) => call(request, 'worktree.list', { workspace }),
+    'worktree.add': (request, workspace, path, branch) => call(request, 'worktree.add', { workspace, path, branch }),
+    'worktree.remove': (request, workspace, path, force = false) => call(request, 'worktree.remove', { workspace, path, force }),
+    'git.hunks': (request, workspace, path, staged = false) => call(request, 'git.hunks', { workspace, path, staged }),
     'git.diff': (request, workspace, staged = false) => call(request, 'git.diff', { workspace, staged }),
     // The epoch is required, not optional: input already in flight when the
     // writer token changed hands must be rejected rather than landing in
