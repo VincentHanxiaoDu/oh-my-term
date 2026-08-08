@@ -4691,6 +4691,138 @@ fn snippet_for(shell: &str) -> Option<ShellSnippet> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Usage
+// ---------------------------------------------------------------------------
+
+/// Input to `usage.report`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UsageReportIn {
+    /// One session, or absent for the instance as a whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+/// What was spent.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct Spend {
+    /// Input tokens.
+    pub input: u64,
+    /// Output tokens.
+    pub output: u64,
+    /// Tokens read from cache.
+    pub cache_read: u64,
+    /// Tokens written to cache.
+    pub cache_write: u64,
+    /// Cost, **only** when the agent itself stated one.
+    ///
+    /// Never computed. A price table in omt goes stale the week any provider
+    /// changes pricing, and the estimate would sit beside counts that are
+    /// right with nothing to tell them apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+}
+
+/// What `usage.report` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct UsageReportOut {
+    /// This session's spend, when one was named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<Spend>,
+    /// Every session's, together.
+    pub total: Spend,
+    /// `unknown` or `reported`.
+    ///
+    /// `unknown` is the common case and must stay distinct from a low number:
+    /// a surface that drew silence as an empty bar would invent the one figure
+    /// a user acts on.
+    pub headroom: String,
+    /// What the agent said about its limit, when it said anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_status: Option<String>,
+    /// When the agent said the limit resets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<String>,
+    /// How many sessions have reported anything at all.
+    pub sessions_reporting: u32,
+}
+
+capability! {
+    /// What has been spent, and what is left.
+    pub struct UsageReport;
+    input  = UsageReportIn,
+    output = UsageReportOut,
+    decl = Decl {
+        name: "usage.report",
+        group: "usage",
+        verb: "report",
+        title: "Usage and quota",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Tokens spent per session and in total, with whatever the agent said about its rate limit. Cost appears only when the agent stated one — omt never computes it from a price table of its own.",
+    },
+}
+
+struct UsageReportHandler(State);
+
+impl CapabilityHandler<UsageReport> for UsageReportHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: UsageReportIn,
+    ) -> Result<UsageReportOut, CapabilityError> {
+        let instance = self.0.lock()?;
+        let ledger = &instance.usage;
+
+        let (session_spend, headroom) = match input.session.as_deref() {
+            Some(raw) => {
+                let id = session_id(raw)?;
+                (Some(spend(&ledger.session(id))), ledger.headroom(id))
+            }
+            // Without a session there is no limit to report: a rate limit
+            // belongs to an account as an agent described it, and merging two
+            // agents' limits into one number would be a figure neither said.
+            None => (None, omt_agent::Headroom::Unknown),
+        };
+
+        let (headroom_kind, status, resets) = match headroom {
+            omt_agent::Headroom::Unknown => ("unknown".to_owned(), None, None),
+            omt_agent::Headroom::Reported(limit) => (
+                "reported".to_owned(),
+                Some(limit.status),
+                limit.resets_at.map(|t| t.to_string()),
+            ),
+        };
+
+        Ok(UsageReportOut {
+            session: session_spend,
+            total: spend(&ledger.total()),
+            headroom: headroom_kind,
+            limit_status: status,
+            resets_at: resets,
+            sessions_reporting: ledger.len() as u32,
+        })
+    }
+}
+
+/// Turn the ledger's own shape into the wire's.
+fn spend(usage: &omt_agent::Usage) -> Spend {
+    Spend {
+        input: usage.input,
+        output: usage.output,
+        cache_read: usage.cache_read,
+        cache_write: usage.cache_write,
+        cost_usd: usage.cost_usd,
+    }
+}
+
 /// Input to `config.schema`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConfigSchemaIn {}
@@ -4976,6 +5108,7 @@ pub fn registry(state: State) -> Result<CapabilityRegistry> {
     r.register::<VoiceProviders, _>(VoiceProvidersHandler(state.clone()))?;
     r.register::<VoiceAppend, _>(VoiceAppendHandler(state.clone()))?;
     r.register::<VoiceClear, _>(VoiceClearHandler(state.clone()))?;
+    r.register::<UsageReport, _>(UsageReportHandler(state.clone()))?;
     r.register::<ConfigSchema, _>(ConfigSchemaHandler(state.clone()))?;
     r.register::<ShellIntegration, _>(ShellIntegrationHandler(state.clone()))?;
     r.register::<ThemeGet, _>(ThemeGetHandler(state.clone()))?;

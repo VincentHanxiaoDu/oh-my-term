@@ -916,6 +916,24 @@
     },
     {
       "aliases": [],
+      "doc": "Tokens spent per session and in total, with whatever the agent said about its rate limit. Cost appears only when the agent stated one — omt never computes it from a price table of its own.",
+      "effects": [],
+      "group": "usage",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "usage.report",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/usage/report",
+      "since": "0.1.0",
+      "title": "Usage and quota",
+      "verb": "report"
+    },
+    {
+      "aliases": [],
       "doc": "Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending.",
       "effects": [],
       "group": "voice",

@@ -50,6 +50,12 @@ pub struct Instance {
     rosters: BTreeMap<SessionId, omt_agent::ThreadRoster>,
     /// Terminals for sessions restored from a snapshot, which have no pty.
     orphans: BTreeMap<SessionId, omt_term::Terminal>,
+    /// What each session has spent, and what any agent said about its limits.
+    ///
+    /// Public because it is read straight through by the capability that
+    /// reports it, and there is nothing to guard: it is an accumulator, and
+    /// wrapping it in methods that only forward would be ceremony.
+    pub usage: omt_agent::UsageLedger,
 }
 
 impl Default for Instance {
@@ -71,6 +77,7 @@ impl Instance {
             runtimes: BTreeMap::new(),
             rosters: BTreeMap::new(),
             orphans: BTreeMap::new(),
+            usage: omt_agent::UsageLedger::new(),
         }
     }
 
@@ -95,6 +102,21 @@ impl Instance {
         let id = self.tree.create_session(workspace, kind, mode)?;
         self.streams.insert(id, Stream::new());
         Ok(id)
+    }
+
+    /// Feed a source reading into a binding's merge machine.
+    pub fn observe_agent(&mut self, binding: BindingId, reading: SourceReading) {
+        self.merges.entry(binding).or_default().observe(reading);
+    }
+
+    /// Note what an agent reported about a session's spending.
+    ///
+    /// Named apart from `observe_agent` deliberately: that one feeds the state
+    /// machine that decides what an agent is *doing*, and this one feeds the
+    /// ledger of what it has *spent*. Two different questions, and a shared
+    /// name would let a call meant for one silently reach the other.
+    pub fn observe_usage(&mut self, session: SessionId, payload: &omt_events::AgentPayload) {
+        self.usage.observe(session, payload);
     }
 
     /// Record an event against a session, assigning its position.
@@ -155,12 +177,6 @@ impl Instance {
             .get(&session)
             .map(|s| Seq::new(s.seq.current()))
     }
-
-    /// Feed a source reading into a binding's merge machine.
-    pub fn observe_agent(&mut self, binding: BindingId, reading: SourceReading) {
-        self.merges.entry(binding).or_default().observe(reading);
-    }
-
     /// What a binding's agent is doing, as of now.
     pub fn agent_state(
         &mut self,

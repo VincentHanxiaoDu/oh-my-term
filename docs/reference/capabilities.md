@@ -54,10 +54,11 @@ vanishing.
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
 | `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
+| `usage.report` | query | viewer | Tokens spent per session and in total, with whatever the agent said about its rate limit. Cost appears only when the agent stated one — omt never computes it from a price table of its own. |
 | `voice.append` | command | operator | Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending. |
 | `voice.clear` | command | operator | Discard a session's dictation buffer. Idempotent. |
 | `voice.providers` | query | viewer | Speech-to-text engines this instance can use, and whether each has a key. Presence only — a capability that returned a key would put it in the first log somebody captured. |
 | `workspace.list` | query | viewer | Every workspace this instance has open, with its session count. |
 | `workspace.open` | command | operator | Open a workspace at a canonical path. Idempotent: the id is derived from the path. |
 
-50 capabilities.
+51 capabilities.

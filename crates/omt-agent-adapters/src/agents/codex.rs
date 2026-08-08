@@ -157,11 +157,47 @@ impl AgentAdapter for Codex {
                 },
                 trigger: None,
             }]),
-            // A rate-limit update means the agent is working, and nothing more
-            // specific. Reported as activity rather than invented into a turn.
-            "account/rateLimits/updated" => Ok(vec![AgentPayload::Activity {
-                state: omt_events::ActivityGuess::Busy,
+            // The agent's own words about its limit, carried rather than
+            // flattened. This used to decode the notification and report a
+            // generic "busy" — which threw away the one number somebody would
+            // act on.
+            "account/rateLimits/updated" => Ok(vec![AgentPayload::RateLimit {
+                status: s("status")
+                    .or_else(|| {
+                        payload
+                            .pointer("/rateLimits/summary")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_owned)
+                    })
+                    .unwrap_or_else(|| "limits updated".to_owned()),
+                // Unix seconds, which is what the notification carries. A
+                // reset time nobody can parse is worse than none: a surface
+                // would show "resets at" with nothing after it.
+                resets_at: payload
+                    .pointer("/rateLimits/resetsAtUnix")
+                    .or_else(|| payload.get("resets_at"))
+                    .and_then(serde_json::Value::as_i64)
+                    .map(omt_types::Timestamp::from_unix_seconds),
             }]),
+            // Token counts, which the ledger accumulates per session.
+            "turn/usage" | "account/usage/updated" => {
+                let n = |k: &str| {
+                    payload
+                        .pointer(&format!("/usage/{k}"))
+                        .or_else(|| payload.get(k))
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0)
+                };
+                Ok(vec![AgentPayload::Usage {
+                    input: n("inputTokens"),
+                    output: n("outputTokens"),
+                    cache_read: n("cachedInputTokens"),
+                    cache_write: n("cacheCreationTokens"),
+                    // Never computed. omt reports a cost only when the agent
+                    // stated one, and Codex does not.
+                    cost_usd: None,
+                }])
+            }
             // Not silently dropped: an event omt does not know about is a gap
             // in this table, and a gap that logs is one somebody can close.
             other => Err(AdapterError::UnknownEvent {
@@ -414,6 +450,55 @@ mod tests {
             serde_json::json!({ "item": { "type": "imageGeneration", "id": "i1" } }),
         );
         assert!(out.is_empty(), "{out:?}");
+    }
+
+    #[test]
+    fn a_rate_limit_carries_what_the_agent_said() {
+        // This used to decode the notification and report a generic "busy",
+        // throwing away the one number somebody would act on.
+        let out = norm(
+            "account/rateLimits/updated",
+            serde_json::json!({ "rateLimits": { "summary": "80% of weekly used" } }),
+        );
+        let AgentPayload::RateLimit { status, .. } = &out[0] else {
+            panic!("expected a rate limit, got {out:?}");
+        };
+        assert_eq!(status, "80% of weekly used");
+    }
+
+    #[test]
+    fn a_rate_limit_with_no_detail_still_reports_a_limit() {
+        // Better than an activity guess: a surface can say "the agent
+        // mentioned its limits" rather than nothing at all.
+        let out = norm("account/rateLimits/updated", serde_json::json!({}));
+        assert!(matches!(out[0], AgentPayload::RateLimit { .. }));
+    }
+
+    #[test]
+    fn usage_carries_the_token_counts() {
+        let out = norm(
+            "turn/usage",
+            serde_json::json!({ "usage": { "inputTokens": 100, "outputTokens": 40 } }),
+        );
+        let AgentPayload::Usage { input, output, .. } = &out[0] else {
+            panic!("expected usage, got {out:?}");
+        };
+        assert_eq!(*input, 100);
+        assert_eq!(*output, 40);
+    }
+
+    #[test]
+    fn no_cost_is_invented_from_token_counts() {
+        // A price table in omt goes stale the week any provider changes
+        // pricing, and the estimate would sit beside counts that are right.
+        let out = norm(
+            "turn/usage",
+            serde_json::json!({ "usage": { "inputTokens": 1000, "outputTokens": 1000 } }),
+        );
+        let AgentPayload::Usage { cost_usd, .. } = &out[0] else {
+            panic!("expected usage");
+        };
+        assert!(cost_usd.is_none(), "a cost was computed: {cost_usd:?}");
     }
 
     #[test]

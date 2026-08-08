@@ -43,14 +43,17 @@ a caller with a credential, and the role that credential carries is the whole
 question. **What it costs**: a role narrower than operator, and the discipline to
 keep it narrow.
 
-## Account and quota visibility
+## ~~Account and quota visibility~~ — built
 
-Which subscription a session is spending, and how much is left. Several agent
-CLIs report rate limits over their own protocols, and omt currently drops that.
+`usage.report` reports tokens per session and in total, with whatever the agent
+said about its rate limit. Cost appears only when the agent stated one: a price
+table in omt would go stale the week any provider changed pricing, and the
+estimate would sit beside counts that are right with nothing to tell them apart.
 
-**Why it is worth it.** Running out mid-task with no warning is a specific,
-common, avoidable annoyance. **What it costs**: little — the events already
-arrive; nothing consumes them.
+What is deliberately still absent is a *policy* — no threshold, no budget, no
+cutoff. `Headroom::Unknown` stays distinct from a low number so a surface can
+decline to draw a bar rather than drawing an empty one, and what to do about a
+low number belongs in a configuration key or a plugin.
 
 ## Explicitly not planned
 

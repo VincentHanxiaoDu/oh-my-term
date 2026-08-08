@@ -44,6 +44,7 @@
   "state.restore",
   "state.save",
   "theme.get",
+  "usage.report",
   "voice.append",
   "voice.clear",
   "voice.providers",

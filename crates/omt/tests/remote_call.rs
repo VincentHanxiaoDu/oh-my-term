@@ -2346,3 +2346,181 @@ fn every_setting_is_listed_whether_or_not_anyone_set_it() {
     drop(client);
     worker.join().expect("worker");
 }
+
+#[test]
+fn usage_accumulates_and_never_invents_a_cost() {
+    // The events already arrived and were dropped a line later — every token
+    // counted into a value nothing read. The ledger now belongs to the
+    // instance, and `usage.report` is how a surface sees it.
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    // Agents report *cumulatively*, so the ledger takes the larger of the two
+    // rather than adding. Adding a cumulative report to a running total
+    // double-counts everything before it and the number grows quadratically
+    // over a session — which is why these go up rather than repeating.
+    let session = omt_types::SessionId::new();
+    {
+        let mut instance = state.lock().expect("lock");
+        for n in 1..=3u64 {
+            instance.observe_usage(
+                session,
+                &omt_events::AgentPayload::Usage {
+                    input: 100 * n,
+                    output: 40 * n,
+                    cache_read: 10,
+                    cache_write: 5,
+                    cost_usd: None,
+                },
+            );
+        }
+    }
+
+    let out = call_ok(
+        &mut client,
+        1,
+        "usage.report",
+        serde_json::json!({ "session": session.to_wire() }),
+        false,
+    );
+    assert_eq!(
+        out["session"]["input"], 300,
+        "the latest cumulative report did not win"
+    );
+    assert_eq!(out["session"]["output"], 120);
+    assert_eq!(out["total"]["input"], 300);
+    assert!(
+        out["session"]["cost_usd"].is_null(),
+        "a cost was invented from token counts: {out}"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_repeated_cumulative_report_does_not_double_the_total() {
+    // The failure the ledger's max-rather-than-add rule prevents: an agent
+    // that re-sends the same cumulative figure would otherwise make the total
+    // grow every time it spoke.
+    let state = omt::state::State::default();
+    let session = omt_types::SessionId::new();
+    {
+        let mut instance = state.lock().expect("lock");
+        for _ in 0..5 {
+            instance.observe_usage(
+                session,
+                &omt_events::AgentPayload::Usage {
+                    input: 500,
+                    output: 200,
+                    cache_read: 0,
+                    cache_write: 0,
+                    cost_usd: None,
+                },
+            );
+        }
+        assert_eq!(
+            instance.usage.session(session).input,
+            500,
+            "the same cumulative report was counted more than once"
+        );
+    }
+}
+
+#[test]
+fn a_session_that_reported_nothing_reports_zero_rather_than_failing() {
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let out = call_ok(
+        &mut client,
+        1,
+        "usage.report",
+        serde_json::json!({ "session": omt_types::SessionId::new().to_wire() }),
+        false,
+    );
+    assert_eq!(out["session"]["input"], 0);
+    // And silence about limits stays silence. A surface that drew this as an
+    // empty bar would invent the one figure a user acts on.
+    assert_eq!(out["headroom"], "unknown");
+    assert!(out["limit_status"].is_null());
+
+    drop(client);
+    worker.join().expect("worker");
+}
+
+#[test]
+fn a_reported_rate_limit_reaches_a_client_in_the_agents_own_words() {
+    let state = omt::state::State::default();
+    let (mut client, server) = client_server_pair();
+    let served = state.clone();
+    let worker = std::thread::spawn(move || serve(server, served));
+
+    send(
+        &mut client,
+        &ProtoMessage::Hello(Hello {
+            proto: omt_proto::PROTO_VERSION,
+            client: "test".to_owned(),
+            token: None,
+        }),
+    );
+    let ProtoMessage::Welcome(_) = recv(&mut client) else {
+        panic!("expected a welcome");
+    };
+
+    let session = omt_types::SessionId::new();
+    {
+        let mut instance = state.lock().expect("lock");
+        instance.observe_usage(
+            session,
+            &omt_events::AgentPayload::RateLimit {
+                status: "80% of weekly used".to_owned(),
+                resets_at: None,
+            },
+        );
+    }
+
+    let out = call_ok(
+        &mut client,
+        1,
+        "usage.report",
+        serde_json::json!({ "session": session.to_wire() }),
+        false,
+    );
+    assert_eq!(out["headroom"], "reported");
+    assert_eq!(
+        out["limit_status"], "80% of weekly used",
+        "the agent's own words did not survive: {out}"
+    );
+
+    drop(client);
+    worker.join().expect("worker");
+}

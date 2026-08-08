@@ -308,6 +308,9 @@ export const HANDLERS = {
   'shell.integration': (request: RequestId, session?: string) =>
     call(request, 'shell.integration', session === undefined ? {} : { session }),
 
+  'usage.report': (request: RequestId, session?: string) =>
+    call(request, 'usage.report', session === undefined ? {} : { session }),
+
   'config.schema': (request: RequestId) => call(request, 'config.schema', {}),
 
   'config.get': (request: RequestId, key?: string) =>
