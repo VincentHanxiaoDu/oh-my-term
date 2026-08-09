@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-08-09
 
 The first release. What follows is what works, and the section after it is what
 does not — because the second list is the one that decides whether this is
