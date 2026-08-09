@@ -49,13 +49,30 @@ To see that from elsewhere, you need a remote surface.
 ```sh
 omt web
 # omt web on http://127.0.0.1:7717
-# token: omt_c_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# (shown once — it cannot be recovered)
+#
+# Scan to open on your phone:
+#
+#   ▄▄▄▄▄▄▄  ▄▄ ▄ ▄▄▄▄▄▄▄
+#   █ ▄▄▄ █ ▀▄█▀▄ █ ▄▄▄ █
+#   █ ███ █ █▄▀ █ █ ███ █      (a QR of the invite link)
+#   ▀▀▀▀▀▀▀ ▀ ▀ ▀ ▀▀▀▀▀▀▀
+#
+# http://127.0.0.1:7717/#token=omt_i_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# (this invite expires in 15 minutes and can be used once)
 ```
 
-The token appears once. It is stored hashed, so a leaked state directory is not
-a leaked credential — and there is no way to print it again. Lost it? Mint
-another.
+Point the phone's camera at it. What the code carries is an **invite**, not a
+credential: it expires, it works once, and the phone exchanges it for a
+credential of its own the moment it opens the link.
+
+That difference is the point. A credential in a QR is permanent access for
+anybody who ever saw the screen — a photograph, a shared call, a shoulder — and
+nothing to revoke but the token itself. An invite buys one device one
+credential, so a lost phone is one credential to revoke and every other device
+keeps working.
+
+Credentials are stored hashed, so a leaked state directory is not a leaked
+credential. Need another device? Run `omt web` again for a fresh invite.
 
 The server binds loopback. To reach it from a phone you need one of:
 

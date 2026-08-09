@@ -11,9 +11,18 @@ vanishing.
 |---|---|---|---|
 | `agent.connect` | command | operator | Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped. |
 | `agent.interrupt` | command | operator | Stop an agent. For an agent with no protocol of its own this is the entire remote control surface. |
+| `agent.offers` | query | viewer | Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none. |
 | `agent.threads` | query | viewer | Every thread in a session — the main one and each subagent — with what it is doing and any card it raised. |
+| `audit.list` | query | admin | Every call, with who made it and whether it worked. Refusals included: a log of only what succeeded answers the wrong question, because who *tried* to do what is most of what an audit is for. |
+| `block.body` | query | viewer | The output of one command block, as styled lines. Paged, because a block can hold a whole test run and a phone asking for one over a slow link stalls. |
+| `block.rerun` | command | operator | Send a block's command to its session again. Refused for a block omt never saw the command of, because the alternative is scraping the screen for something that looks like a prompt. |
 | `config.get` | query | viewer | Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable. |
+| `config.import` | query | viewer | Translate another terminal's settings into omt's, reporting what did not map rather than dropping it. A query: it says what the import would be, and writing it is a separate decision somebody makes. |
 | `config.schema` | query | viewer | Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be. |
+| `device.list` | query | operator | Every device that has been let in, by the name it gave. Pairing mints a credential per device, and a credential nobody can see is one nobody revokes. |
+| `device.revoke` | command | admin | Stop one device's credential working, leaving every other device alone. This is what makes a lost phone something somebody can act on. |
+| `doctor.report` | query | operator | The diagnosis, the version and what the person was doing, as readable text they can check before sending. Nothing is uploaded: omt has no cloud, and a report somebody cannot read is one they have to trust blindly about their own machine. |
+| `doctor.run` | query | viewer | Per-link diagnosis with a remedy on every failure. A check this build cannot perform is reported as not checked rather than as passing: an unrun check reported green is how a diagnosis stops somebody investigating the real problem. |
 | `events.subscribe` | query | viewer | Subscribe to the event stream. |
 | `fanout.choose` | command | operator | Record which arm won, naming its branch. Merges nothing and deletes nothing: the losing worktrees are what you would look at to check the choice was right. |
 | `fanout.start` | command | operator | Create a worktree per agent and record them as one fan-out. Every arm is reported, including any that could not be prepared. |
@@ -24,14 +33,19 @@ vanishing.
 | `git.diff` | query | viewer | Which files changed, with line counts. Staged and unstaged are separate answers. |
 | `git.hunks` | query | viewer | The changed lines of one file. `git.diff` reports which files changed; this is what changed in them. Returned as lines rather than rendered, because a terminal, a phone and a browser each want to draw it differently. |
 | `git.status` | query | viewer | Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches. |
+| `identity.list` | query | admin | Every person this instance knows and the devices each holds. A credential answers whether a token may do something; this answers whose phone it is, which is what makes revoking somebody's access — rather than one token — expressible. |
+| `identity.revoke` | command | admin | Revoke every device one person holds, in one action. Doing it device by device means somebody who has left keeps whichever one was missed, and there is no moment at which their access is known to be gone. |
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
 | `instance.info` | query | viewer | Version and protocol of this instance. |
+| `instance.metrics` | query | operator | Clients, sessions, calls and refusals. The health route says the process is up and says nothing else, which is not the same as knowing it is doing anything. |
 | `interaction.list` | query | viewer | Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot. |
 | `interaction.respond` | command | operator | Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state. |
+| `invite.create` | command | admin | A fresh invite, so a second device can be paired from a device already paired. Without it the only invite is the one printed at startup, and adding a phone means restarting the instance everybody else is connected to. |
 | `job.create` | command | operator | Create a scheduled job, replacing any job of the same name. A missed window is skipped rather than caught up. |
 | `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
+| `media.describe` | query | viewer | What a blob is, from its bytes rather than from a filename somebody supplied. A name is a claim; the bytes are the evidence, and writing an executable as a `.png` is what trusting the claim allows. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
 | `pane.close` | command | operator | Close a pane. The session it showed keeps running — closing a view of something is not ending it. |
 | `pane.focus` | command | operator | Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored. |
@@ -41,8 +55,12 @@ vanishing.
 | `plugin.install` | command | operator | Install a plugin with an explicit grant. What it asks for and what it receives are separate, and what was refused is reported. |
 | `plugin.list` | query | viewer | Installed plugins with what each was granted, and which of those grants are high-consequence. |
 | `plugin.start` | command | operator | Run a plugin, handing it a socket and a token whose role comes from what it was granted. A plugin reaches omt through the same capability surface as any other client — there is no second API. |
+| `presence.list` | query | viewer | Every client connected right now. "Is somebody else looking at this" is a question people ask before they type, and a terminal that cannot answer it is one where two people interleave keystrokes into one shell. |
+| `queue.enqueue` | command | operator | Add a message to an agent's queue. Refused where omt only mirrors the queue rather than owning it: a client must be told it cannot write rather than shown a control that silently does nothing. |
+| `queue.remove` | command | operator | Take a message out of an agent's queue. Refused on a mirrored queue for the same reason enqueue is: a removal omt cannot confirm loses the message with no record of what it was. |
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
 | `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
+| `search.session` | query | viewer | Find text across a session's screen and history, with the row and offsets of each hit so a client can scroll to it and highlight exactly that span. |
 | `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
 | `session.blocks` | query | viewer | Commands run in a session with their output ranges and exit codes, from OSC 133. A shell that emits no marks reports none rather than guesses. |
 | `session.close` | command | operator | End a session and stop the process on it. Idempotent. |
@@ -52,7 +70,9 @@ vanishing.
 | `session.release` | command | operator | Give up the writer token. Idempotent: releasing one you do not hold is not an error. |
 | `session.resize` | command | operator | Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with. |
 | `session.restart` | command | operator | Respawn the command behind a session restored from a snapshot, keeping the old output above a separator. |
+| `session.scrollback` | query | viewer | History as styled lines, by absolute row. Structured rather than raw bytes, so a browser needs no second terminal emulator to show what scrolled past. |
 | `session.snapshot` | query | viewer | The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one. |
+| `session.transcript` | query | viewer | Messages, reasoning, tool calls and results for an agent session. An agent emits no command marks, so blocks do not apply to it; this is what it is read through instead. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `shell.integration` | query | viewer | Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself. |
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
@@ -68,4 +88,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-58 capabilities.
+78 capabilities.

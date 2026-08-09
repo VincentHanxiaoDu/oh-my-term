@@ -25,3 +25,8 @@ mobile/android/local.properties
 mobile/ios/Omt.xcodeproj/
 mobile/ios/build/
 mobile/ios/.build/
+
+# Playwright's per-run output. Traces and screenshots of a failed run are
+# diagnostics, not source.
+web/test-results/
+web/playwright-report/

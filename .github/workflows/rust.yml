@@ -165,3 +165,70 @@ jobs:
         env:
           OMT_TEST_PUBKEY: unused-but-required-by-compose
         run: docker compose -f tests/docker/compose.yml down -v
+
+  integration:
+    name: integration (python, against a real instance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # A git identity, because these run against a real repository and
+      # `git commit` refuses without one.
+      - name: Identify to git
+        run: |
+          git config --global user.email "tests@example.invalid"
+          git config --global user.name "omt integration tests"
+          git config --global init.defaultBranch main
+
+      - name: Build the binary under test
+        run: cargo build -p omt
+
+      - name: Install the suite
+        run: |
+          python3 -m venv tests/integration/.venv
+          tests/integration/.venv/bin/pip install -q \
+            -r tests/integration/requirements.txt
+
+      - name: Run it
+        run: tests/integration/.venv/bin/python -m pytest -q
+        working-directory: tests/integration
+
+  touch:
+    name: touch e2e (a real browser at a phone profile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the binary under test
+        run: cargo build -p omt
+
+      - name: Install the client and its browser
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Start an instance and join it
+        run: |
+          ./target/debug/omt web --bind 127.0.0.1:7788 > /tmp/omt-web.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if grep -q "#token=" /tmp/omt-web.log; then break; fi
+            sleep 1
+          done
+          echo "OMT_TOKEN=$(grep -o 'token=[A-Za-z0-9_]*' /tmp/omt-web.log | head -1 | cut -d= -f2)" >> "$GITHUB_ENV"
+
+      - name: Run it
+        working-directory: web
+        run: npx playwright test
+
+      - name: The instance's log, on failure
+        if: failure()
+        run: cat /tmp/omt-web.log

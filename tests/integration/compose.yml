@@ -1,0 +1,8 @@
+services:
+  integration:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile
+    # A pty per session, and the suite starts a few. The default is enough, but
+    # saying so beats finding out on a busy machine.
+    init: true

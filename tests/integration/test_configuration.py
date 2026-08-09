@@ -1,0 +1,154 @@
+"""
+Configuration, keymap, theme and the settings surface.
+
+`docs/architecture/10-configuration.md`, `16-input-and-keymap.md`, and the
+principle that every feature works before configuration and is also a setting.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+import omt_client
+from omt_client import Client, Instance
+
+
+class TestSchema:
+    def test_every_setting_has_a_default_a_kind_and_a_description(
+        self, client: Client
+    ) -> None:
+        # So a settings screen can be built without hard-coding a list that goes
+        # stale the first time somebody adds a setting.
+        schema = client.call("config.schema")
+        assert schema["settings"]
+        for setting in schema["settings"]:
+            assert setting["key"]
+            assert setting["kind"], f"{setting['key']} has no kind"
+            assert setting.get("doc"), f"{setting['key']} has no description"
+            assert "default" in setting, f"{setting['key']} has no default"
+
+    def test_the_settings_cover_the_features_that_claim_to_be_configurable(
+        self, client: Client
+    ) -> None:
+        # "Minimal to use, complete to configure" is only true if the surfaces
+        # people actually want to change are settings rather than constants.
+        keys = {s["key"] for s in client.call("config.schema")["settings"]}
+        for prefix in ("font.", "appearance.", "terminal.", "agents.", "server."):
+            assert any(k.startswith(prefix) for k in keys), (
+                f"nothing under {prefix} is configurable"
+            )
+
+
+class TestResolved:
+    def test_an_unconfigured_instance_reports_nothing_set(
+        self, client: Client
+    ) -> None:
+        # Deliberately not "reports the defaults": this answers *what has been
+        # configured*, and the defaults come from the schema. Merging them here
+        # would make an untouched setting indistinguishable from one somebody
+        # chose to set to the default on purpose.
+        assert client.call("config.get")["values"] == []
+
+    def test_a_project_setting_is_reported_with_the_file_it_came_from(
+        self, workspace: Path
+    ) -> None:
+        # Which is what makes a surprising setting diagnosable rather than a
+        # mystery somebody works around by changing something else.
+        config = workspace / ".omt" / "config.toml"
+        config.parent.mkdir(exist_ok=True)
+        config.write_text('[font]\nfamily = "IBM Plex Mono"\n')
+
+        instance = omt_client.start_instance(workspace)
+        try:
+            client = omt_client.connect(instance)
+            values = client.call("config.get")["values"]
+            entry = next((v for v in values if v["key"] == "font.family"), None)
+            assert entry is not None, f"the project config was not picked up: {values}"
+            assert entry["value"] == "IBM Plex Mono"
+            assert ".omt" in str(entry.get("source", entry.get("file", ""))), entry
+            client.close()
+        finally:
+            omt_client.stop_instance(instance)
+            config.unlink()
+
+    def test_one_key_can_be_asked_for_on_its_own(self, client: Client) -> None:
+        # Every value, filtered — asking for a key nothing set is an empty
+        # answer, not an error: "not configured" is a legitimate state.
+        answer = client.call("config.get", key="font.family")
+        assert isinstance(answer["values"], list)
+
+
+class TestKeymap:
+    def test_the_cheatsheet_is_generated_from_the_keymap_in_force(
+        self, client: Client
+    ) -> None:
+        # Generated, so it cannot go stale — a cheatsheet maintained by hand is
+        # wrong within a release.
+        sheet = client.call("keys.cheatsheet")
+        assert sheet["bindings"]
+        for binding in sheet["bindings"]:
+            assert binding["chord"]
+            assert binding["action"]
+            assert binding["mode"]
+
+    def test_reserved_keys_are_on_the_sheet_and_marked_as_reaching_the_program(
+        self, client: Client
+    ) -> None:
+        # "Ctrl+C interrupts the program" is the single most useful line on the
+        # sheet, and it is invisible if only bound keys are shown. One list with
+        # a flag, rather than two lists somebody has to cross-reference.
+        sheet = client.call("keys.cheatsheet")
+        reserved = [b for b in sheet["bindings"] if b["reaches_program"]]
+        assert reserved, "no reserved keys are listed"
+        assert any(b["chord"] == "ctrl-c" for b in reserved), reserved
+
+    def test_no_chord_is_listed_twice_with_different_meanings(
+        self, client: Client
+    ) -> None:
+        # A sheet that contradicts itself is worse than no sheet.
+        seen: dict[tuple[str, str], str] = {}
+        for binding in client.call("keys.cheatsheet")["bindings"]:
+            key = (binding["mode"], binding["chord"])
+            assert key not in seen or seen[key] == binding["action"], key
+            seen[key] = binding["action"]
+
+
+class TestTheme:
+    def test_the_colours_in_force_are_reported(self, client: Client) -> None:
+        # So a remote client renders a session in the user's own theme rather
+        # than in whatever the browser's stylesheet happens to say.
+        theme = client.call("theme.get")
+        assert theme["foreground"]
+        assert theme["background"]
+
+    def test_the_palette_is_all_sixteen(self, client: Client) -> None:
+        # Half a palette is worse than none: the renderer emits a variable per
+        # indexed colour, and an undefined one renders as nothing at all.
+        assert len(client.call("theme.get")["ansi"]) == 16
+
+    def test_an_appearance_is_declared(self, client: Client) -> None:
+        assert client.call("theme.get")["appearance"] in {"dark", "light"}
+
+
+class TestInstanceIdentity:
+    def test_the_version_and_protocol_are_reported(self, client: Client) -> None:
+        info = client.call("instance.info")
+        assert info["version"]
+        assert info["proto"] >= 1
+
+    def test_the_catalog_is_available_over_the_wire(self, client: Client) -> None:
+        catalog = client.call("instance.catalog")
+        assert "session.create" in [c["name"] for c in catalog["entries"]]
+
+    def test_each_catalog_entry_carries_what_a_client_needs_to_decide_ui_policy(
+        self, client: Client
+    ) -> None:
+        # Effects drive UI policy: a capability that spawns a process or writes
+        # to a repository is one a client should confirm before invoking, and it
+        # cannot know that without being told.
+        for entry in client.call("instance.catalog")["entries"]:
+            assert "effects" in entry
+            assert entry["role"]
+            assert entry["name"]
