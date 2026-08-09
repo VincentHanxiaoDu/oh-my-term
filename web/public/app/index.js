@@ -20,5 +20,8 @@ export * from './screen.js';
 export * from './touch.js';
 export * from './push.js';
 export * from './terminal.js';
+export * from './view.js';
+export * from './nav.js';
+export * from './tokens.js';
 export * from './app.js';
 export * from './generated/catalog.js';

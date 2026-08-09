@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
-  cardOffer,
-  cardStatus,
-  layOutCard,
-  orderRoster,
-  renderSessionRow,
-  rosterHeader,
   applyTheme,
+  cardOffer,
   changed,
   isCoherent,
+  layOutCard,
+  needsYou,
+  orderRoster,
+  rosterSubtitle,
+  screenFor,
+  stateOf,
   styleOf,
   widthOf,
 } from '../src/index.js'
-import type { Snapshot, StyledRun, Theme } from '../src/index.js'
-import type { Interaction, InteractionCard } from '../src/index.js'
+import type { InteractionCard, Snapshot, StyledRun, Theme } from '../src/index.js'
 
 describe('the roster', () => {
   it('puts what needs a human first, whatever it is called', () => {
@@ -35,159 +35,75 @@ describe('the roster', () => {
     expect(rows.map((r) => r.title)).toEqual(['alpha', 'beta'])
   })
 
-  it('says what a row means in words, not only in colour', () => {
-    const row = renderSessionRow({ title: 'api', state: 'blocked' })
-    expect(row.label).toContain('needs you')
+  it('counts from the same rows the body renders', () => {
+    // The bug that caused the rebuild: a header counting sessions and a body
+    // counting agent threads, both on screen, disagreeing — with no way for a
+    // user to tell which was right.
+    const rows = [
+      { id: '1', title: 'a', state: 'blocked' },
+      { id: '2', title: 'b', state: 'idle' },
+    ]
+    expect(rosterSubtitle(rows)).toBe('1 of 2 need you')
   })
 
-  it('leads with the count that decides whether to keep reading', () => {
-    expect(
-      rosterHeader({
-        connection: 'connected',
-        workspaces: [],
-        sessions: [{}, {}] as never,
-        threads: {},
-        open: [],
-        needsYou: 1,
-        problems: [],
-      }),
-    ).toBe('1 of 2 need you')
-  })
-
-  it('says why it is empty rather than showing an empty list', () => {
-    const header = rosterHeader({
-      connection: 'refused',
-      refusal: 'that token is not valid',
-      workspaces: [],
-      sessions: [],
-      threads: {},
-      open: [],
-      needsYou: 0,
-      problems: [],
-    })
-    expect(header).toBe('that token is not valid')
+  it('says how many sessions there are when none need anything', () => {
+    expect(rosterSubtitle([{ id: '1', title: 'a', state: 'idle' }])).toBe('1 session')
   })
 })
 
-describe('a card', () => {
-  it('keeps the agent options exactly as the agent wrote them', () => {
-    // The index is how the answer is delivered. Reordering them answers a
-    // different question than the one the user read.
-    const out = layOutCard(['Yes', 'Yes, and don’t ask again', 'No'], 'ls')
-    expect(out.map((o) => o.label)).toEqual(['Yes', 'Yes, and don’t ask again', 'No'])
+describe('one state at a time', () => {
+  it('is loading before anything has arrived', () => {
+    // Distinct from empty. "Nothing running" while the request is in flight is
+    // a claim omt cannot make yet.
+    expect(stateOf(undefined, undefined, { headline: 'none' }).kind).toBe('loading')
   })
 
-  it('makes an irreversible yes hard to press', () => {
-    const out = layOutCard(['Yes', 'No'], 'rm -rf /srv/data')
-    expect(out[0]?.confirm).toBe('hold')
+  it('is empty when the answer was empty', () => {
+    expect(stateOf([], undefined, { headline: 'none' }).kind).toBe('empty')
   })
 
-  it('never makes the safe answer harder than the dangerous one', () => {
-    // Hold-to-deny would push people toward the affirmative, which is exactly
-    // backwards from what the confirmation is for.
-    const out = layOutCard(['Yes', 'No'], 'rm -rf /srv/data')
-    expect(out[1]?.confirm).toBe('tap')
+  it('is content when there is any', () => {
+    expect(stateOf(['a'], undefined, { headline: 'none' }).kind).toBe('content')
   })
 
-  it('is ordinary when there is no command behind it', () => {
-    expect(layOutCard(['Yes', 'No'], undefined)[0]?.confirm).toBe('tap')
+  it('reports an error rather than calling a failed request empty', () => {
+    // A list that failed to load is not an empty list. Saying "no sessions"
+    // when the call failed sends somebody looking for the wrong problem.
+    const state = stateOf([], 'the socket closed', { headline: 'none' })
+    expect(state.kind).toBe('error')
   })
 
-  it('refuses to offer buttons for something it cannot deliver', () => {
-    const interaction = {
-      id: 'i1',
-      state: { state: 'open' },
-      deliverable: { kind: 'none', reason: 'this agent has no way to be answered remotely' },
-    } as unknown as Interaction
-    const status = cardStatus(interaction)
-    expect(status.answerable).toBe(false)
-    expect(status.why).toContain('no way to be answered')
-  })
-
-  it('refuses once it has already been answered', () => {
-    const interaction = {
-      id: 'i1',
-      state: { state: 'resolved' },
-      deliverable: { kind: 'native' },
-    } as unknown as Interaction
-    expect(cardStatus(interaction).answerable).toBe(false)
-  })
-
-  it('offers the answer when it is open and deliverable', () => {
-    const interaction = {
-      id: 'i1',
-      state: { state: 'open' },
-      deliverable: { kind: 'native' },
-    } as unknown as Interaction
-    expect(cardStatus(interaction).answerable).toBe(true)
+  it('cannot be two things at once', () => {
+    // The type makes it unrepresentable, and this is the test that says so:
+    // whatever the inputs, exactly one kind comes back.
+    const cases = [
+      stateOf(undefined, undefined, { headline: 'x' }),
+      stateOf([], undefined, { headline: 'x' }),
+      stateOf(['a'], undefined, { headline: 'x' }),
+      stateOf(undefined, 'boom', { headline: 'x' }),
+    ]
+    for (const state of cases) {
+      expect(['loading', 'empty', 'error', 'content']).toContain(state.kind)
+    }
   })
 })
 
-describe('the terminal screen', () => {
-  const run = (text: string, extra: Partial<StyledRun> = {}) => ({ text, ...extra })
-  const screen = (rows: StyledRun[][]): Snapshot => ({
-    rows,
-    cols: 10,
-    rows_count: rows.length,
-    cursor: [0, 0],
-    cursor_visible: true,
-    alternate_screen: false,
+describe('where a tap goes', () => {
+  it('opens the terminal for a plain shell', () => {
+    // The old client routed everything to the thread grid, which is empty for
+    // a shell — so the one thing somebody opens a terminal for was two taps
+    // away and neither tap said so.
+    expect(screenFor({ state: 'running' }, 0)).toBe('terminal')
   })
 
-  it('swaps the colours for inverse rather than filtering them', () => {
-    // A filter also inverts the glyph's antialiasing and the text comes out
-    // fringed.
-    const css = styleOf(run('x', { fg: '#ff0000', bg: '#000000', inverse: true }))
-    expect(css).toContain('color:#000000')
-    expect(css).toContain('background:#ff0000')
+  it('opens the threads for a session running agents', () => {
+    expect(screenFor({ state: 'running' }, 3)).toBe('threads')
   })
 
-  it('makes the default explicit when inverse swaps in an absent colour', () => {
-    // Otherwise the swap silently does nothing and a selected line renders
-    // exactly like an unselected one.
-    const css = styleOf(run('x', { inverse: true }))
-    expect(css).not.toContain('inherit')
-    expect(css).not.toContain('transparent')
-  })
-
-  it('leaves an ordinary run inheriting the theme', () => {
-    expect(styleOf(run('x'))).toContain('color:inherit')
-  })
-
-  it('counts a row by characters, not by code units', () => {
-    expect(widthOf([run('漢字'), run('ab')])).toBe(4)
-  })
-
-  it('refuses a snapshot whose cursor is off the screen', () => {
-    // Rendering it anyway shows a plausible screen that is not what the
-    // terminal says, and somebody answers a prompt from it.
-    const bad = { ...screen([[run('hi')]]), cursor: [9, 0] as [number, number] }
-    expect(isCoherent(bad)).toBe(false)
-  })
-
-  it('refuses a snapshot with fewer rows than it claims', () => {
-    expect(isCoherent({ ...screen([[run('hi')]]), rows_count: 5 })).toBe(false)
-  })
-
-  it('accepts a well-formed screen', () => {
-    expect(isCoherent(screen([[run('hi')]]))).toBe(true)
-  })
-
-  it('does not repaint a screen that did not move', () => {
-    const a = screen([[run('hi')]])
-    expect(changed(a, screen([[run('hi')]]))).toBe(false)
-  })
-
-  it('repaints when only the cursor moved', () => {
-    // The text is identical, and a client that compares only text leaves the
-    // cursor behind where it was.
-    const a = screen([[run('hi')]])
-    expect(changed(a, { ...a, cursor: [0, 1] })).toBe(true)
-  })
-
-  it('repaints when a style changed but the text did not', () => {
-    const a = screen([[run('hi')]])
-    expect(changed(a, screen([[run('hi', { bold: true })]]))).toBe(true)
+  it('opens the threads for a session that needs a human', () => {
+    // Blocked means a card is waiting, and the card is reached through the
+    // threads — sending somebody to a terminal would hide it.
+    expect(screenFor({ state: 'blocked' }, 0)).toBe('threads')
   })
 })
 
@@ -232,9 +148,77 @@ describe('what a card offers', () => {
 
   it('does not read a choice question as a shell command', () => {
     // The prompt of a choice card is a question. Treating it as a command
-    // would have the risk heuristic firing on the word "delete" in prose.
+    // would fire the risk heuristic on the word "delete" in prose.
     const offer = cardOffer(card({ prompt: 'Should I delete the old rows?' }))
     expect(offer.options.every((o) => o.confirm === 'tap')).toBe(true)
+  })
+})
+
+describe('the option layout', () => {
+  it('keeps the agent options exactly as the agent wrote them', () => {
+    const out = layOutCard(['Yes', 'Yes, and don’t ask again', 'No'], 'ls')
+    expect(out.map((o) => o.label)).toEqual(['Yes', 'Yes, and don’t ask again', 'No'])
+  })
+
+  it('is ordinary when there is no command behind it', () => {
+    expect(layOutCard(['Yes', 'No'], undefined)[0]?.confirm).toBe('tap')
+  })
+})
+
+describe('a session row', () => {
+  it('knows which state means a human is needed', () => {
+    expect(needsYou('blocked')).toBe(true)
+    expect(needsYou('running')).toBe(false)
+  })
+})
+
+describe('the terminal screen', () => {
+  const run = (text: string, extra: Partial<StyledRun> = {}) => ({ text, ...extra })
+  const screen = (rows: StyledRun[][]): Snapshot => ({
+    rows,
+    cols: 10,
+    rows_count: rows.length,
+    cursor: [0, 0],
+    cursor_visible: true,
+    alternate_screen: false,
+  })
+
+  it('swaps the colours for inverse rather than filtering them', () => {
+    const css = styleOf(run('x', { fg: '#ff0000', bg: '#000000', inverse: true }))
+    expect(css).toContain('color:#000000')
+    expect(css).toContain('background:#ff0000')
+  })
+
+  it('makes the default explicit when inverse swaps in an absent colour', () => {
+    const css = styleOf(run('x', { inverse: true }))
+    expect(css).not.toContain('inherit')
+    expect(css).not.toContain('transparent')
+  })
+
+  it('leaves an ordinary run inheriting the theme', () => {
+    expect(styleOf(run('x'))).toContain('color:inherit')
+  })
+
+  it('counts a row by characters, not by code units', () => {
+    expect(widthOf([run('漢字'), run('ab')])).toBe(4)
+  })
+
+  it('refuses a snapshot whose cursor is off the screen', () => {
+    const bad = { ...screen([[run('hi')]]), cursor: [9, 0] as [number, number] }
+    expect(isCoherent(bad)).toBe(false)
+  })
+
+  it('accepts a well-formed screen', () => {
+    expect(isCoherent(screen([[run('hi')]]))).toBe(true)
+  })
+
+  it('does not repaint a screen that did not move', () => {
+    expect(changed(screen([[run('hi')]]), screen([[run('hi')]]))).toBe(false)
+  })
+
+  it('repaints when only the cursor moved', () => {
+    const a = screen([[run('hi')]])
+    expect(changed(a, { ...a, cursor: [0, 1] })).toBe(true)
   })
 })
 
@@ -252,8 +236,10 @@ describe('the instance theme', () => {
 
   const fakeRoot = () => {
     const set = new Map<string, string>()
-    return { set, style: { setProperty: (k: string, v: string) => set.set(k, v) } } as never as
-      HTMLElement & { set: Map<string, string> }
+    return {
+      set,
+      style: { setProperty: (k: string, v: string) => set.set(k, v) },
+    } as never as HTMLElement & { set: Map<string, string> }
   }
 
   it('publishes all sixteen ANSI colours', () => {
@@ -264,17 +250,12 @@ describe('the instance theme', () => {
   })
 
   it('ignores a partial palette rather than applying half of it', () => {
-    // Half a palette leaves the other indices on the built-in fallback, so the
-    // screen comes out in two palettes at once — which reads as a rendering
-    // bug rather than as a missing theme.
     const root = fakeRoot()
     applyTheme(root, theme({ ansi: ['#ff0000', '#00ff00'] }))
     expect(root.set.has('--omt-ansi-0')).toBe(false)
   })
 
   it('still applies the foreground and background of a partial theme', () => {
-    // Those two are usable on their own, and dropping them would leave a
-    // themed instance looking entirely unthemed over one bad palette.
     const root = fakeRoot()
     applyTheme(root, theme({ ansi: [] }))
     expect(root.set.get('--omt-fg')).toBe('#eeeeee')

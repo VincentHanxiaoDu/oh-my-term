@@ -7,6 +7,8 @@
  * "untested" and "trivial" describe the same code.
  */
 import { App } from './app.js';
+import { Navigator } from './nav.js';
+import { STYLES } from './tokens.js';
 import { Store } from './store.js';
 import { connect } from './connect.js';
 import { canPush } from './push.js';
@@ -64,7 +66,17 @@ function main() {
         onOpen: () => store.connect(token),
     });
     store = new Store(deviceId(window.localStorage), transport);
-    const app = new App(store, root);
+    // The stylesheet ships with the code rather than living in the HTML, so a
+    // class name has one home and the two cannot drift.
+    const style = document.createElement('style');
+    style.textContent = STYLES;
+    document.head.append(style);
+    const nav = new Navigator();
+    const app = new App(store, root, nav);
+    // The phone's back gesture is the one navigation control every user already
+    // has. A web app that ignores it throws them out to the previous website
+    // rather than the previous screen.
+    window.addEventListener('popstate', (event) => nav.restore(event.state));
     // The grid follows the viewport, not the other way round. A phone rotating
     // or a keyboard opening halves the usable height, and a terminal that keeps
     // the old size hides the line being typed behind the keyboard.

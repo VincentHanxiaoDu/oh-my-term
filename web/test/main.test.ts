@@ -9,17 +9,33 @@ import { describe, expect, it, vi } from 'vitest'
  * loads as a blank page with nothing in any log.
  */
 function stubDom(hash: string) {
-  const element = () => ({
-    style: { setProperty() {}, cssText: '' },
-    classList: { add() {} },
-    append() {},
-    remove() {},
-    addEventListener() {},
-    getBoundingClientRect: () => ({ width: 8, height: 16 }),
-    clientWidth: 400,
-    clientHeight: 800,
-    textContent: '',
-  })
+  // A stub element with the whole surface the client uses, rather than the
+  // handful of methods it happened to call last time this test was written.
+  // Adding one method per failure is a loop that only ends when the client
+  // stops changing.
+  const element = (): never => {
+    const node: Record<string, unknown> = {
+      style: { setProperty() {}, cssText: '' },
+      classList: { add() {}, remove() {}, toggle() {} },
+      dataset: {},
+      children: [] as unknown[],
+      append() {},
+      remove() {},
+      addEventListener() {},
+      removeEventListener() {},
+      setAttribute() {},
+      getAttribute: () => null,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      getBoundingClientRect: () => ({ width: 8, height: 16 }),
+      clientWidth: 400,
+      clientHeight: 800,
+      textContent: '',
+      disabled: false,
+    }
+    return node as never
+  }
+
   const app = element()
   const storage = {
     store: {} as Record<string, string>,
@@ -42,6 +58,11 @@ function stubDom(hash: string) {
     getElementById: (id: string) => (id === 'app' ? app : null),
     createElement: element,
     body: { append() {} },
+    // The entry point puts the stylesheet here. A stub without it fails with
+    // "cannot read properties of undefined", which says nothing about what is
+    // actually missing.
+    head: { append() {} },
+    createTextNode: (text: string) => ({ textContent: text }),
     addEventListener() {},
   })
   vi.stubGlobal('window', win)
