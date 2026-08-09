@@ -49,6 +49,24 @@
       "verb": "interrupt"
     },
     {
+      "aliases": [],
+      "doc": "Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none.",
+      "effects": [],
+      "group": "agent",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent.offers",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/agent/offers",
+      "since": "0.1.0",
+      "title": "What an agent offers",
+      "verb": "offers"
+    },
+    {
       "aliases": [
         "subagents"
       ],
@@ -67,6 +85,64 @@
       "since": "0.1.0",
       "title": "List agent threads",
       "verb": "threads"
+    },
+    {
+      "aliases": [],
+      "doc": "Every call, with who made it and whether it worked. Refusals included: a log of only what succeeded answers the wrong question, because who *tried* to do what is most of what an audit is for.",
+      "effects": [],
+      "group": "audit",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "audit.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/audit/list",
+      "since": "0.1.0",
+      "title": "What has been done",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "The output of one command block, as styled lines. Paged, because a block can hold a whole test run and a phone asking for one over a slow link stalls.",
+      "effects": [],
+      "group": "block",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "block.body",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/block/body",
+      "since": "0.1.0",
+      "title": "Read a block's output",
+      "verb": "body"
+    },
+    {
+      "aliases": [],
+      "doc": "Send a block's command to its session again. Refused for a block omt never saw the command of, because the alternative is scraping the screen for something that looks like a prompt.",
+      "effects": [
+        "writes_pty"
+      ],
+      "group": "block",
+      "hidden": false,
+      "intent": {
+        "class": "raw_stream"
+      },
+      "kind": "command",
+      "name": "block.rerun",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/block/rerun",
+      "since": "0.1.0",
+      "title": "Re-run a command",
+      "verb": "rerun"
     },
     {
       "aliases": [
@@ -92,6 +168,24 @@
     },
     {
       "aliases": [],
+      "doc": "Translate another terminal's settings into omt's, reporting what did not map rather than dropping it. A query: it says what the import would be, and writing it is a separate decision somebody makes.",
+      "effects": [],
+      "group": "config",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "config.import",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/config/import",
+      "since": "0.1.0",
+      "title": "Import settings",
+      "verb": "import"
+    },
+    {
+      "aliases": [],
       "doc": "Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be.",
       "effects": [],
       "group": "config",
@@ -107,6 +201,86 @@
       "since": "0.1.0",
       "title": "List every setting",
       "verb": "schema"
+    },
+    {
+      "aliases": [],
+      "doc": "Every device that has been let in, by the name it gave. Pairing mints a credential per device, and a credential nobody can see is one nobody revokes.",
+      "effects": [],
+      "group": "device",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "device.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/device/list",
+      "since": "0.1.0",
+      "title": "List paired devices",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Stop one device's credential working, leaving every other device alone. This is what makes a lost phone something somebody can act on.",
+      "effects": [
+        "destructive"
+      ],
+      "group": "device",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "device.revoke",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/device/revoke",
+      "since": "0.1.0",
+      "title": "Revoke a device",
+      "verb": "revoke"
+    },
+    {
+      "aliases": [],
+      "doc": "The diagnosis, the version and what the person was doing, as readable text they can check before sending. Nothing is uploaded: omt has no cloud, and a report somebody cannot read is one they have to trust blindly about their own machine.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "doctor",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "doctor.report",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/doctor/report",
+      "since": "0.1.0",
+      "title": "Write a bug report",
+      "verb": "report"
+    },
+    {
+      "aliases": [],
+      "doc": "Per-link diagnosis with a remedy on every failure. A check this build cannot perform is reported as not checked rather than as passing: an unrun check reported green is how a diagnosis stops somebody investigating the real problem.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "doctor",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "doctor.run",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/doctor/run",
+      "since": "0.1.0",
+      "title": "Diagnose this instance",
+      "verb": "run"
     },
     {
       "aliases": [],
@@ -308,6 +482,46 @@
     },
     {
       "aliases": [],
+      "doc": "Every person this instance knows and the devices each holds. A credential answers whether a token may do something; this answers whose phone it is, which is what makes revoking somebody's access — rather than one token — expressible.",
+      "effects": [],
+      "group": "identity",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "identity.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/identity/list",
+      "since": "0.1.0",
+      "title": "Who holds what",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Revoke every device one person holds, in one action. Doing it device by device means somebody who has left keeps whichever one was missed, and there is no moment at which their access is known to be gone.",
+      "effects": [
+        "destructive"
+      ],
+      "group": "identity",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "identity.revoke",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/identity/revoke",
+      "since": "0.1.0",
+      "title": "Revoke a person's access",
+      "verb": "revoke"
+    },
+    {
+      "aliases": [],
       "doc": "Every capability this instance offers.",
       "effects": [],
       "group": "instance",
@@ -346,6 +560,24 @@
     },
     {
       "aliases": [],
+      "doc": "Clients, sessions, calls and refusals. The health route says the process is up and says nothing else, which is not the same as knowing it is doing anything.",
+      "effects": [],
+      "group": "instance",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "instance.metrics",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/instance/metrics",
+      "since": "0.1.0",
+      "title": "How the instance is doing",
+      "verb": "metrics"
+    },
+    {
+      "aliases": [],
       "doc": "Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot.",
       "effects": [],
       "group": "interaction",
@@ -381,6 +613,28 @@
       "since": "0.1.0",
       "title": "Answer a question",
       "verb": "respond"
+    },
+    {
+      "aliases": [],
+      "doc": "A fresh invite, so a second device can be paired from a device already paired. Without it the only invite is the one printed at startup, and adding a phone means restarting the instance everybody else is connected to.",
+      "effects": [],
+      "group": "invite",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id",
+        "ttl_secs": 60
+      },
+      "kind": "command",
+      "name": "invite.create",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/invite/create",
+      "since": "0.1.0",
+      "title": "Invite another device",
+      "verb": "create"
     },
     {
       "aliases": [],
@@ -465,6 +719,24 @@
       "since": "0.1.0",
       "title": "Open a layout",
       "verb": "open"
+    },
+    {
+      "aliases": [],
+      "doc": "What a blob is, from its bytes rather than from a filename somebody supplied. A name is a claim; the bytes are the evidence, and writing an executable as a `.png` is what trusting the claim allows.",
+      "effects": [],
+      "group": "media",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "media.describe",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/media/describe",
+      "since": "0.1.0",
+      "title": "Identify a blob",
+      "verb": "describe"
     },
     {
       "aliases": [],
@@ -650,6 +922,70 @@
     },
     {
       "aliases": [],
+      "doc": "Every client connected right now. \"Is somebody else looking at this\" is a question people ask before they type, and a terminal that cannot answer it is one where two people interleave keystrokes into one shell.",
+      "effects": [],
+      "group": "presence",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "presence.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/presence/list",
+      "since": "0.1.0",
+      "title": "Who is connected",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Add a message to an agent's queue. Refused where omt only mirrors the queue rather than owning it: a client must be told it cannot write rather than shown a control that silently does nothing.",
+      "effects": [
+        "writes_pty"
+      ],
+      "group": "queue",
+      "hidden": false,
+      "intent": {
+        "class": "append",
+        "dedup": "intent_id",
+        "ttl_secs": 600
+      },
+      "kind": "command",
+      "name": "queue.enqueue",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/queue/enqueue",
+      "since": "0.1.0",
+      "title": "Queue a message",
+      "verb": "enqueue"
+    },
+    {
+      "aliases": [],
+      "doc": "Take a message out of an agent's queue. Refused on a mirrored queue for the same reason enqueue is: a removal omt cannot confirm loses the message with no record of what it was.",
+      "effects": [
+        "writes_pty"
+      ],
+      "group": "queue",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "queue.remove",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/queue/remove",
+      "since": "0.1.0",
+      "title": "Unqueue a message",
+      "verb": "remove"
+    },
+    {
+      "aliases": [],
       "doc": "Add a command to the history that suggestions are drawn from.",
       "effects": [],
       "group": "recall",
@@ -687,6 +1023,24 @@
       "since": "0.1.0",
       "title": "Suggest a command",
       "verb": "suggest"
+    },
+    {
+      "aliases": [],
+      "doc": "Find text across a session's screen and history, with the row and offsets of each hit so a client can scroll to it and highlight exactly that span.",
+      "effects": [],
+      "group": "search",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "search.session",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/search/session",
+      "since": "0.1.0",
+      "title": "Search a session",
+      "verb": "session"
     },
     {
       "aliases": [],
@@ -876,6 +1230,24 @@
     },
     {
       "aliases": [],
+      "doc": "History as styled lines, by absolute row. Structured rather than raw bytes, so a browser needs no second terminal emulator to show what scrolled past.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.scrollback",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/scrollback",
+      "since": "0.1.0",
+      "title": "Read scrollback",
+      "verb": "scrollback"
+    },
+    {
+      "aliases": [],
       "doc": "The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one.",
       "effects": [],
       "group": "session",
@@ -891,6 +1263,24 @@
       "since": "0.1.0",
       "title": "Snapshot a session",
       "verb": "snapshot"
+    },
+    {
+      "aliases": [],
+      "doc": "Messages, reasoning, tool calls and results for an agent session. An agent emits no command marks, so blocks do not apply to it; this is what it is read through instead.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.transcript",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/transcript",
+      "since": "0.1.0",
+      "title": "Read an agent transcript",
+      "verb": "transcript"
     },
     {
       "aliases": [],
