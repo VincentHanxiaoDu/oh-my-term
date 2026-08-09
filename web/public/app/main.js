@@ -12,26 +12,44 @@ import { STYLES } from './tokens.js';
 import { Store } from './store.js';
 import { connect } from './connect.js';
 import { canPush } from './push.js';
-import { keyToBytes } from './touch.js';
+import { choose, current, forget, list, readInvite, remember } from './instances.js';
+import { describeDevice, exchangeInvite, isInvite } from './join.js';
 import { fit } from './screen.js';
 import { applyTheme } from './terminal.js';
 /**
- * Where the token comes from.
+ * Which instance to connect to, taking an arriving invite if there is one.
  *
- * The fragment, never the query: a query string is written to the server's
- * access log, to browser history and to any `Referer` the page sends, and a
- * bearer token in any of those outlives the person who pasted it. It is
- * stripped from the address bar as soon as it is read.
+ * The token comes from the fragment, never the query: a query string is written
+ * to the server's access log, to browser history and to any `Referer` the page
+ * sends, and a bearer token in any of those outlives the person who pasted it.
+ * It is stripped from the address bar as soon as it is read.
  */
-function takeToken(loc, storage) {
-    const fragment = new URLSearchParams(loc.hash.replace(/^#/, ''));
-    const fresh = fragment.get('token');
-    if (fresh !== null) {
-        storage.setItem('omt.token', fresh);
+function takeInvite(loc, storage) {
+    const arriving = readInvite(loc.href, () => crypto.randomUUID());
+    if (arriving !== null) {
+        // Stripped from the address bar immediately: a token left in the URL ends
+        // up in a screenshot, in a shared tab, and in whatever the browser syncs.
         history.replaceState(null, '', loc.pathname);
-        return fresh;
+        remember(storage, arriving);
+        choose(storage, arriving.id);
+        return arriving;
     }
-    return storage.getItem('omt.token');
+    // A token stored by a client that only knew how to hold one. Migrated rather
+    // than dropped: it is the only copy, and the instance will not print it again.
+    const legacy = storage.getItem('omt.token');
+    if (legacy !== null && list(storage).length === 0) {
+        const migrated = {
+            id: crypto.randomUUID(),
+            label: loc.host,
+            url: loc.origin,
+            token: legacy,
+        };
+        remember(storage, migrated);
+        choose(storage, migrated.id);
+        storage.removeItem('omt.token');
+        return migrated;
+    }
+    return current(storage);
 }
 /**
  * This browser's identity, stable across reloads.
@@ -49,19 +67,42 @@ function deviceId(storage) {
     storage.setItem('omt.device', fresh);
     return fresh;
 }
-function main() {
+async function main() {
     const root = document.getElementById('app');
     if (root === null) {
         return;
     }
-    const token = takeToken(window.location, window.localStorage);
-    if (token === null) {
+    let instance = takeInvite(window.location, window.localStorage);
+    // An invite is the right to obtain a credential, not a credential. Swapped
+    // here, before anything connects, so what is stored is this device's own —
+    // expiring, single-exchange, and individually revocable when a phone is lost.
+    if (instance !== null && isInvite(instance.token)) {
+        root.textContent = 'Joining…';
+        const joined = await exchangeInvite(instance.url, instance.token, describeDevice());
+        if (joined === null) {
+            root.textContent =
+                'That invite could not be used. It expires after a few minutes and works once — ask for a fresh one.';
+            // Forgotten, or the next load retries a token that can never work and
+            // reports the same failure forever.
+            forget(window.localStorage, instance.id);
+            return;
+        }
+        instance = { ...instance, token: joined.token, label: joined.instance.name };
+        remember(window.localStorage, instance);
+        choose(window.localStorage, instance.id);
+        root.textContent = '';
+    }
+    if (instance === null) {
         root.textContent =
-            'Open the link `omt web` printed. It carries the token, which is shown once.';
+            'Open the link `omt web` printed, or scan the code beside it. It carries the token, which is shown once.';
         return;
     }
+    const token = instance.token;
     let store;
-    const transport = connect({ url: window.location.origin, token }, {
+    const transport = connect(
+    // The chosen instance's origin, which is not always this page's: a client
+    // served by the laptop can be pointed at the desktop.
+    { url: instance.url, token }, {
         onMessage: (message) => store.receive(message),
         onOpen: () => store.connect(token),
     });
@@ -73,6 +114,38 @@ function main() {
     document.head.append(style);
     const nav = new Navigator();
     const app = new App(store, root, nav);
+    // Every *other* instance this browser knows about, connected read-only so the
+    // roster is one list across all of them. Somebody with a laptop and a desktop
+    // asks "does anything need me", not "does anything on the laptop need me" —
+    // and a per-instance list makes them ask it twice and remember which one they
+    // already checked.
+    for (const other of list(window.localStorage)) {
+        if (other.id === instance.id) {
+            continue;
+        }
+        let peer;
+        const link = connect({ url: other.url, token: other.token }, {
+            onMessage: (message) => peer.receive(message),
+            onOpen: () => peer.connect(other.token),
+        });
+        peer = new Store(deviceId(window.localStorage), link);
+        // Its rows join the roster; everything else still happens against the
+        // instance in front of you. Opening a session on another machine switches
+        // to it first, because a terminal is a connection and not a list entry.
+        app.federate(other.id, other.label, peer);
+    }
+    // The instance's own theme, asked for once. `applyTheme` existed and was
+    // imported here and never called, so every client rendered the built-in
+    // palette and a configured theme did nothing — which looks correct, because
+    // the default is a real theme.
+    void store
+        .call('theme.get')
+        .then((theme) => {
+        applyTheme(document.documentElement, theme);
+    })
+        // A theme that cannot be fetched leaves the defaults in place. There is
+        // nothing useful to say about it and nothing broken.
+        .catch(() => { });
     // The phone's back gesture is the one navigation control every user already
     // has. A web app that ignores it throws them out to the previous website
     // rather than the previous screen.
@@ -80,27 +153,44 @@ function main() {
     // The grid follows the viewport, not the other way round. A phone rotating
     // or a keyboard opening halves the usable height, and a terminal that keeps
     // the old size hides the line being typed behind the keyboard.
-    let last = { cols: 0, rows: 0 };
+    //
+    // Keyed by session, not global. A pty is born 80 columns wide, so "the
+    // viewport has not changed since last time" is not a reason to skip the
+    // resize — it is a different pty, and on a 390px screen 80 columns means
+    // half of every line is off the right-hand edge.
+    let last = null;
     const resize = () => {
+        const session = app.route.screen === 'terminal' ? app.route.session : null;
+        if (session === null) {
+            return;
+        }
         const cell = measureCell();
         const view = window.visualViewport;
+        // The box the grid is actually drawn in, when there is one. The viewport is
+        // wider than it — by the body's padding — and asking for that many columns
+        // puts the last few characters of every long line past the right edge.
+        const box = document.querySelector('.terminal-grid')?.getBoundingClientRect();
+        // Height from the scrolling body rather than the viewport: the viewport
+        // also contains the app bar and the key bar, and counting those as terminal
+        // rows puts the bottom of the screen underneath them.
+        const area = document.querySelector('.terminal-body')?.clientHeight;
         const next = fit({
-            width: view?.width ?? root.clientWidth,
-            height: view?.height ?? root.clientHeight,
+            width: box?.width ?? view?.width ?? root.clientWidth,
+            height: area ?? view?.height ?? root.clientHeight,
             cellWidth: cell.width,
             cellHeight: cell.height,
         });
-        if (next.cols === last.cols && next.rows === last.rows) {
+        if (last?.session === session && last.cols === next.cols && last.rows === next.rows) {
             return;
         }
-        last = next;
-        const session = app.route.screen === 'terminal' ? app.route.session : null;
-        if (session !== null) {
-            void store.call('session.resize', session, next.cols, next.rows).catch(() => { });
-        }
+        last = { session, ...next };
+        void store.call('session.resize', session, next.cols, next.rows).catch(() => { });
     };
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
+    // Opening a session is the moment that matters, and it fires no resize event.
+    // Without this the grid is only ever corrected by rotating the phone.
+    nav.subscribe(() => resize());
     resize();
     // Registered last, and only if it could ever help: a failed service worker
     // must cost the notifications, not the client. Everything above already
@@ -108,44 +198,52 @@ function main() {
     if (canPush(environment()).available) {
         void navigator.serviceWorker.register('/sw.js');
     }
-    // Everything typed goes to the session on screen. Attached once, on the
-    // document, because the terminal is redrawn on every frame and a listener on
-    // it would be lost with the element it was attached to.
-    document.addEventListener('keydown', (event) => {
-        if (app.route.screen !== 'terminal') {
-            return;
+    // Typing is handled by the terminal screen's own input, which is what opens
+    // the keyboard on a phone. A second listener here would double-send every
+    // character on a desktop, where both fire.
+    // The visual viewport shrinks when the keyboard opens. Without this the app
+    // keeps its full height and the line being typed sits behind the keyboard.
+    const fitToKeyboard = () => {
+        const view = window.visualViewport;
+        if (view) {
+            root.style.height = `${view.height}px`;
         }
-        const bytes = keyToBytes(event);
-        if (bytes === null) {
-            return;
-        }
-        // Only once it is going somewhere: preventing default on a key omt does
-        // not handle would break the browser's own shortcuts for no reason.
-        event.preventDefault();
-        void app.type(bytes);
-    });
-    // Asked for once, on arrival. The colours are the instance's — a client that
-    // used its own would render the user's terminal in somebody else's palette.
-    void store
-        .call('theme.get')
-        .then((theme) => applyTheme(document.documentElement, theme))
-        .catch(() => {
-        // The built-in fallback in the stylesheet already applies. A missing
-        // theme must not stop the client from being usable.
-    });
+    };
+    window.visualViewport?.addEventListener('resize', fitToKeyboard);
+    window.visualViewport?.addEventListener('scroll', fitToKeyboard);
+    fitToKeyboard();
     app.render();
 }
-/** How big one character is — measured, never assumed. */
+/**
+ * How big one character is — measured, never assumed.
+ *
+ * The probe takes the terminal's *font* and nothing else. Wearing the whole
+ * `.terminal` class, it inherited that rule's `display: block` and padding, so
+ * it measured the container: 24px wide and the full height of the screen. The
+ * grid came out at the clamp minimums, 20 columns by 4 rows, and a phone showed
+ * four lines of a session with everything else off the edge.
+ *
+ * Ten characters, divided: sub-pixel advance widths are real, and rounding one
+ * character's width up by a fraction loses a column every eight characters.
+ */
+const SAMPLE = 'MMMMMMMMMM';
 function measureCell() {
     const probe = document.createElement('span');
-    probe.className = 'terminal';
     probe.style.position = 'absolute';
     probe.style.visibility = 'hidden';
-    probe.textContent = 'M';
+    probe.style.display = 'inline-block';
+    probe.style.padding = '0';
+    probe.style.border = '0';
+    probe.style.whiteSpace = 'pre';
+    // The terminal's font, taken from the terminal itself when one is on screen
+    // so this cannot drift from what is actually being rendered.
+    const drawn = document.querySelector('.terminal');
+    probe.style.font = drawn ? getComputedStyle(drawn).font : 'var(--text-sm) ui-monospace, monospace';
+    probe.textContent = SAMPLE;
     document.body.append(probe);
     const box = probe.getBoundingClientRect();
     probe.remove();
-    return { width: box.width, height: box.height };
+    return { width: box.width / SAMPLE.length, height: box.height };
 }
 function environment() {
     return {
@@ -157,4 +255,4 @@ function environment() {
         permission: ('Notification' in window ? Notification.permission : 'default'),
     };
 }
-main();
+void main();

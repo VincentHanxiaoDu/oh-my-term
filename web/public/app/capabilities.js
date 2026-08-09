@@ -110,6 +110,33 @@ export const HANDLERS = {
     'config.schema': (request) => call(request, 'config.schema', {}),
     'config.get': (request, key) => call(request, 'config.get', key === undefined ? {} : { key }),
     'keys.cheatsheet': (request) => call(request, 'keys.cheatsheet', {}),
+    // The structured surfaces. A phone is about forty columns at a readable size,
+    // so the grid is the fallback and these are what it is actually read through.
+    'session.scrollback': (request, session, from = 0, lines = 200) => call(request, 'session.scrollback', { session, from, lines }),
+    'block.body': (request, session, block, from = 0, lines = 200) => call(request, 'block.body', { session, block, from, lines }),
+    'search.session': (request, session, query, caseSensitive = false, limit = 100) => call(request, 'search.session', {
+        session,
+        query,
+        case_sensitive: caseSensitive,
+        limit,
+    }),
+    'session.transcript': (request, session, from = 0, limit = 500) => call(request, 'session.transcript', { session, from, limit }),
+    'agent.offers': (request, session) => call(request, 'agent.offers', { session }),
+    'identity.list': (request) => call(request, 'identity.list', {}),
+    'identity.revoke': (request, identity) => call(request, 'identity.revoke', { identity }),
+    'presence.list': (request) => call(request, 'presence.list', {}),
+    'audit.list': (request, limit = 200) => call(request, 'audit.list', { limit }),
+    'instance.metrics': (request) => call(request, 'instance.metrics', {}),
+    'doctor.report': (request, whatHappened = '') => call(request, 'doctor.report', { what_happened: whatHappened }),
+    'doctor.run': (request, group) => call(request, 'doctor.run', group === undefined ? {} : { group }),
+    'invite.create': (request) => call(request, 'invite.create', {}),
+    'device.list': (request) => call(request, 'device.list', {}),
+    'device.revoke': (request, device) => call(request, 'device.revoke', { device }),
+    'media.describe': (request, data) => call(request, 'media.describe', { data }),
+    'config.import': (request, source, settings) => call(request, 'config.import', { source, settings }),
+    'block.rerun': (request, session, block, epoch) => call(request, 'block.rerun', { session, block, epoch }),
+    'queue.enqueue': (request, session, text) => call(request, 'queue.enqueue', { session, text }),
+    'queue.remove': (request, session, index) => call(request, 'queue.remove', { session, index }),
 };
 /** Whether this client can invoke a capability. */
 export function handles(capability) {

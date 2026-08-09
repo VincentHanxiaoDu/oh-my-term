@@ -343,6 +343,74 @@ export const HANDLERS = {
     call(request, 'config.get', key === undefined ? {} : { key }),
 
   'keys.cheatsheet': (request: RequestId) => call(request, 'keys.cheatsheet', {}),
+
+  // The structured surfaces. A phone is about forty columns at a readable size,
+  // so the grid is the fallback and these are what it is actually read through.
+  'session.scrollback': (request: RequestId, session: string, from = 0, lines = 200) =>
+    call(request, 'session.scrollback', { session, from, lines }),
+
+  'block.body': (request: RequestId, session: string, block: string, from = 0, lines = 200) =>
+    call(request, 'block.body', { session, block, from, lines }),
+
+  'search.session': (
+    request: RequestId,
+    session: string,
+    query: string,
+    caseSensitive = false,
+    limit = 100,
+  ) =>
+    call(request, 'search.session', {
+      session,
+      query,
+      case_sensitive: caseSensitive,
+      limit,
+    }),
+
+  'session.transcript': (request: RequestId, session: string, from = 0, limit = 500) =>
+    call(request, 'session.transcript', { session, from, limit }),
+
+  'agent.offers': (request: RequestId, session: string) =>
+    call(request, 'agent.offers', { session }),
+
+  'identity.list': (request: RequestId) => call(request, 'identity.list', {}),
+
+  'identity.revoke': (request: RequestId, identity: string) =>
+    call(request, 'identity.revoke', { identity }),
+
+  'presence.list': (request: RequestId) => call(request, 'presence.list', {}),
+
+  'audit.list': (request: RequestId, limit = 200) =>
+    call(request, 'audit.list', { limit }),
+
+  'instance.metrics': (request: RequestId) => call(request, 'instance.metrics', {}),
+
+  'doctor.report': (request: RequestId, whatHappened = '') =>
+    call(request, 'doctor.report', { what_happened: whatHappened }),
+
+  'doctor.run': (request: RequestId, group?: string) =>
+    call(request, 'doctor.run', group === undefined ? {} : { group }),
+
+  'invite.create': (request: RequestId) => call(request, 'invite.create', {}),
+
+  'device.list': (request: RequestId) => call(request, 'device.list', {}),
+
+  'device.revoke': (request: RequestId, device: string) =>
+    call(request, 'device.revoke', { device }),
+
+  'media.describe': (request: RequestId, data: string) =>
+    call(request, 'media.describe', { data }),
+
+  'config.import': (request: RequestId, source: string, settings: unknown) =>
+    call(request, 'config.import', { source, settings }),
+
+  'block.rerun': (request: RequestId, session: string, block: string, epoch: number) =>
+    call(request, 'block.rerun', { session, block, epoch }),
+
+  'queue.enqueue': (request: RequestId, session: string, text: string) =>
+    call(request, 'queue.enqueue', { session, text }),
+
+  'queue.remove': (request: RequestId, session: string, index: number) =>
+    call(request, 'queue.remove', { session, index }),
 } as const
 
 /** The capability names this client handles. */

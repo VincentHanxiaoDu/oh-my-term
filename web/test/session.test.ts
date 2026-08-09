@@ -36,7 +36,10 @@ function interactionEvent(seq: number, i: Interaction): ServerMessage {
     source: 'hook',
     payload: { interaction: i },
   }
-  return { t: 'event', event }
+  // Flattened, exactly as the instance sends it: the envelope's fields sit
+  // alongside `t` rather than under an `event` key. This helper wrapped them,
+  // so every test agreed with the client about a shape the server never sends.
+  return { t: 'event' as const, ...event }
 }
 
 describe('capability intersection', () => {

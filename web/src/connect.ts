@@ -96,13 +96,21 @@ export function connect(
       // gets applied twice.
       return
     }
+    // Only the *parse* is forgiving. A newer instance may send something this
+    // client cannot read, and dropping the connection over it would make every
+    // upgrade an outage.
+    //
+    // The handler is deliberately outside the catch. Wrapping it too meant any
+    // bug in handling a message was swallowed in silence — which is exactly
+    // how the client sat there receiving events and doing nothing with them,
+    // with no error anywhere to say so.
+    let parsed: ServerMessage
     try {
-      handlers.onMessage(JSON.parse(event.data) as ServerMessage)
+      parsed = JSON.parse(event.data) as ServerMessage
     } catch {
-      // A message this build cannot parse is skipped rather than fatal: a
-      // newer instance may send something this client does not know yet, and
-      // dropping the connection over it would make every upgrade a outage.
+      return
     }
+    handlers.onMessage(parsed)
   }
   socket.onclose = (event) => handlers.onClose?.(event.code, shouldReconnect(event.code))
 

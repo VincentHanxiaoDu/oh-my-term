@@ -13,10 +13,93 @@
  */
 import { KEY_BAR, KEY_BAR_SECONDARY, applyLatch, confirmation, riskOf } from './touch.js';
 import { changed, paint } from './terminal.js';
+import { keyToBytes } from './touch.js';
 import { Navigator, hasBack, titleOf } from './nav.js';
 import { appBar, el, renderState, row, stateOf } from './view.js';
+import { choose, current, forget, list, readInvite, remember } from './instances.js';
+import { scanCode } from './scan.js';
+import { markElement, markFor } from './mark.js';
+import { cardTitle, holdToConfirm, planElement, promptElement } from './cards.js';
+import { dictate, dictationAvailable } from './dictate.js';
+import { unify, unifiedSubtitle } from './federation.js';
+import { pairCalls, renderEntry, surfacesFor } from './surfaces.js';
 /** How often the terminal screen asks for a new picture. */
 export const POLL_MS = 150;
+/**
+ * How often the structured surfaces refresh.
+ *
+ * Far slower than the grid, because a block list and a transcript change when
+ * something *happens* rather than on every keystroke echo, and a phone polling
+ * either of them six times a second is a phone with a warm battery.
+ */
+export const BLOCK_POLL_MS = 1_000;
+/**
+ * What identifies the screen on display.
+ *
+ * Two routes with the same key are the same screen showing new data; two with
+ * different keys are a navigation. The difference decides whether the DOM is
+ * repainted or rebuilt, and rebuilding is what loses focus and open state.
+ */
+/**
+ * What the banner says, including anything held for the connection.
+ *
+ * Held work has to be visible. A tap that quietly waits and a tap that quietly
+ * failed look identical, and somebody who cannot tell will do it again.
+ */
+export function waiting(queued, base) {
+    if (queued === 0) {
+        return base;
+    }
+    return `${base} ${queued} ${queued === 1 ? 'action is' : 'actions are'} waiting to send.`;
+}
+export function mountKey(route) {
+    return 'session' in route
+        ? `${route.screen}:${route.session}`
+        : 'interaction' in route
+            ? `${route.screen}:${route.interaction}`
+            : route.screen;
+}
+/** What each surface is called on the switcher. */
+const LABELS = {
+    blocks: 'Commands',
+    transcript: 'Conversation',
+    terminal: 'Terminal',
+};
+/** Which screen each surface is. */
+const SCREENS = {
+    blocks: 'blocks',
+    transcript: 'transcript',
+    terminal: 'terminal',
+};
+/**
+ * What the exit chip says.
+ *
+ * A running command is not a failure and neither is one the shell ended without
+ * saying how — "unknown" is genuinely different from success, and painting it
+ * green would be a claim omt cannot make.
+ */
+export function chipLabel(block) {
+    if (block.outcome === 'running') {
+        return '···';
+    }
+    if (block.failed) {
+        return block.exit_code === undefined ? 'failed' : String(block.exit_code);
+    }
+    if (block.outcome === 'unknown') {
+        return '?';
+    }
+    return '✓';
+}
+/** Which tone that chip wears. */
+export function chipTone(block) {
+    if (block.outcome === 'running') {
+        return 'working';
+    }
+    if (block.failed) {
+        return 'needs-you';
+    }
+    return block.outcome === 'unknown' ? 'muted' : 'ok';
+}
 /** Whether this row is the reason the phone buzzed. */
 export function needsYou(state) {
     return state === 'blocked';
@@ -54,6 +137,26 @@ export function rosterSubtitle(rows) {
  * which the old client did — shows an empty screen for a plain shell, which is
  * the one thing somebody opens a terminal for.
  */
+/**
+ * Which screen a roster tap opens.
+ *
+ * By what the session *is*. An agent session opens on its conversation, because
+ * that is what somebody picked the phone up to read; a shell opens on its
+ * commands where the shell marks them and on the grid where it does not. The
+ * grid is always one tap away and is never the first answer when something
+ * better exists.
+ */
+export function openingScreen(session, threads) {
+    if (threads > 1) {
+        // More than one thread is a grid of subagents, and picking one of them for
+        // somebody would be picking wrong most of the time.
+        return 'threads';
+    }
+    if (threads === 1) {
+        return 'transcript';
+    }
+    return 'terminal';
+}
 export function screenFor(session, threads) {
     return threads > 0 || session.state === 'blocked' ? 'threads' : 'terminal';
 }
@@ -100,20 +203,98 @@ export class App {
     #store;
     #root;
     #nav;
-    #screen = null;
+    /** What the terminal screen is showing. Its own, so an unrelated store
+     * update cannot move it — that race is what left a spinner turning forever
+     * over a session that was answering perfectly well. */
+    #terminal = { kind: 'loading' };
+    /** The input the device keyboard types into. */
+    #input = null;
     #epoch = 0;
     #poll = null;
     #latched = null;
     #cards;
     #threads = {};
+    #terminalSession = null;
+    /** Which session's terminal is currently mounted, so a repaint can tell
+     * itself apart from a screen change. */
+    #mountedSession = null;
+    /** Where the grid is drawn, repainted in place. */
+    #grid = null;
+    /** Which screen is mounted, so a repaint can tell itself from a change. */
+    #mounted = null;
+    /** Where a list screen's rows are drawn, repainted in place. */
+    #list = null;
+    /** How to repaint that list. */
+    #paint = null;
+    /** Where a refused write is explained. */
+    #notice = null;
+    /** What block view is showing. */
+    #blocks = { kind: 'loading' };
+    /** What transcript view is showing. */
+    #transcript = { kind: 'loading' };
+    /** Whether each session's shell marks commands, so block view can say why it
+     * is empty rather than implying nothing has been run. */
+    #shellIntegration = {};
+    /** What is in the search field, kept so returning to it does not clear it. */
+    #query = '';
+    /** Devices this instance has let in. */
+    #devices = [];
+    /** Other instances whose rosters join this one. */
+    #peers = [];
+    /** What the agent in each session offers: its commands and its queue. */
+    #offers = {};
     /** Per-screen, so one screen's failure never appears under another's content. */
     #errors = {};
-    constructor(store, root, nav = new Navigator()) {
+    #storage;
+    /**
+     * How the client starts again against a different instance.
+     *
+     * Switching means a different origin, a different credential and a different
+     * socket, so it is a reload rather than a rewire — there is no partial state
+     * worth preserving across it, and rewiring in place is how a client ends up
+     * showing one instance's sessions with another's terminal.
+     */
+    #restart;
+    constructor(store, root, nav = new Navigator(), storage = window.localStorage, restart = () => window.location.reload()) {
         this.#store = store;
         this.#root = root;
         this.#nav = nav;
+        this.#storage = storage;
+        this.#restart = restart;
         store.subscribe(() => this.render());
         nav.subscribe(() => this.onRouteChange());
+    }
+    /**
+     * Follow another instance's roster.
+     *
+     * Read-only from here: its rows appear in the list, and opening one switches
+     * to that instance first. A terminal is a connection, not a list entry, and
+     * pretending otherwise would have somebody typing into a session on a machine
+     * the screen is not connected to.
+     */
+    federate(id, label, peer) {
+        this.#peers.push({ id, label, store: peer });
+        peer.subscribe(() => this.render());
+    }
+    /** Every instance's sessions, as one list. */
+    get unified() {
+        const here = current(this.#storage);
+        const rosters = [
+            {
+                instance: here?.id ?? 'local',
+                label: here?.label ?? 'this instance',
+                reachable: this.#store.state.connection === 'connected',
+                sessions: this.#store.state.sessions,
+                threads: this.#threads,
+            },
+            ...this.#peers.map((peer) => ({
+                instance: peer.id,
+                label: peer.label,
+                reachable: peer.store.state.connection === 'connected',
+                sessions: peer.store.state.sessions,
+            })),
+        ];
+        return unify(rosters);
     }
     /** Where we are. */
     get route() {
@@ -153,6 +334,9 @@ export class App {
         }
         try {
             await this.#store.call('session.write', route.session, text, this.#epoch);
+            // Cleared on success, or the explanation for a keystroke that failed
+            // once stays on screen over a terminal that is working again.
+            delete this.#errors.terminal;
             await this.refreshTerminal(route.session);
         }
         catch (e) {
@@ -162,6 +346,36 @@ export class App {
     /** Draw. */
     render() {
         const route = this.#nav.route;
+        // What is on screen right now. A screen whose key is unchanged is repainted
+        // in place rather than rebuilt, because rebuilding throws away everything
+        // the browser owns: focus, an open disclosure, the text in a field, a
+        // partly-composed IME word. The terminal proved that first — the input was
+        // detached six times a second — and every screen with a control in it has
+        // the same problem.
+        const key = mountKey(route);
+        if (key === this.#mounted) {
+            if (this.#list !== null) {
+                // Already up: repaint just the part that carries data.
+                this.#paintList();
+                return;
+            }
+            if (route.screen === 'search') {
+                // Nothing here is driven by the store, and repainting would take the
+                // field out from under whoever is typing in it.
+                return;
+            }
+        }
+        else {
+            this.#mounted = key;
+            this.#grid = null;
+            this.#list = null;
+            this.#paint = null;
+            this.#notice = null;
+            this.#mountedSession = null;
+        }
+        // Cleared before every rebuild, including a repaint of a screen that has no
+        // in-place painter. Skipping it appends a second copy of the screen to the
+        // first, which is how a roster ends up with six title bars.
         this.#root.textContent = '';
         switch (route.screen) {
             case 'roster':
@@ -176,7 +390,485 @@ export class App {
             case 'card':
                 this.#renderCard(route.interaction);
                 break;
+            case 'instances':
+                this.#renderInstances();
+                break;
+            case 'blocks':
+                this.#renderBlocks(route.session);
+                break;
+            case 'transcript':
+                this.#renderTranscript(route.session);
+                break;
+            case 'search':
+                this.#renderSearch(route.session);
+                break;
         }
+    }
+    /**
+     * Block view: the commands run in a session, as cards.
+     *
+     * The escape from a forty-column phone. Output is already segmented into
+     * records by the shell's own marks, and a list of collapsible cards is a
+     * native mobile shape — you scroll it with a thumb and you never pan
+     * sideways, because each body is its own scroll container.
+     */
+    #renderBlocks(session) {
+        const title = this.#store.state.sessions.find((s) => s.id === session)?.title;
+        const bar = appBar({
+            title: title ?? 'Commands',
+            onBack: () => this.#nav.back(),
+            action: {
+                label: 'Search this session',
+                onTap: () => this.go({ screen: 'search', session }),
+            },
+        });
+        bar.append(this.#surfaceSwitch(session, 'blocks'));
+        const body = el('div', 'body');
+        // Said rather than shown as an empty list, which reads as "you have run
+        // nothing" about a shell that has run plenty.
+        const notice = el('p', 'notice', 'This shell does not mark where commands start, so omt cannot separate them. The terminal shows everything.');
+        notice.hidden = true;
+        const list = el('div', 'block-list');
+        this.#list = list;
+        this.#paint = () => {
+            // Painted here rather than at mount, because whether the shell marks
+            // commands is only known once the first list has come back — rendered
+            // once at mount, the explanation was built before the answer existed and
+            // never appeared.
+            notice.hidden = this.#shellIntegration[session] !== false;
+            // Which blocks are open is the reader's state, not the data's. Rebuilding
+            // the list every second would close whatever they had just opened.
+            const open = new Set(Array.from(list.querySelectorAll('details[open]'), (node) => node.getAttribute('data-block')));
+            list.textContent = '';
+            list.append(renderState(this.#blocks, (blocks) => blocks.map((block) => {
+                const card = this.#blockCard(session, block);
+                if (open.has(block.id)) {
+                    ;
+                    card.open = true;
+                }
+                return card;
+            })));
+        };
+        this.#paint();
+        body.append(notice, list);
+        this.#shell(bar, body);
+    }
+    /** One command, as a card. */
+    #blockCard(session, block) {
+        const card = el('details', block.failed ? 'block failed' : 'block');
+        card.setAttribute('data-block', block.id);
+        const head = el('summary');
+        head.append(el('span', 'block-glyph', block.attributed ? '$' : '·'));
+        head.append(el('span', 'block-command', block.command || '(output)'));
+        head.append(el('span', `chip ${chipTone(block)}`, chipLabel(block)));
+        card.append(head);
+        const output = el('pre', 'block-output');
+        card.append(output);
+        card.addEventListener('toggle', () => {
+            if (!card.open || output.dataset['loaded'] === 'yes') {
+                return;
+            }
+            output.dataset['loaded'] = 'yes';
+            void this.#store
+                .call('block.body', session, block.id)
+                .then((body) => {
+                const lines = body.lines;
+                output.textContent = lines
+                    .map((line) => line.map((run) => run.text ?? '').join('').trimEnd())
+                    .join('\n');
+            })
+                .catch((e) => {
+                output.textContent = String(e);
+            });
+        });
+        if (block.attributed && block.command.trim() !== '') {
+            // Offered only where omt saw the command. For a block opened from output
+            // alone there is nothing to run again, and the alternative is scraping
+            // the screen for something that looks like a prompt.
+            const again = el('button', 'block-action', 'Run again');
+            again.addEventListener('click', () => void this.rerun(session, block.id));
+            card.append(again);
+        }
+        return card;
+    }
+    /**
+     * The composer: where somebody talks to an agent.
+     *
+     * A textarea rather than an input, because a message to an agent is a
+     * paragraph more often than a line, and a single-line field trains people to
+     * send three fragments instead of one thought.
+     */
+    #composer(session) {
+        const box = el('div', 'composer');
+        const offers = this.#offers[session];
+        // The queue, mirrored verbatim under a busy session. Absent rather than
+        // shown empty for an agent that reports no queue at all: an empty section
+        // implies the feature is there and idle.
+        if (offers && offers.queue.length > 0) {
+            const queue = el('div', 'queue');
+            queue.append(el('p', 'entry-tag', `Queue (${offers.queue.length})`));
+            offers.queue.forEach((text, index) => {
+                const row = el('div', 'queue-item');
+                row.append(el('span', 'meta', String(index + 1)));
+                row.append(el('span', 'label', text));
+                queue.append(row);
+            });
+            // Read-only, and it says so: omt mirrors this queue rather than owning
+            // it, so a remove it cannot confirm would lose the message.
+            queue.append(el('p', 'detail', 'Mirrored from the agent — omt cannot change it from here.'));
+            box.append(queue);
+        }
+        const popup = el('div', 'commands');
+        popup.hidden = true;
+        box.append(popup);
+        const field = document.createElement('textarea');
+        field.className = 'composer-field';
+        field.rows = 1;
+        field.placeholder = 'Message';
+        field.setAttribute('aria-label', 'Message the agent');
+        field.setAttribute('autocapitalize', 'sentences');
+        const closePopup = () => {
+            popup.hidden = true;
+            popup.textContent = '';
+        };
+        field.addEventListener('input', () => {
+            // Grows with what is typed, to a point: a composer that stays one line
+            // hides the beginning of the message being written.
+            field.style.height = 'auto';
+            field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
+            const typed = field.value;
+            const slash = /^\/(\S*)$/.exec(typed);
+            if (slash === null || offers === undefined || offers.commands.length === 0) {
+                closePopup();
+                return;
+            }
+            // A true completion popup over the agent's *own* resolved commands.
+            // Never a list omt keeps: offering a command the agent does not have is
+            // worse than offering none.
+            const prefix = (slash[1] ?? '').toLowerCase();
+            const matches = offers.commands.filter((c) => c.name.toLowerCase().startsWith(prefix));
+            popup.textContent = '';
+            if (matches.length === 0) {
+                closePopup();
+                return;
+            }
+            for (const command of matches.slice(0, 8)) {
+                const item = el('button', 'command');
+                item.append(el('span', 'command-name', `/${command.name}`));
+                if (command.description) {
+                    item.append(el('span', 'command-doc', command.description));
+                }
+                item.addEventListener('click', () => {
+                    field.value = `/${command.name} `;
+                    closePopup();
+                    field.focus();
+                });
+                popup.append(item);
+            }
+            popup.hidden = false;
+        });
+        const send = el('button', 'composer-send', 'Send');
+        send.setAttribute('aria-label', 'Send the message');
+        send.addEventListener('click', () => {
+            const text = field.value.trim();
+            if (text === '') {
+                return;
+            }
+            field.value = '';
+            field.style.height = 'auto';
+            closePopup();
+            void this.type(`${text}\r`);
+        });
+        // An attachment is a file the agent should look at. It goes through the
+        // ordinary chunked write, so a large one over a slow link shows progress
+        // and resumes rather than failing at the end.
+        const attach = el('button', 'composer-icon', '＋');
+        attach.setAttribute('aria-label', 'Attach a file');
+        const picker = document.createElement('input');
+        picker.type = 'file';
+        picker.className = 'hidden-input';
+        picker.addEventListener('change', () => {
+            const file = picker.files?.[0];
+            if (file) {
+                void this.attach(session, file);
+            }
+            // Cleared, or picking the same file twice fires no event the second time.
+            picker.value = '';
+        });
+        attach.addEventListener('click', () => picker.click());
+        const mic = el('button', 'composer-icon', '🎙');
+        mic.setAttribute('aria-label', 'Dictate a message');
+        if (!dictationAvailable()) {
+            // Absent capability, said rather than a button that does nothing. Most
+            // browsers other than Chrome have no recogniser at all.
+            mic.disabled = true;
+            mic.title = 'This browser has no speech recognition';
+        }
+        else {
+            mic.addEventListener('click', () => {
+                void dictate((text, done) => {
+                    // Into the field rather than straight to the agent: dictation
+                    // mishears, and sending before somebody can look is how a typo
+                    // becomes an instruction.
+                    field.value = text;
+                    if (done) {
+                        field.focus();
+                    }
+                }, (chunk, done) => void this.dictated(session, chunk, done));
+            });
+        }
+        box.append(attach, picker, mic, field, send);
+        return box;
+    }
+    /** Send a file to the workspace the session is in. */
+    async attach(session, file) {
+        try {
+            const workspace = this.#store.state.sessions.find((s) => s.id === session)?.workspace;
+            if (workspace === undefined) {
+                return;
+            }
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            let binary = '';
+            for (const byte of bytes) {
+                binary += String.fromCharCode(byte);
+            }
+            await this.#store.call('fs.write', workspace, file.name, btoa(binary), 0, 1);
+            // Named in the message rather than attached invisibly: an agent reads a
+            // path, and a file it was never told about is a file it never opens.
+            void this.type(`(attached ${file.name})\r`);
+        }
+        catch (e) {
+            this.fail('transcript', e);
+        }
+    }
+    /** Hand a dictated chunk to the instance's buffer. */
+    async dictated(session, text, final) {
+        try {
+            await this.#store.call('voice.append', session, text, final);
+        }
+        catch {
+            // The instance may have no speech buffer for this session. The text is
+            // already in the field, which is what the person can see and edit.
+        }
+    }
+    /** Run a block's command again. */
+    async rerun(session, block) {
+        try {
+            const claim = (await this.#store.call('session.acquire', session));
+            await this.#store.call('block.rerun', session, block, claim.epoch);
+            this.go({ screen: 'terminal', session });
+        }
+        catch (e) {
+            this.fail('blocks', e);
+        }
+    }
+    /**
+     * Transcript view: what an agent said and did.
+     *
+     * An agent emits no command marks at all, so the block model does not apply
+     * to it — and what is available instead is better than blocks, because the
+     * agent's own protocol carries whole messages and typed tool calls rather
+     * than a grid of bytes.
+     */
+    #renderTranscript(session) {
+        const title = this.#store.state.sessions.find((s) => s.id === session)?.title;
+        const bar = appBar({
+            title: title ?? 'Conversation',
+            onBack: () => this.#nav.back(),
+            action: {
+                label: 'Search this session',
+                onTap: () => this.go({ screen: 'search', session }),
+            },
+        });
+        bar.append(this.#surfaceSwitch(session, 'transcript'));
+        const body = el('div', 'body transcript');
+        const list = el('div', 'transcript-list');
+        this.#list = list;
+        this.#paint = () => {
+            list.textContent = '';
+            list.append(renderState(this.#transcript, (entries) => pairCalls(entries).map((entry) => renderEntry(entry))));
+        };
+        this.#paint();
+        body.append(list);
+        this.#shell(bar, body, this.#composer(session));
+    }
+    /**
+     * Search within a session.
+     *
+     * Over the instance's own index of the session rather than what happens to be
+     * on screen: the answer to "where did that error go" is almost always above
+     * the fold, and a client-side search of the visible grid cannot find it.
+     */
+    #renderSearch(session) {
+        const bar = appBar({ title: 'Search', onBack: () => this.#nav.back() });
+        const body = el('div', 'body');
+        const field = document.createElement('input');
+        field.className = 'search-field';
+        field.type = 'search';
+        field.placeholder = 'Find in this session';
+        field.setAttribute('aria-label', 'Find in this session');
+        field.value = this.#query;
+        body.append(field);
+        const results = el('div', 'search-results');
+        body.append(results);
+        const run = () => {
+            this.#query = field.value;
+            if (field.value.trim() === '') {
+                results.textContent = '';
+                return;
+            }
+            void this.#store
+                .call('search.session', session, field.value)
+                .then((found) => {
+                const hits = found.hits;
+                results.textContent = '';
+                if (hits.length === 0) {
+                    results.append(el('p', 'detail', 'Nothing matched.'));
+                    return;
+                }
+                for (const hit of hits) {
+                    const row = el('button', 'tap search-hit');
+                    row.setAttribute('aria-label', `line ${hit.row}: ${hit.text}`);
+                    row.append(el('span', 'meta', String(hit.row)));
+                    row.append(el('span', 'label', hit.text));
+                    row.addEventListener('click', () => this.go({ screen: 'terminal', session }));
+                    results.append(row);
+                }
+            })
+                .catch((e) => {
+                results.textContent = '';
+                results.append(el('p', 'detail', String(e)));
+            });
+        };
+        field.addEventListener('input', run);
+        this.#shell(bar, body);
+        field.focus();
+        if (this.#query !== '') {
+            run();
+        }
+    }
+    /**
+     * Every instance this browser has been paired with.
+     *
+     * The client held one token in one slot, so opening a second invite link
+     * silently replaced the first — and a replaced token is shown once and cannot
+     * be recovered. Somebody with a laptop and a desktop had to pick one.
+     */
+    #renderInstances() {
+        const bar = appBar({
+            title: 'Instances',
+            onBack: () => this.#nav.back(),
+            action: { label: 'Add an instance', onTap: () => void this.addInstance() },
+        });
+        const all = list(this.#storage);
+        const here = current(this.#storage);
+        const state = stateOf(all, this.#errors.instances, {
+            headline: 'No instances yet',
+            detail: 'Run `omt web` and scan the code it prints.',
+        });
+        const body = el('div', 'body');
+        body.append(renderState(state, (rows) => rows.map((instance) => row({
+            title: instance.label,
+            meta: instance.url,
+            ...(instance.id === here?.id ? { tone: 'ok' } : {}),
+            label: instance.id === here?.id
+                ? `${instance.label}, the one in use`
+                : `switch to ${instance.label}`,
+            leadsSomewhere: instance.id !== here?.id,
+            onTap: () => {
+                if (instance.id === here?.id) {
+                    return;
+                }
+                choose(this.#storage, instance.id);
+                this.#restart();
+            },
+        }))));
+        // Every device this instance has let in, and a way to take one away. The
+        // credential this browser holds was minted per device precisely so a lost
+        // phone is one thing to revoke — which needs somewhere to do it.
+        // Rendered from state rather than from a promise writing into live DOM: a
+        // store update repaints this screen, and anything a pending call was about
+        // to fill has been detached by then.
+        if (this.#devices.length > 0) {
+            const devices = el('div', 'devices');
+            devices.append(el('p', 'section', 'Devices'));
+            for (const device of this.#devices) {
+                const entry = el('div', device.revoked ? 'device revoked' : 'device');
+                entry.append(el('span', 'label', device.label));
+                entry.append(el('span', 'meta', device.revoked ? 'revoked' : device.role));
+                if (!device.revoked) {
+                    const drop = el('button', 'device-revoke', 'Revoke');
+                    drop.setAttribute('aria-label', `Revoke ${device.label}`);
+                    drop.addEventListener('click', () => void this.revokeDevice(device.id));
+                    entry.append(drop);
+                }
+                devices.append(entry);
+            }
+            body.append(devices);
+        }
+        // Forgetting is its own control rather than a swipe: a swipe that deletes
+        // a credential which cannot be recovered is a gesture people make by
+        // accident on a train.
+        if (here !== null) {
+            const drop = el('button', 'danger', `Forget ${here.label}`);
+            drop.addEventListener('click', () => {
+                forget(this.#storage, here.id);
+                this.#restart();
+            });
+            body.append(drop);
+        }
+        this.#shell(bar, body);
+    }
+    /** Read which devices this instance has let in. */
+    async refreshDevices() {
+        try {
+            const out = (await this.#store.call('device.list'));
+            this.#devices = out.devices;
+            this.render();
+        }
+        catch {
+            // An instance too old to know about devices, or a credential that may not
+            // ask. Not a broken screen: the section simply is not there.
+            this.#devices = [];
+        }
+    }
+    /** Take a device's access away. */
+    async revokeDevice(device) {
+        try {
+            await this.#store.call('device.revoke', device);
+            await this.refreshDevices();
+        }
+        catch (e) {
+            this.fail('instances', e);
+        }
+    }
+    /**
+     * Pair another instance.
+     *
+     * The camera first, because that is the path that exists so nobody has to
+     * retype 32 base62 characters. A browser without `BarcodeDetector` — which
+     * today is most of them other than Chrome — falls back to pasting the same
+     * link, so the feature degrades to what it replaced rather than to nothing.
+     */
+    async addInstance(scan = scanCode) {
+        delete this.#errors.instances;
+        const scanned = await scan().catch(() => null);
+        const text = scanned ?? window.prompt('Paste the link `omt web` printed') ?? '';
+        if (text === '') {
+            this.render();
+            return;
+        }
+        const instance = readInvite(text, () => crypto.randomUUID());
+        if (instance === null) {
+            // Said rather than swallowed: a mis-scan and a link from somewhere else
+            // look identical to somebody holding a phone at a laptop.
+            this.#errors.instances = 'That is not an omt invite link.';
+            this.render();
+            return;
+        }
+        remember(this.#storage, instance);
+        choose(this.#storage, instance.id);
+        this.#restart();
     }
     /** Load whatever the new screen needs. */
     onRouteChange() {
@@ -186,15 +878,41 @@ export class App {
         // from one screen under another's content, which is what the old client did.
         delete this.#errors[route.screen];
         if (route.screen === 'terminal') {
-            this.#screen = null;
+            // Only reset when this is a different session. Coming back to one already
+            // seen shows the last screen straight away: the content is still true,
+            // and a spinner over known-good content is a downgrade rather than a
+            // loading state.
+            if (this.#terminalSession !== route.session) {
+                this.#terminal = { kind: 'loading' };
+                this.#terminalSession = route.session;
+                // Every write is checked against the writer epoch, and the epoch is
+                // per session. Claimed only on creation, opening any session somebody
+                // already had left this client holding another session's epoch — so
+                // every keystroke was refused and the screen simply never changed.
+                void this.claimWriter(route.session);
+            }
             void this.refreshTerminal(route.session);
             this.#poll = setInterval(() => void this.refreshTerminal(route.session), POLL_MS);
         }
         if (route.screen === 'threads') {
             void this.#store.loadThreads(route.session);
         }
+        if (route.screen === 'blocks') {
+            this.#blocks = { kind: 'loading' };
+            void this.refreshBlocks(route.session);
+            this.#poll = setInterval(() => void this.refreshBlocks(route.session), BLOCK_POLL_MS);
+        }
+        if (route.screen === 'transcript') {
+            this.#transcript = { kind: 'loading' };
+            void this.refreshTranscript(route.session);
+            void this.refreshOffers(route.session);
+            this.#poll = setInterval(() => void this.refreshTranscript(route.session), BLOCK_POLL_MS);
+        }
         if (route.screen === 'card' && this.#cards === undefined) {
             void this.loadCards();
+        }
+        if (route.screen === 'instances') {
+            void this.refreshDevices();
         }
         this.render();
     }
@@ -222,14 +940,20 @@ export class App {
         try {
             const next = (await this.#store.call('session.snapshot', session));
             delete this.#errors.terminal;
-            if (changed(this.#screen, next)) {
-                this.#screen = next;
+            const current = this.#terminal.kind === 'content' ? this.#terminal.value : null;
+            if (changed(current, next)) {
+                this.#terminal = { kind: 'content', value: next };
                 this.render();
             }
         }
         catch (e) {
             this.stopPolling();
-            this.fail('terminal', e);
+            this.#terminal = {
+                kind: 'error',
+                headline: 'That session is not there',
+                detail: String(e && typeof e === 'object' && 'message' in e ? e.message : e),
+            };
+            this.render();
         }
     }
     /** Re-read the cards waiting across every session. */
@@ -263,6 +987,64 @@ export class App {
             this.fail('roster', e);
         }
     }
+    /**
+     * Take the writer token for a session.
+     *
+     * Not forced: somebody else driving this session keeps it, and the terminal
+     * stays readable rather than being taken out from under them.
+     */
+    async claimWriter(session) {
+        try {
+            const claim = (await this.#store.call('session.acquire', session));
+            this.#epoch = claim.epoch;
+        }
+        catch (e) {
+            this.fail('terminal', e);
+        }
+    }
+    /** Fetch the blocks for block view. */
+    async refreshBlocks(session) {
+        try {
+            const out = (await this.#store.call('session.blocks', session));
+            this.#shellIntegration[session] = out.shell_integration;
+            this.#blocks = stateOf(out.blocks, undefined, {
+                headline: 'Nothing run yet',
+                detail: 'Commands appear here as they are run.',
+            });
+            this.render();
+        }
+        catch (e) {
+            this.#blocks = { kind: 'error', headline: 'That did not work', detail: String(e) };
+            this.render();
+        }
+    }
+    /** Fetch the transcript for transcript view. */
+    async refreshTranscript(session) {
+        try {
+            const out = (await this.#store.call('session.transcript', session));
+            this.#transcript = stateOf(out.entries, undefined, {
+                headline: 'Nothing said yet',
+                detail: 'What the agent says and does appears here.',
+            });
+            this.render();
+        }
+        catch (e) {
+            this.#transcript = { kind: 'error', headline: 'That did not work', detail: String(e) };
+            this.render();
+        }
+    }
+    /** Fetch what the agent offers: its commands and its queue. */
+    async refreshOffers(session) {
+        try {
+            const out = (await this.#store.call('agent.offers', session));
+            this.#offers[session] = { commands: out.commands, queue: out.queue };
+            this.render();
+        }
+        catch {
+            // An instance too old to know about this is not a failure of the screen
+            // it is on: the composer simply offers no completions.
+        }
+    }
     /** Answer a card. */
     async answer(interaction, option) {
         try {
@@ -276,24 +1058,68 @@ export class App {
             this.fail('card', e);
         }
     }
+    /**
+     * What to say about the connection, or nothing when it is fine.
+     *
+     * A phone loses its network constantly — a lift, a tunnel, a train. Without
+     * this the screen simply stops changing, which is indistinguishable from an
+     * instance where nothing is happening, and somebody acts on a stale roster.
+     */
+    #connectionBanner() {
+        const view = this.#store.state;
+        if (view.connection === 'connected') {
+            return null;
+        }
+        const box = el('div', `connection ${view.connection}`);
+        box.setAttribute('role', 'status');
+        box.textContent =
+            view.connection === 'refused'
+                ? (view.refusal ?? 'This instance refused the credential.')
+                : view.connection === 'connecting'
+                    ? waiting(this.#store.queued, 'Reconnecting…')
+                    : waiting(this.#store.queued, 'Offline — showing what was last known.');
+        return box;
+    }
     #shell(bar, body, keybar) {
-        this.#root.append(bar, body);
+        this.#root.append(bar);
+        // Under the bar and above everything else, on every screen: a connection
+        // that has gone is a fact about all of them, and saying it once per screen
+        // would mean forgetting it on the screen where it matters.
+        const connection = this.#connectionBanner();
+        if (connection) {
+            this.#root.append(connection);
+        }
+        this.#root.append(body);
         if (keybar) {
             this.#root.append(keybar);
         }
     }
     #renderRoster() {
         const view = this.#store.state;
-        const rows = view.connection === 'connected' ? orderRoster(view.sessions) : undefined;
+        // One list across every instance this browser knows about. With only one
+        // paired it is exactly the old roster, so there is no second code path for
+        // the common case to drift from.
+        const all = this.unified;
+        const rows = view.connection === 'connected' || this.#peers.length > 0 ? all : undefined;
         const state = stateOf(rows, this.#errors.roster ?? view.refusal, {
             headline: 'Nothing running',
             detail: 'Start a session and it appears here.',
         });
         const workspace = view.workspaces[0];
+        const here = current(this.#storage);
+        // The mark adapts: a roster with an agent waiting in it is not the same
+        // screen as a roster of shells, and the icon is the cheapest place to say
+        // so on a device where the whole screen is one column.
+        const anyAgent = Object.values(this.#threads).some((n) => n > 0);
         const bar = appBar({
-            title: 'omt',
-            // From the same rows the body renders, so the two cannot disagree.
-            ...(rows ? { subtitle: rosterSubtitle(rows) } : {}),
+            // Named after the instance, and the name is the control: with more than
+            // one paired, "omt" alone does not say whose sessions these are.
+            title: here?.label ?? 'omt',
+            onTitleTap: () => this.go({ screen: 'instances' }),
+            mark: markFor(anyAgent ? 1 : 0),
+            // From the same rows the body renders, so the two cannot disagree — and
+            // adding instances is exactly where that would happen again.
+            ...(rows ? { subtitle: unifiedSubtitle(all, this.#peers.length + 1) } : {}),
             ...(workspace
                 ? { action: { label: 'New session', onTap: () => void this.newSession(workspace.id) } }
                 : {}),
@@ -314,7 +1140,9 @@ export class App {
         }
         body.append(renderState(state, (sessions) => sessions.map((session) => row({
             title: session.title,
-            meta: session.state,
+            meta: this.#peers.length > 0
+                ? `${session.instanceLabel} · ${session.state}`
+                : session.state,
             ...(needsYou(session.state)
                 ? { tone: 'needs-you' }
                 : session.state === 'running'
@@ -322,32 +1150,185 @@ export class App {
                     : {}),
             label: `${session.title} — ${needsYou(session.state) ? 'needs you' : session.state}`,
             onTap: () => {
+                const row = session;
+                const here = current(this.#storage);
+                if (here && row.instance && row.instance !== here.id) {
+                    // On another machine. Switch to it first: a terminal is a
+                    // connection, and opening one against an instance this screen
+                    // is not connected to would type into nothing.
+                    choose(this.#storage, row.instance);
+                    this.#restart();
+                    return;
+                }
                 const threads = this.#threads[session.id] ?? 0;
-                this.go({ screen: screenFor(session, threads), session: session.id });
+                this.go({ screen: openingScreen(session, threads), session: session.id });
             },
         }))));
         this.#shell(bar, body);
     }
+    /**
+     * The terminal screen.
+     *
+     * Mounted once per session and then *repainted in place*, never rebuilt. The
+     * screen repaints every 150ms, and rebuilding it each time detaches the
+     * input — which blurs it, because detaching always does. The keyboard closed
+     * six times a second, an IME composition could never finish, and dictation
+     * stopped mid-sentence. None of it is visible on a desktop, where the
+     * keyboard is not attached to the element at all.
+     */
     #renderTerminal(session) {
+        const input = this.#terminalInput();
+        if (this.#mountedSession === session && this.#grid !== null && this.#root.contains(input)) {
+            // Already on screen: repaint the grid and leave everything else, above
+            // all the focused input, exactly where it is.
+            this.#paintGrid();
+            this.#paintNotice();
+            return;
+        }
         const title = this.#store.state.sessions.find((s) => s.id === session)?.title;
         const bar = appBar({
             title: title ?? 'Terminal',
             onBack: () => this.#nav.back(),
+            action: {
+                label: 'Search this session',
+                onTap: () => this.go({ screen: 'search', session }),
+            },
         });
-        const body = el('div', 'body');
-        const error = this.#errors.terminal;
-        if (error !== undefined) {
-            body.append(renderState({ kind: 'error', headline: 'That session is not there', detail: error }, () => el('div')));
+        bar.append(this.#surfaceSwitch(session, 'terminal'));
+        const body = el('div', 'body terminal-body');
+        const notice = el('div', 'notice');
+        this.#notice = notice;
+        const grid = el('div', 'terminal-grid');
+        this.#grid = grid;
+        body.append(notice, grid);
+        body.append(input);
+        this.#paintGrid();
+        this.#paintNotice();
+        // Tapping the terminal brings the keyboard back after it was dismissed,
+        // which is the gesture every mobile terminal uses.
+        body.addEventListener('click', () => input.focus());
+        this.#shell(bar, body, this.#keybar());
+        this.#mountedSession = session;
+        // After it is in the document, or focus does nothing. Opening a session is
+        // the one moment focus is taken: from then on it follows the person.
+        input.focus();
+    }
+    /**
+     * Say why a keystroke did nothing.
+     *
+     * A refused write was recorded and never shown: somebody typed, nothing
+     * appeared, and there was no error anywhere to explain it. The commonest
+     * reason is that another client holds the writer token, which is a fact about
+     * the session and not a fault.
+     */
+    #paintNotice() {
+        const notice = this.#notice;
+        if (notice === null) {
+            return;
         }
-        else if (this.#screen === null) {
-            body.append(renderState({ kind: 'loading' }, () => el('div')));
+        const problem = this.#errors.terminal;
+        notice.textContent = problem ?? '';
+        notice.hidden = problem === undefined;
+    }
+    /**
+     * Move between a session's surfaces.
+     *
+     * Persistent rather than hidden in a menu: each of these is a complete way of
+     * reading the session, not a preview of another, and the one somebody wants
+     * depends on what they came to find out.
+     *
+     * A surface that does not apply is shown disabled with the reason, because a
+     * control that silently is not there reads as a missing feature.
+     */
+    #surfaceSwitch(session, here) {
+        const threads = this.#threads[session] ?? 0;
+        const offers = surfacesFor({
+            threads,
+            shellIntegration: this.#shellIntegration[session] ?? true,
+            native: false,
+        });
+        const bar = el('div', 'surfaces');
+        bar.setAttribute('role', 'tablist');
+        for (const offer of offers) {
+            const tab = el('button', 'surface', LABELS[offer.surface]);
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-selected', String(offer.surface === here));
+            if (!offer.available) {
+                tab.disabled = true;
+                // The reason, on the control itself: a disabled tab with no
+                // explanation is indistinguishable from a broken one.
+                tab.title = offer.why ?? '';
+                tab.setAttribute('aria-label', `${LABELS[offer.surface]} — ${offer.why ?? 'unavailable'}`);
+            }
+            else if (offer.surface !== here) {
+                tab.addEventListener('click', () => this.go({ screen: SCREENS[offer.surface], session }));
+            }
+            bar.append(tab);
         }
-        else {
+        return bar;
+    }
+    /** Redraw whichever list screen is mounted. */
+    #paintList() {
+        this.#paint?.();
+    }
+    /** Redraw the grid from whatever the terminal screen is showing. */
+    #paintGrid() {
+        const grid = this.#grid;
+        if (grid === null) {
+            return;
+        }
+        grid.textContent = '';
+        grid.append(renderState(this.#terminal, (snapshot) => {
             const host = el('div', 'terminal');
-            paint(host, this.#screen);
-            body.append(host);
+            paint(host, snapshot);
+            return host;
+        }));
+    }
+    /**
+     * The one input the terminal screen types through.
+     *
+     * Built once and reused, never rebuilt per render. The terminal repaints
+     * every 150ms, and a textarea replaced on every repaint is a keyboard that
+     * closes six times a second, an IME composition that can never finish, and
+     * dictation that stops mid-sentence — none of which a desktop shows, because
+     * a desktop keyboard is not attached to the element.
+     */
+    #terminalInput() {
+        const existing = this.#input;
+        if (existing !== null) {
+            return existing;
         }
-        this.#shell(bar, body, error === undefined ? this.#keybar() : undefined);
+        // The device's own keyboard, reached the only way a browser opens one: a
+        // real focused form control. A `keydown` listener on the document works on
+        // a desktop, which is exactly why verifying there missed this entirely.
+        const input = document.createElement('textarea');
+        input.className = 'hidden-input';
+        input.setAttribute('aria-label', 'Terminal input');
+        // A terminal is not prose. Autocapitalise turns `ls` into `Ls`, which is a
+        // command that does not exist, and autocorrect rewrites what is already in
+        // the box so what gets sent is not what was typed.
+        input.setAttribute('autocapitalize', 'off');
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('spellcheck', 'false');
+        input.addEventListener('input', () => {
+            const text = input.value;
+            // Emptied every time. Left to accumulate, the second keystroke sends both
+            // characters.
+            input.value = '';
+            if (text.length > 0) {
+                void this.type(text);
+            }
+        });
+        input.addEventListener('keydown', (event) => {
+            const bytes = keyToBytes(event);
+            if (bytes !== null) {
+                event.preventDefault();
+                void this.type(bytes);
+            }
+        });
+        this.#input = input;
+        return input;
     }
     #keybar() {
         const bar = el('div', 'keybar');
@@ -404,7 +1385,10 @@ export class App {
     }
     #renderCard(id) {
         const card = this.#cards?.find((c) => c.id === id);
-        const bar = appBar({ title: 'Needs you', onBack: () => this.#nav.back() });
+        const bar = appBar({
+            title: cardTitle(card?.kind ?? 'choice'),
+            onBack: () => this.#nav.back(),
+        });
         const body = el('div', 'body');
         if (this.#errors.card !== undefined) {
             body.append(renderState({ kind: 'error', headline: 'That did not send', detail: this.#errors.card }, () => el('div')));
@@ -425,7 +1409,13 @@ export class App {
             this.#shell(bar, body);
             return;
         }
-        body.append(el('p', 'prompt', card.prompt));
+        body.append(promptElement(card.kind, card.prompt));
+        // A plan is the thing being reviewed, so it is the body of the card rather
+        // than something to go and find.
+        const steps = card.steps;
+        if (card.kind === 'plan_review' && steps) {
+            body.append(planElement(steps));
+        }
         const offer = cardOffer(card);
         if (!offer.answerable) {
             body.append(el('p', 'banner', `omt cannot answer this here: ${offer.why ?? 'unknown'}`));
@@ -436,13 +1426,41 @@ export class App {
             this.#shell(bar, body);
             return;
         }
+        // Free text: the agent asked something no list of options answers, so the
+        // card is a field rather than a row of buttons.
+        if (card.kind === 'text') {
+            const field = document.createElement('textarea');
+            field.className = 'composer-field';
+            field.rows = 3;
+            field.setAttribute('aria-label', 'Your answer');
+            const send = el('button', 'tap primary');
+            send.append(el('span', 'label', 'Send'));
+            send.addEventListener('click', () => {
+                const text = field.value.trim();
+                if (text !== '') {
+                    void this.answer(card.id, text);
+                }
+            });
+            body.append(field, send);
+            this.#shell(bar, body);
+            field.focus();
+            return;
+        }
         for (const option of offer.options) {
             const button = el('button', option.confirm === 'hold' ? 'tap hold' : 'tap');
             button.append(el('span', 'label', option.label));
             // Said out loud: the difference between a tap and a hold is invisible
             // until somebody has already failed to press it.
             button.setAttribute('aria-label', option.confirm === 'hold' ? `${option.label} — press and hold` : option.label);
-            button.addEventListener('click', () => void this.answer(card.id, option.label));
+            if (option.confirm === 'hold') {
+                // A real gesture, not a class. This rendered a different-looking button
+                // that a single tap still activated, so an irreversible approval was one
+                // accidental thumb away.
+                holdToConfirm(button, () => void this.answer(card.id, option.label));
+            }
+            else {
+                button.addEventListener('click', () => void this.answer(card.id, option.label));
+            }
             body.append(button);
         }
         this.#shell(bar, body);

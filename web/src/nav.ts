@@ -12,6 +12,10 @@ export type Route =
   | { screen: 'terminal'; session: string }
   | { screen: 'threads'; session: string }
   | { screen: 'card'; interaction: string }
+  | { screen: 'instances' }
+  | { screen: 'blocks'; session: string }
+  | { screen: 'transcript'; session: string }
+  | { screen: 'search'; session: string }
 
 /** What a route is called, for the bar. */
 export function titleOf(route: Route, context: { title?: string } = {}): string {
@@ -24,6 +28,14 @@ export function titleOf(route: Route, context: { title?: string } = {}): string 
       return context.title ?? 'Agents'
     case 'card':
       return 'Needs you'
+    case 'instances':
+      return 'Instances'
+    case 'blocks':
+      return context.title ?? 'Commands'
+    case 'transcript':
+      return context.title ?? 'Conversation'
+    case 'search':
+      return 'Search'
   }
 }
 

@@ -8,7 +8,13 @@
  * than in every component that happens to render a card.
  */
 
-import { HANDLERS, type SessionSummary, type ThreadSummary, type WorkspaceSummary } from './capabilities.js'
+import {
+  HANDLERS,
+  isCommand,
+  type SessionSummary,
+  type ThreadSummary,
+  type WorkspaceSummary,
+} from './capabilities.js'
 import type { ClientMessage, Interaction, RequestId, ServerMessage } from './protocol.js'
 import { isAnswerable, isTerminal } from './protocol.js'
 import { InstanceClient } from './session.js'
@@ -54,6 +60,14 @@ export interface Sink {
 /**
  * The client's state, and the only way to change it.
  */
+/**
+ * How long a burst of events is allowed to accumulate before one refresh.
+ *
+ * Short enough to feel immediate, long enough that a hundred events from a
+ * running build produce one call rather than a hundred.
+ */
+export const REFRESH_COALESCE_MS = 80
+
 export class Store {
   #client: InstanceClient
   #sink: Sink
@@ -63,6 +77,10 @@ export class Store {
   #problems: Problem[] = []
   #pending = new Map<string, { capability: string; resolve: (v: unknown) => void; reject: (e: CallFailure) => void }>()
   #listeners = new Set<(state: ViewState) => void>()
+  /** A refresh already scheduled, so a burst of events costs one call. */
+  #pendingRefresh: ReturnType<typeof setTimeout> | null = null
+  /** Commands minted while the connection was gone. */
+  #queued: ClientMessage[] = []
 
   constructor(device: string, sink: Sink) {
     this.#client = new InstanceClient(device)
@@ -122,8 +140,59 @@ export class Store {
     const message = build(request, ...args)
     return new Promise((resolve, reject) => {
       this.#pending.set(keyOf(request), { capability, resolve, reject })
+
+      if (this.#client.connection.state !== 'connected' && isCommand(capability)) {
+        // Held rather than failed. A phone loses its network in a lift and in a
+        // tunnel, and a tap that vanishes because of five seconds of no signal
+        // is a tap somebody makes again — which for a command means doing it
+        // twice.
+        //
+        // Only commands: a query held for later answers a question nobody is
+        // still asking. And only commands carry an intent id, which is what
+        // makes the instance recognise the replay as the same intent rather
+        // than a second one.
+        this.#queued.push(message)
+        return
+      }
       this.#sink.send(message)
     })
+  }
+
+  /** What is waiting for the connection to come back. */
+  get queued(): number {
+    return this.#queued.length
+  }
+
+  /**
+   * Send everything that was held while the connection was gone.
+   *
+   * Each carries the intent id it was minted with, so an instance that already
+   * saw one recognises the repeat and does not run it twice — which is the
+   * whole reason intent ids are minted at intent time rather than at send time.
+   */
+  #flush(): void {
+    const waiting = this.#queued
+    this.#queued = []
+    for (const message of waiting) {
+      this.#sink.send(message)
+    }
+  }
+
+  /**
+   * Re-read state shortly, coalescing a burst into one call.
+   *
+   * A busy session emits events faster than a round trip, and refreshing per
+   * event would queue more calls than the socket can answer — the client would
+   * fall further behind the more there was to see.
+   */
+  #refreshSoon(): void {
+    if (this.#pendingRefresh !== null) {
+      return
+    }
+    this.#pendingRefresh = setTimeout(() => {
+      this.#pendingRefresh = null
+      void this.refresh()
+    }, REFRESH_COALESCE_MS)
   }
 
   /** Apply a message from the server. */
@@ -138,6 +207,21 @@ export class Store {
       // this the client sits on an empty roster forever, looking exactly like
       // an instance with nothing running.
       void this.refresh()
+      // And subscribe, so what happens next *arrives* rather than being
+      // discovered by asking again. Without it every screen polls: the roster
+      // on a timer, the terminal six times a second, a phone with a warm
+      // battery and a radio that never sleeps.
+      this.#sink.send({ t: 'subscribe', since: {} } as never)
+      // Anything typed while the connection was gone goes now, in the order it
+      // was made.
+      this.#flush()
+    }
+    if (message.t === 'event') {
+      // Something changed. What changed is in the event, but the cheapest
+      // correct thing is to re-read what the visible screens are built from —
+      // a roster of six is one call, and being right matters more here than
+      // being clever.
+      this.#refreshSoon()
     }
     if (message.t === 'goodbye') {
       this.#problems.unshift({

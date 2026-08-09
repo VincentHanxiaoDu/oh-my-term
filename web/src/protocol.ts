@@ -132,7 +132,18 @@ export type ServerMessage =
   | { t: 'goodbye'; reason: string; detail: string }
   | { t: 'result'; request: unknown; status: 'ok'; output: unknown }
   | { t: 'result'; request: unknown; status: 'err'; error: { code: string; message: string } }
-  | { t: 'event'; event: OmtEvent }
+  // Flattened, not nested. The instance serializes its message enum with an
+  // internal tag, so an event arrives as its own fields alongside `t` — there
+  // is no `event` wrapper, and reading one produced `undefined` for every
+  // field on every event that ever arrived.
+  | ({ t: 'event' } & OmtEvent)
+  | {
+      t: 'join_credential'
+      request: RequestId
+      instance: { name: string; version: string; proto: number }
+      token: string
+      role: string
+    }
   | { t: 'resync'; scope_key: string; reason: string; dropped: number; from: Seq }
 
 /** Anything a client can send. */
@@ -140,6 +151,12 @@ export type ClientMessage =
   | { t: 'hello'; proto: number; client: string; token?: string }
   | { t: 'call'; request: RequestId; capability: string; input: unknown; intent?: string }
   | { t: 'subscribe'; since: Record<string, Seq> }
+  | {
+      t: 'join_exchange'
+      request: RequestId
+      invite: string
+      device: { name: string; pubkey?: string; platform: string }
+    }
 
 /**
  * A request's identity.

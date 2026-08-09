@@ -45,9 +45,21 @@ function stubDom(hash: string) {
     setItem(k: string, v: string) {
       this.store[k] = v
     },
+    removeItem(k: string) {
+      delete this.store[k]
+    },
   }
   const win = {
-    location: { hash, pathname: '/', origin: 'http://x', protocol: 'http:', host: 'x' },
+    location: {
+      hash,
+      pathname: '/',
+      origin: 'http://x',
+      protocol: 'http:',
+      host: 'x',
+      // The invite is read out of the whole URL, exactly as a scanned one is,
+      // so the stub needs a whole URL and not only its parts.
+      href: `http://x/${hash}`,
+    },
     localStorage: storage,
     addEventListener() {},
     matchMedia: () => ({ matches: false }),
@@ -69,6 +81,7 @@ function stubDom(hash: string) {
   vi.stubGlobal('location', win.location)
   vi.stubGlobal('history', { replaceState() {} })
   vi.stubGlobal('navigator', { userAgent: 'node', serviceWorker: { register() {} } })
+  vi.stubGlobal('crypto', { randomUUID: () => 'stub-uuid' })
   vi.stubGlobal(
     'WebSocket',
     class {
@@ -100,7 +113,21 @@ describe('the built entry point', () => {
     const { storage } = stubDom('#token=t1')
     vi.resetModules()
     await runEntryPoint()
-    expect(storage.getItem('omt.token')).toBe('t1')
+    // Stored as an instance now rather than as the one token the client used to
+    // hold, because a second invite used to overwrite the first.
+    expect(storage.getItem('omt.instances')).toContain('t1')
+  })
+
+  it('carries over the token an older client stored', async () => {
+    // That token is the only copy — the instance prints it once and cannot
+    // print it again — so an upgrade that dropped it would lock somebody out of
+    // their own machine with no way back.
+    const { storage } = stubDom('')
+    storage.setItem('omt.token', 'from-the-old-client')
+    vi.resetModules()
+    await runEntryPoint()
+    expect(storage.getItem('omt.instances')).toContain('from-the-old-client')
+    expect(storage.getItem('omt.token')).toBeNull()
   })
 
   it('mints a device identity that survives a reload', async () => {

@@ -122,7 +122,7 @@ export class InstanceClient {
         return 'resync-needed'
 
       case 'event':
-        return this.#applyEvent(message.event)
+        return this.#applyEvent(message)
 
       case 'result':
         return undefined

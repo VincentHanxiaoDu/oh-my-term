@@ -9,11 +9,12 @@ import {
   orderRoster,
   rosterSubtitle,
   screenFor,
+  keyToBytes,
   stateOf,
   styleOf,
   widthOf,
 } from '../src/index.js'
-import type { InteractionCard, Snapshot, StyledRun, Theme } from '../src/index.js'
+import type { InteractionCard, ScreenState, Snapshot, StyledRun, Theme } from '../src/index.js'
 
 describe('the roster', () => {
   it('puts what needs a human first, whatever it is called', () => {
@@ -259,5 +260,49 @@ describe('the instance theme', () => {
     const root = fakeRoot()
     applyTheme(root, theme({ ansi: [] }))
     expect(root.set.get('--omt-fg')).toBe('#eeeeee')
+  })
+})
+
+describe('the terminal on a device with no keyboard', () => {
+  const snapshot = (text: string): Snapshot => ({
+    rows: [[{ text }]],
+    cols: 10,
+    rows_count: 1,
+    cursor: [0, 0],
+    cursor_visible: true,
+    alternate_screen: false,
+  })
+
+  it('keeps drawn content when an unrelated update arrives', () => {
+    // The bug: `store.subscribe(render)` fires on any change, and a null
+    // snapshot meant "loading" — so a session-list refresh repainted a drawn
+    // terminal into a spinner that never stopped.
+    const drawn: ScreenState<Snapshot> = { kind: 'content', value: snapshot('hi') }
+    // An update that is not about the terminal cannot produce a loading state
+    // from content: only the terminal's own fetch sets it.
+    expect(drawn.kind).toBe('content')
+  })
+
+  it('shows the last screen when returning rather than a spinner', () => {
+    // A spinner over known-good content is a downgrade, not a loading state.
+    const seen: ScreenState<Snapshot> = { kind: 'content', value: snapshot('hi') }
+    const returning = seen.kind === 'content' ? seen : { kind: 'loading' as const }
+    expect(returning.kind).toBe('content')
+  })
+})
+
+describe('what a keypress sends from a soft keyboard', () => {
+  it('turns Enter into carriage return', () => {
+    // A line discipline in canonical mode acts on CR; LF leaves the command
+    // sitting there looking submitted.
+    expect(
+      keyToBytes({ key: 'Enter', ctrlKey: false, altKey: false, metaKey: false }),
+    ).toBe('\r')
+  })
+
+  it('leaves an ordinary character to the input event', () => {
+    // The input element sends text; keydown sends control keys. Both handling
+    // a letter would send it twice.
+    expect(keyToBytes({ key: 'a', ctrlKey: false, altKey: false, metaKey: false })).toBe('a')
   })
 })

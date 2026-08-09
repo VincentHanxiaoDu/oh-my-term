@@ -114,21 +114,22 @@ describe('the store', () => {
     // counted both would send the user looking for a button that is not there.
     const { store } = harness()
     const card = (id: string, deliverable: Interaction['deliverable']) => ({
+      // Flattened, exactly as the instance sends it. Wrapped in an `event` key
+      // — which this was — the fixture agreed with the client about a shape the
+      // server never produces, so the mismatch could not be caught here.
       t: 'event' as const,
-      event: {
-        scope: { kind: 'session' as const, session: 's1' },
-        seq: id === 'i1' ? 1 : 2,
-        ts: '2026-01-01T00:00:00Z',
-        source: 'hook',
-        payload: {
-          interaction: {
-            id,
-            session: 's1',
-            binding: 'b1',
-            deliverable,
-            state: { state: 'open' as const },
-            opened_at: '2026-01-01T00:00:00Z',
-          },
+      scope: { kind: 'session' as const, session: 's1' },
+      seq: id === 'i1' ? 1 : 2,
+      ts: '2026-01-01T00:00:00Z',
+      source: 'hook',
+      payload: {
+        interaction: {
+          id,
+          session: 's1',
+          binding: 'b1',
+          deliverable,
+          state: { state: 'open' as const },
+          opened_at: '2026-01-01T00:00:00Z',
         },
       },
     })

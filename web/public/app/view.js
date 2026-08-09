@@ -9,6 +9,7 @@
  * `ScreenState` is a sum type so that cannot be written down. A screen is
  * loading *or* empty *or* failed *or* has content. Not four flags.
  */
+import { markElement } from './mark.js';
 /**
  * Decide a screen's state from what it knows.
  *
@@ -57,8 +58,22 @@ export function appBar(options) {
         back.addEventListener('click', options.onBack);
         bar.append(back);
     }
+    if (options.mark) {
+        bar.append(markElement(options.mark));
+    }
     const heading = el('h1');
-    heading.append(document.createTextNode(options.title));
+    if (options.onTitleTap) {
+        // A real button, not an h1 with a click handler: this has to be reachable
+        // by keyboard and announced as a control, and a heading is neither.
+        const tap = el('button', 'title-button');
+        tap.setAttribute('aria-label', `${options.title} — switch instance`);
+        tap.append(document.createTextNode(options.title), el('span', 'chevron-down', '⌄'));
+        heading.append(tap);
+        tap.addEventListener('click', options.onTitleTap);
+    }
+    else {
+        heading.append(document.createTextNode(options.title));
+    }
     if (options.subtitle !== undefined) {
         heading.append(el('span', 'subtitle', options.subtitle));
     }

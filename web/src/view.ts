@@ -10,6 +10,8 @@
  * loading *or* empty *or* failed *or* has content. Not four flags.
  */
 
+import { markElement } from './mark.js'
+
 /** What one screen is showing right now. */
 export type ScreenState<T> =
   | { kind: 'loading' }
@@ -72,6 +74,16 @@ export function appBar(options: {
   title: string
   subtitle?: string
   onBack?: () => void
+  /**
+   * Makes the title itself the way to switch instances.
+   *
+   * A separate button would need a third slot in a bar that already has two on
+   * a 390px screen. The title is also the honest control: it is the name of the
+   * thing being switched.
+   */
+  onTitleTap?: () => void
+  /** The mark to wear, where a screen has one. */
+  mark?: import('./mark.js').MarkKind
   action?: { label: string; onTap: () => void }
 }): HTMLElement {
   const bar = el('header', 'bar')
@@ -84,8 +96,22 @@ export function appBar(options: {
     bar.append(back)
   }
 
+  if (options.mark) {
+    bar.append(markElement(options.mark))
+  }
+
   const heading = el('h1')
-  heading.append(document.createTextNode(options.title))
+  if (options.onTitleTap) {
+    // A real button, not an h1 with a click handler: this has to be reachable
+    // by keyboard and announced as a control, and a heading is neither.
+    const tap = el('button', 'title-button')
+    tap.setAttribute('aria-label', `${options.title} — switch instance`)
+    tap.append(document.createTextNode(options.title), el('span', 'chevron-down', '⌄'))
+    heading.append(tap)
+    tap.addEventListener('click', options.onTitleTap)
+  } else {
+    heading.append(document.createTextNode(options.title))
+  }
   if (options.subtitle !== undefined) {
     heading.append(el('span', 'subtitle', options.subtitle))
   }

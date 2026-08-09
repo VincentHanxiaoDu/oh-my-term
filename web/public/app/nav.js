@@ -16,6 +16,14 @@ export function titleOf(route, context = {}) {
             return context.title ?? 'Agents';
         case 'card':
             return 'Needs you';
+        case 'instances':
+            return 'Instances';
+        case 'blocks':
+            return context.title ?? 'Commands';
+        case 'transcript':
+            return context.title ?? 'Conversation';
+        case 'search':
+            return 'Search';
     }
 }
 /** Whether this screen has something to go back to. */
