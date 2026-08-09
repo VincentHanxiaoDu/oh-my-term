@@ -18,12 +18,17 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 omt-auth = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
-tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "io-util", "time"] }
 serde = { workspace = true }
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+omt-events = { workspace = true }
+schemars = { workspace = true }
+omt-identity = { workspace = true }
 
 [dev-dependencies]
 omt-events = { workspace = true }
+schemars = { workspace = true }
+omt-identity = { workspace = true }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
 serde_json = { workspace = true }

@@ -1328,13 +1328,26 @@ fn a_job_can_be_scheduled_and_fires_once_it_is_due() {
         panic!("expected a welcome");
     };
 
-    let created = call_ok(
+    // Opened first: a job names a workspace by id, like every other capability
+    // that names one. It took a bare directory path, so the generated client —
+    // whose `workspace` argument carries an id everywhere else — got `is not a
+    // directory` for the one obvious call.
+    let opened = call_ok(
         &mut client,
         1,
+        "workspace.open",
+        serde_json::json!({ "root": dir.path().to_string_lossy() }),
+        true,
+    );
+    let workspace = opened["id"].as_str().expect("a workspace id").to_owned();
+
+    let created = call_ok(
+        &mut client,
+        2,
         "job.create",
         serde_json::json!({
             "name": "tests",
-            "workspace": dir.path().to_string_lossy(),
+            "workspace": workspace,
             "run": "true",
             "every_seconds": 60,
         }),
@@ -1370,7 +1383,7 @@ fn a_job_can_be_scheduled_and_fires_once_it_is_due() {
         "job.create",
         serde_json::json!({
             "name": "tests",
-            "workspace": dir.path().to_string_lossy(),
+            "workspace": workspace,
             "run": "true",
             "every_seconds": 30,
         }),
@@ -1604,8 +1617,12 @@ fn a_plugin_is_installed_with_an_explicit_grant_and_then_runs() {
     );
     // What it asked for and what it received are different things, and the
     // difference is reported rather than left to the user to work out.
-    assert_eq!(installed["granted"], serde_json::json!(["ReadSessions"]));
-    assert_eq!(installed["refused"], serde_json::json!(["WriteInput"]));
+    // In the spelling they were sent in. Written out with Rust's variant names,
+    // a client that read this list back and re-sent it — which is what an
+    // "edit these grants" screen does — was told its own values were not
+    // permissions omt knows.
+    assert_eq!(installed["granted"], serde_json::json!(["read_sessions"]));
+    assert_eq!(installed["refused"], serde_json::json!(["write_input"]));
 
     let started = call_ok(
         &mut client,

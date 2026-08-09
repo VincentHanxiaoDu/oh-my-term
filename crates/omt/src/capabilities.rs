@@ -553,9 +553,26 @@ impl CapabilityHandler<AgentThreads> for AgentThreadsHandler {
             CapabilityError::invalid_input(format!("`{}` is not a session id", input.session))
         })?;
         let instance = self.0.lock()?;
-        let roster = instance
-            .threads(id)
-            .ok_or_else(|| CapabilityError::not_found(format!("no session {}", input.session)))?;
+        // A session that exists is not an error, whether or not an agent is in
+        // it. Only a session that does not exist is.
+        //
+        // These were the same branch, so every plain shell answered `no session
+        // <id>` about a session sitting right there in the list — and a client
+        // that trusted it would tell somebody their session had gone.
+        if instance.session(id).is_none() {
+            return Err(CapabilityError::not_found(format!(
+                "no session {}",
+                input.session
+            )));
+        }
+        let Some(roster) = instance.threads(id) else {
+            // No agent has bound to it. An empty roster is the honest answer:
+            // there are no threads, which is different from not knowing.
+            return Ok(AgentThreadsOut {
+                threads: Vec::new(),
+                blocked: 0,
+            });
+        };
 
         let mut threads: Vec<ThreadSummary> = roster
             .threads()
@@ -1757,7 +1774,7 @@ impl CapabilityHandler<SessionSnapshot> for SessionSnapshotHandler {
 }
 
 /// Collapse a row of cells into runs that share a style.
-fn runs_of(cells: &[omt_term::Cell]) -> Vec<StyledRun> {
+pub(crate) fn runs_of(cells: &[omt_term::Cell]) -> Vec<StyledRun> {
     let mut out: Vec<StyledRun> = Vec::new();
     for cell in cells {
         // The spacer half of a wide character carries no glyph of its own.
@@ -2119,7 +2136,7 @@ fn b64_encode(bytes: &[u8]) -> String {
 }
 
 /// The inverse, refusing anything that is not base64 rather than guessing.
-fn b64_decode(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn b64_decode(text: &str) -> Option<Vec<u8>> {
     let value = |c: u8| -> Option<u32> {
         Some(match c {
             b'A'..=b'Z' => u32::from(c - b'A'),
@@ -2535,6 +2552,20 @@ impl CapabilityHandler<AgentConnect> for AgentConnectHandler {
         // every surface: there is one event path and this is it.
         let mut instance = self.0.lock()?;
         let binding = omt_types::BindingId::new();
+        {
+            // Kept as well as emitted. An event that is only emitted is gone
+            // the moment it is sent: a client that connects a minute later sees
+            // nothing that happened, and there was no transcript to render an
+            // agent session from. The ledger was in the same position — nothing
+            // outside a test ever fed it, so every token counted was dropped a
+            // line later.
+            let mut transcripts = self.0.transcripts()?;
+            let transcript = transcripts.entry(session);
+            for payload in &payloads {
+                transcript.observe(payload);
+                instance.observe_usage(session, payload);
+            }
+        }
         for payload in payloads {
             instance.emit(
                 session,
@@ -3668,7 +3699,7 @@ impl CapabilityHandler<PluginInstall> for PluginInstallHandler {
 
         let refused: Vec<String> = asked
             .difference(&granted)
-            .map(|p| format!("{p:?}"))
+            .map(|p| permission_name(*p).to_owned())
             .collect();
         let installed = omt_plugin_host::Installed::new(manifest, granted.clone());
 
@@ -3678,9 +3709,30 @@ impl CapabilityHandler<PluginInstall> for PluginInstallHandler {
 
         Ok(PluginInstallOut {
             id: input.id,
-            granted: granted.iter().map(|p| format!("{p:?}")).collect(),
+            granted: granted
+                .iter()
+                .map(|p| permission_name(*p).to_owned())
+                .collect(),
             refused,
         })
+    }
+}
+
+/// A permission's name on the wire.
+///
+/// The inverse of `parse_permissions`, and the reason it exists: these were
+/// written out with `{:?}`, so a plugin installed with `read_sessions` was
+/// listed back as `ReadSessions`. A client that read the list and re-sent it —
+/// which is exactly what an "edit this plugin's grants" screen does — was told
+/// its own values were not permissions omt knows.
+fn permission_name(permission: omt_plugin_host::Permission) -> &'static str {
+    match permission {
+        omt_plugin_host::Permission::ReadSessions => "read_sessions",
+        omt_plugin_host::Permission::WriteInput => "write_input",
+        omt_plugin_host::Permission::ReadWorkspace => "read_workspace",
+        omt_plugin_host::Permission::WriteWorkspace => "write_workspace",
+        omt_plugin_host::Permission::Network => "network",
+        omt_plugin_host::Permission::SpawnProcess => "spawn_process",
     }
 }
 
@@ -3874,12 +3926,21 @@ fn summarize_plugin(p: &omt_plugin_host::Installed) -> PluginSummary {
         name: p.manifest.name.clone(),
         version: p.manifest.version.clone(),
         enabled: p.enabled,
-        granted: p.granted.iter().map(|g| format!("{g:?}")).collect(),
+        granted: p
+            .granted
+            .iter()
+            .map(|g| permission_name(*g).to_owned())
+            .collect(),
+        // From what it was *granted*, not from what it asked for. Read from the
+        // manifest, this listed permissions that were requested and refused —
+        // so a settings screen warned about authority the plugin does not have,
+        // which teaches people to ignore the warning.
         high_consequence: p
             .manifest
             .high_consequence()
             .iter()
-            .map(|g| format!("{g:?}"))
+            .filter(|g| p.granted.contains(g))
+            .map(|g| permission_name(*g).to_owned())
             .collect(),
     }
 }
@@ -3956,7 +4017,12 @@ pub struct JobCreateIn {
     /// use replaces it, which is what makes editing a job possible without a
     /// separate update call.
     pub name: String,
-    /// The directory it runs in.
+    /// The workspace it runs in, by id.
+    ///
+    /// An id, like every other capability that names a workspace. It took a
+    /// directory path, which meant the generated client — whose parameter is
+    /// called `workspace` everywhere and carries an id everywhere else — got
+    /// `is not a directory` for the one obvious call.
     pub workspace: String,
     /// The command line.
     pub run: String,
@@ -4024,12 +4090,23 @@ impl CapabilityHandler<JobCreate> for JobCreateHandler {
         if input.name.trim().is_empty() {
             return Err(CapabilityError::invalid_input("a job needs a name"));
         }
-        if !std::path::Path::new(&input.workspace).is_dir() {
-            return Err(CapabilityError::invalid_input(format!(
-                "`{}` is not a directory",
-                input.workspace
-            )));
-        }
+        // Resolved through the instance, so a job cannot be scheduled in a
+        // directory omt does not have open — which would fire every interval
+        // and fail every time, silently.
+        let directory = {
+            let instance = self.0.lock()?;
+            let workspace = instance
+                .workspaces()
+                .into_iter()
+                .find(|w| w.id.to_wire() == input.workspace)
+                .ok_or_else(|| {
+                    CapabilityError::invalid_input(format!(
+                        "`{}` is not a workspace this instance has open",
+                        input.workspace
+                    ))
+                })?;
+            workspace.root.clone()
+        };
         let trigger = match (input.every_seconds, input.daily_at_secs) {
             (_, Some(at_secs)) => omt_recall::Trigger::Daily { at_secs },
             (0, None) => omt_recall::Trigger::Manual,
@@ -4037,7 +4114,7 @@ impl CapabilityHandler<JobCreate> for JobCreateHandler {
         };
         let job = omt_recall::Job {
             name: input.name.clone(),
-            workspace: input.workspace,
+            workspace: directory,
             run: input.run,
             trigger,
             enabled: input.enabled,
@@ -5763,7 +5840,7 @@ impl CapabilityHandler<KeysCheatsheet> for KeysHandler {
     }
 }
 
-fn session_id(text: &str) -> Result<SessionId, CapabilityError> {
+pub(crate) fn session_id(text: &str) -> Result<SessionId, CapabilityError> {
     SessionId::from_wire(text)
         .ok_or_else(|| CapabilityError::invalid_input(format!("`{text}` is not a session id")))
 }
@@ -5774,7 +5851,94 @@ fn session_id(text: &str) -> Result<SessionId, CapabilityError> {
 /// Fails if a declaration is invalid, duplicated, or has no handler — all at
 /// startup, by name, rather than when a caller trips over it.
 pub fn registry(state: State) -> Result<CapabilityRegistry> {
+    registry_with(state, std::sync::Arc::default())
+}
+
+/// Build the registry around a particular credential store.
+///
+/// Always registered, whether or not anything has been issued: a catalog that
+/// changes shape depending on how the process was started is one the parity
+/// gate cannot check and the generated client cannot cover. A store with no
+/// credentials in it lists no devices, which is a true answer.
+///
+/// # Errors
+/// Fails if a declaration is invalid, duplicated, or has no handler.
+pub fn registry_with(
+    state: State,
+    credentials: std::sync::Arc<std::sync::Mutex<omt_auth::CredentialStore>>,
+) -> Result<CapabilityRegistry> {
+    registry_watching(state, credentials, std::sync::Arc::default())
+}
+
+/// Build the registry around a credential store and a watch.
+///
+/// # Errors
+/// Fails if a declaration is invalid, duplicated, or has no handler.
+pub fn registry_watching(
+    state: State,
+    credentials: std::sync::Arc<std::sync::Mutex<omt_auth::CredentialStore>>,
+    watch: omt_server::watch::Shared,
+) -> Result<CapabilityRegistry> {
+    registry_full(state, credentials, watch, std::sync::Arc::default())
+}
+
+/// Build the registry around everything a serving instance holds.
+///
+/// # Errors
+/// Fails if a declaration is invalid, duplicated, or has no handler.
+pub fn registry_full(
+    state: State,
+    credentials: std::sync::Arc<std::sync::Mutex<omt_auth::CredentialStore>>,
+    watch: omt_server::watch::Shared,
+    identities: std::sync::Arc<std::sync::Mutex<omt_identity::Directory>>,
+) -> Result<CapabilityRegistry> {
     let mut r = CapabilityRegistry::new();
+    r.register::<crate::doctor::DoctorRun, _>(crate::doctor::DoctorHandler(state.clone()))?;
+    r.register::<crate::doctor::DoctorReport, _>(crate::doctor::ReportHandler(state.clone()))?;
+    r.register::<crate::reach::PresenceList, _>(crate::reach::PresenceListHandler(watch.clone()))?;
+    r.register::<crate::reach::IdentityList, _>(crate::reach::IdentityListHandler(
+        identities.clone(),
+    ))?;
+    r.register::<crate::reach::IdentityRevoke, _>(crate::reach::IdentityRevokeHandler(
+        identities,
+        credentials.clone(),
+    ))?;
+    r.register::<crate::reach::AuditList, _>(crate::reach::AuditListHandler(watch.clone()))?;
+    r.register::<crate::reach::InstanceMetrics, _>(crate::reach::InstanceMetricsHandler(
+        state.clone(),
+        watch,
+    ))?;
+    r.register::<crate::reach::MediaDescribe, _>(crate::reach::MediaDescribeHandler)?;
+    r.register::<crate::reach::ConfigImport, _>(crate::reach::ConfigImportHandler)?;
+    r.register::<crate::reach::DeviceList, _>(crate::reach::DeviceListHandler(
+        credentials.clone(),
+    ))?;
+    r.register::<crate::reach::DeviceRevoke, _>(crate::reach::DeviceRevokeHandler(
+        credentials.clone(),
+    ))?;
+    r.register::<crate::reach::InviteCreate, _>(crate::reach::InviteCreateHandler(credentials))?;
+    r.register::<crate::surfaces::BlockBody, _>(crate::surfaces::BlockBodyHandler(state.clone()))?;
+    r.register::<crate::surfaces::SessionScrollback, _>(
+        crate::surfaces::SessionScrollbackHandler(state.clone()),
+    )?;
+    r.register::<crate::surfaces::SearchSession, _>(crate::surfaces::SearchSessionHandler(
+        state.clone(),
+    ))?;
+    r.register::<crate::surfaces::SessionTranscript, _>(
+        crate::surfaces::SessionTranscriptHandler(state.clone()),
+    )?;
+    r.register::<crate::surfaces::AgentOffers, _>(crate::surfaces::AgentOffersHandler(
+        state.clone(),
+    ))?;
+    r.register::<crate::surfaces::BlockRerun, _>(crate::surfaces::BlockRerunHandler(
+        state.clone(),
+    ))?;
+    r.register::<crate::surfaces::QueueEnqueue, _>(crate::surfaces::QueueEnqueueHandler(
+        state.clone(),
+    ))?;
+    r.register::<crate::surfaces::QueueRemove, _>(crate::surfaces::QueueRemoveHandler(
+        state.clone(),
+    ))?;
     r.register::<InstanceInfo, _>(InstanceInfoHandler)?;
     r.register::<InstanceCatalog, _>(InstanceCatalogHandler)?;
     r.register::<EventsSubscribe, _>(EventsSubscribeHandler)?;

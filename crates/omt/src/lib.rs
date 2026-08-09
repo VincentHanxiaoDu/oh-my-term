@@ -7,11 +7,17 @@
 pub mod capabilities;
 
 pub mod attach;
+pub mod doctor;
+pub mod events;
+pub mod pairing;
 pub mod persist;
+pub mod reach;
 pub mod run;
 pub mod scheduler;
 
 pub mod state;
+pub mod surfaces;
+pub mod transcript;
 
 pub mod serve;
 

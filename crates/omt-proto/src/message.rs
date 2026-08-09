@@ -36,6 +36,16 @@ pub enum ProtoMessage {
     /// The requested position is unrecoverable; rebuild from a snapshot.
     Resync(Resync),
 
+    // ---------- joining ----------
+    /// Swap an invite for a credential of this device's own.
+    ///
+    /// Sent on a connection that has no credential yet, which is the only
+    /// message allowed there: an invite is the right to *obtain* a credential,
+    /// so the exchange cannot itself require one.
+    JoinExchange(JoinExchange),
+    /// The credential that invite bought.
+    JoinCredential(Box<JoinCredential>),
+
     // ---------- hook ingress ----------
     /// An agent's hook reporting an observation.
     HookEvent(Box<HookEvent>),
@@ -88,6 +98,42 @@ impl Welcome {
         v.sort_unstable();
         v
     }
+}
+
+/// A device asking to be let in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct JoinExchange {
+    /// Which request this answers to.
+    pub request: RequestId,
+    /// The invite, as printed.
+    pub invite: String,
+    /// What the device says it is.
+    pub device: omt_types::DeviceClaim,
+}
+
+/// The credential a device was given, and what it is connected to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct JoinCredential {
+    /// Which request.
+    pub request: RequestId,
+    /// Which instance, so a client can label it without a second call.
+    pub instance: JoinedInstance,
+    /// The credential. Shown to the client once and stored by it; the instance
+    /// keeps only a digest.
+    pub token: String,
+    /// What it may do.
+    pub role: Role,
+}
+
+/// The instance a device just joined.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct JoinedInstance {
+    /// Its name, for a device list somebody has to recognise.
+    pub name: String,
+    /// Its version.
+    pub version: String,
+    /// The protocol it speaks.
+    pub proto: u16,
 }
 
 /// A refusal or a shutdown.

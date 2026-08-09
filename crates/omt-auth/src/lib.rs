@@ -10,6 +10,7 @@
 pub mod token;
 
 pub use token::{
-    AuthError, Credential, CredentialStore, MintedCredential, RejectionReason, TOKEN_BYTES,
-    TOKEN_PREFIX, digest_token, is_well_formed,
+    AuthError, Credential, CredentialStore, INVITE_PREFIX, INVITE_TTL_SECS, Invite,
+    MintedCredential, MintedInvite, RejectionReason, TOKEN_BYTES, TOKEN_PREFIX, digest_token,
+    is_well_formed,
 };

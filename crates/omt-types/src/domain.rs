@@ -385,3 +385,22 @@ mod tests {
         }
     }
 }
+
+/// What a device says about itself when it joins.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DeviceClaim {
+    /// What to call it in a list of devices, so a credential can be revoked by
+    /// somebody who remembers the phone rather than the token.
+    pub name: String,
+    /// Its public key, where it has one.
+    ///
+    /// Optional because a browser has no key it can keep secret from itself: a
+    /// key in local storage is exfiltrated with the token it would protect. The
+    /// binding is honest where it applies and absent where it does not, rather
+    /// than theatre everywhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pubkey: Option<String>,
+    /// What it is running, for the same list.
+    #[serde(default)]
+    pub platform: String,
+}

@@ -172,6 +172,28 @@ impl Terminal {
         self.state.scrollback.len() as u64 + u64::from(self.grid().cursor.row)
     }
 
+    /// One line of history, by its absolute row.
+    ///
+    /// Absolute because that is the coordinate a block records: a command whose
+    /// output has scrolled off the screen still names the rows it wrote, and a
+    /// screen-relative index would point somewhere else by the time anybody
+    /// asked.
+    #[must_use]
+    pub fn line_at(&self, absolute: u64) -> Option<&crate::line::Line> {
+        let scrolled = self.state.scrollback.len() as u64;
+        if absolute < scrolled {
+            return self.state.scrollback.line(absolute);
+        }
+        let row = u16::try_from(absolute - scrolled).ok()?;
+        (row < self.grid().size().rows).then(|| self.grid().row(row))
+    }
+
+    /// How many lines have ever been written, history plus screen.
+    #[must_use]
+    pub fn total_rows(&self) -> u64 {
+        self.state.scrollback.len() as u64 + u64::from(self.grid().size().rows)
+    }
+
     /// Feed any new shell-integration transitions to the block tracker.
     ///
     /// Through a small queue of its own rather than by inspecting the action

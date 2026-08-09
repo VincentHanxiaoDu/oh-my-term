@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use omt_types::{Role, Timestamp};
+use omt_types::{DeviceClaim, Role, Timestamp};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -104,10 +104,52 @@ pub fn is_well_formed(token: &str) -> bool {
     token.starts_with(TOKEN_PREFIX) && token.len() > TOKEN_PREFIX.len() + 20
 }
 
+/// The prefix an invite carries.
+///
+/// Deliberately different from a credential's. An invite is *not* a credential
+/// — it is the right to obtain one — and the two being indistinguishable in a
+/// log, a paste or a screenshot is how one gets treated as the other.
+pub const INVITE_PREFIX: &str = "omt_i_";
+
+/// How long an invite is good for.
+///
+/// Short, because an invite is meant to be scanned off a screen in the same
+/// minute it is printed. A long-lived one is a credential with extra steps —
+/// which is exactly what the invite link used to be.
+pub const INVITE_TTL_SECS: u64 = 15 * 60;
+
+/// A stored invite. Never contains the token itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Invite {
+    /// Its identity, for revoking.
+    pub id: String,
+    /// SHA-256 of the token, hex encoded.
+    digest: String,
+    /// The role the credential it mints will have.
+    pub role: Role,
+    /// When it stops being exchangeable.
+    pub expires_at: Timestamp,
+    /// Whether it has already been exchanged.
+    ///
+    /// Single-exchange, so an invite photographed off somebody's screen after
+    /// they used it is worth nothing.
+    pub used: bool,
+}
+
+/// A freshly minted invite. The token appears here and nowhere else.
+#[derive(Debug, Clone)]
+pub struct MintedInvite {
+    /// The stored record.
+    pub invite: Invite,
+    /// The token to print once.
+    pub token: String,
+}
+
 /// Every credential an instance knows.
 #[derive(Debug, Default)]
 pub struct CredentialStore {
     by_id: BTreeMap<String, Credential>,
+    invites: BTreeMap<String, Invite>,
 }
 
 impl CredentialStore {
@@ -445,5 +487,263 @@ mod tests {
     fn revoking_something_that_does_not_exist_says_so() {
         let mut s = store();
         assert!(!s.revoke("cred_nonexistent"));
+    }
+}
+
+impl CredentialStore {
+    /// Mint an invite: the right to obtain a credential, and not a credential.
+    ///
+    /// The distinction is the whole point of this existing. `omt web` used to
+    /// mint a long-lived operator credential and put it straight in the link it
+    /// printed, so the invite *was* the credential — permanently, for anyone who
+    /// ever saw the QR, with nothing to revoke short of the token itself.
+    pub fn mint_invite(&mut self, role: Role, now: Timestamp) -> MintedInvite {
+        let token = format!("{INVITE_PREFIX}{}", random_body());
+        let invite = Invite {
+            id: format!("invt_{}", &digest_token(&token)[..12]),
+            digest: digest_token(&token),
+            role,
+            expires_at: Timestamp::from_offset(
+                now.as_offset() + time::Duration::seconds(INVITE_TTL_SECS as i64),
+            ),
+            used: false,
+        };
+        self.invites.insert(invite.id.clone(), invite.clone());
+        MintedInvite { invite, token }
+    }
+
+    /// Exchange an invite for a credential bound to the device that presented it.
+    ///
+    /// Single-exchange and expiring, both enforced here rather than by whoever
+    /// remembers to check: an invite is handed around by being *shown*, and the
+    /// only safe assumption is that more than one person saw it.
+    ///
+    /// # Errors
+    /// Rejects an invite that is unknown, expired or already exchanged — with
+    /// one coarse reason, because distinguishing them tells whoever is guessing
+    /// which guesses were close.
+    pub fn exchange(
+        &mut self,
+        token: &str,
+        device: &DeviceClaim,
+        now: Timestamp,
+    ) -> Result<MintedCredential, AuthError> {
+        let digest = digest_token(token);
+        let found = self
+            .invites
+            .values_mut()
+            .find(|i| {
+                bool::from(subtle::ConstantTimeEq::ct_eq(
+                    i.digest.as_bytes(),
+                    digest.as_bytes(),
+                ))
+            })
+            .ok_or(AuthError::Rejected)?;
+
+        if found.used || found.expires_at.unix_millis() <= now.unix_millis() {
+            return Err(AuthError::Rejected);
+        }
+        // Marked before the credential exists, so a failure after this point
+        // cannot leave an invite that has been exchanged and still works.
+        found.used = true;
+        let role = found.role;
+
+        let label = if device.name.trim().is_empty() {
+            "a device".to_owned()
+        } else {
+            device.name.clone()
+        };
+        // Per device and individually revocable, which is what makes "this
+        // phone was stolen" an action somebody can take.
+        Ok(self.mint(role, &label, None, device.pubkey.clone()))
+    }
+
+    /// Every invite still outstanding.
+    #[must_use]
+    pub fn invites(&self) -> Vec<&Invite> {
+        self.invites.values().collect()
+    }
+
+    /// Forget invites that can no longer be exchanged.
+    ///
+    /// Housekeeping rather than security: a used invite is already refused. This
+    /// stops a long-running instance accumulating them forever.
+    pub fn prune_invites(&mut self, now: Timestamp) {
+        self.invites
+            .retain(|_, i| !i.used && i.expires_at.unix_millis() > now.unix_millis());
+    }
+}
+
+/// Random token body, shared by credentials and invites.
+fn random_body() -> String {
+    use rand::Rng as _;
+    let mut bytes = [0u8; TOKEN_BYTES];
+    rand::rng().fill(&mut bytes);
+    const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    bytes
+        .iter()
+        .map(|b| ALPHABET[(*b as usize) % ALPHABET.len()] as char)
+        .collect()
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod invite_tests {
+    use super::*;
+
+    fn device() -> DeviceClaim {
+        DeviceClaim {
+            name: "a phone".to_owned(),
+            pubkey: None,
+            platform: "ios/safari".to_owned(),
+        }
+    }
+
+    #[test]
+    fn an_invite_is_not_a_credential() {
+        // The whole reason invites exist. Printed as a credential — which is
+        // what the invite link used to carry — the QR on somebody's screen is
+        // permanent access for anybody who ever saw it.
+        let mut store = CredentialStore::new();
+        let minted = store.mint_invite(Role::Operator, Timestamp::now());
+
+        assert!(minted.token.starts_with(INVITE_PREFIX));
+        assert!(
+            store
+                .verify(&minted.token, Timestamp::now(), false)
+                .is_err(),
+            "an invite was accepted as a credential"
+        );
+    }
+
+    #[test]
+    fn exchanging_one_produces_a_credential_that_works() {
+        let mut store = CredentialStore::new();
+        let invite = store.mint_invite(Role::Operator, Timestamp::now());
+        let credential = store
+            .exchange(&invite.token, &device(), Timestamp::now())
+            .expect("a fresh invite exchanges");
+
+        assert_eq!(
+            store
+                .verify(&credential.token, Timestamp::now(), false)
+                .expect("valid")
+                .role,
+            Role::Operator
+        );
+    }
+
+    #[test]
+    fn an_invite_can_only_be_exchanged_once() {
+        // An invite is handed around by being *shown*, so the only safe
+        // assumption is that more than one person saw it.
+        let mut store = CredentialStore::new();
+        let invite = store.mint_invite(Role::Operator, Timestamp::now());
+        store
+            .exchange(&invite.token, &device(), Timestamp::now())
+            .expect("the first exchange");
+
+        assert!(
+            store
+                .exchange(&invite.token, &device(), Timestamp::now())
+                .is_err(),
+            "the same invite was exchanged twice"
+        );
+    }
+
+    #[test]
+    fn an_expired_invite_is_refused() {
+        let mut store = CredentialStore::new();
+        let invite = store.mint_invite(Role::Operator, Timestamp::now());
+        let later = Timestamp::from_offset(
+            Timestamp::now().as_offset() + time::Duration::seconds(INVITE_TTL_SECS as i64 + 1),
+        );
+        assert!(store.exchange(&invite.token, &device(), later).is_err());
+    }
+
+    #[test]
+    fn an_invite_nobody_minted_is_refused() {
+        let mut store = CredentialStore::new();
+        assert!(
+            store
+                .exchange("omt_i_notarealinviteatall", &device(), Timestamp::now())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn the_credential_is_named_after_the_device_that_asked_for_it() {
+        // So "this phone was stolen" is something somebody can act on without
+        // knowing which opaque token belonged to it.
+        let mut store = CredentialStore::new();
+        let invite = store.mint_invite(Role::Operator, Timestamp::now());
+        let credential = store
+            .exchange(&invite.token, &device(), Timestamp::now())
+            .expect("exchanges");
+        assert_eq!(credential.credential.label, "a phone");
+    }
+
+    #[test]
+    fn two_devices_get_two_separately_revocable_credentials() {
+        let mut store = CredentialStore::new();
+        let first = store.mint_invite(Role::Operator, Timestamp::now());
+        let second = store.mint_invite(Role::Operator, Timestamp::now());
+        let phone = store
+            .exchange(&first.token, &device(), Timestamp::now())
+            .expect("first");
+        let laptop = store
+            .exchange(
+                &second.token,
+                &DeviceClaim {
+                    name: "a laptop".to_owned(),
+                    pubkey: None,
+                    platform: "macos".to_owned(),
+                },
+                Timestamp::now(),
+            )
+            .expect("second");
+
+        assert!(store.revoke(&phone.credential.id));
+        assert!(store.verify(&phone.token, Timestamp::now(), false).is_err());
+        assert!(
+            store.verify(&laptop.token, Timestamp::now(), false).is_ok(),
+            "revoking one device took the other with it"
+        );
+    }
+
+    #[test]
+    fn a_device_key_is_carried_onto_the_credential() {
+        let mut store = CredentialStore::new();
+        let invite = store.mint_invite(Role::Operator, Timestamp::now());
+        let credential = store
+            .exchange(
+                &invite.token,
+                &DeviceClaim {
+                    name: "a phone".to_owned(),
+                    pubkey: Some("ed25519:9f3a".to_owned()),
+                    platform: "ios".to_owned(),
+                },
+                Timestamp::now(),
+            )
+            .expect("exchanges");
+        assert_eq!(
+            credential.credential.device_key.as_deref(),
+            Some("ed25519:9f3a")
+        );
+    }
+
+    #[test]
+    fn pruning_forgets_what_can_no_longer_be_exchanged() {
+        let mut store = CredentialStore::new();
+        let invite = store.mint_invite(Role::Operator, Timestamp::now());
+        store
+            .exchange(&invite.token, &device(), Timestamp::now())
+            .expect("exchanges");
+        store.prune_invites(Timestamp::now());
+        assert!(store.invites().is_empty());
     }
 }

@@ -227,3 +227,43 @@ fn two_sessions_number_independently_under_real_traffic() {
         );
     }
 }
+
+#[test]
+fn a_session_stops_claiming_to_be_starting_once_its_program_speaks() {
+    // A roster showing seven live shells all labelled "starting" was the
+    // symptom: nothing ever left `Starting`, so the label meant nothing and
+    // there was no way to tell a session wedged during startup from one that
+    // had been sitting at a prompt for an hour.
+    //
+    // The program has to speak *and stay alive*. A program that exits reaches
+    // `Exited` whether or not this works, so a short one asserts nothing —
+    // which is exactly what the first version of this test did.
+    let mut instance = Instance::new();
+    let ws = instance.open_workspace("/w").expect("workspace");
+    let id = spawn_into(&mut instance, ws, "echo up; sleep 30", PtySize::new(80, 24));
+
+    assert_eq!(
+        instance.session(id).map(|s| s.state),
+        Some(omt_session::SessionState::Starting),
+        "a session is starting before its program has said anything"
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        instance.pump_all().expect("pump");
+        if instance.session(id).map(|s| s.state) == Some(omt_session::SessionState::Running) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert_eq!(
+        instance.session(id).map(|s| s.state),
+        Some(omt_session::SessionState::Running),
+        "a session that printed its output still called itself starting"
+    );
+
+    // Not left behind: `sleep 30` outliving the test is how a suite ends up
+    // taking thirty seconds per run.
+    instance.close_session(id).expect("close");
+}

@@ -35,6 +35,8 @@ pub struct State {
     credentials: Arc<Mutex<omt_auth::CredentialStore>>,
     /// Speech engines this instance can use.
     stt: Arc<Mutex<omt_stt::ProviderSet>>,
+    /// What each agent session has said and done.
+    transcripts: Arc<Mutex<crate::transcript::Transcripts>>,
     /// Fan-outs in progress, by name.
     ///
     /// Named rather than numbered because a fan-out outlives the call that
@@ -77,6 +79,7 @@ impl State {
             // which is the whole of BYOK.
             stt: Arc::new(Mutex::new(providers_from_env())),
             fanouts: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
+            transcripts: Arc::new(Mutex::new(crate::transcript::Transcripts::default())),
             config: Arc::new(Mutex::new(None)),
         }
     }
@@ -93,12 +96,24 @@ impl State {
             return Ok(cached);
         }
         let home = config_home();
-        let layers =
-            omt_config::load(&home, None).map_err(|e| CapabilityError::internal(e.to_string()))?;
-        // No schema yet, so every key resolves and nothing is reported unknown.
-        // Stated rather than silently true: once the schema exists this is the
-        // line that starts rejecting typos.
-        let resolved = std::sync::Arc::new(omt_config::merge(&layers, &[]));
+        // The directory omt was started in is the project layer. Passing `None`
+        // here — which this did — means `<repo>/.omt/config.toml` is searched
+        // for by nothing and applied by nothing: a file that arrives with a
+        // `git clone`, that the documentation describes as the way a project
+        // configures itself, and that silently did nothing at all.
+        let workspace = std::env::current_dir().ok();
+        let mut layers = omt_config::load(&home, workspace.as_deref())
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+        // The environment is the runtime layer, and it outranks every file.
+        // `omt_config::from_environment` existed and had no caller, so
+        // `OMT_APPEARANCE__THEME=nord omt web` did nothing either.
+        layers.push(omt_config::from_environment(std::env::vars()));
+
+        // With the schema, a key that does not exist is reported rather than
+        // silently ignored, and a key set from a layer that is not allowed to
+        // set it is dropped *and said out loud*. A silently ignored setting is
+        // indistinguishable from a broken feature.
+        let resolved = std::sync::Arc::new(omt_config::merge(&layers, &omt_config::key_specs()));
         if let Ok(mut slot) = self.config.lock() {
             *slot = Some(resolved.clone());
         }
@@ -126,6 +141,18 @@ impl State {
 const HISTORY_LIMIT: usize = 10_000;
 
 impl State {
+    /// Every session's transcript.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn transcripts(
+        &self,
+    ) -> Result<MutexGuard<'_, crate::transcript::Transcripts>, CapabilityError> {
+        self.transcripts
+            .lock()
+            .map_err(|_| CapabilityError::internal("the transcript lock was poisoned"))
+    }
+
     /// The command history.
     ///
     /// # Errors

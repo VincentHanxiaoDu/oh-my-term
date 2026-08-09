@@ -54,6 +54,30 @@ pub struct Setting {
     pub doc: &'static str,
     /// The permitted values, for an enumerated setting.
     pub choices: &'static [&'static str],
+    /// Which layers may set it.
+    ///
+    /// Not decoration. A repository you cloned must not be able to tell your
+    /// daemon what address to bind, so `server.bind` is not settable from a
+    /// project file — and the merge is where that is enforced, which is why
+    /// this lives on the same table the settings screen reads.
+    pub scope: crate::Scope,
+}
+
+/// The schema, as the merge wants it.
+///
+/// Derived rather than written twice. `SETTINGS` says a settings screen,
+/// `config.schema` and the validator all read one table — and until this
+/// existed the validator read an empty slice, so every key was unknown, no
+/// scope was enforced and a typo was silently applied.
+#[must_use]
+pub fn key_specs() -> Vec<crate::KeySpec> {
+    SETTINGS
+        .iter()
+        .map(|s| crate::KeySpec {
+            key: s.key,
+            scope: s.scope,
+        })
+        .collect()
 }
 
 /// Every setting omt understands.
@@ -67,6 +91,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "\"monospace\"",
         doc: "The font a client renders the terminal in.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "font.size",
@@ -74,6 +99,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "13.0",
         doc: "Point size.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "font.line_height",
@@ -81,6 +107,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "1.2",
         doc: "Line height as a multiple of the font size.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "appearance.theme",
@@ -88,6 +115,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "\"omt dark\"",
         doc: "The theme, by name. Built in, or one imported into the themes directory.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "terminal.scrollback_lines",
@@ -95,6 +123,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "10000",
         doc: "How many lines of scrollback each session keeps.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "terminal.blocks",
@@ -102,6 +131,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "true",
         doc: "Track command blocks. On for every shell; a shell that emits no marks still gets blocks, with less known about each.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "terminal.highlight",
@@ -109,6 +139,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "true",
         doc: "Colour the command line by token.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "hints.enabled",
@@ -116,6 +147,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "true",
         doc: "Show the hint line. It stops offering the introduction once the prefix has been used.",
         choices: &[],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "server.bind",
@@ -123,6 +155,10 @@ pub const SETTINGS: &[Setting] = &[
         default: "\"127.0.0.1:7717\"",
         doc: "Where the web surface listens. Loopback by default, deliberately.",
         choices: &[],
+        // A repository you cloned must not be able to move your daemon off
+        // loopback. This is the key where that matters most, and the scope is
+        // what stops it.
+        scope: crate::Scope::UserOrAbove,
     },
     Setting {
         key: "agents.detection",
@@ -130,6 +166,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "\"all\"",
         doc: "Which agent-detection sources to run.",
         choices: &["all", "told-only", "off"],
+        scope: crate::Scope::Any,
     },
     Setting {
         key: "notifications.when",
@@ -137,6 +174,7 @@ pub const SETTINGS: &[Setting] = &[
         default: "\"needs-you\"",
         doc: "When to notify. `needs-you` is a card waiting on a human, which is the only one worth a buzz by default.",
         choices: &["needs-you", "any-change", "off"],
+        scope: crate::Scope::Any,
     },
 ];
 

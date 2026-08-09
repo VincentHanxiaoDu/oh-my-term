@@ -33,6 +33,7 @@ libc = "0.2"
 omt-agent = { workspace = true }
 omt-agent-adapters = { workspace = true }
 omt-media = { workspace = true }
+omt-identity = { workspace = true }
 omt-store = { workspace = true }
 omt-stt = { workspace = true }
 omt-recall = { workspace = true }
@@ -49,6 +50,7 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 linkme = { workspace = true }
 anyhow = { workspace = true }
+qrcode = { version = "0.14.1", default-features = false }
 
 [dev-dependencies]
 blake3 = { workspace = true }
@@ -59,3 +61,5 @@ omt-session = { workspace = true }
 omt-daemon = { workspace = true }
 tempfile = "3"
 libc = "0.2"
+rqrr = "0.10.1"
+image = "0.25.10"

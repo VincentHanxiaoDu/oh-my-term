@@ -46,6 +46,31 @@ pub enum Source {
 }
 
 impl Source {
+    /// Read a source from its wire name.
+    ///
+    /// The inverse of what a client sends. Unknown returns nothing rather than
+    /// falling back to a guess: importing iTerm2 settings as VS Code's would
+    /// produce a config that is wrong in ways nobody can trace.
+    #[must_use]
+    pub fn from_wire(name: &str) -> Option<Self> {
+        match name {
+            "flat_json" => Some(Self::FlatJson),
+            "vscode" => Some(Self::VsCode),
+            "iterm2" => Some(Self::ITerm2),
+            _ => None,
+        }
+    }
+
+    /// Its wire name.
+    #[must_use]
+    pub const fn wire(self) -> &'static str {
+        match self {
+            Self::FlatJson => "flat_json",
+            Self::VsCode => "vscode",
+            Self::ITerm2 => "iterm2",
+        }
+    }
+
     /// What to call it.
     #[must_use]
     pub const fn name(self) -> &'static str {

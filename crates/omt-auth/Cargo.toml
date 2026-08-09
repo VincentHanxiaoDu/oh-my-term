@@ -13,6 +13,8 @@ thiserror = { workspace = true }
 sha2 = "0.10"
 rand = "0.9"
 subtle = "2"
+schemars = { workspace = true }
+time = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

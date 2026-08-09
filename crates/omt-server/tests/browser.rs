@@ -84,16 +84,35 @@ async fn a_wrong_token_is_refused() {
 }
 
 #[tokio::test]
-async fn a_websocket_without_a_credential_is_refused_before_the_upgrade() {
-    // Accepting the socket and then closing it would let an unauthenticated
-    // caller hold a connection, and browsers report that as an opaque network
-    // error rather than a 401.
+async fn a_websocket_without_a_credential_can_only_exchange_an_invite() {
+    // The upgrade is allowed with no credential, and has to be: an invite is
+    // the right to *obtain* a credential, so requiring one to use it is a door
+    // that only opens from inside.
+    //
+    // What makes that safe is this: such a connection is refused everything
+    // else, including the handshake — a welcome states a role and lists what
+    // the peer may call, and neither is true of a caller who has presented
+    // nothing.
+    use futures_util::{SinkExt as _, StreamExt as _};
+
     let (addr, _) = start().await;
     let url = format!("ws://{addr}/api/ws");
-    assert!(
-        tokio_tungstenite::connect_async(&url).await.is_err(),
-        "an unauthenticated websocket was accepted"
-    );
+    let (mut socket, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("the upgrade is allowed so an invite can be exchanged");
+
+    socket
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            serde_json::json!({ "t": "hello", "proto": 1, "client": "test" }).to_string(),
+        ))
+        .await
+        .expect("send");
+
+    let reply = socket.next().await.expect("a reply").expect("no error");
+    let text = reply.into_text().expect("text");
+    let message: serde_json::Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(message["t"], "goodbye", "{message}");
+    assert_eq!(message["reason"], "unauthorized", "{message}");
 }
 
 #[tokio::test]

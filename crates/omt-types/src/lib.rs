@@ -13,7 +13,7 @@ mod ids;
 mod seq;
 mod timestamp;
 
-pub use domain::{Actor, AgentKind, AgentState, BlockReason, Role, SessionMode, Tier};
+pub use domain::{Actor, AgentKind, AgentState, BlockReason, DeviceClaim, Role, SessionMode, Tier};
 pub use ids::{
     BindingId, BlockId, ClientId, CredentialId, DeviceId, IdentityId, InstanceId, IntentId,
     InteractionId, JobId, PaneId, SessionId, ViewId, WorkspaceId,

@@ -40,15 +40,61 @@ pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()>
     if let (Ok(cwd), Ok(mut instance)) = (std::env::current_dir(), state.lock()) {
         let _ = instance.open_workspace(&cwd.display().to_string());
     }
-    let registry = crate::capabilities::registry(state).context("building the registry")?;
+    let events_state = state.clone();
 
     let mut credentials = CredentialStore::new();
-    let minted = credentials.mint(Role::Operator, "first run", None, None);
+    // An invite, not a credential. Printed as a credential — which this did —
+    // the QR on somebody's screen is permanent access for anybody who ever saw
+    // it, with nothing to revoke short of the token itself. An invite expires,
+    // is exchanged once, and buys a credential belonging to the device that
+    // exchanged it, which is a thing somebody can revoke when a phone is lost.
+    // Admin, because this invite is printed on the machine's own terminal and
+    // whoever reads it is standing at it. Minted as an operator — which it was
+    // — the first device could never invite a second or revoke a lost one, so
+    // device management existed and nobody could reach it.
+    //
+    // Every invite made *from* a device is an operator invite, so admin stays
+    // with whoever started the daemon rather than spreading by default.
+    let minted = credentials.mint_invite(Role::Admin, omt_types::Timestamp::now());
 
     let scheme = if tls.is_some() { "https" } else { "http" };
     println!("omt web on {scheme}://{bind}");
-    println!("token: {}", minted.token);
-    println!("(shown once — it cannot be recovered)");
+
+    // The QR, not the token, is the thing to point a phone at. Printed first
+    // and largest because reading 32 base62 characters off one screen and
+    // typing them into another is the step people give up at — and the step
+    // where a token gets pasted into a chat window to get it across, which
+    // puts it in somebody else's scrollback for good.
+    //
+    // Built from the address a phone can reach, which is not always the one
+    // bound to: `0.0.0.0` means every interface to a socket and nothing at all
+    // to a browser.
+    let address = crate::pairing::reachable_address(bind, crate::pairing::local_ip);
+    let url = crate::pairing::invite_url(scheme, &address, &minted.token);
+    match crate::pairing::qr_block(&url) {
+        Ok(block) => {
+            println!("\nScan to open on your phone:\n");
+            print!("{block}");
+            println!("\n{url}");
+        }
+        // A terminal that cannot show the code still has to be usable, so the
+        // link is printed either way below.
+        Err(_) => println!("\n{url}"),
+    }
+    println!(
+        "(this invite expires in {} minutes and can be used once)",
+        omt_auth::INVITE_TTL_SECS / 60
+    );
+
+    if is_loopback(bind) {
+        // A loopback address in a QR is a code that opens the phone's *own*
+        // localhost. It scans perfectly and goes nowhere, which is the most
+        // confusing possible failure.
+        println!(
+            "note: this address only works on this machine — restart with \
+             `omt web --bind 0.0.0.0:PORT` to pair a phone"
+        );
+    }
 
     // Said out loud when it is missing, because the whole point of the warning
     // is that a token crossing a network in clear text is a token somebody
@@ -59,8 +105,36 @@ pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()>
         );
     }
 
-    omt_server::http::run_with_tls(bind, HttpState::new(registry, credentials), tls)
-        .with_context(|| format!("serving on {bind}"))
+    // The event source, so a subscribing client is *sent* what happens rather
+    // than polling for it.
+    let state_for_events = std::sync::Arc::new(crate::events::InstanceEvents(events_state));
+    // One store, shared: the server authenticates against it and the device
+    // capabilities revoke through it. Two copies would let a revoked device
+    // keep working until whichever one the server consulted caught up.
+    let credentials = std::sync::Arc::new(std::sync::Mutex::new(credentials));
+    // One watch, shared: the socket writes presence and the audit log into it,
+    // and the capabilities that report them read the same one. Two would answer
+    // "who is connected" differently depending on which was asked.
+    let watch: omt_server::watch::Shared = std::sync::Arc::default();
+    if let Ok(mut w) = watch.lock() {
+        w.started(omt_types::Timestamp::now());
+    }
+    // One directory, shared: the join registers a device into it and the
+    // identity capabilities read and revoke through the same one.
+    let identities: std::sync::Arc<std::sync::Mutex<omt_identity::Directory>> =
+        std::sync::Arc::default();
+    let registry = crate::capabilities::registry_full(
+        state,
+        credentials.clone(),
+        watch.clone(),
+        identities.clone(),
+    )
+    .context("building the registry")?;
+    let http = HttpState::sharing(registry, credentials)
+        .watching(watch)
+        .with_identities(identities)
+        .with_events(state_for_events);
+    omt_server::http::run_with_tls(bind, http, tls).with_context(|| format!("serving on {bind}"))
 }
 
 /// How often the pump looks for output.

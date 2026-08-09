@@ -14,6 +14,6 @@ pub use hook::{
     HookAck, HookCorrelation, HookDirective, HookEvent, MAX_VERBATIM_PAYLOAD, Truncation,
 };
 pub use message::{
-    Call, CallOutcome, CallResult, Goodbye, GoodbyeReason, Hello, PROTO_VERSION, ProtoMessage,
-    Resync, Subscribe, Welcome, negotiate,
+    Call, CallOutcome, CallResult, Goodbye, GoodbyeReason, Hello, JoinCredential, JoinExchange,
+    JoinedInstance, PROTO_VERSION, ProtoMessage, Resync, Subscribe, Welcome, negotiate,
 };

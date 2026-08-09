@@ -21,6 +21,14 @@ pub struct Peer {
     pub role: Role,
     /// Whether the handshake has happened.
     pub greeted: bool,
+    /// Whether this connection presented a credential at all.
+    ///
+    /// A connection without one is allowed, because an invite is the right to
+    /// *obtain* a credential and requiring one to use it is a door that only
+    /// opens from inside. It can do exactly one thing — exchange that invite —
+    /// and this is what makes every other message refused rather than run at
+    /// whatever role the connection happens to hold.
+    pub anonymous: bool,
 }
 
 impl Peer {
@@ -31,7 +39,13 @@ impl Peer {
             actor,
             role,
             greeted: false,
+            anonymous: false,
         }
+    }
+
+    /// Mark this peer as having presented no credential.
+    pub const fn unauthenticated(&mut self) {
+        self.anonymous = true;
     }
 }
 
@@ -47,6 +61,15 @@ pub fn handle(
     message: ProtoMessage,
 ) -> Option<ProtoMessage> {
     match message {
+        // First, ahead of the handshake. A connection that presented no
+        // credential exists to exchange an invite — which is handled before
+        // this — and must not be greeted, because a welcome states a role and
+        // lists the capabilities this peer may call.
+        _ if peer.anonymous => Some(ProtoMessage::Goodbye(Goodbye {
+            reason: GoodbyeReason::Unauthorized,
+            detail: "this connection may only exchange an invite".to_owned(),
+        })),
+
         ProtoMessage::Hello(hello) => Some(greet(registry, peer, &hello)),
 
         // Everything else requires the handshake. Answering before it would

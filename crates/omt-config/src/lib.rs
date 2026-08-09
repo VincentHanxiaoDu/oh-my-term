@@ -6,7 +6,7 @@
 //! otherwise unanswerable across four files.
 
 pub mod schema;
-pub use schema::{SETTINGS, Setting, setting};
+pub use schema::{SETTINGS, Setting, key_specs, setting};
 pub mod import;
 pub mod layer;
 pub mod load;

@@ -171,6 +171,23 @@ impl Directory {
         }
     }
 
+    /// Every identity this instance knows.
+    ///
+    /// Absent, nothing could ask "who is there" — only "tell me about this one",
+    /// which needs an id somebody already has. That is a large part of why this
+    /// directory had no callers: it could answer questions nobody was in a
+    /// position to ask.
+    #[must_use]
+    pub fn identities(&self) -> Vec<&Identity> {
+        self.identities.values().collect()
+    }
+
+    /// Every device, whoever it belongs to.
+    #[must_use]
+    pub fn devices(&self) -> Vec<&Device> {
+        self.devices.values().collect()
+    }
+
     /// Look a device up by the key it presented.
     #[must_use]
     pub fn by_key(&self, public_key: &str) -> Option<&Device> {

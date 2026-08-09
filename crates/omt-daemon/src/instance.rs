@@ -543,6 +543,22 @@ impl Instance {
             ));
         }
 
+        // First output is what turns starting into running. Nothing else did
+        // it, so a live session read `starting` for as long as it existed — a
+        // roster of seven shells all claiming to be still starting up, long
+        // after every one of them had printed a prompt.
+        //
+        // Output rather than a live pid: a pid exists the instant the fork
+        // returns and says nothing about whether the program came up. A byte on
+        // the pty is the program speaking. Done here, where the runtime borrow
+        // taken above has ended.
+        if pumped.bytes > 0
+            && let Some(session) = self.tree.session_mut(id)
+            && session.state == omt_session::SessionState::Starting
+        {
+            session.state = omt_session::SessionState::Running;
+        }
+
         let mut out = Vec::new();
         for (source, payload) in pending {
             out.extend(self.emit(id, source, payload));

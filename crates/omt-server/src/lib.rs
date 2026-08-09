@@ -7,9 +7,12 @@
 
 pub mod dispatch;
 pub mod http;
+pub mod watch;
 
 pub use dispatch::{Peer, catalog_hash, handle};
 pub use http::{DEFAULT_BIND, HttpState, TlsFiles, bearer, router, run_with_tls};
+pub use http::{EventCursor, EventSource, EventsSince};
+pub use watch::{AUDIT_LIMIT, Audited, Connected, Watch};
 
 use omt_catalog::CapabilityRegistry;
 
