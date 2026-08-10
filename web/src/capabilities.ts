@@ -434,6 +434,18 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'security.bind_check': (
+    request: RequestId,
+    binds: string[],
+    options: {
+      auth_backend?: boolean
+      tailnet_identity?: boolean
+      tls?: boolean
+      trust_proxy?: boolean
+      default_role?: string
+    } = {},
+  ) => call(request, 'security.bind_check', { binds, ...options }),
+
   'recall.policy': (request: RequestId, indexReasoning = false) =>
     call(request, 'recall.policy', { index_reasoning: indexReasoning }),
 

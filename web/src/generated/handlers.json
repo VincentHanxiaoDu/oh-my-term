@@ -82,6 +82,7 @@
   "recall.suggest",
   "search.explain",
   "search.session",
+  "security.bind_check",
   "session.acquire",
   "session.blocks",
   "session.close",

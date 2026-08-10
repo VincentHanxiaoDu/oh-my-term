@@ -1630,6 +1630,24 @@
     },
     {
       "aliases": [],
+      "doc": "A misconfiguration fails the daemon rather than warning. A warning about an open port is printed once, into a log nobody reads, on a machine that is now reachable from the network.",
+      "effects": [],
+      "group": "security",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "security.bind_check",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/security/bind_check",
+      "since": "0.1.0",
+      "title": "Check a listen configuration",
+      "verb": "bind_check"
+    },
+    {
+      "aliases": [],
       "doc": "Take the writer token for a session, returning the epoch every write is checked against.",
       "effects": [],
       "group": "session",

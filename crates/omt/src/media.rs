@@ -2509,6 +2509,134 @@ impl CapabilityHandler<RecallPolicy> for AttentionHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Bind policy — 13 §2
+// ---------------------------------------------------------------------------
+
+/// Input to `security.bind_check`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct BindCheckIn {
+    /// Where omt would listen: `unix`, `loopback`, `tailnet`, or an address.
+    pub binds: Vec<String>,
+    /// Whether a password or bearer token is configured.
+    #[serde(default)]
+    pub auth_backend: bool,
+    /// Whether Tailscale's LocalAPI supplies identity.
+    #[serde(default)]
+    pub tailnet_identity: bool,
+    /// Whether omt terminates TLS.
+    #[serde(default)]
+    pub tls: bool,
+    /// Whether a reverse proxy is declared to terminate it.
+    #[serde(default)]
+    pub trust_proxy: bool,
+    /// What an unauthenticated caller gets: `none`, `viewer` or `operator`.
+    #[serde(default)]
+    pub default_role: Option<String>,
+}
+
+/// Something that must be fixed first.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RefusalOut {
+    /// What is wrong.
+    pub problem: String,
+    /// What to do about it.
+    pub remedy: String,
+}
+
+/// What `security.bind_check` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct BindCheckOut {
+    /// Whether omt would start.
+    pub may_start: bool,
+    /// Everything that must be fixed, not just the first.
+    pub refusals: Vec<RefusalOut>,
+    /// Things worth knowing that do not stop it.
+    pub warnings: Vec<String>,
+}
+
+omt_catalog::capability! {
+    /// Whether a listen configuration is one omt will start on.
+    pub struct BindCheck;
+    input  = BindCheckIn,
+    output = BindCheckOut,
+    decl = omt_catalog::Decl {
+        name: "security.bind_check",
+        group: "security",
+        verb: "bind_check",
+        title: "Check a listen configuration",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Admin,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A misconfiguration fails the daemon rather than warning. A warning about an open port is printed once, into a log nobody reads, on a machine that is now reachable from the network.",
+    },
+}
+
+/// Serves the bind check.
+pub struct SecurityHandler;
+
+impl CapabilityHandler<BindCheck> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: BindCheckIn,
+    ) -> Result<BindCheckOut, CapabilityError> {
+        use omt_auth::bind::{Auth, Bind, DefaultRole, Listen, Transport, check};
+        let mut binds = Vec::new();
+        for spec in &input.binds {
+            binds.push(match spec.as_str() {
+                "unix" => Bind::UnixSocket {
+                    path: "/run/omt.sock".to_owned(),
+                },
+                "loopback" => Bind::Loopback { port: 7878 },
+                "tailnet" => Bind::Tailnet { port: 7878 },
+                other => {
+                    let addr = other.parse().map_err(|_| {
+                        CapabilityError::invalid_input(format!(
+                            "`{other}` is not `unix`, `loopback`, `tailnet` or an IP address"
+                        ))
+                    })?;
+                    Bind::Interface { addr, port: 7878 }
+                }
+            });
+        }
+        let verdict = check(&Listen {
+            binds,
+            auth: Auth {
+                backend: input.auth_backend,
+                tailnet_identity: input.tailnet_identity,
+            },
+            transport: Transport {
+                tls: input.tls,
+                trust_proxy: input.trust_proxy,
+            },
+            default_role: match input.default_role.as_deref() {
+                Some("viewer") => DefaultRole::Viewer,
+                Some("operator") => DefaultRole::Operator,
+                _ => DefaultRole::None,
+            },
+        });
+        Ok(BindCheckOut {
+            may_start: verdict.may_start(),
+            refusals: verdict
+                .refusals
+                .into_iter()
+                .map(|r| RefusalOut {
+                    problem: r.problem,
+                    remedy: r.remedy,
+                })
+                .collect(),
+            warnings: verdict.warnings.into_iter().map(|w| w.note).collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
