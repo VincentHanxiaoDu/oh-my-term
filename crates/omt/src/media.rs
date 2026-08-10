@@ -2908,6 +2908,95 @@ impl CapabilityHandler<LaunchPreview> for SecurityHandler {
     }
 }
 
+/// Input to `keys.check_file`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CheckFileIn {
+    /// The leader chord.
+    pub leader: String,
+    /// Which flavour.
+    #[serde(default)]
+    pub keymap: Option<String>,
+    /// Trigger to action.
+    pub bindings: Vec<(String, String)>,
+}
+
+/// Something wrong with a keybinding file.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct BindingProblemOut {
+    /// Which trigger.
+    pub trigger: String,
+    /// What is wrong.
+    pub message: String,
+    /// What to do.
+    pub help: String,
+}
+
+/// What `keys.check_file` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CheckFileOut {
+    /// Everything wrong, in file order.
+    pub problems: Vec<BindingProblemOut>,
+}
+
+omt_catalog::capability! {
+    /// Check a keybinding file against the capabilities that exist.
+    pub struct CheckBindingFile;
+    input  = CheckFileIn,
+    output = CheckFileOut,
+    decl = omt_catalog::Decl {
+        name: "keys.check_file",
+        group: "keys",
+        verb: "check_file",
+        title: "Check a keybinding file",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A binding naming a capability that is not there parses, loads and does nothing — and the person who wrote it concludes their key is broken rather than their spelling.",
+    },
+}
+
+/// Serves the keybinding file check, which needs the catalog to check against.
+///
+/// A cell filled *after* registration finishes rather than a list captured
+/// during it. Capturing mid-registration gives whatever happened to be
+/// registered so far, which is a subset that changes with the order of the
+/// lines above — and the failure is a valid binding reported as naming a
+/// capability that does not exist. Found exactly that way.
+pub struct BindingFileHandler(pub std::sync::Arc<std::sync::OnceLock<Vec<String>>>);
+
+impl CapabilityHandler<CheckBindingFile> for BindingFileHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: CheckFileIn,
+    ) -> Result<CheckFileOut, CapabilityError> {
+        let file = omt_input::keymap::BindingFile {
+            leader: input.leader,
+            keymap: input.keymap.unwrap_or_else(|| "default".to_owned()),
+            bindings: input.bindings,
+        };
+        Ok(CheckFileOut {
+            problems: omt_input::keymap::check_bindings(
+                &file,
+                self.0.get().map_or(&[][..], Vec::as_slice),
+            )
+                .into_iter()
+                .map(|p| BindingProblemOut {
+                    trigger: p.trigger,
+                    message: p.message,
+                    help: p.help,
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -280,6 +280,139 @@ pub fn cheatsheet_markdown(keymap: &Keymap) -> String {
     out
 }
 
+/// A keybinding file, flat.
+///
+/// `docs/architecture/10-configuration.md` §8.2. Flat because it is greppable,
+/// diffable and machine-editable; contexts live on the trigger rather than in
+/// nesting. Nesting reads better in an example and worse in a real file — a
+/// binding somebody is hunting for is found by searching for the chord, and a
+/// nested file hides which context they landed in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingFile {
+    /// The leader, which relocates the whole namespace with one edit.
+    pub leader: String,
+    /// Which flavour: `default`, `vim`, `emacs`, or a name.
+    pub keymap: String,
+    /// Trigger to action.
+    pub bindings: Vec<(String, String)>,
+}
+
+/// Something wrong with a keybinding file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingProblem {
+    /// The trigger it concerns.
+    pub trigger: String,
+    /// What is wrong.
+    pub message: String,
+    /// What to do.
+    pub help: String,
+}
+
+/// Split a trigger into its context and its chord.
+///
+/// `copy:j` is `j` in copy mode; a bare `j` is global. On the trigger rather
+/// than in a section header, so grepping for `j` finds every place it is bound
+/// — which is the question somebody has when a key does something unexpected.
+#[must_use]
+pub fn split_trigger(trigger: &str) -> (Option<&str>, &str) {
+    match trigger.split_once(':') {
+        Some((context, chord)) if !context.is_empty() && !chord.is_empty() => {
+            (Some(context), chord)
+        }
+        _ => (None, trigger),
+    }
+}
+
+/// Check a keybinding file against the capabilities that exist.
+///
+/// Every problem, in file order. The important one is an action naming a
+/// capability that is not there: the binding parses, loads, and does nothing,
+/// and the person who wrote it concludes their key is broken rather than their
+/// spelling.
+#[must_use]
+pub fn check_bindings(file: &BindingFile, capabilities: &[String]) -> Vec<BindingProblem> {
+    let mut out = Vec::new();
+
+    if Chord::parse(&file.leader).is_err() {
+        out.push(BindingProblem {
+            trigger: "leader".to_owned(),
+            message: format!("`{}` is not a chord", file.leader),
+            help: "Write it like `ctrl-b`.".to_owned(),
+        });
+    }
+
+    let known_contexts = ["global", "copy", "overlay", "pane", "agent"];
+    for (trigger, action) in &file.bindings {
+        let (context, chord) = split_trigger(trigger);
+
+        if let Some(context) = context
+            && !known_contexts.contains(&context)
+        {
+            out.push(BindingProblem {
+                trigger: trigger.clone(),
+                message: format!("`{context}` is not a context omt has"),
+                help: format!("The contexts are {}.", known_contexts.join(", ")),
+            });
+        }
+        if Chord::parse(chord).is_err() {
+            out.push(BindingProblem {
+                trigger: trigger.clone(),
+                message: format!("`{chord}` is not a chord"),
+                help: "Write it like `ctrl-shift-p`, or `copy:j` to scope it.".to_owned(),
+            });
+            continue;
+        }
+        // The name of the action, before any arguments.
+        let name = action.split_whitespace().next().unwrap_or(action);
+        if !capabilities.iter().any(|c| c == name) {
+            out.push(BindingProblem {
+                trigger: trigger.clone(),
+                message: format!("`{name}` is not a capability this instance has"),
+                // Suggested rather than merely refused, because the usual
+                // cause is a near-miss and the usual fix is one character.
+                help: nearest(name, capabilities).map_or_else(
+                    || "Check `omt keys list` for what can be bound.".to_owned(),
+                    |near| format!("Did you mean `{near}`?"),
+                ),
+            });
+        }
+    }
+
+    out
+}
+
+/// The closest capability name, when one is close enough to suggest.
+fn nearest<'a>(wanted: &str, capabilities: &'a [String]) -> Option<&'a str> {
+    capabilities
+        .iter()
+        .map(|c| (distance(wanted, c), c.as_str()))
+        // Two edits. Three starts suggesting things that share almost nothing,
+        // and a wrong suggestion is worse than none: somebody takes it.
+        .filter(|(d, _)| *d <= 2)
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, c)| c)
+}
+
+/// Levenshtein distance, capped by the shorter word.
+fn distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut current = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            current.push(
+                (current[j] + 1)
+                    .min(previous[j + 1] + 1)
+                    .min(previous[j] + cost),
+            );
+        }
+        previous = current;
+    }
+    previous[b.len()]
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -530,6 +663,130 @@ mod tests {
                     chord.canonical()
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod binding_file_tests {
+    use super::*;
+
+    fn capabilities() -> Vec<String> {
+        vec![
+            "session.create".to_owned(),
+            "session.close".to_owned(),
+            "ui.open_command_palette".to_owned(),
+        ]
+    }
+
+    fn file(bindings: Vec<(&str, &str)>) -> BindingFile {
+        BindingFile {
+            leader: "ctrl-b".to_owned(),
+            keymap: "default".to_owned(),
+            bindings: bindings
+                .into_iter()
+                .map(|(t, a)| (t.to_owned(), a.to_owned()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_context_lives_on_the_trigger_not_in_a_section() {
+        // So grepping for `j` finds every place it is bound, which is the
+        // question somebody has when a key does something unexpected.
+        assert_eq!(split_trigger("copy:j"), (Some("copy"), "j"));
+        assert_eq!(split_trigger("j"), (None, "j"));
+    }
+
+    #[test]
+    fn a_trigger_with_an_empty_half_is_taken_whole() {
+        // `:j` and `copy:` are typos, and treating them as scoped would bind
+        // something in a context named nothing.
+        assert_eq!(split_trigger(":j"), (None, ":j"));
+        assert_eq!(split_trigger("copy:"), (None, "copy:"));
+    }
+
+    #[test]
+    fn a_good_file_reports_nothing() {
+        let f = file(vec![("ctrl-t", "session.create"), ("copy:y", "session.close")]);
+        assert!(check_bindings(&f, &capabilities()).is_empty());
+    }
+
+    #[test]
+    fn an_action_naming_no_capability_is_the_important_error() {
+        // The binding parses, loads, and does nothing — and the person who
+        // wrote it concludes their key is broken rather than their spelling.
+        let f = file(vec![("ctrl-t", "session.craete")]);
+        let found = check_bindings(&f, &capabilities());
+        assert_eq!(found.len(), 1);
+        assert!(found[0].message.contains("not a capability"));
+    }
+
+    #[test]
+    fn a_near_miss_is_suggested_because_the_fix_is_one_character() {
+        let f = file(vec![("ctrl-t", "session.creat")]);
+        let found = check_bindings(&f, &capabilities());
+        assert!(found[0].help.contains("session.create"), "{}", found[0].help);
+    }
+
+    #[test]
+    fn something_that_resembles_nothing_gets_no_guess() {
+        // A wrong suggestion is worse than none, because somebody takes it.
+        let f = file(vec![("ctrl-t", "totally.unrelated")]);
+        let found = check_bindings(&f, &capabilities());
+        assert!(found[0].help.contains("keys list"), "{}", found[0].help);
+    }
+
+    #[test]
+    fn an_unparseable_chord_is_reported_against_its_trigger() {
+        let f = file(vec![("not a chord", "session.create")]);
+        let found = check_bindings(&f, &capabilities());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].trigger, "not a chord");
+    }
+
+    #[test]
+    fn a_context_omt_does_not_have_is_reported_with_the_ones_it_does() {
+        let f = file(vec![("nonsense:j", "session.create")]);
+        let found = check_bindings(&f, &capabilities());
+        assert!(found.iter().any(|p| p.help.contains("copy")), "{found:?}");
+    }
+
+    #[test]
+    fn a_bad_leader_is_reported_against_the_leader() {
+        let mut f = file(vec![]);
+        f.leader = "not a chord".to_owned();
+        let found = check_bindings(&f, &capabilities());
+        assert_eq!(found[0].trigger, "leader");
+    }
+
+    #[test]
+    fn every_problem_in_the_file_is_reported() {
+        let f = file(vec![
+            ("ctrl-t", "session.nope"),
+            ("also not a chord", "session.create"),
+            ("nonsense:j", "session.create"),
+        ]);
+        assert!(check_bindings(&f, &capabilities()).len() >= 3);
+    }
+
+    #[test]
+    fn an_action_with_arguments_is_checked_by_its_name() {
+        // The arguments are the capability's business, not the keymap's.
+        let f = file(vec![("ctrl-t", "session.create --agent claude")]);
+        assert!(check_bindings(&f, &capabilities()).is_empty());
+    }
+
+    #[test]
+    fn every_problem_carries_help() {
+        let f = file(vec![("ctrl-t", "session.nope"), ("bad chord", "x")]);
+        for problem in check_bindings(&f, &capabilities()) {
+            assert!(!problem.help.is_empty(), "{}", problem.trigger);
         }
     }
 }

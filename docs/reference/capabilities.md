@@ -50,6 +50,7 @@ vanishing.
 | `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
 | `keys.audit` | query | viewer | A registry nobody runs the defaults against documents a problem instead of preventing one. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
+| `keys.check_file` | query | viewer | A binding naming a capability that is not there parses, loads and does nothing — and the person who wrote it concludes their key is broken rather than their spelling. |
 | `keys.conflicts` | query | viewer | `Conflicts with something` is not actionable — every chord collides somewhere. This says which program, what the key does there, and how badly it would be missed. |
 | `keys.explain` | query | viewer | `Not bound` and `bound, but the pane underneath owns it` look identical from the user's chair and have different fixes, so this says which. |
 | `keys.flavour` | query | viewer | A modal keymap governs omt's own surfaces only. It never governs a pane whose keys are passing through, which is what stops omt and an inner vim from contending over hjkl. |
@@ -129,4 +130,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-119 capabilities.
+120 capabilities.

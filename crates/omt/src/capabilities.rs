@@ -5994,6 +5994,13 @@ pub fn registry_full(
     r.register::<crate::media::PublishCheck, _>(crate::media::SecurityHandler)?;
     r.register::<crate::media::ReloadClass, _>(crate::media::SecurityHandler)?;
     r.register::<crate::media::LaunchPreview, _>(crate::media::SecurityHandler)?;
+    // Filled after every registration, below. A binding file is checked
+    // against what this instance actually offers, which is the only list that
+    // answers "will this key do anything here".
+    let names: std::sync::Arc<std::sync::OnceLock<Vec<String>>> = std::sync::Arc::default();
+    r.register::<crate::media::CheckBindingFile, _>(crate::media::BindingFileHandler(
+        names.clone(),
+    ))?;
     r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(
@@ -6111,6 +6118,10 @@ pub fn registry_full(
     r.register::<SessionSnapshot, _>(SessionSnapshotHandler(state.clone()))?;
     r.register::<ConfigGet, _>(ConfigGetHandler(state))?;
     r.register::<KeysCheatsheet, _>(KeysHandler)?;
+    // Now that everything is registered. Doing this above would capture a
+    // subset that depends on the order of the lines, and a binding naming a
+    // real capability would be reported as naming none.
+    let _ = names.set(r.decls().map(|d| d.name.to_owned()).collect());
     r.seal()?;
     Ok(r)
 }

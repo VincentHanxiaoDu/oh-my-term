@@ -434,6 +434,18 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'keys.check_file': (
+    request: RequestId,
+    leader: string,
+    bindings: [string, string][],
+    keymap?: string,
+  ) =>
+    call(request, 'keys.check_file', {
+      leader,
+      bindings,
+      ...(keymap === undefined ? {} : { keymap }),
+    }),
+
   'launch.preview': (request: RequestId, launch: Record<string, unknown>) =>
     call(request, 'launch.preview', { launch }),
 

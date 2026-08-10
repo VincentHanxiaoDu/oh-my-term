@@ -806,6 +806,24 @@
     },
     {
       "aliases": [],
+      "doc": "A binding naming a capability that is not there parses, loads and does nothing — and the person who wrote it concludes their key is broken rather than their spelling.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.check_file",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/check_file",
+      "since": "0.1.0",
+      "title": "Check a keybinding file",
+      "verb": "check_file"
+    },
+    {
+      "aliases": [],
       "doc": "`Conflicts with something` is not actionable — every chord collides somewhere. This says which program, what the key does there, and how badly it would be missed.",
       "effects": [],
       "group": "keys",

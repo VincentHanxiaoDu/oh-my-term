@@ -425,3 +425,56 @@ class TestKeysAreExplicable:
 
         with pytest.raises(Exception):
             client.call("keys.explain", chord="not a chord")
+
+
+class TestKeybindingFiles:
+    """10-configuration §8.2. Flat, contexts on the trigger."""
+
+    def test_a_good_file_reports_nothing(self, client) -> None:
+        out = client.call(
+            "keys.check_file",
+            leader="ctrl-b",
+            bindings=[["ctrl-t", "session.create"]],
+        )
+        assert out["problems"] == []
+
+    def test_a_binding_naming_no_capability_is_caught(self, client) -> None:
+        # It parses, loads and does nothing, and the person who wrote it
+        # concludes their key is broken rather than their spelling.
+        out = client.call(
+            "keys.check_file",
+            leader="ctrl-b",
+            bindings=[["ctrl-t", "session.craete"]],
+        )
+        assert len(out["problems"]) == 1
+        assert "not a capability" in out["problems"][0]["message"]
+
+    def test_a_near_miss_is_suggested(self, client) -> None:
+        out = client.call(
+            "keys.check_file", leader="ctrl-b", bindings=[["ctrl-t", "session.creat"]]
+        )
+        assert "session.create" in out["problems"][0]["help"]
+
+    def test_a_context_lives_on_the_trigger(self, client) -> None:
+        # So grepping for `j` finds every place it is bound.
+        out = client.call(
+            "keys.check_file", leader="ctrl-b", bindings=[["copy:j", "session.create"]]
+        )
+        assert out["problems"] == []
+
+    def test_an_unknown_context_lists_the_ones_that_exist(self, client) -> None:
+        out = client.call(
+            "keys.check_file",
+            leader="ctrl-b",
+            bindings=[["nonsense:j", "session.create"]],
+        )
+        assert any("copy" in p["help"] for p in out["problems"])
+
+    def test_every_problem_comes_back_with_help(self, client) -> None:
+        out = client.call(
+            "keys.check_file",
+            leader="not a chord",
+            bindings=[["ctrl-t", "session.nope"], ["also bad", "session.create"]],
+        )
+        assert len(out["problems"]) >= 3
+        assert all(p["help"] for p in out["problems"])
