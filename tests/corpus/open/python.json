@@ -1,0 +1,29 @@
+{
+  "producer": "python traceback, pytest",
+  "cases": [
+    {
+      "line": "  File \"/app/service.py\", line 42, in handle_request",
+      "rule": "builtin.python_traceback",
+      "target": "/app/service.py",
+      "line_number": 42
+    },
+    {
+      "line": "  File \"/home/me/my project/app.py\", line 7, in <module>",
+      "rule": "builtin.python_traceback",
+      "target": "/home/me/my project/app.py",
+      "line_number": 7
+    },
+    {
+      "line": "Traceback (most recent call last):",
+      "rule": null
+    },
+    {
+      "line": "During handling of the above exception, another occurred:",
+      "rule": null
+    },
+    {
+      "line": "ValueError: something went wrong",
+      "rule": null
+    }
+  ]
+}

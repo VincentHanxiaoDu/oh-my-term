@@ -1,0 +1,33 @@
+{
+  "producer": "rustc, clippy, cargo test",
+  "cases": [
+    {
+      "line": "  --> crates/omt/src/main.rs:9:5",
+      "rule": "builtin.rustc_arrow",
+      "target": "crates/omt/src/main.rs",
+      "line_number": 9
+    },
+    {
+      "line": "error[E0433]: failed to resolve",
+      "rule": null
+    },
+    {
+      "line": "thread 'main' panicked at src/lib.rs:120:9:",
+      "rule": "builtin.rust_panic",
+      "target": "src/lib.rs",
+      "line_number": 120
+    },
+    {
+      "line": "   Compiling omt v0.1.0",
+      "rule": null
+    },
+    {
+      "line": "test result: ok. 57 passed; 0 failed",
+      "rule": null
+    },
+    {
+      "line": "warning: unused variable",
+      "rule": null
+    }
+  ]
+}

@@ -71,6 +71,27 @@ const TRAILING_PUNCTUATION: &[char] = &['.', ',', ';', ':', '!', '?', '\'', '"',
 /// bracket travels with the link and it resolves to nothing.
 const LEADING_PUNCTUATION: &[char] = &['(', '[', '{', '\'', '"', '<'];
 
+/// Bytes without which no rule can possibly match.
+///
+/// `docs/architecture/18-semantic-open.md` §10. Every path has a separator or
+/// an extension dot, every URL has a colon, and every rule anchored on a
+/// literal contains one of these. A line with none of them cannot match
+/// anything, and on the overwhelmingly common no-match line this single pass is
+/// the whole cost.
+///
+/// The safety property is one-directional and it is the only one that matters:
+/// **the prefilter may never skip a line that would have matched.** A
+/// false negative here is a link that silently fails to appear, which is
+/// indistinguishable from the rule being wrong and is debugged by reading the
+/// matcher. A false positive costs one wasted scan and nothing else.
+const REQUIRED_BYTES: &[u8] = b"/:.";
+
+/// Whether a line is worth running the matcher over.
+#[must_use]
+pub fn might_match(line: &str) -> bool {
+    line.bytes().any(|b| REQUIRED_BYTES.contains(&b))
+}
+
 /// Find every actionable target in one line of text.
 ///
 /// Takes a single line by construction: a caller cannot accidentally pass two
@@ -78,6 +99,12 @@ const LEADING_PUNCTUATION: &[char] = &['(', '[', '{', '\'', '"', '<'];
 /// half-URLs.
 #[must_use]
 pub fn recognize(line: &str) -> Vec<Match> {
+    // The cheap test first. On a line with no separator, colon or dot there is
+    // nothing any rule could match, and this pass is the entire cost.
+    if !might_match(line) {
+        return Vec::new();
+    }
+
     let mut out = Vec::new();
     let mut index = 0usize;
 
@@ -225,6 +252,87 @@ fn split_location(token: &str) -> (&str, Option<u32>, Option<u32>) {
 )]
 mod tests {
     use super::*;
+
+    /// Lines drawn from what actually goes past in a terminal, plus the awkward
+    /// ones. Used to hold the prefilter to its one-directional promise.
+    const CORPUS: &[&str] = &[
+        "see src/main.rs:42 for the cause",
+        "docs at https://example.invalid/x",
+        r#"  File "/app/service.py", line 42, in handle"#,
+        "  --> crates/omt/src/main.rs:9:5",
+        "thread 'main' panicked at src/lib.rs:120:9:",
+        "    at handleRequest (/app/server.js:12:15)",
+        "./configure --prefix=/usr/local",
+        "Compiling omt v0.1.0",
+        "warning: unused variable",
+        "just some ordinary prose here",
+        "",
+        "   ",
+        "make: *** [all] Error 2",
+        "user@host ~ %",
+        "0123456789",
+        "a.b",
+        "::::",
+        "/",
+        "no separators here at all so nothing can match",
+    ];
+
+    #[test]
+    fn the_prefilter_never_skips_a_line_that_would_have_matched() {
+        // The one-directional promise, and the only property that matters. A
+        // false negative is a link that silently fails to appear, which is
+        // indistinguishable from the rule being wrong and gets debugged by
+        // reading the matcher.
+        for line in CORPUS {
+            if !might_match(line) {
+                // Run the full matcher with the prefilter bypassed, by calling
+                // the rule table and the token scan the way `recognize` would.
+                assert!(
+                    crate::rules::apply(line).is_none(),
+                    "prefilter skipped `{line}`, which a rule matches"
+                );
+                assert!(
+                    line.split_whitespace()
+                        .all(|token| as_url(token).is_none() && as_path(token).is_none()),
+                    "prefilter skipped `{line}`, which the token scan matches"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_prefilter_actually_rejects_the_common_no_match_line() {
+        // If it rejected nothing it would be a pure cost. Ordinary prose is
+        // most of what goes past in a terminal.
+        assert!(!might_match("just some ordinary prose here"));
+        assert!(!might_match("warning unused variable"));
+        assert!(!might_match(""));
+        assert!(might_match("src/main.rs"));
+    }
+
+    #[test]
+    fn recognition_over_a_screenful_is_cheap_enough_to_run_every_frame() {
+        // §10's bound: the matcher runs over the viewport, never the
+        // scrollback. Sixty lines is a full-screen redraw. This is a
+        // regression guard on the order of magnitude, not a benchmark — a
+        // change that made recognition a hundred times slower would make
+        // scrolling visibly stutter, and nothing else here would notice.
+        let screen: Vec<String> = (0..60)
+            .map(|i| format!("{} line {i} with src/file{i}.rs:{i} in it", "x".repeat(60)))
+            .collect();
+        let started = std::time::Instant::now();
+        for _ in 0..100 {
+            for line in &screen {
+                let _ = recognize(line);
+            }
+        }
+        let per_frame = started.elapsed() / 100;
+        assert!(
+            per_frame < std::time::Duration::from_millis(8),
+            "a screenful took {per_frame:?}, which would show as stutter"
+        );
+    }
+
 
     fn targets(line: &str) -> Vec<Target> {
         recognize(line).into_iter().map(|m| m.target).collect()

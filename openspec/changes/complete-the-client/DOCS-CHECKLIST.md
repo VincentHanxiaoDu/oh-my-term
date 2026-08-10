@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**75 of 212 features ticked.** (34 further sections are prose.)
+**77 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -243,8 +243,8 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 7. Web and mobile parity
 - [x] 8. Security — omt-open: lexical normalisation without touching the filesystem, absolute paths outside every root refused
 - [x] 9. Capabilities — test_workspace_surfaces: open.resolve, open.rules_list, open.rules_test; every listed rule proven to fire (open.remote.* is §6, not covered)
-- [ ] 10. Performance
-- [ ] 11. Testing
+- [x] 10. Performance — omt-open: byte prefilter proven never to skip a matching line; a screenful under 8ms; a 16k line bounded
+- [x] 11. Testing — crates/omt-open/tests/corpus.rs over tests/corpus/open/: 28 cases, negatives outnumber positives, hostile file, reflow stability
 - ~~12. OPEN QUESTIONS~~ — prose
 
 ## 19-onboarding

@@ -1,0 +1,35 @@
+{
+  "producer": "node, jest, vitest",
+  "cases": [
+    {
+      "line": "    at handleRequest (/app/server.js:12:15)",
+      "rule": "builtin.node_stack",
+      "target": "/app/server.js",
+      "line_number": 12
+    },
+    {
+      "line": "    at /app/index.js:3:1",
+      "rule": "builtin.node_stack",
+      "target": "/app/index.js",
+      "line_number": 3
+    },
+    {
+      "line": "    at run (file:///app/x.js:1:1)",
+      "rule": "builtin.node_stack",
+      "target": "/app/x.js",
+      "line_number": 1
+    },
+    {
+      "line": "Error: connect ECONNREFUSED",
+      "rule": null
+    },
+    {
+      "line": "the file is at the top",
+      "rule": null
+    },
+    {
+      "line": "    at Object.<anonymous>",
+      "rule": null
+    }
+  ]
+}
