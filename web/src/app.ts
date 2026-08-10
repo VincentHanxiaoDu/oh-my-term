@@ -181,6 +181,39 @@ export function orderRoster<T extends { state: string; title: string }>(
  * rebuild was a header counting one thing and a body counting another, both on
  * screen, disagreeing — with no way for a user to tell which was right.
  */
+/**
+ * What a screen reader should be told when the roster changes.
+ *
+ * `docs/architecture/08-web-client.md` §9.1. Returns `null` when nothing needs
+ * saying, which is most of the time — a region that speaks on every render
+ * teaches somebody to tune it out, and then it is not there for the one that
+ * mattered.
+ *
+ * A session going to `blocked` is urgent: it is the one event that stops work
+ * and the entire reason this surface exists. Anything else is not announced at
+ * all, because a sighted user can see it and a screen-reader user can go and
+ * look — the region is for what cannot be discovered by looking.
+ */
+export function announcement(
+  before: readonly SessionRow[],
+  after: readonly SessionRow[],
+): { message: string; urgent: boolean } | null {
+  const was = new Set(before.filter((r) => needsYou(r.state)).map((r) => r.id))
+  const now = after.filter((r) => needsYou(r.state))
+  const fresh = now.filter((r) => !was.has(r.id))
+  if (fresh.length === 0) {
+    return null
+  }
+  // Named where there is one, counted where there are several: "3 sessions
+  // need you" is what somebody can act on, and three separate announcements
+  // in a row is noise they will turn off.
+  const message =
+    fresh.length === 1
+      ? `${fresh[0]?.title ?? 'A session'} needs you`
+      : `${fresh.length} sessions need you`
+  return { message, urgent: true }
+}
+
 export function rosterSubtitle(rows: readonly SessionRow[]): string {
   const blocked = rows.filter((r) => needsYou(r.state)).length
   if (blocked > 0) {
@@ -1293,6 +1326,18 @@ export class App {
     return box
   }
 
+  /** The roster as it was last rendered, for spotting what is new. */
+  #lastRoster: readonly SessionRow[] = []
+
+  /** Where announcements go. Off-screen, present on every screen. */
+  readonly #live: HTMLElement = (() => {
+    const region = document.createElement('p')
+    region.className = 'sr-only'
+    region.setAttribute('aria-live', 'polite')
+    region.setAttribute('aria-atomic', 'true')
+    return region
+  })()
+
   #shell(
     bar: HTMLElement,
     body: HTMLElement,
@@ -1317,10 +1362,34 @@ export class App {
     if (keybar) {
       this.#root.append(keybar)
     }
+    // 08 §9.1. Kept across renders rather than rebuilt with the screen: a live
+    // region that is replaced is a live region that never announces, because
+    // the browser only speaks a change to a node it was already watching.
+    this.#root.append(this.#live)
+  }
+
+  /** Announce something a screen reader would otherwise have to go and find. */
+  announce(message: string, urgent = false): void {
+    // A new interaction is polite: it can wait for a pause. A session going to
+    // `blocked` is assertive, because it is the one thing that stops work and
+    // the whole point of the surface is that somebody learns about it.
+    this.#live.setAttribute('aria-live', urgent ? 'assertive' : 'polite')
+    // Cleared first: setting the same text twice is not a change, and the
+    // second identical announcement would be silent — which is exactly the
+    // case of a second agent blocking for the same reason.
+    this.#live.textContent = ''
+    this.#live.textContent = message
   }
 
   #renderRoster(): void {
     const view = this.#store.state
+    // Said before the screen is built, so a reader hears it whether or not the
+    // roster is the screen somebody is on (08 §9.1).
+    const said = announcement(this.#lastRoster, this.unified as SessionRow[])
+    if (said) {
+      this.announce(said.message, said.urgent)
+    }
+    this.#lastRoster = this.unified as SessionRow[]
     // Counts arrive with the roster now, so every screen agrees about which
     // sessions have an agent in them without asking per session.
     for (const session of view.sessions) {
@@ -1980,7 +2049,18 @@ export class App {
       return
     }
 
-    body.append(promptElement(card.kind, card.prompt))
+    // 08 §9.1: the card is the decision and everything else is behind it, so
+    // it is a real dialog rather than a div that looks like one. A screen
+    // reader is then told the same thing a sighted user sees — that this is
+    // the thing to deal with — instead of reading the roster underneath it.
+    body.setAttribute('role', 'dialog')
+    body.setAttribute('aria-modal', 'true')
+    const heading = `card-prompt-${card.id}`
+    body.setAttribute('aria-labelledby', heading)
+
+    const prompt = promptElement(card.kind, card.prompt)
+    prompt.id = heading
+    body.append(prompt)
 
     // A plan is the thing being reviewed, so it is the body of the card rather
     // than something to go and find.
@@ -2025,6 +2105,13 @@ export class App {
       return
     }
 
+    // A real group rather than a run of buttons: a screen reader announces
+    // "one of four" and which one, which is exactly the information the
+    // terminal card cannot convey.
+    const choices = el('div', 'choices')
+    choices.setAttribute('role', 'group')
+    choices.setAttribute('aria-labelledby', heading)
+
     for (const option of offer.options) {
       const button = el('button', option.confirm === 'hold' ? 'tap hold' : 'tap')
       button.append(el('span', 'label', option.label))
@@ -2042,8 +2129,9 @@ export class App {
       } else {
         button.addEventListener('click', () => void this.answer(card.id, option.label))
       }
-      body.append(button)
+      choices.append(button)
     }
+    body.append(choices)
 
     this.#shell(bar, body)
   }

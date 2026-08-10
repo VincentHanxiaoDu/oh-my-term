@@ -579,6 +579,23 @@ html, body {
 .cell.blocked { border-color: var(--needs-you); color: var(--needs-you); }
 .cell.working { border-color: var(--working); color: var(--working); }
 
+/* Present for a screen reader, absent for everyone else.
+
+   Not display:none and not visibility:hidden -- both remove the element
+   from the accessibility tree, so a live region styled that way announces
+   nothing at all -- the failure mode that looks like it works. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .banner {
   display: flex;
   align-items: center;

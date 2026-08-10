@@ -96,16 +96,16 @@ Unticked means not done. Partly built stays unticked.
 
 ## 08-web-client
 
-- [ ] 1. Stack
-- [ ] 2. Consuming generated artifacts
+- [x] 1. Stack — TypeScript with `strict`, `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, which is what §2's type-level parity mechanism depends on, plus Vitest (278 tests) and Playwright (device profiles). ⚠️ **The stack diverges from §1**: no Vite, no Solid.js, no xterm.js — the client is framework-free with hand-written DOM and its own terminal rendering from `session.snapshot`'s styled runs. That is a smaller dependency surface than the document specifies and it works; the document and the code disagree and one of them should move.
+- [x] 2. Consuming generated artifacts — `web/src/generated/` is committed and `codegen-check` diffs it. §2's **type-level** exhaustiveness check now exists in `web/src/parity.ts`: `Exclude<Capability, Handled>` must be `never` in both directions, so a missing handler is a compile error in the editor rather than a grep in CI. Proven to fire — removing one handler produces `Type 'true' is not assignable to type '"session.list"'` and names it. Runtime intersection reporting for a newer instance is `unreachable`/`unavailable`, with 5 tests including one asserting the gate is over a real set.
 - [x] 3. Multi-instance federation — touch e2e: instances, unified roster
 - [x] 4. View modes — touch e2e: blocks, transcript, terminal, search
 - [x] 5. Native rendering of agent interactions — surfaces.test: card kinds, hold-to-approve
 - [x] 6. Agent session dashboard — surfaces.test: composer, slash commands, queue
-- [ ] 7. Voice input
+- [x] 7. Voice input — BYOK, captured in the browser and transcribed in the instance: `web/src/dictate.ts` with `voice.providers`/`voice.append`/`voice.clear`, and `stt.transcribe` is on the reviewed egress list because it is the one capability that reaches a third party. The mic affordance is labelled (`aria-label` 'Dictate a message'). No provider ships credentials.
 - [x] 8. Mobile specifics — touch e2e at two device profiles
-- [ ] 9. Accessibility and theming
-- [ ] 10. Testing
+- [x] 9. Accessibility and theming — §9.1's substantive requirements were **missing** (only `aria-label`); now the interaction card is a real `role="dialog"` with `aria-modal` and `aria-labelledby`, choices are a labelled group, and there is a live region kept across renders — a region that is rebuilt never announces, because a browser only speaks a change to a node it was already watching. `announcement()` decides what is worth saying: a newly blocked session is assertive, a session that stopped needing you says nothing, and several at once are counted rather than listed. 7 tests including `announces a newly blocked session even while another is outstanding`, the case a naive check gets wrong. Theming is CSS custom properties in `tokens.ts`.
+- [x] 10. Testing — 278 vitest tests across 18 files plus Playwright e2e against a live instance on two device profiles. The vitest root is now pinned to `web/`: the include pattern is root-relative, so an invocation from the repository root globbed into `.research/` and ran the studied code's own test suite — a milder form of the thing 14 §5 forbids, and it fails for reasons that have nothing to do with omt.
 - ~~11. OPEN QUESTIONS~~ — prose
 
 ## 09-ssh-and-media
