@@ -395,9 +395,7 @@ mod tests {
 
     #[test]
     fn a_line_number_that_is_not_a_number_is_not_taken_as_one() {
-        let (path, line, _) = split_path_line_column("src/x.rs:notanumber")
-            .map(|(p, l, c)| (p, l, c))
-            .expect("split");
+        let (path, line, _) = split_path_line_column("src/x.rs:notanumber").expect("split");
         assert_eq!(path, "src/x.rs:notanumber");
         assert_eq!(line, None);
     }

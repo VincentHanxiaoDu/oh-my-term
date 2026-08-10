@@ -130,7 +130,7 @@ mod tests {
         // tmux's copy-mode-vi is the single most-missed feature for vim users
         // moving to a new multiplexer.
         let mut km = Keymap::new();
-        apply(&mut km, Flavour::Vim);
+        let _ = apply(&mut km, Flavour::Vim);
         for spec in ["h", "j", "k", "l", "v", "y"] {
             assert!(
                 !matches!(km.resolve(&chord(spec), &[Mode::Copy]), Action::Passthrough),
@@ -144,7 +144,7 @@ mod tests {
         // The scope rule that makes the whole feature safe. Somebody running
         // vim inside a pane, with omt in vim mode, must not have `j` taken.
         let mut km = Keymap::new();
-        apply(&mut km, Flavour::Vim);
+        let _ = apply(&mut km, Flavour::Vim);
         for spec in ["h", "j", "k", "l", "v", "y", "/", "n"] {
             assert_eq!(
                 km.resolve(&chord(spec), &[Mode::Global]),
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn emacs_mode_binds_its_own_motions_in_the_same_places() {
         let mut km = Keymap::new();
-        apply(&mut km, Flavour::Emacs);
+        let _ = apply(&mut km, Flavour::Emacs);
         for spec in ["ctrl-n", "ctrl-p", "ctrl-f", "ctrl-b"] {
             assert!(
                 !matches!(km.resolve(&chord(spec), &[Mode::Copy]), Action::Passthrough),
@@ -179,7 +179,7 @@ mod tests {
         // The two are alternatives, not layers. Somebody in emacs mode who
         // pressed `j` expecting a character is not moved down a line.
         let mut km = Keymap::new();
-        apply(&mut km, Flavour::Emacs);
+        let _ = apply(&mut km, Flavour::Emacs);
         assert_eq!(km.resolve(&chord("j"), &[Mode::Copy]), Action::Passthrough);
     }
 
@@ -222,9 +222,9 @@ mod tests {
         // They are alternatives. If applying one after the other left a mix,
         // somebody switching flavours would get a keymap that is neither.
         let mut vim = Keymap::new();
-        apply(&mut vim, Flavour::Vim);
+        let _ = apply(&mut vim, Flavour::Vim);
         let mut emacs = Keymap::new();
-        apply(&mut emacs, Flavour::Emacs);
+        let _ = apply(&mut emacs, Flavour::Emacs);
         for (_, spec, _) in bindings(Flavour::Vim) {
             let in_emacs = emacs.resolve(&chord(spec), &[Mode::Copy, Mode::Overlay]);
             let in_vim = vim.resolve(&chord(spec), &[Mode::Copy, Mode::Overlay]);

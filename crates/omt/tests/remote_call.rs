@@ -33,7 +33,7 @@ fn recv(stream: &mut std::os::unix::net::UnixStream) -> ProtoMessage {
 }
 
 /// Serve until the client hangs up.
-fn serve(mut stream: std::os::unix::net::UnixStream, state: omt::state::State) {
+fn serve(stream: std::os::unix::net::UnixStream, state: omt::state::State) {
     serve_as(stream_role(), stream, state);
 }
 

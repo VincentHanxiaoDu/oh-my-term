@@ -5,6 +5,7 @@
 //! positions would eventually produce two different events at one position —
 //! which a resuming client cannot detect and cannot recover from.
 
+pub mod escalation;
 pub mod instance;
 pub mod runtime;
 

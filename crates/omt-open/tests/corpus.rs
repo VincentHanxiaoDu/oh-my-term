@@ -17,6 +17,12 @@
 //! URL, a token beginning with `-`, and one longer than any terminal line —
 //! which is where a quadratic scanner stops being merely slow.
 
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+
 use std::path::PathBuf;
 
 #[derive(serde::Deserialize)]

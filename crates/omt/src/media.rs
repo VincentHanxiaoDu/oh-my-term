@@ -377,7 +377,7 @@ pub fn attachment_reference(agent: &str, path: &str) -> (String, &'static str) {
         "claudecode" | "claude" => (format!("@\"{path}\""), "high"),
         "aider" => (format!("/add {path}"), "high"),
         "geminicli" | "gemini" | "qwencode" | "qwen" => (format!("@{path}"), "medium"),
-        "codex" => (format!("{path}"), "medium"),
+        "codex" => (path.to_string(), "medium"),
         // The only ones with a real structured attachment channel. A path in
         // the prompt would work less well than the channel they already have.
         "opencode" => (path.to_owned(), "high"),

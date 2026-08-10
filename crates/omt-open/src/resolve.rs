@@ -204,7 +204,7 @@ pub fn offers(existence: Existence, line: Option<u32>) -> Vec<ActionOffer> {
             mutates: false,
         }),
     }
-    out.sort_by(|a, b| b.rank.cmp(&a.rank));
+    out.sort_by_key(|c| std::cmp::Reverse(c.rank));
     out
 }
 
@@ -309,7 +309,7 @@ mod tests {
         // A path resolved against the wrong root opens somebody else's file.
         // Naming the root is what makes a wrong answer visible.
         let (_d, root) = workspace();
-        let r = resolve("src/main.rs", Some(42), &[root.clone()], true).expect("resolve");
+        let r = resolve("src/main.rs", Some(42), std::slice::from_ref(&root), true).expect("resolve");
         assert_eq!(r.existence, Existence::File);
         assert_eq!(r.root.as_deref(), Some(root.display().to_string().as_str()));
         assert_eq!(r.line, Some(42));

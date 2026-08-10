@@ -445,8 +445,10 @@ mod tests {
 
     #[test]
     fn every_publishing_refusal_says_what_to_do() {
-        let mut p = Publication::default();
-        p.default_role = DefaultRole::Operator;
+        let p = Publication {
+            default_role: DefaultRole::Operator,
+            ..Publication::default()
+        };
         let v = check_publication(&p);
         assert!(v.refusals.len() >= 4);
         for refusal in v.refusals {

@@ -53,17 +53,16 @@ pub enum Matched {
 #[must_use]
 pub fn matches(bound: &Chord, reported: &Reported) -> Matched {
     let wanted = bound.canonical();
-    if let Ok(produced) = Chord::parse(&reported.produced) {
-        if produced.canonical() == wanted {
-            return Matched::Produced;
-        }
+    if Chord::parse(&reported.produced).is_ok_and(|produced| produced.canonical() == wanted) {
+        return Matched::Produced;
     }
-    if let Some(base) = &reported.base_layout {
-        if let Ok(parsed) = Chord::parse(base) {
-            if parsed.canonical() == wanted {
-                return Matched::BaseLayout;
-            }
-        }
+    if reported
+        .base_layout
+        .as_ref()
+        .and_then(|base| Chord::parse(base).ok())
+        .is_some_and(|parsed| parsed.canonical() == wanted)
+    {
+        return Matched::BaseLayout;
     }
     Matched::No
 }

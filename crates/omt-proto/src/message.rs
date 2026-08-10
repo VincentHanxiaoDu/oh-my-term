@@ -306,6 +306,7 @@ mod tests {
             role: Role::Operator,
             catalog_hash: "abc".into(),
             capabilities: vec!["session.list".into(), "agent.state".into()],
+            auth_methods: Vec::new(),
         };
         let usable = w.intersect(&[
             "session.list".into(),
