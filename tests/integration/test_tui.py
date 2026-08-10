@@ -264,3 +264,54 @@ class TestTheKeymapIsDiscoverable:
         tui.send("echo interrupted\r")
         painted = strip(tui.read(4.0))
         assert "interrupted" in painted, painted[-500:]
+
+
+class TestKeymapConflicts:
+    """16-input-and-keymap §5. The part the doc calls actually novel."""
+
+    def test_a_chord_the_inner_program_needs_says_what_it_would_break(
+        self, client
+    ) -> None:
+        # "Conflicts with something" is not actionable. What somebody needs to
+        # know is which program, and what they would lose.
+        out = client.call("keys.conflicts", chord="ctrl-w")
+        assert out["conflicts"], out
+        first = out["conflicts"][0]
+        assert "vim" in first["program"].lower()
+        assert first["does"]
+        assert first["severity"] == "critical"
+
+    def test_a_critical_conflict_is_refused_and_a_minor_one_is_not(
+        self, client
+    ) -> None:
+        # Refusing on anything less leaves omt with almost no bindings, since
+        # every chord collides with something somewhere.
+        assert client.call("keys.conflicts", chord="ctrl-x")["refused"] is True
+        assert client.call("keys.conflicts", chord="ctrl-alt-f9")["refused"] is False
+
+    def test_spelling_does_not_change_the_answer(self, client) -> None:
+        # Comparing written strings would silently miss most conflicts and
+        # report a clean bill of health, which is worse than not checking.
+        answers = {
+            client.call("keys.conflicts", chord=spelling)["chord"]
+            for spelling in ("ctrl-w", "Ctrl-W", "CTRL-w")
+        }
+        assert len(answers) == 1, answers
+
+    def test_every_conflict_says_what_it_was_checked_against(self, client) -> None:
+        # A keymap is a claim about somebody else's software at a point in
+        # time. Without a version, a stale file looks exactly like a current
+        # one and omt warns confidently about a binding that has moved.
+        for conflict in client.call("keys.conflicts", chord="ctrl-c")["conflicts"]:
+            assert conflict["verified_against"]
+
+    def test_a_free_chord_reports_nothing_rather_than_hedging(self, client) -> None:
+        out = client.call("keys.conflicts", chord="ctrl-alt-f9")
+        assert out["conflicts"] == []
+
+    def test_something_that_is_not_a_chord_is_refused(self, client) -> None:
+        import pytest
+
+        with pytest.raises(Exception) as caught:
+            client.call("keys.conflicts", chord="not a chord at all")
+        assert "chord" in str(caught.value).lower()

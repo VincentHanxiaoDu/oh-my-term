@@ -46,6 +46,7 @@ vanishing.
 | `job.create` | command | operator | Create a scheduled job, replacing any job of the same name. A missed window is skipped rather than caught up. |
 | `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
+| `keys.conflicts` | query | viewer | `Conflicts with something` is not actionable — every chord collides somewhere. This says which program, what the key does there, and how badly it would be missed. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
 | `media.attach` | query | viewer | Per-adapter, because one format applied to all of them is silently ignored by most — which looks exactly like an agent choosing not to read the file. |
 | `media.clipboard` | command | operator | OSC 52, wrapped for tmux when TERM says so. omt does not claim the copy succeeded: there is no acknowledgement to base that on. |
@@ -111,4 +112,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-101 capabilities.
+102 capabilities.

@@ -734,6 +734,24 @@
     },
     {
       "aliases": [],
+      "doc": "`Conflicts with something` is not actionable — every chord collides somewhere. This says which program, what the key does there, and how badly it would be missed.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.conflicts",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/conflicts",
+      "since": "0.1.0",
+      "title": "What a binding would break",
+      "verb": "conflicts"
+    },
+    {
+      "aliases": [],
       "doc": "Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed.",
       "effects": [
         "spawns_process"

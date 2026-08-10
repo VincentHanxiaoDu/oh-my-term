@@ -1061,6 +1061,94 @@ impl CapabilityHandler<RemoteDiscard> for MirrorHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Keymap conflicts — 16 §5
+// ---------------------------------------------------------------------------
+
+/// Input to `keys.conflicts`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ConflictsIn {
+    /// The chord omt would take.
+    pub chord: String,
+}
+
+/// One thing a binding would break.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ConflictOut {
+    /// Which program.
+    pub program: String,
+    /// What the key does there, in that program's own words.
+    pub does: String,
+    /// How much losing it matters.
+    pub severity: String,
+    /// What that keymap was checked against, so a stale warning is visible.
+    pub verified_against: String,
+}
+
+/// What `keys.conflicts` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ConflictsOut {
+    /// The canonical form of the chord that was asked about.
+    pub chord: String,
+    /// Everything it would break, worst first.
+    pub conflicts: Vec<ConflictOut>,
+    /// Whether omt refuses to take it by default.
+    pub refused: bool,
+}
+
+omt_catalog::capability! {
+    /// What binding this chord would break in the program underneath.
+    pub struct KeysConflicts;
+    input  = ConflictsIn,
+    output = ConflictsOut,
+    decl = omt_catalog::Decl {
+        name: "keys.conflicts",
+        group: "keys",
+        verb: "conflicts",
+        title: "What a binding would break",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "`Conflicts with something` is not actionable — every chord collides somewhere. This says which program, what the key does there, and how badly it would be missed.",
+    },
+}
+
+/// Serves the keymap conflict registry.
+pub struct KeysHandler;
+
+impl CapabilityHandler<KeysConflicts> for KeysHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ConflictsIn,
+    ) -> Result<ConflictsOut, CapabilityError> {
+        let chord = omt_input::key::Chord::parse(&input.chord).map_err(|e| {
+            CapabilityError::invalid_input(format!("`{}` is not a chord: {e}", input.chord))
+        })?;
+        let registry = omt_input::conflicts::builtin();
+        Ok(ConflictsOut {
+            refused: registry.should_refuse(&chord),
+            chord: chord.canonical(),
+            conflicts: registry
+                .conflicts(&chord)
+                .into_iter()
+                .map(|c| ConflictOut {
+                    program: c.program,
+                    does: c.does,
+                    severity: format!("{:?}", c.severity).to_lowercase(),
+                    verified_against: c.verified_against,
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

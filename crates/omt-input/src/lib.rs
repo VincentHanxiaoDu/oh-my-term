@@ -9,6 +9,7 @@
 pub mod highlight;
 pub use highlight::{Class, Span, classify};
 pub mod key;
+pub mod conflicts;
 pub mod keymap;
 
 pub use key::{Chord, ChordParseError, EncodeMode, Key, Modifiers, encode};

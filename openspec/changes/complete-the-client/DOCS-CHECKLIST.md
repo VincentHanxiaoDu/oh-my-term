@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**79 of 212 features ticked.** (34 further sections are prose.)
+**80 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -207,7 +207,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 2. The dispatch model
 - [ ] 3. The leader key
 - [ ] 4. Modes and contexts
-- [ ] 5. Conflict detection and resolution
+- [x] 5. Conflict detection and resolution — test_tui: names the program and what the key does there, only critical refuses, spelling-independent, every entry version-stamped
 - [ ] 6. Modal keymaps: vim mode and emacs mode
 - [x] 7. `omt ssh` — local feels remote-native — test_tui: help, prefix, Ctrl-C reaches the program
 - [ ] 8. Defaults

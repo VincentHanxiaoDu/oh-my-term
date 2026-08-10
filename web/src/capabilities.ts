@@ -434,6 +434,9 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'keys.conflicts': (request: RequestId, chord: string) =>
+    call(request, 'keys.conflicts', { chord }),
+
   'open.remote_list': (request: RequestId) => call(request, 'open.remote_list', {}),
 
   'open.remote_discard': (request: RequestId, path: string) =>

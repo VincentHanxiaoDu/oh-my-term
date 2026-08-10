@@ -36,6 +36,7 @@
   "job.create",
   "job.list",
   "keys.cheatsheet",
+  "keys.conflicts",
   "layout.open",
   "media.attach",
   "media.clipboard",
