@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**58 of 212 features ticked.** (33 further sections are prose.)
+**62 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -175,13 +175,13 @@ Unticked means not done. Partly built stays unticked.
 
 ## 14-licensing
 
-- [ ] 1. omt's own licence
+- [x] 1. omt's own licence — test_licensing: LICENSE is Apache, every crate declares it
 - [ ] 2. What was studied, and under which licences
 - [ ] 3. The line we draw
-- [ ] 4. Clean-room practice
-- [ ] 5. `.research/` is gitignored and must never be vendored
+- [x] 4. Clean-room practice — test_licensing: no studied product is named in shipped source or docs
+- [x] 5. `.research/` is gitignored and must never be vendored — test_licensing: gitignored, nothing tracked, nothing imported; gate proven to fire on a vendored fixture
 - [ ] 6. Third-party dependency policy
-- [ ] 7. Attribution and NOTICE
+- [x] 7. Attribution and NOTICE — test_licensing: NOTICE has substance, not merely presence
 - [ ] 8. Contributor rule
 - ~~9. Open questions~~ — prose
 

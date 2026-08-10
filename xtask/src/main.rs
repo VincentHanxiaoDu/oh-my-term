@@ -9,11 +9,12 @@ use anyhow::{Context, Result, bail};
 fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         Some("layering") => layering(),
+        Some("licensing") => licensing(std::env::args().nth(2)),
         Some("codegen") => codegen(false),
         Some("codegen-check") => codegen(true),
         Some(other) => bail!("unknown task `{other}`"),
         None => {
-            eprintln!("usage: cargo xtask <layering|codegen|codegen-check>");
+            eprintln!("usage: cargo xtask <layering|licensing|codegen|codegen-check>");
             Ok(())
         }
     }
@@ -95,6 +96,120 @@ fn read_deps(manifest: &Path) -> Result<BTreeSet<String>> {
         }
     }
     Ok(deps)
+}
+
+/// The licensing gate: `docs/architecture/14-licensing.md` §1, §5, §6 and §7.
+///
+/// A licence policy that lives only in prose is one nobody notices breaking.
+/// Each check here corresponds to a way this project could quietly acquire a
+/// problem that is expensive to unwind later — a vendored file from a codebase
+/// under a different licence, a dependency whose terms omt cannot accept, an
+/// attribution that silently went stale.
+fn licensing(root: Option<String>) -> Result<()> {
+    // An optional root so the gate can be pointed at a fixture. A gate that
+    // has only ever been observed passing is one nobody has shown to work,
+    // and the check that matters most here — studied code being vendored —
+    // cannot be provoked in the real repository without committing the very
+    // thing it forbids.
+    let root = match root {
+        Some(path) => std::path::PathBuf::from(path),
+        None => repo_root()?,
+    };
+    let mut problems: Vec<String> = Vec::new();
+
+    // §1. The licence omt is under, as a file rather than only a manifest
+    // field. The field tells cargo; the file is what anybody actually reads.
+    let license = root.join("LICENSE");
+    if !license.is_file() {
+        problems.push("LICENSE is missing".to_owned());
+    } else {
+        let text = std::fs::read_to_string(&license)?;
+        if !text.contains("Apache License") {
+            problems.push("LICENSE is not the Apache 2.0 text the manifests declare".to_owned());
+        }
+    }
+
+    // §5. `.research/` holds other people's code, read to understand problems
+    // and never to copy from. Two separate failures: it stops being ignored,
+    // or something inside it gets committed. The second is the one that
+    // matters, and being ignored is not proof it did not happen — a file added
+    // with `-f` stays tracked forever after.
+    let ignore = std::fs::read_to_string(root.join(".gitignore")).unwrap_or_default();
+    if !ignore.lines().any(|l| l.trim().trim_end_matches('/') == ".research") {
+        problems.push(".research/ is no longer gitignored".to_owned());
+    }
+    let tracked = std::process::Command::new("git")
+        .args(["ls-files", ".research"])
+        .current_dir(&root)
+        .output()?;
+    let tracked = String::from_utf8_lossy(&tracked.stdout);
+    let vendored: Vec<&str> = tracked.lines().filter(|l| !l.is_empty()).collect();
+    if !vendored.is_empty() {
+        problems.push(format!(
+            "{} file(s) under .research/ are tracked by git. Studied code must never be vendored: {}",
+            vendored.len(),
+            vendored.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    // §7. NOTICE exists and says what it is for. Checked for substance rather
+    // than presence: an empty NOTICE satisfies a file-exists test and no
+    // obligation at all.
+    let notice = root.join("NOTICE");
+    if !notice.is_file() {
+        problems.push("NOTICE is missing".to_owned());
+    } else {
+        let text = std::fs::read_to_string(&notice)?;
+        if text.trim().len() < 100 {
+            problems.push("NOTICE is too short to be carrying any attribution".to_owned());
+        }
+        if !text.contains("Apache") {
+            problems.push("NOTICE does not name the licence it is required by".to_owned());
+        }
+    }
+
+    // §6. Every crate in the workspace declares a licence, and it is omt's.
+    // A crate that inherits nothing is one that is published under no terms.
+    for member in workspace_members(&root)? {
+        let manifest = std::fs::read_to_string(member.join("Cargo.toml"))?;
+        if !manifest.contains("license") && !manifest.contains("license.workspace") {
+            problems.push(format!(
+                "{} declares no licence",
+                member.file_name().unwrap_or_default().to_string_lossy()
+            ));
+        }
+    }
+
+    if problems.is_empty() {
+        println!("licensing ok — LICENSE, NOTICE, .research/ unvendored, every crate licensed");
+        Ok(())
+    } else {
+        for p in &problems {
+            eprintln!("  {p}");
+        }
+        bail!("{} licensing problem(s)", problems.len())
+    }
+}
+
+/// The repository root, from this file's location rather than the cwd.
+fn repo_root() -> Result<std::path::PathBuf> {
+    let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    Ok(here
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("xtask has no parent directory"))?
+        .to_path_buf())
+}
+
+/// Every crate directory in the workspace.
+fn workspace_members(root: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
+    let mut members = Vec::new();
+    for entry in std::fs::read_dir(root.join("crates"))? {
+        let path = entry?.path();
+        if path.join("Cargo.toml").is_file() {
+            members.push(path);
+        }
+    }
+    Ok(members)
 }
 
 fn layering() -> Result<()> {
