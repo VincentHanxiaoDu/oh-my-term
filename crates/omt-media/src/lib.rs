@@ -6,6 +6,7 @@
 //! that already has a blob can say so by name rather than sending it again.
 
 pub mod clipboard;
+pub mod normalize;
 pub mod store;
 pub mod transfer;
 

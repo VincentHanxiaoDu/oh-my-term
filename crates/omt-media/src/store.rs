@@ -170,6 +170,11 @@ impl BlobStore {
         origin: Origin,
         class: Class,
     ) -> Result<BlobMeta, StoreError> {
+        // Stripped here, at the one place everything arrives through, rather
+        // than at each point of use. Every point of use would have to remember,
+        // and one of them will not. The digest is of the stripped bytes, so
+        // what is stored, named and handed on are all the same thing.
+        let bytes = &crate::normalize::normalize(bytes)[..];
         let meta = describe(bytes)?;
         let size = meta.size as u64;
         if size > self.quota.max_blob {
@@ -322,6 +327,37 @@ mod tests {
 
     fn store() -> BlobStore {
         BlobStore::new(Quota::default())
+    }
+
+    #[test]
+    fn metadata_is_stripped_on_the_way_in_not_on_the_way_out() {
+        // A screenshot from a phone carries EXIF, and EXIF carries GPS.
+        // Handing that to an agent leaks where somebody was standing, with no
+        // sign anything was attached beyond the picture they meant to share.
+        let mut jpeg = vec![0xFFu8, 0xD8];
+        let payload = b"Exif\0\0GPSLatitude=51.5074";
+        jpeg.extend_from_slice(&[0xFF, 0xE1]);
+        jpeg.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
+        jpeg.extend_from_slice(payload);
+        jpeg.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x02]);
+        jpeg.extend_from_slice(b"IMAGEDATA");
+
+        let mut s = store();
+        let meta = s.put(&jpeg, Origin::WebUpload, Class::Runtime).expect("put");
+        let stored = String::from_utf8_lossy(s.get(&meta.digest).expect("get")).into_owned();
+        assert!(!stored.contains("GPSLatitude"), "{stored:?}");
+        assert!(stored.contains("IMAGEDATA"), "the picture itself survived");
+    }
+
+    #[test]
+    fn the_digest_names_what_was_actually_stored() {
+        // Not what arrived. A digest of the pre-strip bytes would name
+        // something that is nowhere on disk, and every later fetch by that
+        // name would miss.
+        let mut s = store();
+        let meta = s.put(PNG, Origin::WebUpload, Class::Runtime).expect("put");
+        let stored = s.get(&meta.digest).expect("get");
+        assert_eq!(meta.digest, crate::digest(stored));
     }
 
     #[test]

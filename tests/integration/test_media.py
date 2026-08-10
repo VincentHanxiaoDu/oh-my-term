@@ -154,3 +154,32 @@ class TestHandingAFileToAnAgent:
         with pytest.raises(Exception) as caught:
             client.call("media.attach", agent="claude-code", path="shot.png")
         assert "absolute" in str(caught.value).lower()
+
+
+class TestMetadataDoesNotSurvive:
+    """§4.1 and §8. Stripped on the way in, at the one place everything passes."""
+
+    def test_gps_does_not_reach_an_agent(self, client: Client) -> None:
+        # A screenshot from a phone carries EXIF, and EXIF carries GPS. Handing
+        # that to an agent — which may send it to a model API — leaks where
+        # somebody was standing, with no sign anything was attached beyond the
+        # picture they meant to share.
+        payload = b"Exif\x00\x00GPSLatitude=51.5074"
+        jpeg = (
+            bytes([0xFF, 0xD8, 0xFF, 0xE1])
+            + (len(payload) + 2).to_bytes(2, "big")
+            + payload
+            + bytes([0xFF, 0xDA, 0x00, 0x02])
+            + b"IMAGEDATA"
+        )
+        put = client.call("media.put", content=b64(jpeg), origin="local_clipboard")
+        got = base64.b64decode(client.call("media.get", digest=put["digest"])["content"])
+        assert b"GPSLatitude" not in got
+        assert b"IMAGEDATA" in got, "the picture itself survived"
+
+    def test_the_digest_names_what_was_actually_stored(self, client: Client) -> None:
+        # Not what arrived. A digest of the pre-strip bytes would name something
+        # that is nowhere on disk, and every later fetch by it would miss.
+        put = client.call("media.put", content=b64(PNG), origin="web_upload")
+        got = client.call("media.get", digest=put["digest"])
+        assert len(base64.b64decode(got["content"])) == put["size"]
