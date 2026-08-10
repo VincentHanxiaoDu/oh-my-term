@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**85 of 212 features ticked.** (34 further sections are prose.)
+**86 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -211,7 +211,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 6. Modal keymaps: vim mode and emacs mode — test_tui: vim motions in copy mode, never in a passing-through pane; emacs is an alternative not a layer
 - [x] 7. `omt ssh` — local feels remote-native — test_tui: help, prefix, Ctrl-C reaches the program
 - [x] 8. Defaults — test_tui: keys.audit — omt's defaults take nothing critical, and the audit reports how many programs it checked against
-- [ ] 9. Accessibility and internationalization
+- [x] 9. Accessibility and internationalization — omt-input layout: matches on base-layout key or produced character, says which; defaults avoid AltGr or carry an alias
 - [ ] 10. Testing
 - [ ] 11. Capabilities introduced here
 - ~~12. What this document deliberately does not do~~ — prose

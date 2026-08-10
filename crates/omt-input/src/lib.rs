@@ -12,6 +12,7 @@ pub mod key;
 pub mod conflicts;
 pub mod dispatch;
 pub mod keymap;
+pub mod layout;
 pub mod modal;
 
 pub use key::{Chord, ChordParseError, EncodeMode, Key, Modifiers, encode};

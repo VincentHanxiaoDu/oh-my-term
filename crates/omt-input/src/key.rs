@@ -115,6 +115,21 @@ impl Chord {
     pub fn parse(spec: &str) -> Result<Self, ChordParseError> {
         let mut mods = Modifiers::NONE;
         let lower = spec.to_lowercase();
+
+        // `-` separates modifiers from the key, so the `-` key cannot be
+        // written plainly — `split('-')` turns it into two empty parts and the
+        // parse fails. That matters: `⟨leader⟩ -` is one of the documented
+        // defaults, so without this the split-down binding is unexpressible and
+        // silently absent. `ctrl--` is the modified form, and `minus` is the
+        // spelling for anyone who would rather not count dashes.
+        let lower = if lower == "-" {
+            "minus".to_owned()
+        } else if let Some(head) = lower.strip_suffix("--") {
+            format!("{head}-minus")
+        } else {
+            lower
+        };
+
         let parts: Vec<&str> = lower.split('-').collect();
         let Some((last, prefixes)) = parts.split_last() else {
             return Err(ChordParseError::Empty);
@@ -142,6 +157,7 @@ impl Chord {
             "tab" => Key::Tab,
             "backspace" | "bs" => Key::Backspace,
             "esc" | "escape" => Key::Escape,
+            "minus" => Key::Char('-'),
             "del" | "delete" => Key::Delete,
             "insert" | "ins" => Key::Insert,
             "home" => Key::Home,
@@ -376,6 +392,28 @@ fn function_key(n: u8, m: Modifiers) -> Vec<u8> {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_minus_key_can_be_expressed_at_all() {
+        // `-` separates modifiers from the key, so a plain `-` split into two
+        // empty parts and failed to parse. `⟨leader⟩ -` is a documented
+        // default, which means the split-down binding was silently absent —
+        // the kind of gap nothing fails on, because an unparseable spec is
+        // dropped exactly like a key nobody has tried.
+        let bare = Chord::parse("-").expect("the minus key");
+        assert_eq!(bare, Chord::parse("minus").expect("by name"));
+        let modified = Chord::parse("ctrl--").expect("ctrl and minus");
+        assert_eq!(modified, Chord::parse("ctrl-minus").expect("by name"));
+        assert_ne!(bare, modified);
+    }
+
+    #[test]
+    fn a_trailing_dash_is_still_not_a_modifier() {
+        // `ctrl-` on its own names no key, and should stay an error rather
+        // than quietly becoming the minus key.
+        assert!(Chord::parse("ctrl-").is_err());
+    }
+
 
     #[test]
     fn ctrl_c_is_the_interrupt_byte() {
