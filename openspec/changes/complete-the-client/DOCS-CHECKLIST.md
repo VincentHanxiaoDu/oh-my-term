@@ -163,7 +163,7 @@ Unticked means not done. Partly built stays unticked.
 
 - ~~1. Threat model~~ — prose
 - [x] 2. Bind policy — test_security: the default needs no configuration, an open port without auth refuses, every refusal carries a remedy, all problems reported at once
-- [x] 3. Authentication — test_joining: invite is not a credential, single use
+- [x] 3. Authentication — test_security: the welcome advertises the methods, tailnet is not offered on loopback, every advertised name is in the closed set; test_joining: an invite is not a credential and is single-use; constant-time compare in omt-auth
 - [x] 4. Roles and their mapping onto the catalog — crates/omt/tests/parity.rs: no Viewer capability changes anything, spawning as Viewer needs the reviewed allow-list, instance-changing commands are Admin
 - [x] 5. Credential storage, rotation and TLS — omt-auth at_rest + omt-config merge: an inline secret is an error with somewhere to put it and is kept out of the resolved values; permissions corrected, foreign ownership fatal
 - [x] 6. Browser-side controls — omt-server origin: a hostile page is refused before the credential, prefixes and paths do not pass, a non-browser client still connects; CSP names no host omt does not serve
