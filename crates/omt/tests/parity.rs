@@ -18,7 +18,7 @@
 
 use std::collections::BTreeSet;
 
-use omt_catalog::{CapabilityRegistry, Surface};
+use omt_catalog::{CapabilityRegistry, Effects, Surface};
 use omt_types::Role;
 
 /// The web client's handler registry, as the generated TypeScript will mirror.
@@ -177,4 +177,116 @@ fn the_gate_actually_fails_when_a_surface_is_missing() {
         would_fail,
         "the web-handler arm cannot distinguish a handled capability from an unhandled one"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Role and effects consistency — 13-security §4
+// ---------------------------------------------------------------------------
+
+/// Capabilities allowed to be `Viewer` while spawning a process.
+///
+/// 13 §4's read-only-subprocess carve-out requires the argv template to be in
+/// an allow-list checked in next to this test, so adding one is a reviewed diff
+/// rather than a property a handler asserts about itself. Empty is the correct
+/// state until something genuinely needs it.
+const READ_ONLY_SUBPROCESS_ALLOW_LIST: &[&str] = &[];
+
+#[test]
+fn no_viewer_capability_can_change_anything() {
+    // The mapping is mechanical, which is what makes it trustworthy. A
+    // capability declaring `Viewer` while carrying a writing effect is two
+    // declarations disagreeing, and the one dispatch enforces is the role —
+    // so the effect is what would surprise somebody.
+    let r = registry();
+    let mut offenders: Vec<String> = Vec::new();
+    for decl in r.decls() {
+        if decl.role != Role::Viewer {
+            continue;
+        }
+        let writes = decl.effects.contains(Effects::WRITES_PTY)
+            || decl.effects.contains(Effects::WRITES_FS)
+            || decl.effects.contains(Effects::NETWORK)
+            || decl.effects.contains(Effects::DESTRUCTIVE);
+        if writes {
+            offenders.push(format!("{} ({:?})", decl.name, decl.effects));
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "these are Viewer but change something: {offenders:?}"
+    );
+}
+
+#[test]
+fn spawning_a_process_as_viewer_needs_the_reviewed_allow_list() {
+    // `SPAWNS_PROCESS` alone does not disqualify Viewer, but the carve-out is
+    // deliberately hard to reach: the argv template has to be in a list in the
+    // repository, so it costs a reviewed diff.
+    let r = registry();
+    for decl in r.decls() {
+        if decl.role != Role::Viewer || !decl.effects.contains(Effects::SPAWNS_PROCESS) {
+            continue;
+        }
+        assert!(
+            READ_ONLY_SUBPROCESS_ALLOW_LIST.contains(&decl.name),
+            "`{}` is Viewer and spawns a process without being on the allow-list",
+            decl.name
+        );
+    }
+}
+
+#[test]
+fn every_capability_declares_one_of_the_three_roles() {
+    // There is no sub-Viewer role and no tier between them. A narrower surface
+    // is a Viewer credential with a capability scope, not a fourth role — and
+    // a fourth appearing here would mean somebody added one by accident.
+    let r = registry();
+    for decl in r.decls() {
+        assert!(
+            matches!(decl.role, Role::Viewer | Role::Operator | Role::Admin),
+            "`{}` has role {:?}",
+            decl.name,
+            decl.role
+        );
+    }
+}
+
+#[test]
+fn what_operator_must_not_reach_is_admin_only() {
+    // 13 §4 draws the line at the *instance*, not at data. Operator explicitly
+    // may close sessions and remove worktrees — that is the job. What it may
+    // not do is change instance config, manage credentials, install plugins,
+    // or shut the instance down, because those outlive the afternoon somebody
+    // was handed the credential for.
+    //
+    // My first version of this test asserted every DESTRUCTIVE capability must
+    // be Admin, and it failed on `session.close` and `worktree.remove`. The
+    // code was right and the test was wrong: the doc says Operator can close
+    // sessions in as many words. Worth the note, because a security test that
+    // is stricter than the design gets relaxed by whoever hits it next, and
+    // they will relax more than this line.
+    let admin_only_groups = ["config", "identity", "device", "plugin", "uninstall"];
+    let r = registry();
+    let mut offenders: Vec<&str> = Vec::new();
+    for decl in r.decls() {
+        let reaches_the_instance = admin_only_groups.contains(&decl.group)
+            && matches!(decl.kind, omt_catalog::Kind::Command);
+        if reaches_the_instance && decl.role != Role::Admin {
+            offenders.push(decl.name);
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "these change the instance but are not Admin: {offenders:?}"
+    );
+}
+
+#[test]
+fn the_role_check_would_actually_catch_something() {
+    // Otherwise the three tests above pass because the catalog happens to have
+    // no Viewer capabilities at all, which is the shape of gate this change
+    // has already found twice.
+    let r = registry();
+    let viewers = r.decls().filter(|d| d.role == Role::Viewer).count();
+    assert!(viewers > 10, "only {viewers} Viewer capabilities to check");
 }

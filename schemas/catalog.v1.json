@@ -1400,7 +1400,7 @@
       "parity": {
         "parity": "full"
       },
-      "role": "operator",
+      "role": "admin",
       "route": "/v1/plugin/enable",
       "since": "0.1.0",
       "title": "Enable a plugin",
@@ -1422,7 +1422,7 @@
       "parity": {
         "parity": "full"
       },
-      "role": "operator",
+      "role": "admin",
       "route": "/v1/plugin/install",
       "since": "0.1.0",
       "title": "Install a plugin",
@@ -1464,7 +1464,7 @@
       "parity": {
         "parity": "full"
       },
-      "role": "operator",
+      "role": "admin",
       "route": "/v1/plugin/start",
       "since": "0.1.0",
       "title": "Start a plugin",

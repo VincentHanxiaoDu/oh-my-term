@@ -83,7 +83,11 @@ class TestCatalogParity:
 
     def test_every_capability_states_the_role_it_needs(self, catalog: dict) -> None:
         for declaration in catalog["capabilities"]:
-            assert declaration["role"] in {"viewer", "operator", "owner", "admin"}
+            # The three roles `Role` actually has. This set previously
+            # included `owner`, which is not a variant — the same dead
+            # vocabulary as the intent classes above, and it passed for the
+            # same reason: nothing ever used the arm.
+            assert declaration["role"] in {"viewer", "operator", "admin"}
 
     def test_every_capability_is_documented(self, catalog: dict) -> None:
         # The doc is what a settings screen, the generated client and the

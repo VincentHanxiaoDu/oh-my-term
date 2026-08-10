@@ -34,8 +34,18 @@ fn recv(stream: &mut std::os::unix::net::UnixStream) -> ProtoMessage {
 
 /// Serve until the client hangs up.
 fn serve(mut stream: std::os::unix::net::UnixStream, state: omt::state::State) {
+    serve_as(stream_role(), stream, state);
+}
+
+/// The role most of these tests want: everything a person at the terminal does.
+const fn stream_role() -> Role {
+    Role::Operator
+}
+
+/// Serve as a particular role.
+fn serve_as(role: Role, mut stream: std::os::unix::net::UnixStream, state: omt::state::State) {
     let registry = omt::capabilities::registry(state).expect("registry");
-    let mut peer = Peer::new(Actor::Local, Role::Operator);
+    let mut peer = Peer::new(Actor::Local, role);
     loop {
         let Ok((_, payload)) = omt_transport::read_frame(&mut stream) else {
             return;
@@ -1587,7 +1597,10 @@ fn a_plugin_is_installed_with_an_explicit_grant_and_then_runs() {
     let state = omt::state::State::default();
     let (mut client, server) = client_server_pair();
     let served = state.clone();
-    let worker = std::thread::spawn(move || serve(server, served));
+    // Admin, because installing a plugin is an Admin capability: 13 §4 is
+    // explicit that Operator cannot install plugins, and this test was
+    // connecting as Operator only because the shared helper does.
+    let worker = std::thread::spawn(move || serve_as(Role::Admin, server, served));
 
     send(
         &mut client,

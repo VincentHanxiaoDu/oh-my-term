@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**110 of 212 features ticked.** (34 further sections are prose.)
+**111 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -164,7 +164,7 @@ Unticked means not done. Partly built stays unticked.
 - ~~1. Threat model~~ — prose
 - [x] 2. Bind policy — test_security: the default needs no configuration, an open port without auth refuses, every refusal carries a remedy, all problems reported at once
 - [x] 3. Authentication — test_joining: invite is not a credential, single use
-- [ ] 4. Roles and their mapping onto the catalog
+- [x] 4. Roles and their mapping onto the catalog — crates/omt/tests/parity.rs: no Viewer capability changes anything, spawning as Viewer needs the reviewed allow-list, instance-changing commands are Admin
 - [ ] 5. Credential storage, rotation and TLS
 - [ ] 6. Browser-side controls
 - [ ] 7. The two high-consequence capabilities

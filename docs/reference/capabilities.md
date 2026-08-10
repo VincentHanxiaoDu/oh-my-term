@@ -80,10 +80,10 @@ vanishing.
 | `pane.list` | query | viewer | Panes in a workspace's primary view, which one has focus, and how many fit on a standard terminal. |
 | `pane.navigate` | query | viewer | Geometric, over the placed rectangles rather than tree order — tree order gives wrong answers in asymmetric layouts. Deterministic, because breaking ties by recency makes the same keypress do two different things for reasons the user cannot see. |
 | `pane.open` | command | operator | Open a pane onto an existing session. Presentation only: no process is started and none is stopped. |
-| `plugin.enable` | command | operator | Switch a plugin on or off. Idempotent: setting the state it already has is not an error. |
-| `plugin.install` | command | operator | Install a plugin with an explicit grant. What it asks for and what it receives are separate, and what was refused is reported. |
+| `plugin.enable` | command | admin | Switch a plugin on or off. Idempotent: setting the state it already has is not an error. |
+| `plugin.install` | command | admin | Install a plugin with an explicit grant. What it asks for and what it receives are separate, and what was refused is reported. |
 | `plugin.list` | query | viewer | Installed plugins with what each was granted, and which of those grants are high-consequence. |
-| `plugin.start` | command | operator | Run a plugin, handing it a socket and a token whose role comes from what it was granted. A plugin reaches omt through the same capability surface as any other client — there is no second API. |
+| `plugin.start` | command | admin | Run a plugin, handing it a socket and a token whose role comes from what it was granted. A plugin reaches omt through the same capability surface as any other client — there is no second API. |
 | `presence.list` | query | viewer | Every client connected right now. "Is somebody else looking at this" is a question people ask before they type, and a terminal that cannot answer it is one where two people interleave keystrokes into one shell. |
 | `queue.enqueue` | command | operator | Add a message to an agent's queue. Refused where omt only mirrors the queue rather than owning it: a client must be told it cannot write rather than shown a control that silently does nothing. |
 | `queue.remove` | command | operator | Take a message out of an agent's queue. Refused on a mirrored queue for the same reason enqueue is: a removal omt cannot confirm loses the message with no record of what it was. |

@@ -3700,7 +3700,10 @@ capability! {
         hidden: false,
         hidden_reason: None,
         kind: Kind::Command,
-        role: Role::Operator,
+        // Admin, not Operator. 13 §4 is explicit that Operator cannot
+        // install plugins — a plugin outlives the afternoon somebody was
+        // handed a credential for, and it runs with omt's own reach.
+        role: Role::Admin,
         effects: Effects::SPAWNS_PROCESS,
         // Keyed by the plugin id: installing the same plugin twice replaces it
         // rather than running two copies with the same namespace.
@@ -3840,7 +3843,10 @@ capability! {
         hidden: false,
         hidden_reason: None,
         kind: Kind::Command,
-        role: Role::Operator,
+        // Admin, not Operator. 13 §4 is explicit that Operator cannot
+        // install plugins — a plugin outlives the afternoon somebody was
+        // handed a credential for, and it runs with omt's own reach.
+        role: Role::Admin,
         effects: Effects::SPAWNS_PROCESS,
         intent: Some(Intent::Append {
             dedup: DedupKey::IntentIdAndTarget,
@@ -4021,7 +4027,10 @@ capability! {
         hidden: false,
         hidden_reason: None,
         kind: Kind::Command,
-        role: Role::Operator,
+        // Admin, not Operator. 13 §4 is explicit that Operator cannot
+        // install plugins — a plugin outlives the afternoon somebody was
+        // handed a credential for, and it runs with omt's own reach.
+        role: Role::Admin,
         effects: Effects::empty(),
         // Compare-and-swap on the plugin's state: a repeat sets the same value
         // and reports it, which is what makes a toggle safe to retry.
