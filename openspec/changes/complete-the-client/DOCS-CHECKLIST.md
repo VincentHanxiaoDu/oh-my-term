@@ -71,14 +71,14 @@ Unticked means not done. Partly built stays unticked.
 
 ## 06-agent-layer
 
-- [ ] 1. What this layer must deliver
+- [x] 1. What this layer must deliver — all four: which agent and for how long (§2 `binding.rs`), what state (§4 merge), structured interactions (§5, `test_agents`), ancillary semantics (§8). Nothing in the list is unrepresented.
 - [x] 2. The two-axis model — `crates/omt-agent/src/binding.rs`. Binding (which agent, with a lifetime) is a separate type from state, reconciled on its own slow axis. `learning_the_agents_own_id_is_not_a_rebind`, `a_binding_keeps_its_start_time_when_it_is_only_refined`, `an_agents_own_id_is_never_forgotten_once_known`, `a_worse_tier_never_downgrades_a_binding` (9 tests, omt-agent 79 green).
 - [x] 3. Source model — test_agent_native: messages, tools, results
 - [x] 4. Merging: confidence tiers, not voting — omt-agent merge: the highest fresh tier wins, a lower one may fill a gap but never contradict a live higher one, a stale source stops speaking, an authoritative source suspends the heuristic
 - [x] 5. Interactions — the flagship path — test_agents: interactions and deliverable
 - [x] 6. The heuristic floor — omt-agent-adapters detect: a marker beats a name belonging to another agent, an unrecognised process is Unknown rather than a guess, an unreadable environment is not evidence of absence
 - [x] 7. Adapters — omt-agent-adapters registry: the builtin set covers every agent in the matrix, an adapter can be written from outside the crate and can replace a built-in one
-- [ ] 8. Ancillary semantics
+- [x] 8. Ancillary semantics — queue: `crates/omt-agent/src/queue.rs` + `crates/omt/src/queue.rs`, D15's four requirements (binding target, durable entries with `valid_until`, receipt-not-mirror, `unknown` never empty) with `an_enqueue_against_another_binding_is_refused`, `a_broken_reader_reports_unknown_never_empty`, `the_flagship_agent_is_the_one_that_cannot_edit_its_queue` and 5 integration tests in `TestQueueHonesty`. Slash commands: `agent.offers`, `test_what_the_agent_offers_is_read_from_the_agent`. File changes: `claude_code.rs` normalizes `PostToolUse` for Write/Edit/MultiEdit into `FileChanged`. Usage, compaction, subagents, `away_summary`: `AgentPayload` variants in `omt-events/src/agent.rs` with round-trip tests.
 - [x] 9. Failure modes and their handling — omt-agent ledger: a restart abandons what nobody answered, preserves an answer that was given, never cancels, and settles nothing twice
 - ~~10. Open questions~~ — prose
 
