@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**80 of 212 features ticked.** (34 further sections are prose.)
+**81 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -204,7 +204,7 @@ Unticked means not done. Partly built stays unticked.
 ## 16-input-and-keymap
 
 - [ ] 1. The layer model
-- [ ] 2. The dispatch model
+- [x] 2. The dispatch model — omt-input dispatch: original bytes pass through unmodified, undecodable sequences are never claimed, leader-leader sends the leader on
 - [ ] 3. The leader key
 - [ ] 4. Modes and contexts
 - [x] 5. Conflict detection and resolution — test_tui: names the program and what the key does there, only critical refuses, spelling-independent, every entry version-stamped
