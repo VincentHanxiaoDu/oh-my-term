@@ -116,6 +116,7 @@ fn licensing(root: Option<String>) -> Result<()> {
         None => repo_root()?,
     };
     let mut problems: Vec<String> = Vec::new();
+    let mut checked = 0usize;
 
     // §1. The licence omt is under, as a file rather than only a manifest
     // field. The field tells cargo; the file is what anybody actually reads.
@@ -152,6 +153,46 @@ fn licensing(root: Option<String>) -> Result<()> {
         ));
     }
 
+    // §6. Every dependency's licence, checked against the policy rather than
+    // trusted. The forbidden list is checked first and by prefix, because the
+    // dangerous ones are families — `GPL-3.0-or-later` and `AGPL-3.0` are not
+    // strings anybody enumerates correctly by hand — and because a dual
+    // licence with one forbidden arm must not pass on the strength of its
+    // acceptable arm without somebody deciding that deliberately.
+    match dependency_licences(&root) {
+        Err(e) => problems.push(format!("could not read dependency licences: {e}")),
+        Ok(deps) => {
+            checked = deps.len();
+            for (name, licence) in deps {
+                if let Some((_, why)) = EXCEPTIONS.iter().find(|(n, _)| *n == name) {
+                    debug_assert!(!why.is_empty(), "an exception with no reason is a silencing");
+                    continue;
+                }
+                let Some(expression) = licence else {
+                    problems.push(format!(
+                        "`{name}` declares no licence at all, which is case-by-case, not allowed by default"
+                    ));
+                    continue;
+                };
+                if let Some(bad) = FORBIDDEN.iter().find(|f| {
+                    expression
+                        .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '.')
+                        .any(|part| part.starts_with(**f))
+                }) {
+                    problems.push(format!(
+                        "`{name}` is `{expression}`, which contains the forbidden `{bad}`"
+                    ));
+                    continue;
+                }
+                if !expression_allowed(&expression) {
+                    problems.push(format!(
+                        "`{name}` is `{expression}`, which is not covered by the allow list"
+                    ));
+                }
+            }
+        }
+    }
+
     // §7. NOTICE exists and says what it is for. Checked for substance rather
     // than presence: an empty NOTICE satisfies a file-exists test and no
     // obligation at all.
@@ -181,7 +222,11 @@ fn licensing(root: Option<String>) -> Result<()> {
     }
 
     if problems.is_empty() {
-        println!("licensing ok — LICENSE, NOTICE, .research/ unvendored, every crate licensed");
+        println!(
+            "licensing ok — LICENSE, NOTICE, .research/ unvendored, every crate licensed, {} dependencies checked ({} by exception)",
+            checked,
+            EXCEPTIONS.len()
+        );
         Ok(())
     } else {
         for p in &problems {
@@ -189,6 +234,89 @@ fn licensing(root: Option<String>) -> Result<()> {
         }
         bail!("{} licensing problem(s)", problems.len())
     }
+}
+
+/// Licences allowed without review, from §6.
+const ALLOWED: &[&str] = &[
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "MPL-2.0",
+    // Bundled with Apache-2.0 by several crates in the ecosystem; the
+    // exception narrows Apache's patent grant rather than adding a term.
+    "LLVM-exception",
+    "Unlicense",
+    "Unicode-DFS-2016",
+];
+
+/// Licence families omt cannot accept, from §6.
+///
+/// Prefixes, because these are families: `GPL-3.0-or-later` and `AGPL-3.0`
+/// are not strings anybody enumerates correctly by hand.
+const FORBIDDEN: &[&str] = &[
+    "GPL", "AGPL", "LGPL", "SSPL", "BUSL", "Elastic", "CC-BY-NC",
+];
+
+/// Dependencies §6 calls case-by-case, each with its justification.
+///
+/// Kept here rather than in a data file: an exception is a decision, and a
+/// decision with no reviewer attached is how an allow list becomes a list of
+/// things somebody once silenced. In this form it cannot be added without
+/// appearing in a diff next to the rule it is an exception to.
+const EXCEPTIONS: &[(&str, &str)] = &[
+    (
+        "r-efi",
+        "Triple-licensed MIT OR Apache-2.0 OR LGPL-2.1-or-later. omt takes the Apache-2.0 arm; the LGPL arm is one of three and is not exercised. Reached only as a transitive UEFI target dependency and never linked on the platforms omt ships.",
+    ),
+    (
+        "webpki-roots",
+        "CDLA-Permissive-2.0, a permissive data licence covering the Mozilla root certificate bundle rather than code. It imposes no restriction on distribution and no copyleft.",
+    ),
+];
+
+/// Whether an SPDX expression is satisfied by the allow list.
+///
+/// `OR` needs one arm, `AND` needs all of them. Requiring every arm of an `OR`
+/// was the first version of this and it rejected half the ecosystem: `Apache-2.0
+/// OR MIT` is a choice the *user* of the crate makes, and omt takes the arm it
+/// can accept. `/` is the same thing in the older spelling several crates still
+/// use, and `WITH` attaches an exception to the licence on its left.
+fn expression_allowed(expression: &str) -> bool {
+    let normalised = expression.replace('/', " OR ");
+    normalised.split(" OR ").any(|arm| {
+        arm.split(" AND ").all(|term| {
+            let term = term.trim().trim_matches(|c| c == '(' || c == ')').trim();
+            let base = term.split(" WITH ").next().unwrap_or(term).trim();
+            ALLOWED.contains(&base)
+        })
+    })
+}
+
+/// Every dependency and the licence it declares.
+fn dependency_licences(root: &std::path::Path) -> Result<Vec<(String, Option<String>)>> {
+    let output = std::process::Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--all-features"])
+        .current_dir(root)
+        .output()?;
+    if !output.status.success() {
+        bail!("cargo metadata failed");
+    }
+    let meta: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let mut out = Vec::new();
+    for package in meta["packages"].as_array().into_iter().flatten() {
+        let name = package["name"].as_str().unwrap_or("?").to_owned();
+        // omt's own crates are covered by §1 and checked there.
+        if name.starts_with("omt") || name == "xtask" {
+            continue;
+        }
+        out.push((name, package["license"].as_str().map(str::to_owned)));
+    }
+    Ok(out)
 }
 
 /// The repository root, from this file's location rather than the cwd.

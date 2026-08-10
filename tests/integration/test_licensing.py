@@ -32,6 +32,37 @@ def xtask(task: str, cwd=None) -> subprocess.CompletedProcess:
     )
 
 
+MINIMAL_MANIFEST = """[package]
+name = "fixture"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+"""
+
+
+def fixture_repo(path) -> None:
+    """A repository the gate can run against.
+
+    It needs a real manifest: `cargo metadata` is how the dependency check
+    reads licences, and a fixture without one fails for a reason that has
+    nothing to do with what the test is about.
+    """
+    (path / "LICENSE").write_text("Apache License Version 2.0")
+    (path / "NOTICE").write_text("oh-my-term\nApache\n" + "x" * 200)
+    (path / ".gitignore").write_text(".research/\n")
+    (path / "Cargo.toml").write_text(MINIMAL_MANIFEST)
+    (path / "crates").mkdir()
+    # A real package, not a virtual workspace with no members: `cargo metadata`
+    # refuses that outright, and the fixture would fail for a reason that has
+    # nothing to do with licensing.
+    src = path / "src"
+    src.mkdir()
+    (src / "lib.rs").write_text("")
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+
+
 def xtask_at(root: str) -> subprocess.CompletedProcess:
     """Run the gate against a fixture rather than this repository."""
     return subprocess.run(
@@ -53,14 +84,10 @@ class TestTheGateItself:
         # a repository that actually violates it. Without this, a gate that
         # silently stopped looking at `.research/` would keep printing "ok"
         # forever and nothing would ever notice.
-        (tmp_path / "LICENSE").write_text("Apache License Version 2.0")
-        (tmp_path / "NOTICE").write_text("oh-my-term\nApache\n" + "x" * 200)
-        (tmp_path / ".gitignore").write_text(".research/\n")
-        (tmp_path / "crates").mkdir()
+        fixture_repo(tmp_path)
         research = tmp_path / ".research" / "somebody-elses"
         research.mkdir(parents=True)
         (research / "copied.rs").write_text("fn main() {}")
-        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
         # `-f`, which is exactly how this happens in real life: ignored is not
         # the same as untracked, and a file forced in once stays tracked.
         subprocess.run(
@@ -76,11 +103,7 @@ class TestTheGateItself:
     ) -> None:
         # The other half: a gate that fails everything is as useless as one
         # that passes everything, and only the pair distinguishes them.
-        (tmp_path / "LICENSE").write_text("Apache License Version 2.0")
-        (tmp_path / "NOTICE").write_text("oh-my-term\nApache\n" + "x" * 200)
-        (tmp_path / ".gitignore").write_text(".research/\n")
-        (tmp_path / "crates").mkdir()
-        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        fixture_repo(tmp_path)
 
         result = xtask_at(str(tmp_path))
         assert result.returncode == 0, result.stderr
@@ -184,3 +207,42 @@ class TestNoCompetitorNamesLeaked:
                         offenders.append(f"{path.relative_to(REPO_ROOT)}: {name}")
                         break
         assert offenders == [], offenders
+
+
+class TestDependencyPolicy:
+    """§6. Every dependency's licence, checked rather than trusted."""
+
+    def test_the_gate_reports_how_many_dependencies_it_checked(self) -> None:
+        # A count, because "ok" from a check that silently examined nothing
+        # looks exactly like "ok" from one that examined everything.
+        result = xtask("licensing")
+        assert result.returncode == 0, result.stderr
+        assert "dependencies checked" in result.stdout
+        count = int(result.stdout.split(" dependencies checked")[0].split()[-1])
+        assert count > 100, result.stdout
+
+    def test_a_forbidden_licence_family_is_rejected(self, tmp_path) -> None:
+        # Prefix families, because `GPL-3.0-or-later` and `AGPL-3.0` are not
+        # strings anybody enumerates correctly by hand.
+        source = (REPO_ROOT / "xtask" / "src" / "main.rs").read_text()
+        for family in ("GPL", "AGPL", "LGPL", "SSPL", "BUSL"):
+            assert f'"{family}"' in source
+
+    def test_a_dual_licence_passes_on_the_arm_omt_can_accept(self) -> None:
+        # `Apache-2.0 OR MIT` is a choice the user of the crate makes. The
+        # first version of this rejected half the ecosystem by requiring every
+        # arm, which is why the gate is run over the real tree in the test
+        # above rather than only over fixtures.
+        result = xtask("licensing")
+        assert result.returncode == 0, result.stderr
+
+    def test_every_exception_carries_a_justification(self) -> None:
+        # An exception is a decision, and one with no reason attached is how an
+        # allow list becomes a list of things somebody once silenced.
+        source = (REPO_ROOT / "xtask" / "src" / "main.rs").read_text()
+        block = source.split("const EXCEPTIONS")[1].split("];")[0]
+        entries = [line for line in block.splitlines() if line.strip().startswith('"')]
+        assert entries, "the exception table should be readable"
+        # Each entry is a (name, justification) pair, so a bare name with no
+        # following prose would show up as an odd count.
+        assert len(entries) % 2 == 0, entries

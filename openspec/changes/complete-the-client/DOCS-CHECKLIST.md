@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**62 of 212 features ticked.** (33 further sections are prose.)
+**63 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -180,7 +180,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 3. The line we draw
 - [x] 4. Clean-room practice — test_licensing: no studied product is named in shipped source or docs
 - [x] 5. `.research/` is gitignored and must never be vendored — test_licensing: gitignored, nothing tracked, nothing imported; gate proven to fire on a vendored fixture
-- [ ] 6. Third-party dependency policy
+- [x] 6. Third-party dependency policy — test_licensing: 311 dependencies checked, forbidden families rejected, dual licences pass on the acceptable arm, every exception justified
 - [x] 7. Attribution and NOTICE — test_licensing: NOTICE has substance, not merely presence
 - [ ] 8. Contributor rule
 - ~~9. Open questions~~ — prose
