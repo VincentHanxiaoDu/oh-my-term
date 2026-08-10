@@ -988,6 +988,26 @@
     },
     {
       "aliases": [],
+      "doc": "A path resolved against the wrong root opens somebody else's file, so the root that was used is part of the answer and anything escaping every root is refused rather than clamped.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "open",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "open.resolve",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/open/resolve",
+      "since": "0.1.0",
+      "title": "Resolve a recognised path",
+      "verb": "resolve"
+    },
+    {
+      "aliases": [],
       "doc": "Close a pane. The session it showed keeps running — closing a view of something is not ending it.",
       "effects": [],
       "group": "pane",

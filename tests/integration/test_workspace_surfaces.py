@@ -276,3 +276,83 @@ class TestTheFormatsToolsActuallyPrint:
         # tappable in the same place, and no basis for choosing.
         found = client.call("open.recognize", line="  --> src/x.rs:9:5")
         assert len(found["matches"]) == 1
+
+
+class TestResolvingWhatWasRecognised:
+    """18-semantic-open §3 and §4.
+
+    Recognition says what the text looks like. Resolution answers the two
+    questions it deliberately refused: is it there, and what can be done.
+    """
+
+    def test_a_relative_path_resolves_and_says_which_root_it_used(
+        self, client: Client, tmp_path
+    ) -> None:
+        # A path resolved against the wrong root opens somebody else's file.
+        # Naming the root is what makes a wrong answer visible rather than
+        # merely wrong.
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "main.rs").write_text("fn main() {}")
+        out = client.call(
+            "open.resolve", path="src/main.rs", roots=[str(tmp_path)], line=42
+        )
+        assert out["existence"] == "file"
+        assert out["root"] == str(tmp_path)
+        assert out["line"] == 42
+
+    def test_a_traversal_is_refused_rather_than_clamped(
+        self, client: Client, tmp_path
+    ) -> None:
+        with pytest.raises(Exception) as caught:
+            client.call(
+                "open.resolve", path="../../../etc/passwd", roots=[str(tmp_path)]
+            )
+        assert "outside" in str(caught.value).lower()
+
+    def test_an_absolute_path_outside_every_root_is_refused(
+        self, client: Client, tmp_path
+    ) -> None:
+        # Otherwise a build log naming /etc/shadow becomes something tappable.
+        with pytest.raises(Exception):
+            client.call("open.resolve", path="/etc/shadow", roots=[str(tmp_path)])
+
+    def test_a_missing_file_says_missing_and_still_offers_something(
+        self, client: Client, tmp_path
+    ) -> None:
+        # Copying the path is what somebody does next when a build names a file
+        # that is not there.
+        out = client.call("open.resolve", path="absent.rs", roots=[str(tmp_path)])
+        assert out["existence"] == "missing"
+        assert out["actions"][0]["handler"] == "clipboard"
+
+    def test_actions_come_back_ranked_best_first(
+        self, client: Client, tmp_path
+    ) -> None:
+        (tmp_path / "a.rs").write_text("")
+        out = client.call("open.resolve", path="a.rs", roots=[str(tmp_path)])
+        ranks = [a["rank"] for a in out["actions"]]
+        assert ranks == sorted(ranks, reverse=True)
+        assert out["actions"][0]["handler"] == "editor"
+
+    def test_the_line_is_carried_into_the_label_that_uses_it(
+        self, client: Client, tmp_path
+    ) -> None:
+        (tmp_path / "a.rs").write_text("")
+        out = client.call("open.resolve", path="a.rs", roots=[str(tmp_path)], line=42)
+        assert "42" in out["actions"][0]["label"]
+
+    def test_anything_that_changes_something_says_so_without_being_run(
+        self, client: Client, tmp_path
+    ) -> None:
+        # Which is what lets a phone decide to show a confirm sheet.
+        (tmp_path / "sub").mkdir()
+        out = client.call("open.resolve", path="sub", roots=[str(tmp_path)])
+        assert out["existence"] == "directory"
+        assert any(a["mutates"] for a in out["actions"])
+
+    def test_a_relative_path_with_no_root_is_an_honest_failure(
+        self, client: Client
+    ) -> None:
+        with pytest.raises(Exception) as caught:
+            client.call("open.resolve", path="src/main.rs", roots=[])
+        assert "workspace" in str(caught.value).lower()

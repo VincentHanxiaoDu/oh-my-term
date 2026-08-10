@@ -49,6 +49,7 @@
   "onboarding.dismiss_hints",
   "onboarding.hint_state",
   "open.recognize",
+  "open.resolve",
   "pane.close",
   "pane.focus",
   "pane.list",

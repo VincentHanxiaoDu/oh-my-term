@@ -434,6 +434,13 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'open.resolve': (request: RequestId, path: string, roots: string[], line?: number) =>
+    call(request, 'open.resolve', {
+      path,
+      roots,
+      ...(line === undefined ? {} : { line }),
+    }),
+
   'ssh.plan': (
     request: RequestId,
     target: string,

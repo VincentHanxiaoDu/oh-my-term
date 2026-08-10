@@ -592,6 +592,106 @@ impl CapabilityHandler<SshPlan> for MediaHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Resolving a recognised target — 18 §3, §4
+// ---------------------------------------------------------------------------
+
+/// Input to `open.resolve`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResolveIn {
+    /// The path as it was recognised.
+    pub path: String,
+    /// A line, where the text carried one.
+    #[serde(default)]
+    pub line: Option<u32>,
+    /// The roots it may resolve against.
+    ///
+    /// Passed in rather than taken from the daemon's open workspaces, because
+    /// the caller knows which pane the text came from and the daemon does not.
+    pub roots: Vec<String>,
+}
+
+/// What `open.resolve` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ResolveOut {
+    /// The absolute path.
+    pub path: String,
+    /// Which root it resolved against, so a wrong answer is visible.
+    pub root: Option<String>,
+    /// Whether it is there — or was not looked for.
+    pub existence: String,
+    /// A line, where there was one.
+    pub line: Option<u32>,
+    /// What can be done, best first.
+    pub actions: Vec<Offer>,
+}
+
+/// One thing that could be done.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct Offer {
+    /// Which handler.
+    pub handler: String,
+    /// What to call it in a menu.
+    pub label: String,
+    /// Higher is a better default.
+    pub rank: i16,
+    /// Whether it changes anything, so a confirm sheet is decidable without
+    /// running it.
+    pub mutates: bool,
+}
+
+omt_catalog::capability! {
+    /// Turn a recognised path into a concrete target, or an honest failure.
+    pub struct OpenResolve;
+    input  = ResolveIn,
+    output = ResolveOut,
+    decl = omt_catalog::Decl {
+        name: "open.resolve",
+        group: "open",
+        verb: "resolve",
+        title: "Resolve a recognised path",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::READS_FS,
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A path resolved against the wrong root opens somebody else's file, so the root that was used is part of the answer and anything escaping every root is refused rather than clamped.",
+    },
+}
+
+impl CapabilityHandler<OpenResolve> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ResolveIn,
+    ) -> Result<ResolveOut, CapabilityError> {
+        let roots: Vec<std::path::PathBuf> =
+            input.roots.iter().map(std::path::PathBuf::from).collect();
+        let resolved = omt_open::resolve::resolve(&input.path, input.line, &roots, true)
+            .map_err(|e| CapabilityError::invalid_input(e.to_string()))?;
+        Ok(ResolveOut {
+            path: resolved.path,
+            root: resolved.root,
+            existence: format!("{:?}", resolved.existence).to_lowercase(),
+            line: resolved.line,
+            actions: resolved
+                .actions
+                .into_iter()
+                .map(|a| Offer {
+                    handler: a.handler,
+                    label: a.label,
+                    rank: a.rank,
+                    mutates: a.mutates,
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

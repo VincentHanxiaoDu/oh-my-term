@@ -6,6 +6,7 @@
 //! that is allowed to have effects.
 
 pub mod recognize;
+pub mod resolve;
 pub mod rules;
 
 pub use recognize::{ALLOWED_SCHEMES, Match, Target, recognize, scheme_allowed};
