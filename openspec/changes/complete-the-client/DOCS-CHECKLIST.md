@@ -23,9 +23,9 @@ Unticked means not done. Partly built stays unticked.
 - ~~2. The solution in one paragraph~~ — prose
 - ~~3. Shape of the system~~ — prose
 - ~~4. Domain model~~ — prose
-- [ ] 5. The agent observation pipeline
-- [ ] 6. Terminal core
-- [ ] 7. Remote
+- [x] 5. The agent observation pipeline — `crates/omt/tests/overview.rs`: `the_observation_pipeline_has_the_six_sources_the_overview_claims`, `higher_is_more_authoritative` (an enum reordered alphabetically by somebody tidying it would invert the whole model silently), and `a_lower_tier_never_contradicts_a_live_higher_one`, checked through the merge machine rather than restated — a guess must not be able to overwrite what an agent said about itself. The detail is 06 §3–§4, ticked with its own tests.
+- [x] 6. Terminal core — `the_terminal_core_is_a_real_one` exercises the four things that separate a terminal from a text area showing output: parser, grid with scrollback, reflow across a width change, and the block model from OSC 133 rather than a guess. The detail is 04, now fully ticked, including the support matrix that found the IL/DL and RIS bugs.
+- [x] 7. Remote — `every_instance_is_authoritative_for_its_own_sessions` (ids carry no instance, so a federating client keys them by the connection they came from) and `the_three_built_in_auth_methods_are_there_plus_tailnet`, which asserts what a client is actually offered rather than what an enum contains. Federation end to end is `test_connection`/`test_joining`; the detail is 07 and 13, both ticked.
 - ~~8. What omt is not~~ — prose
 
 ## 03-capability-catalog
