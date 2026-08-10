@@ -20,6 +20,24 @@
     },
     {
       "aliases": [],
+      "doc": "Presents comparable facts; never ranks, scores or recommends. Judging requires understanding the code, and a plausible wrong recommendation about which branch to keep costs somebody real work.",
+      "effects": [],
+      "group": "agent",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent.compare",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/agent/compare",
+      "since": "0.1.0",
+      "title": "Compare parallel runs",
+      "verb": "compare"
+    },
+    {
+      "aliases": [],
       "doc": "Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped.",
       "effects": [
         "spawns_process"

@@ -179,3 +179,69 @@ class TestStuckAgentDetection:
     def test_a_first_turn_with_no_history_is_not_evidence(self, client) -> None:
         out = client.call("agent.attention", working_secs=3600, silent_secs=3600)
         assert out["needs_attention"] is False
+
+
+class TestComparingParallelRuns:
+    """20-recall-and-usage §9. D-R5: present facts, never judge."""
+
+    def run(self, session, **over):
+        base = {
+            "session": session,
+            "branch": f"work/{session}",
+            "base_ref": "abc123",
+            "agent": "claude_code",
+            "elapsed_secs": 600,
+            "files_from_git": ["src/a.rs"],
+            "files_from_agent": ["src/a.rs"],
+            "insertions": 40,
+            "deletions": 10,
+            "turns": 8,
+            "tokens": 120000,
+            "summary": "Added the parser",
+        }
+        base.update(over)
+        return base
+
+    def test_nothing_is_ranked_or_recommended(self, client) -> None:
+        # A comparison that says "this one looks best" will be believed, and
+        # when it is wrong nobody finds out until the other worktrees are gone.
+        out = client.call("agent.compare", runs=[self.run("a"), self.run("b")])
+        text = str(out).lower()
+        for word in ("score", "rank", "best", "recommend", "winner"):
+            assert word not in text, word
+
+    def test_a_file_the_agent_claims_but_git_did_not_see_is_flagged(
+        self, client
+    ) -> None:
+        # The alarming direction: the agent believes it wrote something that is
+        # not in the diff.
+        out = client.call(
+            "agent.compare",
+            runs=[self.run("a", files_from_agent=["src/a.rs", "src/imagined.rs"])],
+        )
+        assert out["rows"][0]["files_disagreement"] == ["src/imagined.rs"]
+        assert any("disagree" in c for c in out["caveats"])
+
+    def test_different_bases_are_called_out_as_incomparable(self, client) -> None:
+        # Two numbers in the same column measured against different things.
+        out = client.call(
+            "agent.compare",
+            runs=[self.run("a"), self.run("b", base_ref="def456")],
+        )
+        assert any("different base" in c for c in out["caveats"])
+
+    def test_unreported_usage_is_unreported_not_zero(self, client) -> None:
+        # Blank meaning zero would make an agent that reports nothing look like
+        # the cheapest one.
+        out = client.call("agent.compare", runs=[self.run("a"), self.run("b", tokens=None)])
+        assert out["rows"][1]["tokens"] is None
+        assert any("not zero" in c for c in out["caveats"])
+
+    def test_the_agents_own_summary_is_verbatim(self, client) -> None:
+        said = "I refactored the lexer but the tests still fail"
+        out = client.call("agent.compare", runs=[self.run("a", summary=said)])
+        assert out["rows"][0]["summary"] == said
+
+    def test_comparing_nothing_is_empty_rather_than_an_error(self, client) -> None:
+        out = client.call("agent.compare", runs=[])
+        assert out["rows"] == []

@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**102 of 212 features ticked.** (34 further sections are prose.)
+**103 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -270,7 +270,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 6. Command history as a first-class case
 - [ ] 7. Cross-instance search
 - [ ] 8. Timeline and digest
-- [ ] 9. Comparing parallel agent results (G18)
+- [x] 9. Comparing parallel agent results (G18) — test_agents: nothing ranked or recommended, both directions of file disagreement flagged, different bases called incomparable, unreported usage is not zero
 - [x] 10. Detecting a stuck or looping agent (G19) — test_agents: every reason reported not just the first, baselines per binding so a slow agent is not a permanent alarm, a first turn is not evidence
 - [x] 11. Usage and cost (G15) — test_agents: usage report
 - [ ] 12. Capabilities

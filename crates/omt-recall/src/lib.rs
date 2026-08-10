@@ -4,6 +4,7 @@
 //! alone. A command run fifty times in another project is not what the user
 //! wants here, and a history that offers it is one they stop reading.
 
+pub mod compare;
 pub mod ranking;
 pub mod redact;
 pub mod schedule;

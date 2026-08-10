@@ -1,5 +1,6 @@
 [
   "agent.attention",
+  "agent.compare",
   "agent.connect",
   "agent.interrupt",
   "agent.offers",

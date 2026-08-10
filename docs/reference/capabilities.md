@@ -10,6 +10,7 @@ vanishing.
 | Capability | Kind | Role | What it does |
 |---|---|---|---|
 | `agent.attention` | query | viewer | Baselines are per binding and learned from its own history: thirty seconds is an eternity for a linter and a blink for a test suite, so a fixed threshold is wrong for everybody. |
+| `agent.compare` | query | viewer | Presents comparable facts; never ranks, scores or recommends. Judging requires understanding the code, and a plausible wrong recommendation about which branch to keep costs somebody real work. |
 | `agent.connect` | command | operator | Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped. |
 | `agent.interrupt` | command | operator | Stop an agent. For an agent with no protocol of its own this is the entire remote control surface. |
 | `agent.offers` | query | viewer | Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none. |
@@ -122,4 +123,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-112 capabilities.
+113 capabilities.

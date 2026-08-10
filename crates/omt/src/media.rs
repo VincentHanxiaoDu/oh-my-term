@@ -2087,6 +2087,188 @@ impl CapabilityHandler<AgentAttention> for AttentionHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Comparing parallel runs — 20 §9
+// ---------------------------------------------------------------------------
+
+/// One run, as the caller describes it.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RunIn {
+    /// Which session.
+    pub session: String,
+    /// Its branch.
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// The resolved base it is measured against.
+    #[serde(default)]
+    pub base_ref: Option<String>,
+    /// Which agent.
+    #[serde(default)]
+    pub agent: Option<String>,
+    /// How long, in seconds.
+    #[serde(default)]
+    pub elapsed_secs: u64,
+    /// Files git reports changed.
+    #[serde(default)]
+    pub files_from_git: Vec<String>,
+    /// Files the agent said it changed.
+    #[serde(default)]
+    pub files_from_agent: Vec<String>,
+    /// Lines added.
+    #[serde(default)]
+    pub insertions: u32,
+    /// Lines removed.
+    #[serde(default)]
+    pub deletions: u32,
+    /// Turns.
+    #[serde(default)]
+    pub turns: u32,
+    /// Times it stopped to ask.
+    #[serde(default)]
+    pub interactions: u32,
+    /// How many went unanswered.
+    #[serde(default)]
+    pub interactions_timed_out: u32,
+    /// Commands that exited non-zero.
+    #[serde(default)]
+    pub failed_blocks: u32,
+    /// Tokens, agent-reported.
+    #[serde(default)]
+    pub tokens: Option<u64>,
+    /// The agent's own summary.
+    #[serde(default)]
+    pub summary: Option<String>,
+}
+
+/// Input to `agent.compare`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareIn {
+    /// The runs to put side by side.
+    pub runs: Vec<RunIn>,
+}
+
+/// One row of the comparison.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RowOut {
+    /// Which session.
+    pub session: String,
+    /// Its branch.
+    pub branch: Option<String>,
+    /// What it was measured against.
+    pub base_ref: Option<String>,
+    /// Which agent.
+    pub agent: Option<String>,
+    /// How long, in seconds.
+    pub elapsed_secs: u64,
+    /// Every file either record mentions.
+    pub files_touched: Vec<String>,
+    /// Files the two records disagree about.
+    pub files_disagreement: Vec<String>,
+    /// Lines added.
+    pub insertions: u32,
+    /// Lines removed.
+    pub deletions: u32,
+    /// Turns.
+    pub turns: u32,
+    /// Times it stopped to ask.
+    pub interactions: u32,
+    /// How many went unanswered.
+    pub interactions_timed_out: u32,
+    /// Commands that exited non-zero.
+    pub failed_blocks: u32,
+    /// Tokens, agent-reported. Absent means unreported, not zero.
+    pub tokens: Option<u64>,
+    /// The agent's own summary, verbatim.
+    pub summary: Option<String>,
+}
+
+/// What `agent.compare` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CompareOut {
+    /// One row per run, in the order given.
+    pub rows: Vec<RowOut>,
+    /// What is not comparable, and why.
+    pub caveats: Vec<String>,
+}
+
+omt_catalog::capability! {
+    /// Put parallel agent runs side by side.
+    pub struct AgentCompare;
+    input  = CompareIn,
+    output = CompareOut,
+    decl = omt_catalog::Decl {
+        name: "agent.compare",
+        group: "agent",
+        verb: "compare",
+        title: "Compare parallel runs",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Presents comparable facts; never ranks, scores or recommends. Judging requires understanding the code, and a plausible wrong recommendation about which branch to keep costs somebody real work.",
+    },
+}
+
+impl CapabilityHandler<AgentCompare> for AttentionHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: CompareIn,
+    ) -> Result<CompareOut, CapabilityError> {
+        let runs: Vec<omt_recall::compare::Run> = input
+            .runs
+            .into_iter()
+            .map(|r| omt_recall::compare::Run {
+                session: r.session,
+                branch: r.branch,
+                base_ref: r.base_ref,
+                agent: r.agent,
+                elapsed_secs: r.elapsed_secs,
+                files_from_git: r.files_from_git,
+                files_from_agent: r.files_from_agent,
+                insertions: r.insertions,
+                deletions: r.deletions,
+                turns: r.turns,
+                interactions: r.interactions,
+                interactions_timed_out: r.interactions_timed_out,
+                failed_blocks: r.failed_blocks,
+                tokens: r.tokens,
+                summary: r.summary,
+            })
+            .collect();
+        let comparison = omt_recall::compare::compare(&runs);
+        Ok(CompareOut {
+            rows: comparison
+                .rows
+                .into_iter()
+                .map(|r| RowOut {
+                    session: r.session,
+                    branch: r.branch,
+                    base_ref: r.base_ref,
+                    agent: r.agent,
+                    elapsed_secs: r.elapsed_secs,
+                    files_touched: r.files_touched,
+                    files_disagreement: r.files_disagreement,
+                    insertions: r.insertions,
+                    deletions: r.deletions,
+                    turns: r.turns,
+                    interactions: r.interactions,
+                    interactions_timed_out: r.interactions_timed_out,
+                    failed_blocks: r.failed_blocks,
+                    tokens: r.tokens,
+                    summary: r.summary,
+                })
+                .collect(),
+            caveats: comparison.caveats,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

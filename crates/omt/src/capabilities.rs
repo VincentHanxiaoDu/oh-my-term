@@ -5978,6 +5978,7 @@ pub fn registry_full(
     r.register::<crate::media::LayoutRestore, _>(crate::media::LayoutHandler(layouts))?;
     r.register::<crate::media::SearchExplain, _>(crate::media::SearchHandler)?;
     r.register::<crate::media::AgentAttention, _>(crate::media::AttentionHandler)?;
+    r.register::<crate::media::AgentCompare, _>(crate::media::AttentionHandler)?;
     r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(

@@ -8,6 +8,7 @@
 /** Every capability this build declares. */
 export const CAPABILITIES = [
   'agent.attention',
+  'agent.compare',
   'agent.connect',
   'agent.interrupt',
   'agent.offers',
@@ -127,6 +128,7 @@ export type Capability = (typeof CAPABILITIES)[number]
 /** What each capability is, for a palette or a settings screen. */
 export const CAPABILITY_INFO: Record<Capability, { title: string; group: string; kind: string; role: string; doc: string }> = {
   'agent.attention': { title: "Is this agent stuck", group: 'agent', kind: 'query', role: 'viewer', doc: "Baselines are per binding and learned from its own history: thirty seconds is an eternity for a linter and a blink for a test suite, so a fixed threshold is wrong for everybody." },
+  'agent.compare': { title: "Compare parallel runs", group: 'agent', kind: 'query', role: 'viewer', doc: "Presents comparable facts; never ranks, scores or recommends. Judging requires understanding the code, and a plausible wrong recommendation about which branch to keep costs somebody real work." },
   'agent.connect': { title: "Connect a protocol agent", group: 'agent', kind: 'command', role: 'operator', doc: "Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped." },
   'agent.interrupt': { title: "Interrupt an agent", group: 'agent', kind: 'command', role: 'operator', doc: "Stop an agent. For an agent with no protocol of its own this is the entire remote control surface." },
   'agent.offers': { title: "What an agent offers", group: 'agent', kind: 'query', role: 'viewer', doc: "Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none." },
