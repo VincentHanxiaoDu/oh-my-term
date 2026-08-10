@@ -48,6 +48,7 @@
   "onboarding.disclosures",
   "onboarding.dismiss_hints",
   "onboarding.hint_state",
+  "open.click",
   "open.recognize",
   "open.resolve",
   "pane.close",

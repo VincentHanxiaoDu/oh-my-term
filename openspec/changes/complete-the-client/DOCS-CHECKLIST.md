@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**73 of 212 features ticked.** (34 further sections are prose.)
+**74 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -238,7 +238,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 2. Recognition — test_workspace_surfaces: recognise paths and URLs
 - [x] 3. Resolution — test_workspace_surfaces: names the root it used, refuses escapes, distinguishes missing from unchecked
 - [x] 4. Actions and the handler registry — test_workspace_surfaces: ranked offers, line in the label, mutating actions declared without being run
-- [ ] 5. The conflicts
+- [x] 5. The conflicts — test_workspace_surfaces: a plain click inside a mouse-reporting app is forwarded, shift is the one omt claims, alt is not
 - [ ] 6. The `omt ssh` remote flow
 - [ ] 7. Web and mobile parity
 - [x] 8. Security — omt-open: lexical normalisation without touching the filesystem, absolute paths outside every root refused

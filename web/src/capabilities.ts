@@ -434,6 +434,16 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'open.click': (
+    request: RequestId,
+    modifiers: {
+      mouse_reporting?: boolean
+      shift?: boolean
+      super_key?: boolean
+      alt?: boolean
+    } = {},
+  ) => call(request, 'open.click', modifiers),
+
   'open.resolve': (request: RequestId, path: string, roots: string[], line?: number) =>
     call(request, 'open.resolve', {
       path,

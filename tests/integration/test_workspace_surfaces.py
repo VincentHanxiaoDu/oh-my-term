@@ -356,3 +356,45 @@ class TestResolvingWhatWasRecognised:
         with pytest.raises(Exception) as caught:
             client.call("open.resolve", path="src/main.rs", roots=[])
         assert "workspace" in str(caught.value).lower()
+
+
+class TestWhoOwnsAClick:
+    """18-semantic-open §5.1. The part that decides whether this is a feature
+    or a broken editor."""
+
+    def test_a_plain_click_inside_vim_belongs_to_vim(self, client: Client) -> None:
+        # The rule everything else protects. A multiplexer that swallows this
+        # has broken every editor.
+        out = client.call("open.click", mouse_reporting=True)
+        assert out["owner"] == "application"
+        assert out["consumed"] is False
+
+    def test_shift_click_is_the_one_omt_claims(self, client: Client) -> None:
+        # Applications overwhelmingly do not expect shifted clicks, precisely
+        # because the xterm convention exists.
+        out = client.call("open.click", mouse_reporting=True, shift=True)
+        assert out["owner"] == "activate"
+        assert out["consumed"] is True
+
+    def test_alt_click_is_forwarded_even_though_omt_would_like_it(
+        self, client: Client
+    ) -> None:
+        # Many applications already use it. Wanting a binding is not a reason
+        # to take one somebody else is using.
+        out = client.call("open.click", mouse_reporting=True, alt=True)
+        assert out["owner"] == "application"
+
+    def test_with_reporting_off_the_ordinary_selection_bindings_apply(
+        self, client: Client
+    ) -> None:
+        assert client.call("open.click")["owner"] == "selection"
+        assert client.call("open.click", shift=True)["owner"] == "extendselection"
+        assert client.call("open.click", alt=True)["owner"] == "blockselection"
+
+    def test_super_click_means_the_same_thing_in_both_states(
+        self, client: Client
+    ) -> None:
+        # So somebody who learns it does not also have to learn when it applies.
+        for reporting in (True, False):
+            out = client.call("open.click", mouse_reporting=reporting, super_key=True)
+            assert out["owner"] == "activate"

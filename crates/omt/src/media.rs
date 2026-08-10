@@ -692,6 +692,76 @@ impl CapabilityHandler<OpenResolve> for MediaHandler {
     }
 }
 
+/// Input to `open.click`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ClickIn {
+    /// Whether the program in the pane has enabled mouse reporting.
+    #[serde(default)]
+    pub mouse_reporting: bool,
+    /// Whether Shift was held.
+    #[serde(default)]
+    pub shift: bool,
+    /// Cmd on macOS, Super elsewhere.
+    #[serde(default)]
+    pub super_key: bool,
+    /// Alt / Option.
+    #[serde(default)]
+    pub alt: bool,
+}
+
+/// What `open.click` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ClickOut {
+    /// Who owns this click.
+    pub owner: String,
+    /// Whether omt took it, or the program under it did.
+    pub consumed: bool,
+}
+
+omt_catalog::capability! {
+    /// Who owns a click at these coordinates.
+    pub struct OpenClick;
+    input  = ClickIn,
+    output = ClickOut,
+    decl = omt_catalog::Decl {
+        name: "open.click",
+        group: "open",
+        verb: "click",
+        title: "Who owns this click",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "When the program in the pane has mouse reporting on, every press is its input. A multiplexer that swallows clicks so its own link handler can run has broken vim, and no link feature is worth that.",
+    },
+}
+
+impl CapabilityHandler<OpenClick> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ClickIn,
+    ) -> Result<ClickOut, CapabilityError> {
+        let owner = omt_open::click::owner(
+            input.mouse_reporting,
+            omt_open::click::Modifiers {
+                shift: input.shift,
+                super_key: input.super_key,
+                alt: input.alt,
+            },
+        );
+        Ok(ClickOut {
+            owner: format!("{owner:?}").to_lowercase(),
+            consumed: omt_open::click::consumed(owner),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

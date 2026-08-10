@@ -58,6 +58,7 @@ vanishing.
 | `onboarding.disclosures` | query | viewer | Every trigger is something the user produced, and every feature is mentioned at most once. Advocacy for a feature somebody has not yet needed spends attention omt will want later. |
 | `onboarding.dismiss_hints` | command | operator | Permanent. Somebody who turns tips off and is asked again next week has been told their answer did not count. |
 | `onboarding.hint_state` | query | viewer | At most one hint is ever offered. Six tips on a first run teach nobody six things; they teach that omt interrupts. |
+| `open.click` | query | viewer | When the program in the pane has mouse reporting on, every press is its input. A multiplexer that swallows clicks so its own link handler can run has broken vim, and no link feature is worth that. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
 | `open.resolve` | query | operator | A path resolved against the wrong root opens somebody else's file, so the root that was used is part of the answer and anything escaping every root is refused rather than clamped. |
 | `pane.close` | command | operator | Close a pane. The session it showed keeps running — closing a view of something is not ending it. |
@@ -106,4 +107,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-96 capabilities.
+97 capabilities.

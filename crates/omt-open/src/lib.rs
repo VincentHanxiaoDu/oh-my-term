@@ -5,6 +5,7 @@
 //! exists and whether the user may open it are asked later, separately, by code
 //! that is allowed to have effects.
 
+pub mod click;
 pub mod recognize;
 pub mod resolve;
 pub mod rules;

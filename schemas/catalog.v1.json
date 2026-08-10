@@ -970,6 +970,24 @@
     },
     {
       "aliases": [],
+      "doc": "When the program in the pane has mouse reporting on, every press is its input. A multiplexer that swallows clicks so its own link handler can run has broken vim, and no link feature is worth that.",
+      "effects": [],
+      "group": "open",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "open.click",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/open/click",
+      "since": "0.1.0",
+      "title": "Who owns this click",
+      "verb": "click"
+    },
+    {
+      "aliases": [],
       "doc": "Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern.",
       "effects": [],
       "group": "open",
