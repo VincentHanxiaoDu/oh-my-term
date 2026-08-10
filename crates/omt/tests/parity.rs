@@ -290,3 +290,73 @@ fn the_role_check_would_actually_catch_something() {
     let viewers = r.decls().filter(|d| d.role == Role::Viewer).count();
     assert!(viewers > 10, "only {viewers} Viewer capabilities to check");
 }
+
+// ---------------------------------------------------------------------------
+// The two high-consequence capabilities — 13-security §7
+// ---------------------------------------------------------------------------
+
+#[test]
+fn writing_to_a_pty_is_never_available_to_a_viewer() {
+    // 13 §7.1. A remote PTY write is remote code execution as the user, by
+    // design. Operator is the floor, and the writer token on top of it is what
+    // makes remote input visible to anybody at the machine and attributable
+    // afterwards.
+    let r = registry();
+    for decl in r.decls() {
+        if decl.effects.contains(Effects::WRITES_PTY) {
+            assert_ne!(
+                decl.role,
+                Role::Viewer,
+                "`{}` writes a PTY as Viewer",
+                decl.name
+            );
+        }
+    }
+}
+
+#[test]
+fn omt_has_no_second_permission_model_over_an_agents_own() {
+    // 13 §7.2 and D1. There is no destructive classifier, no approvable-tool
+    // allow-list and no auto-approve. Each of those would be a second
+    // permission model with its own configuration and its own bugs, and —
+    // worst — a false sense that omt is protecting somebody in the cases it
+    // cannot see. Danger classification belongs to the agent CLI, which has
+    // the tool schema and the arguments; omt has a string.
+    //
+    // Checked by name because this is a feature request that will arrive, and
+    // it will arrive sounding reasonable.
+    let forbidden = [
+        "auto_approve",
+        "autoapprove",
+        "approve_all",
+        "classify_danger",
+        "deny_destructive",
+        "approvable_tools",
+        "permission_policy",
+    ];
+    let r = registry();
+    for decl in r.decls() {
+        let name = decl.name.to_lowercase();
+        for word in forbidden {
+            assert!(
+                !name.contains(word),
+                "`{}` looks like a second permission model over the agent's own",
+                decl.name
+            );
+        }
+    }
+}
+
+#[test]
+fn resolving_an_interaction_needs_operator_not_admin() {
+    // The single feature the product exists for: a tap on a phone approves
+    // what pressing `y` at the keyboard would. Requiring Admin would make the
+    // owner's own phone second-class, which is the experience omt exists to
+    // remove — and requiring Viewer would let a watcher answer for the owner.
+    let r = registry();
+    let resolve = r
+        .decls()
+        .find(|d| d.name.starts_with("interaction.") && matches!(d.kind, omt_catalog::Kind::Command))
+        .expect("an interaction command");
+    assert_eq!(resolve.role, Role::Operator, "`{}`", resolve.name);
+}

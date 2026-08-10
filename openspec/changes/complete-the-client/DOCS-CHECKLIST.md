@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**111 of 212 features ticked.** (34 further sections are prose.)
+**112 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -167,7 +167,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 4. Roles and their mapping onto the catalog — crates/omt/tests/parity.rs: no Viewer capability changes anything, spawning as Viewer needs the reviewed allow-list, instance-changing commands are Admin
 - [ ] 5. Credential storage, rotation and TLS
 - [ ] 6. Browser-side controls
-- [ ] 7. The two high-consequence capabilities
+- [x] 7. The two high-consequence capabilities — parity.rs + test_security: no PTY write is Viewer, no second permission model exists by name, an agent that offered nothing gets an empty list rather than an invented one
 - [ ] 8. Secret redaction
 - [ ] 9. Network egress and supply chain
 - [ ] 10. Checklist — publishing an instance over Tailscale Funnel

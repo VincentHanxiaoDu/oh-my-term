@@ -95,3 +95,43 @@ class TestBindPolicy:
         with pytest.raises(Exception) as caught:
             client.call("security.bind_check", binds=["nonsense"])
         assert "loopback" in str(caught.value)
+
+
+class TestTheTwoHighConsequenceCapabilities:
+    """13-security §7."""
+
+    def test_writing_to_a_pty_needs_more_than_a_viewer_credential(
+        self, client: Client, catalog: dict
+    ) -> None:
+        # A remote PTY write is remote code execution as the user, by design.
+        for declaration in catalog["capabilities"]:
+            if "writes_pty" in [e.lower() for e in declaration.get("effects", [])]:
+                assert declaration["role"] != "viewer", declaration["name"]
+
+    def test_omt_ships_no_second_permission_model(self, catalog: dict) -> None:
+        # No destructive classifier, no approvable-tool allow-list, no
+        # auto-approve. Each would be a second permission model with its own
+        # bugs and a false sense that omt is protecting somebody in cases it
+        # cannot see.
+        forbidden = (
+            "auto_approve",
+            "approve_all",
+            "classify_danger",
+            "deny_destructive",
+            "approvable_tools",
+        )
+        for declaration in catalog["capabilities"]:
+            for word in forbidden:
+                assert word not in declaration["name"], declaration["name"]
+
+    def test_an_agents_own_options_come_back_verbatim(
+        self, client: Client, session: str
+    ) -> None:
+        # If the CLI offered something, omt surfaces it as the agent resolved
+        # it. If it offered nothing, omt does not invent anything — a shell
+        # session has no commands, and an empty list is the honest answer
+        # rather than a set omt made up.
+        out = client.call("agent.offers", session=session)
+        assert out["commands"] == []
+        assert out["tools"] == []
+        assert out["models"] == []
