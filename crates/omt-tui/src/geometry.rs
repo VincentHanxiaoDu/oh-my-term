@@ -537,6 +537,142 @@ fn swap_unchecked(tree: &Node, one: &str, other: &str) -> Node {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Saving and restoring a layout — §10
+// ---------------------------------------------------------------------------
+
+/// A layout, in a form that survives a restart.
+///
+/// The tree and nothing else. Rects are not stored, because they are a function
+/// of the tree and the screen — saving them would restore a desktop layout onto
+/// a phone as a desktop layout, which is the bug §3 exists to prevent.
+///
+/// Zoom is not stored either. It is a view state, and a saved zoom would have
+/// somebody restore a layout and find one pane where four should be.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Saved {
+    /// What it is called.
+    pub name: String,
+    /// The tree, flattened.
+    pub tree: SavedNode,
+}
+
+/// A tree, in a form serde can carry.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SavedNode {
+    /// A pane.
+    Leaf {
+        /// Which pane.
+        id: String,
+    },
+    /// A split.
+    Split {
+        /// `vertical` or `horizontal`.
+        direction: String,
+        /// The first child's share.
+        ratio: f32,
+        /// The first child.
+        first: Box<SavedNode>,
+        /// The second.
+        second: Box<SavedNode>,
+    },
+}
+
+impl From<&Node> for SavedNode {
+    fn from(node: &Node) -> Self {
+        match node {
+            Node::Leaf { id } => Self::Leaf { id: id.clone() },
+            Node::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => Self::Split {
+                direction: match direction {
+                    Split::Vertical => "vertical".to_owned(),
+                    Split::Horizontal => "horizontal".to_owned(),
+                },
+                ratio: *ratio,
+                first: Box::new(Self::from(first.as_ref())),
+                second: Box::new(Self::from(second.as_ref())),
+            },
+        }
+    }
+}
+
+impl From<&SavedNode> for Node {
+    fn from(node: &SavedNode) -> Self {
+        match node {
+            SavedNode::Leaf { id } => Self::Leaf { id: id.clone() },
+            SavedNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => Self::Split {
+                // An unrecognised direction becomes vertical rather than
+                // failing the whole restore. A layout file from a future
+                // version should give back the panes it can, not nothing.
+                direction: if direction == "horizontal" {
+                    Split::Horizontal
+                } else {
+                    Split::Vertical
+                },
+                ratio: *ratio,
+                first: Box::new(Self::from(first.as_ref())),
+                second: Box::new(Self::from(second.as_ref())),
+            },
+        }
+    }
+}
+
+/// Every pane named in a saved layout, in pre-order.
+#[must_use]
+pub fn panes_of(node: &SavedNode) -> Vec<String> {
+    match node {
+        SavedNode::Leaf { id } => vec![id.clone()],
+        SavedNode::Split { first, second, .. } => {
+            let mut out = panes_of(first);
+            out.extend(panes_of(second));
+            out
+        }
+    }
+}
+
+/// Restore a saved layout, keeping only the panes that still exist.
+///
+/// A layout is a description of sessions that were running, and by the time it
+/// is restored some of them are not. Dropping the missing ones and rebuilding
+/// the rest is the only outcome that gives somebody back what they still have —
+/// failing gives them nothing, and keeping the names gives them panes showing
+/// dead sessions they then have to close one by one.
+#[must_use]
+pub fn restore(saved: &Saved, alive: &[String]) -> Option<(Node, Vec<String>)> {
+    let named = panes_of(&saved.tree);
+    let missing: Vec<String> = named
+        .iter()
+        .filter(|id| !alive.contains(id))
+        .cloned()
+        .collect();
+    let surviving: Vec<String> = named
+        .into_iter()
+        .filter(|id| alive.contains(id))
+        .collect();
+    if surviving.is_empty() {
+        return None;
+    }
+    // Rebuilt rather than pruned in place: pruning leaves splits with one
+    // child, and a split with one child renders as a pane that has mysteriously
+    // stopped filling its space.
+    let tree = if surviving.len() == panes_of(&saved.tree).len() {
+        Node::from(&saved.tree)
+    } else {
+        preset(Preset::EvenVertical, &surviving)?
+    };
+    Some((tree, missing))
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -545,6 +681,92 @@ fn swap_unchecked(tree: &Node, one: &str, other: &str) -> Node {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn a_layout_round_trips_through_its_saved_form() {
+        let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c"])).expect("t");
+        let saved = Saved {
+            name: "work".to_owned(),
+            tree: SavedNode::from(&tree),
+        };
+        let json = serde_json::to_string(&saved).expect("to json");
+        let back: Saved = serde_json::from_str(&json).expect("from json");
+        assert_eq!(Node::from(&back.tree), tree);
+    }
+
+    #[test]
+    fn a_saved_layout_holds_no_rectangles() {
+        // Rects are a function of the tree and the screen. Saving them would
+        // restore a desktop layout onto a phone as a desktop layout, which is
+        // the bug the degradation rule exists to prevent.
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        let json = serde_json::to_string(&Saved {
+            name: "x".to_owned(),
+            tree: SavedNode::from(&tree),
+        })
+        .expect("json");
+        for word in ["left", "top", "width", "height"] {
+            assert!(!json.contains(word), "{word} leaked into {json}");
+        }
+    }
+
+    #[test]
+    fn restoring_keeps_the_panes_that_still_exist_and_names_the_rest() {
+        // A layout describes sessions that were running, and by restore time
+        // some are not.
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
+        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
+        let (restored, missing) = restore(&saved, &ids(&["a", "c"])).expect("something survived");
+        assert_eq!(missing, ["b"]);
+        let g = compute(&restored, Rect { left: 0, top: 0, width: 80, height: 24 });
+        let names: Vec<String> = g.panes.iter().map(|p| p.pane.clone()).collect();
+        assert_eq!(names, ["a", "c"]);
+    }
+
+    #[test]
+    fn a_restore_with_nothing_left_is_none_rather_than_an_empty_layout() {
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
+        assert!(restore(&saved, &[]).is_none());
+    }
+
+    #[test]
+    fn a_fully_alive_layout_restores_its_exact_shape() {
+        // The common case must not be rebuilt into something merely
+        // equivalent: somebody saved a main-vertical and expects it back.
+        let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c"])).expect("t");
+        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
+        let (restored, missing) =
+            restore(&saved, &ids(&["a", "b", "c"])).expect("all alive");
+        assert!(missing.is_empty());
+        assert_eq!(restored, tree);
+    }
+
+    #[test]
+    fn a_pruned_layout_has_no_split_with_one_child() {
+        // Pruning in place leaves them, and a split with one child renders as
+        // a pane that has mysteriously stopped filling its space.
+        let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c", "d"])).expect("t");
+        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
+        let (restored, _) = restore(&saved, &ids(&["a", "d"])).expect("some alive");
+        let g = compute(&restored, Rect { left: 0, top: 0, width: 80, height: 24 });
+        assert_eq!(
+            g.panes.iter().map(|p| p.outer.width).sum::<u16>(),
+            80,
+            "the restored panes fill the screen"
+        );
+    }
+
+    #[test]
+    fn a_layout_from_a_future_version_gives_back_the_panes_it_can() {
+        // Failing the whole restore over one unrecognised field would hand
+        // somebody nothing at all.
+        let json = r#"{"name":"w","tree":{"kind":"split","direction":"diagonal","ratio":0.5,"first":{"kind":"leaf","id":"a"},"second":{"kind":"leaf","id":"b"}}}"#;
+        let saved: Saved = serde_json::from_str(json).expect("parses");
+        let (tree, _) = restore(&saved, &ids(&["a", "b"])).expect("restores");
+        let g = compute(&tree, Rect { left: 0, top: 0, width: 80, height: 24 });
+        assert_eq!(g.panes.len(), 2);
+    }
+
     #[test]
     fn a_float_sits_on_top_of_the_layout() {
         let area = Rect { left: 0, top: 0, width: 80, height: 24 };

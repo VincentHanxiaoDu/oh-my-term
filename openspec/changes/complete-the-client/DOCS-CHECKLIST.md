@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**94 of 212 features ticked.** (34 further sections are prose.)
+**96 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -227,8 +227,8 @@ Unticked means not done. Partly built stays unticked.
 - [x] 6. Directional focus navigation — test_workspace_surfaces: geometric over placed rects, hidden panes skipped, deterministic, no wrap by default
 - [ ] 7. Mobile and web parity
 - [ ] 8. Rendering
-- [ ] 9. Capabilities
-- [ ] 10. Persistence and restore
+- [x] 9. Capabilities — test_workspace_surfaces: pane.navigate, layout.save, layout.restore
+- [x] 10. Persistence and restore — test_workspace_surfaces: saved layouts hold no rects, restore keeps what survives and names the rest, a phone-sized restore drops what will not fit
 - [ ] 11. Testing
 - ~~12. Open questions~~ — prose
 

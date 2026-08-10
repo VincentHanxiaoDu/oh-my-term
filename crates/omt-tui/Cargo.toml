@@ -10,8 +10,12 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+serde = { workspace = true }
 omt-types = { workspace = true }
 omt-catalog = { workspace = true }
 omt-term = { workspace = true }
 omt-input = { workspace = true }
 crossterm = "0.29"
+
+[dev-dependencies]
+serde_json = { workspace = true }

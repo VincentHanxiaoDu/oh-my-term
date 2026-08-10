@@ -866,6 +866,48 @@
     },
     {
       "aliases": [],
+      "doc": "Keeps the panes that still exist and names the rest. Failing outright gives somebody nothing; keeping dead names gives them panes they have to close one by one.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "layout",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "layout.restore",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/layout/restore",
+      "since": "0.1.0",
+      "title": "Restore a saved layout",
+      "verb": "restore"
+    },
+    {
+      "aliases": [],
+      "doc": "The tree and nothing else. Rects are a function of the tree and the screen, so saving them would restore a desktop layout onto a phone as a desktop layout.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "layout",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "layout.save",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/layout/save",
+      "since": "0.1.0",
+      "title": "Save this layout",
+      "verb": "save"
+    },
+    {
+      "aliases": [],
       "doc": "Per-adapter, because one format applied to all of them is silently ignored by most — which looks exactly like an agent choosing not to read the file.",
       "effects": [],
       "group": "media",

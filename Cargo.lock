@@ -1768,6 +1768,8 @@ dependencies = [
  "omt-input",
  "omt-term",
  "omt-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

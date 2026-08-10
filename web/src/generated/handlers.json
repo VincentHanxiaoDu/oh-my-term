@@ -43,6 +43,8 @@
   "keys.list",
   "keys.registry",
   "layout.open",
+  "layout.restore",
+  "layout.save",
   "media.attach",
   "media.clipboard",
   "media.describe",

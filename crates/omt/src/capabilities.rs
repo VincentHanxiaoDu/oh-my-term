@@ -5971,6 +5971,11 @@ pub fn registry_full(
     r.register::<crate::media::KeysExplain, _>(crate::media::KeysHandler)?;
     r.register::<crate::media::KeysRegistry, _>(crate::media::KeysHandler)?;
     r.register::<crate::media::PaneNavigate, _>(crate::media::KeysHandler)?;
+    let layouts: crate::media::Layouts = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::BTreeMap::new(),
+    ));
+    r.register::<crate::media::LayoutSave, _>(crate::media::LayoutHandler(layouts.clone()))?;
+    r.register::<crate::media::LayoutRestore, _>(crate::media::LayoutHandler(layouts))?;
     r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(

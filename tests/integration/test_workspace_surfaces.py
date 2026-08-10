@@ -535,3 +535,58 @@ class TestDirectionalFocus:
                 "pane.navigate", panes=self.PANES, **{"from": "a"}, direction="sideways"
             )
         assert "left" in str(caught.value).lower()
+
+
+class TestSavedLayouts:
+    """17-panes-and-layout §9 and §10."""
+
+    def test_a_layout_saves_and_restores(self, client: Client) -> None:
+        client.call(
+            "layout.save", name="work", panes=["a", "b", "c"], preset="main_vertical"
+        )
+        out = client.call(
+            "layout.restore", name="work", alive=["a", "b", "c"], width=120, height=40
+        )
+        assert [p["pane"] for p in out["panes"]] == ["a", "b", "c"]
+        assert out["missing"] == []
+
+    def test_a_restore_names_the_panes_that_are_gone(self, client: Client) -> None:
+        # A restore that quietly drops two panes leaves somebody wondering what
+        # they have forgotten.
+        client.call("layout.save", name="w2", panes=["a", "b", "c"], preset="even_vertical")
+        out = client.call("layout.restore", name="w2", alive=["a", "c"], width=120, height=40)
+        assert out["missing"] == ["b"]
+        assert [p["pane"] for p in out["panes"]] == ["a", "c"]
+
+    def test_restoring_onto_a_phone_drops_what_will_not_fit(
+        self, client: Client
+    ) -> None:
+        # The whole reason rects are not saved: a desktop layout restored onto
+        # a phone must not come back as a desktop layout.
+        client.call("layout.save", name="w3", panes=["a", "b", "c", "d"], preset="even_vertical")
+        out = client.call("layout.restore", name="w3", alive=["a", "b", "c", "d"], width=30, height=60)
+        assert out["hidden"], out
+
+    def test_a_layout_with_nothing_left_alive_is_refused_with_a_reason(
+        self, client: Client
+    ) -> None:
+        client.call("layout.save", name="w4", panes=["a"], preset="even_vertical")
+        with pytest.raises(Exception) as caught:
+            client.call("layout.restore", name="w4", alive=[], width=80, height=24)
+        assert "running" in str(caught.value).lower()
+
+    def test_an_unknown_layout_is_not_found(self, client: Client) -> None:
+        with pytest.raises(Exception):
+            client.call("layout.restore", name="nope", alive=["a"], width=80, height=24)
+
+    def test_an_unknown_preset_says_what_exists(self, client: Client) -> None:
+        with pytest.raises(Exception) as caught:
+            client.call("layout.save", name="w5", panes=["a"], preset="spiral")
+        assert "main_vertical" in str(caught.value)
+
+    def test_saving_the_same_name_twice_replaces_rather_than_doubling(
+        self, client: Client
+    ) -> None:
+        first = client.call("layout.save", name="dup", panes=["a"], preset="even_vertical")
+        second = client.call("layout.save", name="dup", panes=["a", "b"], preset="even_vertical")
+        assert first["saved"] == second["saved"]

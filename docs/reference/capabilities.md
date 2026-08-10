@@ -53,6 +53,8 @@ vanishing.
 | `keys.list` | query | viewer | In a stable order, so two calls can be compared. An unordered list makes a diff between two configurations unreadable. |
 | `keys.registry` | query | viewer | The registry is data, so a new agent CLI is a file rather than a release. This says how much of it is loaded. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
+| `layout.restore` | query | operator | Keeps the panes that still exist and names the rest. Failing outright gives somebody nothing; keeping dead names gives them panes they have to close one by one. |
+| `layout.save` | command | operator | The tree and nothing else. Rects are a function of the tree and the screen, so saving them would restore a desktop layout onto a phone as a desktop layout. |
 | `media.attach` | query | viewer | Per-adapter, because one format applied to all of them is silently ignored by most — which looks exactly like an agent choosing not to read the file. |
 | `media.clipboard` | command | operator | OSC 52, wrapped for tmux when TERM says so. omt does not claim the copy succeeded: there is no acknowledgement to base that on. |
 | `media.describe` | query | viewer | What a blob is, from its bytes rather than from a filename somebody supplied. A name is a claim; the bytes are the evidence, and writing an executable as a `.png` is what trusting the claim allows. |
@@ -118,4 +120,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-108 capabilities.
+110 capabilities.

@@ -434,6 +434,17 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'layout.save': (request: RequestId, name: string, panes: string[], preset: string) =>
+    call(request, 'layout.save', { name, panes, preset }),
+
+  'layout.restore': (
+    request: RequestId,
+    name: string,
+    alive: string[],
+    width: number,
+    height: number,
+  ) => call(request, 'layout.restore', { name, alive, width, height }),
+
   'pane.navigate': (
     request: RequestId,
     panes: {

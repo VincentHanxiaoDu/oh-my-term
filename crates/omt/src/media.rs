@@ -1624,6 +1624,217 @@ impl CapabilityHandler<PaneNavigate> for KeysHandler {
     }
 }
 
+/// Saved layouts, by name.
+pub type Layouts = std::sync::Arc<
+    std::sync::Mutex<std::collections::BTreeMap<String, omt_tui::geometry::Saved>>,
+>;
+
+/// Input to `layout.save`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct LayoutSaveIn {
+    /// What to call it.
+    pub name: String,
+    /// The panes, in the order they should be arranged.
+    pub panes: Vec<String>,
+    /// `even_vertical`, `even_horizontal`, `main_vertical` or `main_horizontal`.
+    pub preset: String,
+}
+
+/// What `layout.save` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct LayoutSaveOut {
+    /// What it was called.
+    pub name: String,
+    /// How many layouts are saved now.
+    pub saved: usize,
+}
+
+omt_catalog::capability! {
+    /// Save an arrangement under a name.
+    pub struct LayoutSave;
+    input  = LayoutSaveIn,
+    output = LayoutSaveOut,
+    decl = omt_catalog::Decl {
+        name: "layout.save",
+        group: "layout",
+        verb: "save",
+        title: "Save this layout",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Command,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::WRITES_FS,
+        // Cas: saving the same name twice is a replace, so a retry after a
+        // dropped acknowledgement lands on the same result.
+        intent: Some(omt_catalog::Intent::Cas),
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The tree and nothing else. Rects are a function of the tree and the screen, so saving them would restore a desktop layout onto a phone as a desktop layout.",
+    },
+}
+
+/// Serves saved layouts.
+pub struct LayoutHandler(pub Layouts);
+
+fn preset_of(name: &str) -> Option<omt_tui::geometry::Preset> {
+    match name {
+        "even_vertical" => Some(omt_tui::geometry::Preset::EvenVertical),
+        "even_horizontal" => Some(omt_tui::geometry::Preset::EvenHorizontal),
+        "main_vertical" => Some(omt_tui::geometry::Preset::MainVertical),
+        "main_horizontal" => Some(omt_tui::geometry::Preset::MainHorizontal),
+        _ => None,
+    }
+}
+
+impl CapabilityHandler<LayoutSave> for LayoutHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: LayoutSaveIn,
+    ) -> Result<LayoutSaveOut, CapabilityError> {
+        if input.name.trim().is_empty() {
+            return Err(CapabilityError::invalid_input(
+                "a layout needs a name to be restored by",
+            ));
+        }
+        let preset = preset_of(&input.preset).ok_or_else(|| {
+            CapabilityError::invalid_input(format!(
+                "no preset `{}`; omt has even_vertical, even_horizontal, main_vertical and main_horizontal",
+                input.preset
+            ))
+        })?;
+        let tree = omt_tui::geometry::preset(preset, &input.panes)
+            .ok_or_else(|| CapabilityError::invalid_input("an empty layout is not a layout"))?;
+        let mut held = self
+            .0
+            .lock()
+            .map_err(|_| CapabilityError::internal("the layout lock was poisoned"))?;
+        held.insert(
+            input.name.clone(),
+            omt_tui::geometry::Saved {
+                name: input.name.clone(),
+                tree: omt_tui::geometry::SavedNode::from(&tree),
+            },
+        );
+        Ok(LayoutSaveOut {
+            name: input.name,
+            saved: held.len(),
+        })
+    }
+}
+
+/// Input to `layout.restore`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct LayoutRestoreIn {
+    /// Which saved layout.
+    pub name: String,
+    /// Which panes still exist.
+    pub alive: Vec<String>,
+    /// How wide the screen is.
+    pub width: u16,
+    /// How tall.
+    pub height: u16,
+}
+
+/// What `layout.restore` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct LayoutRestoreOut {
+    /// Where each surviving pane goes.
+    pub panes: Vec<PlacementOut>,
+    /// Panes the layout named that are no longer running.
+    ///
+    /// Named rather than counted, because a restore that quietly drops two
+    /// panes leaves somebody wondering what they have forgotten.
+    pub missing: Vec<String>,
+    /// Panes that survived but do not fit this screen.
+    pub hidden: Vec<String>,
+}
+
+/// One placed pane.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct PlacementOut {
+    /// Which pane.
+    pub pane: String,
+    /// Column of the left edge.
+    pub left: u16,
+    /// Row of the top edge.
+    pub top: u16,
+    /// How wide.
+    pub width: u16,
+    /// How tall.
+    pub height: u16,
+}
+
+omt_catalog::capability! {
+    /// Restore a saved layout onto this screen.
+    pub struct LayoutRestore;
+    input  = LayoutRestoreIn,
+    output = LayoutRestoreOut,
+    decl = omt_catalog::Decl {
+        name: "layout.restore",
+        group: "layout",
+        verb: "restore",
+        title: "Restore a saved layout",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::READS_FS,
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Keeps the panes that still exist and names the rest. Failing outright gives somebody nothing; keeping dead names gives them panes they have to close one by one.",
+    },
+}
+
+impl CapabilityHandler<LayoutRestore> for LayoutHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: LayoutRestoreIn,
+    ) -> Result<LayoutRestoreOut, CapabilityError> {
+        let held = self
+            .0
+            .lock()
+            .map_err(|_| CapabilityError::internal("the layout lock was poisoned"))?;
+        let saved = held
+            .get(&input.name)
+            .ok_or_else(|| CapabilityError::not_found(format!("no layout `{}`", input.name)))?;
+        let (tree, missing) = omt_tui::geometry::restore(saved, &input.alive).ok_or_else(|| {
+            CapabilityError::precondition_failed(format!(
+                "none of the panes in `{}` are still running",
+                input.name
+            ))
+        })?;
+        let geometry = omt_tui::geometry::compute(
+            &tree,
+            omt_tui::geometry::Rect {
+                left: 0,
+                top: 0,
+                width: input.width,
+                height: input.height,
+            },
+        );
+        Ok(LayoutRestoreOut {
+            panes: geometry
+                .panes
+                .into_iter()
+                .map(|p| PlacementOut {
+                    pane: p.pane,
+                    left: p.outer.left,
+                    top: p.outer.top,
+                    width: p.outer.width,
+                    height: p.outer.height,
+                })
+                .collect(),
+            hidden: geometry.hidden,
+            missing,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
