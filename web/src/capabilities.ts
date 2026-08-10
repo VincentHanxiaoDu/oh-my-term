@@ -434,6 +434,19 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'search.explain': (
+    request: RequestId,
+    candidates: {
+      id: string
+      kind: string
+      bm25: number
+      age_secs: number
+      in_scope?: boolean
+      exit?: number | null
+      session_active?: boolean
+    }[],
+  ) => call(request, 'search.explain', { candidates }),
+
   'layout.save': (request: RequestId, name: string, panes: string[], preset: string) =>
     call(request, 'layout.save', { name, panes, preset }),
 

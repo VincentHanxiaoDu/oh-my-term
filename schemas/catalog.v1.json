@@ -1540,6 +1540,24 @@
     },
     {
       "aliases": [],
+      "doc": "A transparent weighted product with no learning and no hidden state. Search over somebody's own history is where a wrong answer looks exactly like a right one, and a ranker that cannot explain itself gives them no way to notice.",
+      "effects": [],
+      "group": "search",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "search.explain",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/search/explain",
+      "since": "0.1.0",
+      "title": "Why this result ranked here",
+      "verb": "explain"
+    },
+    {
+      "aliases": [],
       "doc": "Find text across a session's screen and history, with the row and offsets of each hit so a client can scroll to it and highlight exactly that span.",
       "effects": [],
       "group": "search",

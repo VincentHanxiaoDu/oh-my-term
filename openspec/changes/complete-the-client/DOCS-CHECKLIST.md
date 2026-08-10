@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**99 of 212 features ticked.** (34 further sections are prose.)
+**100 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -265,7 +265,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 1. The recall problem, stated as questions
 - [x] 2. What is indexed, and what is not — test_workspace_surfaces: recall and its danger rule
 - [ ] 3. Index design
-- [ ] 4. Ranking
+- [x] 4. Ranking — test_workspace_surfaces: every factor reasoned, the factors multiply to the score, a huge text match cannot swamp the rest, the order is total
 - [ ] 5. Redaction and the index
 - [ ] 6. Command history as a first-class case
 - [ ] 7. Cross-instance search

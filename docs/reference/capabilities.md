@@ -87,6 +87,7 @@ vanishing.
 | `queue.remove` | command | operator | Take a message out of an agent's queue. Refused on a mirrored queue for the same reason enqueue is: a removal omt cannot confirm loses the message with no record of what it was. |
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
 | `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
+| `search.explain` | query | viewer | A transparent weighted product with no learning and no hidden state. Search over somebody's own history is where a wrong answer looks exactly like a right one, and a ranker that cannot explain itself gives them no way to notice. |
 | `search.session` | query | viewer | Find text across a session's screen and history, with the row and offsets of each hit so a client can scroll to it and highlight exactly that span. |
 | `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
 | `session.blocks` | query | viewer | Commands run in a session with their output ranges and exit codes, from OSC 133. A shell that emits no marks reports none rather than guesses. |
@@ -120,4 +121,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-110 capabilities.
+111 capabilities.

@@ -590,3 +590,78 @@ class TestSavedLayouts:
         first = client.call("layout.save", name="dup", panes=["a"], preset="even_vertical")
         second = client.call("layout.save", name="dup", panes=["a", "b"], preset="even_vertical")
         assert first["saved"] == second["saved"]
+
+
+class TestWhyAResultRankedThere:
+    """20-recall-and-usage §4. A transparent weighted product."""
+
+    def candidate(self, id, **over):
+        base = {
+            "id": id,
+            "kind": "command",
+            "bm25": -10.0,
+            "age_secs": 0,
+            "in_scope": True,
+            "exit": 0,
+            "session_active": False,
+        }
+        base.update(over)
+        return base
+
+    def test_every_factor_comes_back_with_a_reason(self, client: Client) -> None:
+        # The only remedy for a ranker that cannot explain itself is to stop
+        # trusting search, which is the same as not having it.
+        out = client.call("search.explain", candidates=[self.candidate("a")])
+        factors = out["results"][0]["factors"]
+        assert len(factors) == 6
+        assert all(f["because"] for f in factors)
+
+    def test_the_factors_multiply_to_the_score(self, client: Client) -> None:
+        # A printed explanation that does not reconstruct the number looks like
+        # an audit and is not one.
+        result = client.call("search.explain", candidates=[self.candidate("a")])[
+            "results"
+        ][0]
+        product = 1.0
+        for factor in result["factors"]:
+            product *= factor["value"]
+        assert abs(product - result["score"]) < 1e-9
+
+    def test_something_more_recent_wins_all_else_equal(self, client: Client) -> None:
+        out = client.call(
+            "search.explain",
+            candidates=[
+                self.candidate("old", age_secs=30 * 86400),
+                self.candidate("new"),
+            ],
+        )
+        assert out["results"][0]["id"] == "new"
+
+    def test_a_huge_text_match_cannot_swamp_everything_else(
+        self, client: Client
+    ) -> None:
+        out = client.call(
+            "search.explain",
+            candidates=[
+                self.candidate(
+                    "wordy",
+                    bm25=-10000.0,
+                    in_scope=False,
+                    exit=1,
+                    age_secs=30 * 86400,
+                    kind="output",
+                ),
+                self.candidate("nearby"),
+            ],
+        )
+        assert out["results"][0]["id"] == "nearby"
+
+    def test_the_same_query_gives_the_same_order(self, client: Client) -> None:
+        # An unstable order makes consecutive runs disagree, which reads as the
+        # index being broken.
+        candidates = [self.candidate(x) for x in ("b", "a", "c")]
+        orders = {
+            tuple(r["id"] for r in client.call("search.explain", candidates=candidates)["results"])
+            for _ in range(3)
+        }
+        assert len(orders) == 1

@@ -1835,6 +1835,139 @@ impl CapabilityHandler<LayoutRestore> for LayoutHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Why one result beat another — 20 §4
+// ---------------------------------------------------------------------------
+
+/// One candidate, as the caller describes it.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CandidateIn {
+    /// Its id.
+    pub id: String,
+    /// `command`, `output`, `agent_message` or `file_change`.
+    pub kind: String,
+    /// FTS5's bm25, negative and more-negative-is-better.
+    pub bm25: f64,
+    /// How many seconds ago.
+    pub age_secs: u64,
+    /// Whether it is in the workspace the search came from.
+    #[serde(default)]
+    pub in_scope: bool,
+    /// The exit code, where there was one.
+    #[serde(default)]
+    pub exit: Option<i32>,
+    /// Whether its session is still running.
+    #[serde(default)]
+    pub session_active: bool,
+}
+
+/// Input to `search.explain`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ExplainSearchIn {
+    /// The candidates to rank.
+    pub candidates: Vec<CandidateIn>,
+}
+
+/// One factor's contribution.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct FactorOut {
+    /// What it is called.
+    pub name: String,
+    /// What it multiplied by.
+    pub value: f64,
+    /// Why, in words.
+    pub because: String,
+}
+
+/// One scored result.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ScoredOut {
+    /// Which candidate.
+    pub id: String,
+    /// The product of every factor.
+    pub score: f64,
+    /// Each factor, in the order applied.
+    pub factors: Vec<FactorOut>,
+}
+
+/// What `search.explain` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ExplainSearchOut {
+    /// Every candidate, best first.
+    pub results: Vec<ScoredOut>,
+}
+
+omt_catalog::capability! {
+    /// Rank some candidates and show the arithmetic.
+    pub struct SearchExplain;
+    input  = ExplainSearchIn,
+    output = ExplainSearchOut,
+    decl = omt_catalog::Decl {
+        name: "search.explain",
+        group: "search",
+        verb: "explain",
+        title: "Why this result ranked here",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A transparent weighted product with no learning and no hidden state. Search over somebody's own history is where a wrong answer looks exactly like a right one, and a ranker that cannot explain itself gives them no way to notice.",
+    },
+}
+
+/// Serves search explanation.
+pub struct SearchHandler;
+
+impl CapabilityHandler<SearchExplain> for SearchHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ExplainSearchIn,
+    ) -> Result<ExplainSearchOut, CapabilityError> {
+        let candidates: Vec<omt_recall::ranking::Candidate> = input
+            .candidates
+            .into_iter()
+            .map(|c| omt_recall::ranking::Candidate {
+                id: c.id,
+                kind: match c.kind.as_str() {
+                    "output" => omt_recall::ranking::Kind::Output,
+                    "agent_message" => omt_recall::ranking::Kind::AgentMessage,
+                    "file_change" => omt_recall::ranking::Kind::FileChange,
+                    _ => omt_recall::ranking::Kind::Command,
+                },
+                bm25: c.bm25,
+                age_secs: c.age_secs,
+                in_scope: c.in_scope,
+                exit: c.exit,
+                session_active: c.session_active,
+            })
+            .collect();
+        Ok(ExplainSearchOut {
+            results: omt_recall::ranking::rank(&candidates)
+                .into_iter()
+                .map(|s| ScoredOut {
+                    id: s.id,
+                    score: s.score,
+                    factors: s
+                        .factors
+                        .into_iter()
+                        .map(|f| FactorOut {
+                            name: f.name,
+                            value: f.value,
+                            because: f.because,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
