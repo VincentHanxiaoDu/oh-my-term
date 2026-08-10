@@ -187,3 +187,50 @@ class TestWhenASettingTakesEffect:
     ) -> None:
         out = client.call("config.reload_class", keys=["some.new.setting"])
         assert out["keys"][0]["class"] == "hot"
+
+
+class TestTheSettingsReferenceIsGenerated:
+    """10-configuration §4. One table; the docs, the capability and the
+    validator all read it."""
+
+    def test_the_reference_is_current(self) -> None:
+        # A hand-written settings page is wrong the first time a default
+        # changes, and nothing fails when it drifts.
+        import subprocess
+
+        from omt_client import REPO_ROOT
+
+        result = subprocess.run(
+            ["cargo", "run", "-q", "-p", "xtask", "--", "codegen-check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_every_setting_in_the_capability_is_in_the_reference(
+        self, client
+    ) -> None:
+        # The two reading the same table is the property worth having; a
+        # setting in one and not the other means they are not.
+        from omt_client import REPO_ROOT
+
+        page = (REPO_ROOT / "docs" / "reference" / "settings.md").read_text()
+        for setting in client.call("config.schema")["settings"]:
+            assert f"`{setting['key']}`" in page, setting["key"]
+
+    def test_every_setting_has_a_default_and_a_sentence(self, client) -> None:
+        # P11: a feature works before it is configured, so a setting with no
+        # default is a setting that must be set — the same failure with extra
+        # steps.
+        for setting in client.call("config.schema")["settings"]:
+            assert setting["default"] is not None, setting["key"]
+            assert setting["doc"].strip(), setting["key"]
+
+    def test_the_reference_says_when_each_setting_takes_effect(self) -> None:
+        from omt_client import REPO_ROOT
+
+        page = (REPO_ROOT / "docs" / "reference" / "settings.md").read_text()
+        assert "immediately" in page
+        assert "Reload" in page

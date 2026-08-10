@@ -366,6 +366,38 @@ fn handlers() -> Result<()> {
     Ok(())
 }
 
+/// Every setting, as a page somebody can read.
+///
+/// Generated from the same table `config.schema` serves and the validator
+/// checks against, so a setting cannot exist in one and not the others. A
+/// hand-written settings page is wrong the first time a default changes, and
+/// nothing fails when it drifts — which is the same argument as the capability
+/// reference beside it.
+fn settings_reference() -> String {
+    let mut out = String::from(
+        "# Settings\n\nGenerated from `omt-config`'s schema. Every setting has a default, because a feature works before it is configured.\n\n| Key | Holds | Default | Reload | What it does |\n|---|---|---|---|---|\n",
+    );
+    let mut settings: Vec<&omt_config::schema::Setting> = omt_config::schema::SETTINGS.iter().collect();
+    settings.sort_by_key(|s| s.key);
+    for setting in settings {
+        let choices = if setting.choices.is_empty() {
+            setting.kind.as_str().to_owned()
+        } else {
+            setting.choices.join(" \\| ")
+        };
+        let reload = match omt_config::schema::reload_class(setting.key) {
+            omt_config::schema::Reload::Hot => "immediately",
+            omt_config::schema::Reload::RestartServer => "on listener restart",
+            omt_config::schema::Reload::Restart => "on restart",
+        };
+        out.push_str(&format!(
+            "| `{}` | {} | `{}` | {} | {} |\n",
+            setting.key, choices, setting.default, reload, setting.doc
+        ));
+    }
+    out
+}
+
 /// The repository root, from this file's location rather than the cwd.
 fn repo_root() -> Result<std::path::PathBuf> {
     let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -556,6 +588,7 @@ fn codegen(check: bool) -> Result<()> {
             root.join("docs/reference/capabilities.md"),
             reference(&entries),
         ),
+        (root.join("docs/reference/settings.md"), settings_reference()),
     ];
 
     let mut stale = Vec::new();
