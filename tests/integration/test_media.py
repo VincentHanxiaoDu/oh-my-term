@@ -83,3 +83,38 @@ class TestTheLandingZoneIsVisible:
         before = client.call("media.list")["used"]
         client.call("media.put", content=payload, origin="web_upload")
         assert client.call("media.list")["used"] == before
+
+
+class TestClipboardAcrossSsh:
+    """§3. OSC 52, which rides the connection that is already there."""
+
+    def test_a_plain_terminal_gets_a_bare_sequence(self, client: Client) -> None:
+        out = client.call("media.clipboard", text="hello", term="xterm-256color")
+        assert out["sequence"].startswith("\x1b]52;c;")
+
+    def test_tmux_gets_a_passthrough_wrapper(self, client: Client) -> None:
+        # Keyed off TERM, not $TMUX: TERM survives ssh and $TMUX does not, so
+        # keying off the variable gives a copy that works locally and silently
+        # does nothing remotely.
+        out = client.call("media.clipboard", text="hello", term="screen-256color")
+        assert out["sequence"].startswith("\x1bPtmux;")
+        assert out["sequence"].endswith("\x1b\\")
+
+    def test_omt_does_not_claim_the_copy_succeeded(self, client: Client) -> None:
+        # There is no acknowledgement to base that on.
+        out = client.call("media.clipboard", text="hello", term="xterm")
+        assert "sent" in out["message"].lower()
+        assert "copied" not in out["message"].lower()
+
+    def test_something_over_the_limit_is_refused_not_truncated(
+        self, client: Client
+    ) -> None:
+        # A truncated clipboard is worse than a refused one: the paste looks
+        # like it worked and the tail is gone.
+        with pytest.raises(Exception) as caught:
+            client.call("media.clipboard", text="x" * 70000, term="xterm")
+        assert "limit" in str(caught.value).lower()
+
+    def test_copying_nothing_is_refused(self, client: Client) -> None:
+        with pytest.raises(Exception):
+            client.call("media.clipboard", text="", term="xterm")

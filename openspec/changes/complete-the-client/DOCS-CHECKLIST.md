@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**64 of 212 features ticked.** (33 further sections are prose.)
+**66 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -112,12 +112,12 @@ Unticked means not done. Partly built stays unticked.
 
 - [ ] 1. The scenarios
 - [x] 2. The blob store — test_media: content-addressed, sniffed, quota'd, TTL'd, refcounted
-- [ ] 3. Clipboard text
+- [x] 3. Clipboard text — test_media: bare OSC 52, tmux passthrough keyed off TERM, refused over the cap, never claims success
 - [ ] 4. Getting images in: the easy cases
 - [ ] 5. Case (b): image paste over SSH — the core mechanism
 - [ ] 6. `omt ssh <target>` — the thin client
 - [ ] 7. Image display and file transfer
-- [ ] 8. Security
+- [x] 8. Security — omt-media: traversal reduced to one component, both separators, reserved names, hash-prefixed, truncated
 - ~~9. OPEN QUESTIONS~~ — prose
 
 ## 10-configuration

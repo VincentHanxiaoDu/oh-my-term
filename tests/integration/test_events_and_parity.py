@@ -65,12 +65,18 @@ class TestCatalogParity:
         for declaration in catalog["capabilities"]:
             if declaration["kind"] == "command":
                 assert declaration["intent"], declaration["name"]
+                # The five classes D15 defines, and exactly those. This set
+                # previously listed `idempotent` and `exactly_once`, which are
+                # not in the enum at all, and omitted two that are — it passed
+                # only because no capability had yet used either arm. A closed
+                # vocabulary that does not match the type it mirrors checks
+                # nothing.
                 assert declaration["intent"]["class"] in {
                     "cas",
                     "append",
                     "raw_stream",
-                    "idempotent",
-                    "exactly_once",
+                    "externally_confirmed",
+                    "lww_free_text",
                 }, declaration
             else:
                 assert declaration.get("intent") in (None, {}), declaration["name"]

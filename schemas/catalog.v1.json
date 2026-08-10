@@ -758,6 +758,26 @@
     },
     {
       "aliases": [],
+      "doc": "OSC 52, wrapped for tmux when TERM says so. omt does not claim the copy succeeded: there is no acknowledgement to base that on.",
+      "effects": [],
+      "group": "media",
+      "hidden": false,
+      "intent": {
+        "class": "lww_free_text"
+      },
+      "kind": "command",
+      "name": "media.clipboard",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/media/clipboard",
+      "since": "0.1.0",
+      "title": "Copy to local clipboard",
+      "verb": "clipboard"
+    },
+    {
+      "aliases": [],
       "doc": "What a blob is, from its bytes rather than from a filename somebody supplied. A name is a claim; the bytes are the evidence, and writing an executable as a `.png` is what trusting the claim allows.",
       "effects": [],
       "group": "media",

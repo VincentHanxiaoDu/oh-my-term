@@ -288,6 +288,76 @@ impl CapabilityHandler<MediaList> for MediaHandler {
     }
 }
 
+/// Input to `media.clipboard`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ClipIn {
+    /// The text to put on the local clipboard.
+    pub text: String,
+    /// The terminal the human is actually sitting in front of.
+    ///
+    /// Supplied by the caller because only the client knows it. Keyed off
+    /// `TERM` rather than `$TMUX`, which does not survive ssh — getting that
+    /// backwards yields a copy that works locally and silently does nothing
+    /// remotely.
+    #[serde(default)]
+    pub term: Option<String>,
+}
+
+/// What `media.clipboard` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ClipOut {
+    /// The bytes to write into the session's output stream.
+    pub sequence: String,
+    /// What the surface may say about it.
+    ///
+    /// Not "copied". OSC 52 has no acknowledgement, Terminal.app does not
+    /// implement it at all, and kitty refuses silently above its own limit.
+    pub message: String,
+}
+
+omt_catalog::capability! {
+    /// Put text on the local clipboard, across ssh.
+    pub struct MediaClipboard;
+    input  = ClipIn,
+    output = ClipOut,
+    decl = omt_catalog::Decl {
+        name: "media.clipboard",
+        group: "media",
+        verb: "clipboard",
+        title: "Copy to local clipboard",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Command,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::empty(),
+        intent: Some(omt_catalog::Intent::LwwFreeText),
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "OSC 52, wrapped for tmux when TERM says so. omt does not claim the copy succeeded: there is no acknowledgement to base that on.",
+    },
+}
+
+impl CapabilityHandler<MediaClipboard> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ClipIn,
+    ) -> Result<ClipOut, CapabilityError> {
+        let term = input.term.unwrap_or_else(|| "xterm-256color".to_owned());
+        let sequence = omt_media::clipboard::osc52(
+            &input.text,
+            &term,
+            omt_media::clipboard::DEFAULT_MAX_BYTES,
+        )
+        .map_err(|e| CapabilityError::invalid_input(e.to_string()))?;
+        Ok(ClipOut {
+            sequence,
+            message: omt_media::clipboard::what_to_say().to_owned(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -5,6 +5,7 @@
 //! so the second attempt is a no-op rather than a second copy — and a client
 //! that already has a blob can say so by name rather than sending it again.
 
+pub mod clipboard;
 pub mod store;
 pub mod transfer;
 
@@ -148,6 +149,60 @@ pub fn safe_filename(meta: &BlobMeta) -> String {
     }
 }
 
+/// Reduce a peer-supplied filename to a single, harmless path component.
+///
+/// `docs/architecture/09-ssh-and-media.md` §8. Enforced here rather than in the
+/// callers, so no surface can bypass it by forgetting to.
+///
+/// The name is never used alone: it is prefixed with the blob's short hash, so
+/// two peers cannot collide and a name that survives sanitisation still cannot
+/// choose where it lands. Everything structural is stripped rather than
+/// escaped, because escaping is a decision about what the filesystem will do
+/// with a byte, and there are several filesystems.
+#[must_use]
+pub fn sanitize_component(requested: &str, digest: &str) -> String {
+    // Windows reserved device names. On those systems a file called `CON` is
+    // not a file, and opening it does something else entirely.
+    const RESERVED: &[&str] = &[
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let cleaned: String = requested
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | '\0' | ':'))
+        .collect();
+    // After stripping separators, `..` is just a name; taking the last
+    // component as well means a `..` that survived some other encoding is not
+    // treated as a directory step.
+    let mut name: String = cleaned
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .trim_matches('.')
+        .to_owned();
+
+    let stem = &digest[..16.min(digest.len())];
+    if name.is_empty() {
+        return format!("omt-{stem}");
+    }
+    if RESERVED
+        .iter()
+        .any(|r| name.split('.').next().unwrap_or_default().eq_ignore_ascii_case(r))
+    {
+        name.push_str(".bin");
+    }
+    // Truncated on a character boundary, and to leave room for the prefix: a
+    // 255-byte name plus a prefix is over the limit on every filesystem that
+    // has one.
+    let room = 255usize.saturating_sub(stem.len() + 5);
+    while name.len() > room {
+        name.pop();
+    }
+    format!("omt-{stem}-{name}")
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -156,6 +211,64 @@ pub fn safe_filename(meta: &BlobMeta) -> String {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_traversal_dressed_as_a_filename_becomes_one_component() {
+        let name = sanitize_component("../../../etc/passwd", "abc123def456789012345");
+        assert!(!name.contains('/'), "{name}");
+        assert!(!name.contains(".."), "{name}");
+        assert!(name.ends_with("passwd"), "{name}");
+    }
+
+    #[test]
+    fn a_windows_separator_is_stripped_too() {
+        // The peer may not be on the same kind of system as the receiver, and
+        // a check that only knows one separator is one the other side walks
+        // straight through.
+        let name = sanitize_component("..\\..\\windows\\system32\\cmd.exe", "abc123def4567890");
+        assert!(!name.contains('\\'), "{name}");
+        assert!(name.ends_with("cmd.exe"), "{name}");
+    }
+
+    #[test]
+    fn control_characters_and_nul_are_removed() {
+        let name = sanitize_component("ev\u{0}il\nname", "abc123def4567890");
+        assert!(!name.contains('\u{0}'));
+        assert!(!name.contains('\n'));
+    }
+
+    #[test]
+    fn every_name_is_prefixed_with_the_content_hash() {
+        // Two peers cannot collide, and a name that survives sanitisation
+        // still does not get to choose where it lands.
+        let name = sanitize_component("report.pdf", "deadbeefcafe0000");
+        assert!(name.starts_with("omt-deadbeefcafe0000-"), "{name}");
+    }
+
+    #[test]
+    fn a_windows_reserved_name_is_suffixed() {
+        // On those systems `CON` is not a file, and opening it does something
+        // else entirely.
+        let name = sanitize_component("CON", "abc123def4567890");
+        assert!(name.ends_with(".bin"), "{name}");
+        let name = sanitize_component("con.txt", "abc123def4567890");
+        assert!(name.ends_with(".bin"), "{name}");
+    }
+
+    #[test]
+    fn a_name_that_sanitizes_to_nothing_still_gets_one() {
+        for awkward in ["", "...", "/", "///", "\u{0}"] {
+            let name = sanitize_component(awkward, "abc123def4567890");
+            assert!(name.starts_with("omt-"), "{awkward:?} gave {name}");
+            assert!(name.len() > 4);
+        }
+    }
+
+    #[test]
+    fn an_enormous_name_is_truncated_within_the_filesystem_limit() {
+        let name = sanitize_component(&"x".repeat(5000), "abc123def4567890");
+        assert!(name.len() <= 255, "{}", name.len());
+    }
 
     fn png() -> Vec<u8> {
         let mut v = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
