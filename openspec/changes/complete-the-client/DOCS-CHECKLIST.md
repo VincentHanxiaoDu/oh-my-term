@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**108 of 212 features ticked.** (34 further sections are prose.)
+**109 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -264,7 +264,7 @@ Unticked means not done. Partly built stays unticked.
 
 - [x] 1. The recall problem, stated as questions — omt-recall policy: every question in the table is answerable under the default settings, and turning output indexing off costs one nameable question
 - [x] 2. What is indexed, and what is not — test_workspace_surfaces: every source has a stated treatment, reasoning excluded until opted in, tool fields are an allow list, output windowed not truncated
-- [ ] 3. Index design
+- [x] 3. Index design — omt-recall policy: the suffix chain makes a path searchable by the part anybody remembers, no empty tokens, cost bounded
 - [x] 4. Ranking — test_workspace_surfaces: every factor reasoned, the factors multiply to the score, a huge text match cannot swamp the rest, the order is total
 - [x] 5. Redaction and the index — omt-recall redact: D-R2 enforced by the type (no constructor takes a string), the screen keeps the truth, ordinary output untouched
 - [x] 6. Command history as a first-class case — omt-recall: history dedupes so a habit is one row, dangerous commands never suggested, recency decays over a week

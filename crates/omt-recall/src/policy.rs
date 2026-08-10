@@ -223,6 +223,52 @@ pub fn answerable(sources: &[Source], settings: &Settings) -> bool {
     })
 }
 
+/// Expand a path into everything somebody might search for it by.
+///
+/// `docs/architecture/20-recall-and-usage.md` §3.4. `crates/omt-term/src/grid.rs`
+/// is written as the full path plus its suffix chain plus the stem and
+/// extension, so `grid.rs`, `omt-term/src` and `grid` all hit.
+///
+/// Done by writing the text several ways rather than with a custom tokeniser
+/// extension. The extension would be a C shim and a portability problem, and
+/// the cost here is about three times the path bytes — which against a
+/// megabyte of paths a day is nothing.
+///
+/// The suffix chain is the part that matters. Nobody searches for a full path:
+/// they remember the file and maybe the directory above it, and a tokeniser
+/// that only stored the whole string would answer "no results" to `grid.rs`.
+#[must_use]
+pub fn expand_path(path: &str) -> String {
+    let trimmed = path.trim_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let parts: Vec<&str> = trimmed.split('/').filter(|p| !p.is_empty()).collect();
+    let mut out: Vec<String> = Vec::new();
+
+    // Every suffix, longest first, so a search for the full path scores against
+    // the first token rather than the last.
+    for start in 0..parts.len() {
+        out.push(parts[start..].join("/"));
+    }
+
+    // The stem and extension separately, because `grid` and `rs` are both
+    // things people type and neither is a token of any suffix above.
+    if let Some(basename) = parts.last()
+        && let Some((stem, extension)) = basename.rsplit_once('.')
+    {
+        if !stem.is_empty() {
+            out.push(stem.to_owned());
+        }
+        if !extension.is_empty() {
+            out.push(extension.to_owned());
+        }
+    }
+
+    out.dedup();
+    out.join(" ")
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -231,6 +277,87 @@ pub fn answerable(sources: &[Source], settings: &Settings) -> bool {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn a_path_is_searchable_by_the_bit_anybody_remembers() {
+        // Nobody searches for a full path: they remember the file and maybe
+        // the directory above it.
+        let expanded = expand_path("crates/omt-term/src/grid.rs");
+        for fragment in [
+            "crates/omt-term/src/grid.rs",
+            "omt-term/src/grid.rs",
+            "src/grid.rs",
+            "grid.rs",
+            "grid",
+            "rs",
+        ] {
+            assert!(
+                expanded.split(' ').any(|token| token == fragment),
+                "`{fragment}` is not in `{expanded}`"
+            );
+        }
+    }
+
+    #[test]
+    fn the_full_path_comes_first_so_it_scores_highest() {
+        let expanded = expand_path("a/b/c.rs");
+        assert!(expanded.starts_with("a/b/c.rs"));
+    }
+
+    #[test]
+    fn a_bare_filename_expands_to_its_stem_and_extension() {
+        let expanded = expand_path("grid.rs");
+        let tokens: Vec<&str> = expanded.split(' ').collect();
+        assert!(tokens.contains(&"grid.rs"));
+        assert!(tokens.contains(&"grid"));
+        assert!(tokens.contains(&"rs"));
+    }
+
+    #[test]
+    fn a_file_with_no_extension_still_expands() {
+        let expanded = expand_path("scripts/build");
+        let tokens: Vec<&str> = expanded.split(' ').collect();
+        assert!(tokens.contains(&"scripts/build"));
+        assert!(tokens.contains(&"build"));
+    }
+
+    #[test]
+    fn a_dotfile_is_not_mistaken_for_an_extension() {
+        // `.gitignore` has no stem, and emitting an empty token would put a
+        // double space in the column and match the empty query.
+        let expanded = expand_path(".gitignore");
+        assert!(!expanded.contains("  "), "{expanded}");
+        assert!(expanded.split(' ').any(|t| t == "gitignore"));
+    }
+
+    #[test]
+    fn leading_and_repeated_slashes_do_not_produce_empty_tokens() {
+        for path in ["/a/b.rs", "a//b.rs", "/a/b.rs/"] {
+            let expanded = expand_path(path);
+            assert!(!expanded.contains("  "), "{path} -> `{expanded}`");
+            assert!(!expanded.starts_with(' '), "{path}");
+        }
+    }
+
+    #[test]
+    fn an_empty_path_expands_to_nothing() {
+        assert_eq!(expand_path(""), "");
+        assert_eq!(expand_path("/"), "");
+    }
+
+    #[test]
+    fn the_cost_is_a_small_multiple_of_the_path() {
+        // Three times the path bytes against a megabyte of paths a day is
+        // nothing; thirty times would not be.
+        let path = "a/b/c/d/e/f/g/h.rs";
+        let expanded = expand_path(path);
+        assert!(
+            expanded.len() < path.len() * 6,
+            "{} vs {}",
+            expanded.len(),
+            path.len()
+        );
+    }
+
     #[test]
     fn every_question_people_actually_ask_is_answerable_by_default() {
         // The check that matters: a question whose sources are all excluded is
