@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod events;
 pub mod pairing;
 pub mod persist;
+pub mod bootstrap;
 pub mod discovery;
 pub mod media;
 pub mod multiuser;
