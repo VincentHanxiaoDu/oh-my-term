@@ -14,6 +14,7 @@ pub mod persist;
 pub mod discovery;
 pub mod media;
 pub mod multiuser;
+pub mod upgrade;
 pub mod queue;
 pub mod migrate;
 pub mod onboarding;

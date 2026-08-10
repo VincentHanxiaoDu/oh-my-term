@@ -296,7 +296,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 3. `omt doctor` — test_doctor: every group, remedy on every failure
 - [x] 4. Health, metrics, logs and fault isolation — test_watching: metrics
 - [x] 5. Diagnostics panel and `omt bug-report` — test_doctor: bug report carries no credential
-- [ ] 6. Upgrade
+- [x] 6. Upgrade — `crates/omt/src/upgrade.rs`. The refusal is the default and names what is running; `--wait` defers until every agent is idle *and* no interaction is open; a package manager's file is delegated to rather than overwritten; skew is a notice unless there is no common proto; §6.3's host loop skips a host serving another user and one that is unreachable. `a_working_agent_stops_the_upgrade_by_default`, `a_deferred_restart_waits_for_an_unanswered_question_too`, `a_host_serving_another_user_is_never_upgraded`, `a_downgrade_is_warned_about_before_it_happens_not_after` (15 tests). Planning and policy; no downloader.
 - [ ] 7. Bootstrap onto a host with no omt (R38)
 - [ ] 8. Automation and CI (G14)
 - [ ] 9. Performance and resource budgets
