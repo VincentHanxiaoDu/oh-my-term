@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**50 of 212 features ticked.** (33 further sections are prose.)
+**53 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -249,10 +249,10 @@ Unticked means not done. Partly built stays unticked.
 
 ## 19-onboarding
 
-- [ ] 1. First run, second run, tenth run
-- [ ] 2. Discoverability without documentation
+- [x] 1. First run, second run, tenth run — test_onboarding: a first run offers one hint, later hints wait for later runs
+- [x] 2. Discoverability without documentation — test_onboarding: the first thing said is how to reach omt at all
 - [ ] 3. `omt setup`
-- [ ] 4. In-product help
+- [x] 4. In-product help — test_onboarding: topics generated from the catalog, every listed topic renders
 - [ ] 5. tmux and zellij: migration and coexistence
 - [ ] 6. Progressive disclosure of advanced features
 - [ ] 7. `TERM` and terminfo — R6

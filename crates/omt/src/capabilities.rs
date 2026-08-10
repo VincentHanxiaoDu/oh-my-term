@@ -5939,6 +5939,14 @@ pub fn registry_full(
     identities: std::sync::Arc<std::sync::Mutex<omt_identity::Directory>>,
 ) -> Result<CapabilityRegistry> {
     let mut r = CapabilityRegistry::new();
+    // One shared hint state, because the rule is "one hint", not "one hint per
+    // client" — a phone and a terminal each offering their own first tip is the
+    // failure this exists to prevent.
+    let hints = std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Hints::default()));
+    r.register::<crate::onboarding::HintState, _>(crate::onboarding::HintsHandler(hints.clone()))?;
+    r.register::<crate::onboarding::DismissHints, _>(crate::onboarding::HintsHandler(hints))?;
+    r.register::<crate::onboarding::HelpTopics, _>(crate::onboarding::HelpHandler)?;
+    r.register::<crate::onboarding::HelpRender, _>(crate::onboarding::HelpHandler)?;
     r.register::<crate::doctor::DoctorRun, _>(crate::doctor::DoctorHandler(state.clone()))?;
     r.register::<crate::doctor::DoctorReport, _>(crate::doctor::ReportHandler(state.clone()))?;
     r.register::<crate::reach::PresenceList, _>(crate::reach::PresenceListHandler(watch.clone()))?;

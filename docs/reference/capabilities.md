@@ -33,6 +33,8 @@ vanishing.
 | `git.diff` | query | viewer | Which files changed, with line counts. Staged and unstaged are separate answers. |
 | `git.hunks` | query | viewer | The changed lines of one file. `git.diff` reports which files changed; this is what changed in them. Returned as lines rather than rendered, because a terminal, a phone and a browser each want to draw it differently. |
 | `git.status` | query | viewer | Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches. |
+| `help.render` | query | viewer | A model rather than formatted text, so a phone and a terminal can render the same help differently without one of them parsing the other's layout. |
+| `help.topics` | query | viewer | Derived from the catalog, not written beside it. Hand-written help is wrong the first time something is renamed and stays wrong, because nothing fails when it drifts. |
 | `identity.list` | query | admin | Every person this instance knows and the devices each holds. A credential answers whether a token may do something; this answers whose phone it is, which is what makes revoking somebody's access — rather than one token — expressible. |
 | `identity.revoke` | command | admin | Revoke every device one person holds, in one action. Doing it device by device means somebody who has left keeps whichever one was missed, and there is no moment at which their access is known to be gone. |
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
@@ -46,6 +48,8 @@ vanishing.
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
 | `media.describe` | query | viewer | What a blob is, from its bytes rather than from a filename somebody supplied. A name is a claim; the bytes are the evidence, and writing an executable as a `.png` is what trusting the claim allows. |
+| `onboarding.dismiss_hints` | command | operator | Permanent. Somebody who turns tips off and is asked again next week has been told their answer did not count. |
+| `onboarding.hint_state` | query | viewer | At most one hint is ever offered. Six tips on a first run teach nobody six things; they teach that omt interrupts. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
 | `pane.close` | command | operator | Close a pane. The session it showed keeps running — closing a view of something is not ending it. |
 | `pane.focus` | command | operator | Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored. |
@@ -88,4 +92,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-78 capabilities.
+82 capabilities.

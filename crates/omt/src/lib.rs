@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod events;
 pub mod pairing;
 pub mod persist;
+pub mod onboarding;
 pub mod reach;
 pub mod run;
 pub mod scheduler;

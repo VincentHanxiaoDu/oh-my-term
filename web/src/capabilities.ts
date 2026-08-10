@@ -418,6 +418,20 @@ export const HANDLERS = {
 
   'queue.remove': (request: RequestId, session: string, index: number) =>
     call(request, 'queue.remove', { session, index }),
+
+  'onboarding.hint_state': (request: RequestId) =>
+    call(request, 'onboarding.hint_state', {}),
+
+  // `hint` omitted turns the lot off. Deliberately one call rather than two:
+  // dismissing one and dismissing all are the same decision at two scopes, and
+  // splitting them invites a client that offers only the nuclear option.
+  'onboarding.dismiss_hints': (request: RequestId, hint?: string) =>
+    call(request, 'onboarding.dismiss_hints', hint === undefined ? {} : { hint }),
+
+  'help.topics': (request: RequestId) => call(request, 'help.topics', {}),
+
+  'help.render': (request: RequestId, topic: string) =>
+    call(request, 'help.render', { topic }),
 } as const
 
 /** The capability names this client handles. */

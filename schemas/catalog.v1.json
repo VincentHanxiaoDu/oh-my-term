@@ -482,6 +482,42 @@
     },
     {
       "aliases": [],
+      "doc": "A model rather than formatted text, so a phone and a terminal can render the same help differently without one of them parsing the other's layout.",
+      "effects": [],
+      "group": "help",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "help.render",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/help/render",
+      "since": "0.1.0",
+      "title": "Show help for a topic",
+      "verb": "render"
+    },
+    {
+      "aliases": [],
+      "doc": "Derived from the catalog, not written beside it. Hand-written help is wrong the first time something is renamed and stays wrong, because nothing fails when it drifts.",
+      "effects": [],
+      "group": "help",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "help.topics",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/help/topics",
+      "since": "0.1.0",
+      "title": "Browse help",
+      "verb": "topics"
+    },
+    {
+      "aliases": [],
       "doc": "Every person this instance knows and the devices each holds. A credential answers whether a token may do something; this answers whose phone it is, which is what makes revoking somebody's access — rather than one token — expressible.",
       "effects": [],
       "group": "identity",
@@ -737,6 +773,46 @@
       "since": "0.1.0",
       "title": "Identify a blob",
       "verb": "describe"
+    },
+    {
+      "aliases": [],
+      "doc": "Permanent. Somebody who turns tips off and is asked again next week has been told their answer did not count.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "onboarding",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "onboarding.dismiss_hints",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/onboarding/dismiss_hints",
+      "since": "0.1.0",
+      "title": "Stop showing tips",
+      "verb": "dismiss_hints"
+    },
+    {
+      "aliases": [],
+      "doc": "At most one hint is ever offered. Six tips on a first run teach nobody six things; they teach that omt interrupts.",
+      "effects": [],
+      "group": "onboarding",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "onboarding.hint_state",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/onboarding/hint_state",
+      "since": "0.1.0",
+      "title": "Show the next tip",
+      "verb": "hint_state"
     },
     {
       "aliases": [],
