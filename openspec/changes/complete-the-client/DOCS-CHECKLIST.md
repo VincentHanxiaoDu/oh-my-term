@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**70 of 212 features ticked.** (33 further sections are prose.)
+**70 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -110,7 +110,7 @@ Unticked means not done. Partly built stays unticked.
 
 ## 09-ssh-and-media
 
-- [ ] 1. The scenarios
+- ~~1. The scenarios~~ — prose: a routing table naming which of §2–§7 specifies each case, not an independent feature. Its four rows are covered by the sections it points at.
 - [x] 2. The blob store — test_media: content-addressed, sniffed, quota'd, TTL'd, refcounted
 - [x] 3. Clipboard text — test_media: bare OSC 52, tmux passthrough keyed off TERM, refused over the cap, never claims success
 - [x] 4. Getting images in: the easy cases — test_media: GPS does not survive a paste, the picture does, the digest names what was stored
