@@ -8,6 +8,7 @@
 pub mod app;
 pub mod chrome;
 pub mod hint;
+pub mod geometry;
 pub mod navigate;
 pub mod overlay;
 
