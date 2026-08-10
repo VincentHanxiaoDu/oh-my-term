@@ -293,3 +293,39 @@ class TestComingFromTmux:
         first = client.call("migrate.tmux_preview", config=self.CONFIG)
         second = client.call("migrate.tmux_preview", config=self.CONFIG)
         assert first["preview"] == second["preview"]
+
+
+class TestProgressiveDisclosure:
+    """§6. Advanced features, surfaced only once the user has earned it."""
+
+    def test_nothing_advanced_is_mentioned_unprompted(self, fresh: Client) -> None:
+        # The default experience mentions none of these.
+        out = fresh.call("onboarding.disclosures")
+        assert out["surface"] is None
+
+    def test_one_occasion_is_not_enough(self, fresh: Client) -> None:
+        out = fresh.call("onboarding.disclosures", trigger="remote")
+        assert out["recorded"] is True
+        assert out["surface"] is None, "one long wait is a coincidence"
+
+    def test_three_occasions_earn_a_single_mention(self, fresh: Client) -> None:
+        for _ in range(2):
+            fresh.call("onboarding.disclosures", trigger="remote")
+        out = fresh.call("onboarding.disclosures", trigger="remote")
+        assert out["surface"] == "remote"
+        assert "phone" in out["line"]
+        again = fresh.call("onboarding.disclosures", trigger="remote")
+        assert again["surface"] is None, "a second mention is nagging"
+
+    def test_workflows_are_never_advocated(self, fresh: Client) -> None:
+        # An unrequested "we noticed a pattern" toast is exactly what the
+        # one-hint rule exists to forbid.
+        for _ in range(10):
+            out = fresh.call("onboarding.disclosures", trigger="workflows")
+            assert out["surface"] != "workflows"
+
+    def test_an_unknown_trigger_is_ignored_rather_than_counted(
+        self, fresh: Client
+    ) -> None:
+        out = fresh.call("onboarding.disclosures", trigger="nonsense")
+        assert out["recorded"] is False

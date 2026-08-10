@@ -428,6 +428,9 @@ export const HANDLERS = {
   'onboarding.dismiss_hints': (request: RequestId, hint?: string) =>
     call(request, 'onboarding.dismiss_hints', hint === undefined ? {} : { hint }),
 
+  'onboarding.disclosures': (request: RequestId, trigger?: string) =>
+    call(request, 'onboarding.disclosures', trigger === undefined ? {} : { trigger }),
+
   'help.topics': (request: RequestId) => call(request, 'help.topics', {}),
 
   'help.render': (request: RequestId, topic: string) =>

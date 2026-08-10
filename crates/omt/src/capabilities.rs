@@ -5953,6 +5953,9 @@ pub fn registry_full(
     r.register::<crate::uninstall::UninstallApply, _>(crate::uninstall::UninstallHandler(roots))?;
     r.register::<crate::setup::DetectAgents, _>(crate::setup::SetupHandler)?;
     r.register::<crate::setup::TermProfile, _>(crate::setup::SetupHandler)?;
+    r.register::<crate::onboarding::DisclosureState, _>(crate::onboarding::DisclosureHandler(
+        std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Disclosures::default())),
+    ))?;
     r.register::<crate::onboarding::HelpTopics, _>(crate::onboarding::HelpHandler)?;
     r.register::<crate::onboarding::HelpRender, _>(crate::onboarding::HelpHandler)?;
     r.register::<crate::doctor::DoctorRun, _>(crate::doctor::DoctorHandler(state.clone()))?;

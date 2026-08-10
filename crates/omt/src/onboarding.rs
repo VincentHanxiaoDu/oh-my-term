@@ -452,6 +452,198 @@ impl CapabilityHandler<HelpRender> for HelpHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Progressive disclosure — §6
+// ---------------------------------------------------------------------------
+
+/// An advanced feature, and what has to happen before omt mentions it.
+///
+/// The rule that governs all of these: **the trigger is something the user
+/// produces themselves**, and the feature is surfaced at most once. Advocacy
+/// for a feature somebody has not yet needed is the same failure as a first run
+/// that fires six tips — it spends attention omt will want later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Feature {
+    /// Its id.
+    pub id: &'static str,
+    /// How many times the trigger must occur first.
+    ///
+    /// Three for the remote client, because one long wait is a coincidence and
+    /// three is a pattern the user has actually lived through.
+    pub occasions: u32,
+    /// What omt says, once.
+    pub line: &'static str,
+    /// Whether omt is ever allowed to bring it up on its own.
+    ///
+    /// False for workflows, deliberately. §6 records it as an open question
+    /// rather than shipping it: an unrequested "we noticed a pattern" toast is
+    /// exactly the behaviour the one-hint rule exists to forbid.
+    pub may_advocate: bool,
+}
+
+/// Every advanced feature, and its trigger.
+pub const FEATURES: &[Feature] = &[
+    Feature {
+        id: "remote",
+        occasions: 3,
+        line: "Questions have been waiting a while. `omt pair` puts them on your phone.",
+        may_advocate: true,
+    },
+    Feature {
+        id: "plugins",
+        occasions: 1,
+        line: "`omt help plugin` explains how plugins add capabilities.",
+        may_advocate: true,
+    },
+    Feature {
+        id: "worktrees",
+        occasions: 1,
+        line: "This repository has more than one worktree. The explorer can switch between them.",
+        may_advocate: true,
+    },
+    Feature {
+        id: "keymaps",
+        occasions: 1,
+        line: "Your $EDITOR is vim-like. omt has a vim keymap.",
+        may_advocate: true,
+    },
+    Feature {
+        id: "voice",
+        occasions: 1,
+        line: "The web client can take dictation.",
+        may_advocate: true,
+    },
+    Feature {
+        id: "sharing",
+        occasions: 1,
+        line: "`omt share` lets somebody else watch this session.",
+        may_advocate: true,
+    },
+    Feature {
+        id: "workflows",
+        occasions: 1,
+        line: "",
+        may_advocate: false,
+    },
+];
+
+/// What omt remembers about advanced features.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Disclosures {
+    /// How many times each trigger has occurred.
+    pub occasions: std::collections::BTreeMap<String, u32>,
+    /// Which features have already been surfaced.
+    pub surfaced: BTreeSet<String>,
+}
+
+impl Disclosures {
+    /// Record that a user-produced trigger happened.
+    ///
+    /// Unknown ids are ignored rather than counted. A typo that silently
+    /// accumulated toward surfacing something would be advocacy nobody earned.
+    pub fn trigger(&mut self, id: &str) -> bool {
+        if !FEATURES.iter().any(|f| f.id == id) {
+            return false;
+        }
+        *self.occasions.entry(id.to_owned()).or_default() += 1;
+        true
+    }
+
+    /// Reset a counter, because the user did the thing it was counting toward.
+    pub fn reset(&mut self, id: &str) {
+        self.occasions.remove(id);
+    }
+
+    /// What, if anything, omt has earned the right to mention.
+    ///
+    /// One at a time and once ever, for the same reason the hints are: the
+    /// budget being spent here is the user's attention, and it does not refill.
+    #[must_use]
+    pub fn next(&self) -> Option<&'static Feature> {
+        FEATURES.iter().find(|f| {
+            f.may_advocate
+                && !self.surfaced.contains(f.id)
+                && self.occasions.get(f.id).copied().unwrap_or(0) >= f.occasions
+        })
+    }
+
+    /// Note that a feature was mentioned.
+    pub fn mark_surfaced(&mut self, id: &str) {
+        self.surfaced.insert(id.to_owned());
+    }
+}
+
+/// Input to `onboarding.disclosures`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DisclosureIn {
+    /// A trigger the user just produced, if this call is reporting one.
+    #[serde(default)]
+    pub trigger: Option<String>,
+}
+
+/// What `onboarding.disclosures` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct DisclosureOut {
+    /// The one feature omt has earned the right to mention, if any.
+    pub surface: Option<String>,
+    /// What to say about it.
+    pub line: Option<String>,
+    /// Whether the reported trigger was recognised.
+    pub recorded: bool,
+}
+
+omt_catalog::capability! {
+    /// Whether the user has earned a mention of an advanced feature.
+    pub struct DisclosureState;
+    input  = DisclosureIn,
+    output = DisclosureOut,
+    decl = omt_catalog::Decl {
+        name: "onboarding.disclosures",
+        group: "onboarding",
+        verb: "disclosures",
+        title: "Advanced features",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Every trigger is something the user produced, and every feature is mentioned at most once. Advocacy for a feature somebody has not yet needed spends attention omt will want later.",
+    },
+}
+
+/// Serves progressive disclosure.
+pub struct DisclosureHandler(pub std::sync::Arc<std::sync::Mutex<Disclosures>>);
+
+impl CapabilityHandler<DisclosureState> for DisclosureHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: DisclosureIn,
+    ) -> Result<DisclosureOut, CapabilityError> {
+        let mut state = self
+            .0
+            .lock()
+            .map_err(|_| CapabilityError::internal("the disclosure lock was poisoned"))?;
+        let recorded = match &input.trigger {
+            Some(id) => state.trigger(id),
+            None => false,
+        };
+        let found = state.next().map(|f| (f.id, f.line));
+        if let Some((id, _)) = found {
+            state.mark_surfaced(id);
+        }
+        Ok(DisclosureOut {
+            surface: found.map(|(id, _)| id.to_owned()),
+            line: found.map(|(_, line)| line.to_owned()),
+            recorded,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -563,6 +755,76 @@ mod tests {
             HINTS.iter().map(|h| h.after_runs).collect::<Vec<_>>(),
             sorted
         );
+    }
+
+    #[test]
+    fn nothing_advanced_is_mentioned_before_the_user_earns_it() {
+        // The default experience mentions none of these. Advocacy for a
+        // feature somebody has not yet needed spends attention omt will want
+        // later.
+        assert_eq!(Disclosures::default().next(), None);
+    }
+
+    #[test]
+    fn one_occasion_is_a_coincidence_and_three_is_a_pattern() {
+        let mut d = Disclosures::default();
+        d.trigger("remote");
+        assert_eq!(d.next(), None, "one long wait proves nothing");
+        d.trigger("remote");
+        assert_eq!(d.next(), None);
+        d.trigger("remote");
+        assert_eq!(d.next().map(|f| f.id), Some("remote"));
+    }
+
+    #[test]
+    fn a_feature_is_mentioned_at_most_once_ever() {
+        let mut d = Disclosures::default();
+        d.trigger("plugins");
+        assert_eq!(d.next().map(|f| f.id), Some("plugins"));
+        d.mark_surfaced("plugins");
+        d.trigger("plugins");
+        assert_eq!(d.next(), None, "a second mention is nagging");
+    }
+
+    #[test]
+    fn doing_the_thing_resets_the_counter() {
+        let mut d = Disclosures::default();
+        d.trigger("remote");
+        d.trigger("remote");
+        d.reset("remote");
+        d.trigger("remote");
+        assert_eq!(d.next(), None, "the count started again");
+    }
+
+    #[test]
+    fn workflows_are_never_advocated_however_many_times_the_trigger_fires() {
+        // Recorded as an open question rather than shipped. An unrequested
+        // "we noticed a pattern" toast is exactly what the one-hint rule
+        // exists to forbid.
+        let mut d = Disclosures::default();
+        for _ in 0..50 {
+            d.trigger("workflows");
+        }
+        assert_eq!(d.next(), None);
+    }
+
+    #[test]
+    fn an_unknown_trigger_is_ignored_rather_than_counted() {
+        // A typo that silently accumulated toward surfacing something would be
+        // advocacy nobody earned.
+        let mut d = Disclosures::default();
+        assert!(!d.trigger("nonsense"));
+        assert!(d.occasions.is_empty());
+    }
+
+    #[test]
+    fn every_feature_that_may_be_advocated_has_something_to_say() {
+        for f in FEATURES {
+            if f.may_advocate {
+                assert!(!f.line.is_empty(), "{}", f.id);
+                assert!(f.occasions >= 1, "{}", f.id);
+            }
+        }
     }
 
     #[test]

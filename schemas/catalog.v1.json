@@ -796,6 +796,24 @@
     },
     {
       "aliases": [],
+      "doc": "Every trigger is something the user produced, and every feature is mentioned at most once. Advocacy for a feature somebody has not yet needed spends attention omt will want later.",
+      "effects": [],
+      "group": "onboarding",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "onboarding.disclosures",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/onboarding/disclosures",
+      "since": "0.1.0",
+      "title": "Advanced features",
+      "verb": "disclosures"
+    },
+    {
+      "aliases": [],
       "doc": "Permanent. Somebody who turns tips off and is asked again next week has been told their answer did not count.",
       "effects": [
         "writes_fs"
