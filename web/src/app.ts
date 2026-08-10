@@ -1502,7 +1502,37 @@ export class App {
     input.setAttribute('autocorrect', 'off')
     input.setAttribute('autocomplete', 'off')
     input.setAttribute('spellcheck', 'false')
-    input.addEventListener('input', () => {
+    // Whether an input method is mid-word.
+    //
+    // This is the whole of typing on a phone that is not set to English. A
+    // pinyin keyboard puts `n i h a o` in the field and waits for a character
+    // to be chosen; clearing the field on every `input` event — which is what
+    // this did — wipes the candidate buffer on the first keystroke, so nothing
+    // is ever committed and the terminal stays empty. Gboard's autocorrect uses
+    // the same mechanism, so English was quietly damaged too.
+    //
+    // While composing, the field belongs to the input method. omt takes it back
+    // at `compositionend`, which is the moment a word actually exists.
+    let composing = false
+    input.addEventListener('compositionstart', () => {
+      composing = true
+    })
+    input.addEventListener('compositionend', () => {
+      composing = false
+      const text = input.value
+      input.value = ''
+      if (text.length > 0) {
+        void this.type(text)
+      }
+    })
+
+    input.addEventListener('input', (event) => {
+      // `isComposing` as well as the flag: Android fires `input` for the
+      // composing keystroke before `compositionstart` arrives, and reading only
+      // the flag loses the first letter of every word.
+      if (composing || (event as InputEvent).isComposing) {
+        return
+      }
       const text = input.value
       // Emptied every time. Left to accumulate, the second keystroke sends both
       // characters.
@@ -1512,6 +1542,12 @@ export class App {
       }
     })
     input.addEventListener('keydown', (event) => {
+      // 229 is the keycode a browser reports for "the input method is handling
+      // this". Acting on it sends a stray byte for every letter of a word being
+      // composed.
+      if (composing || event.isComposing || event.keyCode === 229) {
+        return
+      }
       const bytes = keyToBytes(event)
       if (bytes !== null) {
         event.preventDefault()

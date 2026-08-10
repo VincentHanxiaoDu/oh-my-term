@@ -263,3 +263,40 @@ test('forgetting an instance is offered, and is not a swipe', async ({ page }) =
   await page.getByRole('button', { name: /switch instance/i }).tap()
   await expect(page.getByRole('button', { name: /^Forget / })).toBeVisible()
 })
+
+test('a word typed through an input method arrives once, when it is committed', async ({
+  page,
+}) => {
+  // The failure this exists for: a pinyin keyboard puts `n i h a o` in the
+  // field and waits for a character to be chosen, and clearing the field on
+  // every `input` event wiped the candidate buffer on the first keystroke — so
+  // nothing was ever committed and the terminal stayed empty.
+  //
+  // Playwright's typing does not go through an input method, so this drives the
+  // composition events by hand. It is the only way to reach this path at all.
+  await openASession(page)
+  const input = page.locator('.hidden-input')
+  await expect(input).toBeFocused()
+
+  await page.evaluate(() => {
+    const field = document.querySelector('.hidden-input') as HTMLTextAreaElement
+    const compose = (data: string, type: 'compositionstart' | 'compositionupdate') => {
+      field.value = data
+      field.dispatchEvent(new CompositionEvent(type, { data, bubbles: true }))
+      // Chrome fires an `input` with isComposing during composition.
+      field.dispatchEvent(new InputEvent('input', { data, isComposing: true, bubbles: true }))
+    }
+    compose('n', 'compositionstart')
+    compose('ni', 'compositionupdate')
+    compose('nihao', 'compositionupdate')
+    // The character the person chose, which is what should be sent.
+    field.value = '你好'
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: '你好', bubbles: true }))
+  })
+
+  // The composing keystrokes must not have been sent; the committed word must.
+  await expect(page.locator('.terminal-body')).toContainText('你好', { timeout: 5000 })
+  await expect(page.locator('.terminal-body')).not.toContainText('nihao')
+  // And the field is empty afterwards, ready for the next word.
+  await expect(input).toHaveValue('')
+})
