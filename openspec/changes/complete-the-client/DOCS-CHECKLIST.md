@@ -31,12 +31,12 @@ Unticked means not done. Partly built stays unticked.
 ## 03-capability-catalog
 
 - [x] 1. The idea — all seven derived artifacts now exist. Dispatch, routes, `schemas/catalog.v1.json`, `web/src/generated/catalog.ts`, `docs/reference/capabilities.md` and the parity matrix were already generated; the `omt <group> <verb>` CLI tree was the missing one and is now `crates/omt/src/cli.rs`, derived rather than written out. `crates/omt/tests/cli_tree.rs` runs the real binary against a real daemon: `a_capability_is_reachable_as_a_subcommand_without_being_written_out`, `stdout_is_data_and_stderr_is_everything_else`, `an_unreachable_instance_exits_five`, `a_command_is_dispatched_as_a_command_and_a_query_as_a_query` (9 tests, plus 16 unit tests). `codegen-check` is the drift gate.
-- [ ] 2. Declaring a capability
-- [ ] 3. The machinery
+- [x] 2. Declaring a capability — `omt-catalog` decl tests: `a_good_declaration_validates`, `validation_reports_every_problem_at_once`, `a_query_with_intent_is_rejected`, `a_command_without_intent_is_rejected` (§2.2), `raw_stream_is_never_retryable`, `effects_are_refined_per_call` and `refining_effects_upward_is_caught_by_dispatch` (§2.1), `a_viewer_may_not_write`, `an_unknown_effect_is_refused_not_ignored`, `exemptions_are_per_surface` (§2.3).
+- [x] 3. The machinery — `crates/omt-catalog/tests/third_party_impl.rs` proves the traits are implementable from outside the crate and that a third-party declaration reaches the link-time slice (§3.1, §3.3); `registry::tests` covers dispatch, role refusal before the handler runs, duplicate registration and sealing (§3.2, §3.5); `cargo xtask codegen-check` is §3.4, run green here; §3.6's runtime registration is the contribution admission in `omt-plugin-host`.
 - [x] 4. Events are the read-side twin — test_events_and_parity: effects declared
 - [x] 5. The parity contract — test_events_and_parity: intent class per kind
-- [ ] 6. Capability groups (initial surface)
-- [ ] 7. Versioning
+- [x] 6. Capability groups (initial surface) — asserted in `crates/omt/tests/parity.rs`: `there_is_no_notification_group` (D12 removed push from v1, and a group is one macro away from existing), `layout_is_a_group_of_its_own_and_not_a_pane_sub_group`, `every_group_the_initial_surface_names_exists`.
+- [x] 7. Versioning — aliases were **declared but never resolved**, so a rename was a `not_found` on the wire; `CapabilityRegistry::resolve` now honours them and a colliding alias is refused at registration. `a_renamed_capability_still_answers_to_its_old_name`, `an_alias_does_not_appear_as_a_capability_of_its_own`, `an_alias_that_collides_with_a_real_capability_is_refused`, plus the same over the wire in `TestVersioning`. Catalog intersection on handshake is `a_client_presents_the_intersection_rather_than_failing`.
 - ~~8. Why this is worth the machinery~~ — prose
 
 ## 04-terminal-core

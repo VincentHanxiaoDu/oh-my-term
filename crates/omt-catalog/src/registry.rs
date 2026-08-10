@@ -134,6 +134,13 @@ impl<C: Capability, H: CapabilityHandler<C>> ErasedHandler for Erased<C, H> {
 pub struct CapabilityRegistry {
     decls: BTreeMap<&'static str, &'static Decl>,
     handlers: BTreeMap<&'static str, Box<dyn ErasedHandler>>,
+    /// Old names, pointing at what they were renamed to.
+    ///
+    /// 03 §7: a rename ships as an alias for two minor versions. An alias that
+    /// is declared but not resolved is not an alias -- it is a name in a
+    /// document and a `not_found` on the wire, which is the breakage the rule
+    /// exists to prevent.
+    aliases: BTreeMap<&'static str, &'static str>,
     sealed: bool,
 }
 
@@ -173,6 +180,18 @@ impl CapabilityRegistry {
         if self.decls.contains_key(decl.name) {
             return Err(RegistryError::Duplicate { name: decl.name });
         }
+        for alias in decl.aliases {
+            // An alias that collides with a real capability would shadow it,
+            // and which one won would depend on registration order.
+            if self.decls.contains_key(alias) {
+                return Err(RegistryError::Duplicate { name: alias });
+            }
+            if let Some(existing) = self.aliases.insert(alias, decl.name)
+                && existing != decl.name
+            {
+                return Err(RegistryError::Duplicate { name: alias });
+            }
+        }
         self.decls.insert(decl.name, decl);
         self.handlers.insert(
             decl.name,
@@ -196,6 +215,18 @@ impl CapabilityRegistry {
             })?;
         if self.decls.contains_key(decl.name) {
             return Err(RegistryError::Duplicate { name: decl.name });
+        }
+        for alias in decl.aliases {
+            // An alias that collides with a real capability would shadow it,
+            // and which one won would depend on registration order.
+            if self.decls.contains_key(alias) {
+                return Err(RegistryError::Duplicate { name: alias });
+            }
+            if let Some(existing) = self.aliases.insert(alias, decl.name)
+                && existing != decl.name
+            {
+                return Err(RegistryError::Duplicate { name: alias });
+            }
         }
         self.decls.insert(decl.name, decl);
         Ok(())
@@ -253,6 +284,18 @@ impl CapabilityRegistry {
     /// all arrive here, which is why the role check lives here and not in a
     /// transport — a transport that forgot it would be a silent hole.
     ///
+    /// The current name for a name a caller used.
+    ///
+    /// An unknown name is returned unchanged, so the `not_found` names what the
+    /// caller actually asked for rather than something omt substituted.
+    #[must_use]
+    pub fn resolve<'a>(&self, name: &'a str) -> &'a str
+    where
+        'static: 'a,
+    {
+        self.aliases.get(name).copied().unwrap_or(name)
+    }
+
     /// # Errors
     /// `not_found` for an unknown name, `unauthorized` below the required role,
     /// or whatever the handler returns.
@@ -262,6 +305,10 @@ impl CapabilityRegistry {
         ctx: &CallContext,
         input: serde_json::Value,
     ) -> Result<DispatchOutcome, CapabilityError> {
+        // An old name resolves to the current one, and everything after this
+        // -- role, intent, the handler, the audit record -- is about the
+        // capability rather than about which name reached it.
+        let name = self.resolve(name);
         let decl = self
             .decls
             .get(name)
@@ -537,5 +584,143 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod alias_tests {
+    use super::*;
+    use crate::{Effects, Intent, Kind, Parity};
+    use omt_types::Role;
+
+    #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+    struct Empty {}
+
+    struct Renamed;
+
+    static RENAMED_DECL: Decl = Decl {
+        name: "thing.resolve",
+        group: "thing",
+        verb: "resolve",
+        title: "Resolve a thing",
+        aliases: &["thing.respond"],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "A capability that was renamed.",
+    };
+
+    impl Capability for Renamed {
+        type Input = Empty;
+        type Output = Empty;
+        const DECL: &'static Decl = &RENAMED_DECL;
+    }
+
+    struct Handler;
+
+    impl CapabilityHandler<Renamed> for Handler {
+        fn call(&self, _ctx: &CallContext, _input: Empty) -> Result<Empty, CapabilityError> {
+            Ok(Empty {})
+        }
+    }
+
+    fn registry() -> CapabilityRegistry {
+        let mut r = CapabilityRegistry::new();
+        r.register::<Renamed, _>(Handler).expect("registered");
+        r
+    }
+
+    fn ctx() -> CallContext {
+        CallContext {
+            actor: omt_types::Actor::Local,
+            role: Role::Admin,
+            request: RequestId {
+                device: omt_types::DeviceId::new(),
+                n: 1,
+            },
+            intent: Some(omt_types::IntentId::new()),
+        }
+    }
+
+    #[test]
+    fn a_renamed_capability_still_answers_to_its_old_name() {
+        // 03 §7: a rename ships as an alias for two minor versions. An alias
+        // that is declared but not resolved is not an alias — it is a name in a
+        // document and a `not_found` on the wire.
+        let r = registry();
+        r.dispatch("thing.respond", &ctx(), serde_json::json!({}))
+            .expect("the old name reaches it");
+    }
+
+    #[test]
+    fn the_current_name_works_too() {
+        let r = registry();
+        r.dispatch("thing.resolve", &ctx(), serde_json::json!({}))
+            .expect("the new name reaches it");
+    }
+
+    #[test]
+    fn an_alias_does_not_appear_as_a_capability_of_its_own() {
+        // Otherwise a rename would double the catalog, and a client would show
+        // the same operation twice.
+        let r = registry();
+        let names: Vec<&str> = r.decls().map(|d| d.name).collect();
+        assert_eq!(names, vec!["thing.resolve"]);
+    }
+
+    #[test]
+    fn an_unknown_name_is_reported_as_the_caller_wrote_it() {
+        // Not silently rewritten to something omt substituted, which would
+        // make the error about the wrong thing.
+        let r = registry();
+        let error = r
+            .dispatch("thing.nonsense", &ctx(), serde_json::json!({}))
+            .expect_err("not found");
+        assert!(error.message.contains("thing.nonsense"), "{}", error.message);
+    }
+
+    #[test]
+    fn an_alias_that_collides_with_a_real_capability_is_refused() {
+        // Which one won would otherwise depend on registration order.
+        struct Collides;
+        static COLLIDING: Decl = Decl {
+            name: "other.thing",
+            group: "other",
+            verb: "thing",
+            title: "Collides",
+            aliases: &["thing.resolve"],
+            hidden: false,
+            hidden_reason: None,
+            kind: Kind::Query,
+            role: Role::Viewer,
+            effects: Effects::empty(),
+            intent: None,
+            parity: Parity::Full,
+            since: "0.1.0",
+            doc: "Its alias is somebody else's real name.",
+        };
+        impl Capability for Collides {
+            type Input = Empty;
+            type Output = Empty;
+            const DECL: &'static Decl = &COLLIDING;
+        }
+        impl CapabilityHandler<Collides> for Handler {
+            fn call(&self, _ctx: &CallContext, _input: Empty) -> Result<Empty, CapabilityError> {
+                Ok(Empty {})
+            }
+        }
+
+        let mut r = registry();
+        assert!(r.register::<Collides, _>(Handler).is_err());
     }
 }

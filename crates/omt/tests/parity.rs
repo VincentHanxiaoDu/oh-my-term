@@ -462,3 +462,84 @@ fn no_capability_is_named_like_telemetry() {
         }
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// Capability groups — 03 §6
+// ---------------------------------------------------------------------------
+
+#[test]
+fn there_is_no_notification_group() {
+    // D12 removes push from v1, so `notification.push.*` and
+    // `notification.test` are not v1 capabilities and must not be declared.
+    // Asserted rather than assumed: a group is one `capability!` away from
+    // existing, and the decision that removed it lives in a document.
+    let r = registry();
+    let declared: Vec<&str> = r
+        .decls()
+        .map(|d| d.group)
+        .filter(|g| *g == "notification")
+        .collect();
+    assert!(
+        declared.is_empty(),
+        "D12 removed push from v1, but a notification group is declared"
+    );
+}
+
+#[test]
+fn layout_is_a_group_of_its_own_and_not_a_pane_sub_group() {
+    // These act on a view, not on a pane (17 §9.3). Folding them into `pane.*`
+    // would put operations on two different objects under one name.
+    let r = registry();
+    let groups: std::collections::BTreeSet<&str> = r.decls().map(|d| d.group).collect();
+    assert!(groups.contains("layout"), "no layout group");
+    assert!(groups.contains("pane"), "no pane group");
+    let misfiled: Vec<&str> = r
+        .decls()
+        .filter(|d| d.group == "pane" && d.verb.starts_with("layout"))
+        .map(|d| d.name)
+        .collect();
+    assert!(misfiled.is_empty(), "layout operations under pane: {misfiled:?}");
+}
+
+#[test]
+fn every_group_the_initial_surface_names_exists() {
+    // §6 says it is the shape rather than the exhaustive list, so this checks
+    // the groups and not each capability. A group that vanished is a surface
+    // that vanished.
+    let r = registry();
+    let groups: std::collections::BTreeSet<&str> = r.decls().map(|d| d.group).collect();
+    for group in [
+        "instance",
+        "workspace",
+        "session",
+        "pane",
+        "layout",
+        "agent",
+        "interaction",
+        "media",
+        "config",
+        "keys",
+        "plugin",
+        "events",
+    ] {
+        assert!(groups.contains(group), "the {group} group is gone");
+    }
+}
+
+#[test]
+fn a_renamed_capability_keeps_answering_to_its_old_name() {
+    // 03 §7. `interaction.respond` became `interaction.resolve`, which every
+    // document already called it; the old name is an alias for two minor
+    // versions so a client mid-upgrade is not broken by the correction.
+    let r = registry();
+    assert_eq!(r.resolve("interaction.respond"), "interaction.resolve");
+    assert!(
+        r.decls().any(|d| d.name == "interaction.resolve"),
+        "the current name is declared"
+    );
+    assert!(
+        !r.decls().any(|d| d.name == "interaction.respond"),
+        "and the alias is not a second entry in the catalog"
+    );
+}

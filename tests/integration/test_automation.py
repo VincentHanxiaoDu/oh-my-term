@@ -200,3 +200,34 @@ class TestOperations:
         by_name = {c["name"]: c for c in client.call("instance.catalog")["entries"]}
         assert by_name["remote.probe"]["role"] == "operator"
         assert "network" in [e.lower() for e in by_name["remote.probe"]["effects"]]
+
+
+class TestVersioning:
+    """03-capability-catalog §7."""
+
+    def test_a_renamed_capability_still_answers_to_its_old_name(
+        self, client: Client
+    ) -> None:
+        # `interaction.respond` became `interaction.resolve`, which every
+        # document already called it. A client mid-upgrade must not break on the
+        # correction, so the old name is an alias for two minor versions -- and
+        # an alias that is declared but not resolved is a `not_found` on the
+        # wire, which is the breakage the rule exists to prevent.
+        _, refusal = client.try_call(
+            "interaction.respond",
+            interaction="int_00000000000000000000000000000000",
+            option="approve",
+        )
+        assert refusal is not None
+        # It reached the capability: the refusal is about the interaction, not
+        # about the name.
+        assert refusal.code != "not_found" or "interaction" in refusal.message.lower()
+
+    def test_the_alias_is_not_a_second_entry_in_the_catalog(
+        self, client: Client
+    ) -> None:
+        # Otherwise a rename doubles the catalog and a client shows the same
+        # operation twice.
+        names = [c["name"] for c in client.call("instance.catalog")["entries"]]
+        assert "interaction.resolve" in names
+        assert "interaction.respond" not in names
