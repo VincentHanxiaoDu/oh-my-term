@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**135 of 212 features ticked.** (34 further sections are prose.)
+**136 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -284,7 +284,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 3. Retention and compaction — test_workspace_surfaces: the fact outlives the output, failed and agent-touched blocks keep theirs, a small output is not worth compacting, every kind is deleted eventually
 - [x] 4. Export and purge — test_extensibility: save and restore
 - [ ] 5. Encryption at rest
-- [ ] 6. Crash consistency
+- [x] 6. Crash consistency — omt-store record: a torn tail is distinguished from corruption in the middle, a file of another kind is rejected before its length is believed, an absurd length is refused rather than allocated
 - [x] 7. Migration of on-disk formats — omt-store version: a store from the future is refused rather than partly read, the two directions are different refusals with opposite remedies, no best-effort parse
 - [ ] 8. Capabilities
 - ~~9. OPEN QUESTIONS~~ — prose
