@@ -1382,6 +1382,26 @@
     },
     {
       "aliases": [],
+      "doc": "Every agent omt can drive, found or not. Listing only what is present hides the difference between an agent omt did not find and one it has never heard of.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "setup",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "setup.detect_agents",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/setup/detect_agents",
+      "since": "0.1.0",
+      "title": "Find installed agents",
+      "verb": "detect_agents"
+    },
+    {
+      "aliases": [],
       "doc": "Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself.",
       "effects": [],
       "group": "shell",
@@ -1439,6 +1459,26 @@
       "since": "0.1.0",
       "title": "Save instance state",
       "verb": "save"
+    },
+    {
+      "aliases": [],
+      "doc": "A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "term",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "term.profile",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/term/profile",
+      "since": "0.1.0",
+      "title": "Check this terminal",
+      "verb": "profile"
     },
     {
       "aliases": [],

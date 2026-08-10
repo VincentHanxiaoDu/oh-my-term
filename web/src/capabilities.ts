@@ -432,6 +432,10 @@ export const HANDLERS = {
 
   'help.render': (request: RequestId, topic: string) =>
     call(request, 'help.render', { topic }),
+
+  'setup.detect_agents': (request: RequestId) => call(request, 'setup.detect_agents', {}),
+
+  'term.profile': (request: RequestId) => call(request, 'term.profile', {}),
 } as const
 
 /** The capability names this client handles. */

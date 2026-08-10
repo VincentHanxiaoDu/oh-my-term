@@ -144,3 +144,59 @@ class TestHelpIsGeneratedNotWritten:
         for topic in client.call("help.topics")["topics"]:
             out = client.call("help.render", topic=topic["name"])
             assert len(out["entries"]) == len(topic["entries"])
+
+
+class TestWhatIsInstalled:
+    """§3.3. What a first run finds on this machine."""
+
+    def test_every_agent_omt_can_drive_is_listed_found_or_not(
+        self, client: Client
+    ) -> None:
+        # Listing only what is present hides the difference between an agent
+        # omt did not find and one it has never heard of — and the second is
+        # the one worth filing a bug about.
+        out = client.call("setup.detect_agents")
+        assert len(out["agents"]) >= 10
+        kinds = {a["kind"] for a in out["agents"]}
+        assert "ClaudeCode" in kinds
+        assert "Codex" in kinds
+
+    def test_each_entry_says_what_it_is_invoked_as(self, client: Client) -> None:
+        out = client.call("setup.detect_agents")
+        assert all(a["command"] for a in out["agents"])
+
+    def test_it_says_whether_it_looked_at_all(self, client: Client) -> None:
+        # An unreadable PATH makes every answer below meaningless, and
+        # reporting "no agents" there would be a confident wrong answer.
+        out = client.call("setup.detect_agents")
+        assert out["searched"] is True
+
+    def test_the_count_agrees_with_the_list(self, client: Client) -> None:
+        out = client.call("setup.detect_agents")
+        assert out["found"] == sum(1 for a in out["agents"] if a["path"])
+
+
+class TestThisTerminal:
+    """§7. A wrong TERM does not fail; it draws a subtly wrong screen."""
+
+    def test_it_reports_what_term_advertises(self, client: Client) -> None:
+        out = client.call("term.profile")
+        assert "term" in out
+        assert isinstance(out["entry_resolved"], bool)
+
+    def test_every_disagreement_names_a_remedy(self, client: Client) -> None:
+        # A diagnostic that names a problem and not its fix is one people learn
+        # to scroll past, which costs the next one too.
+        out = client.call("term.profile")
+        for d in out["disagreements"]:
+            assert d["remedy"], d
+            assert d["advertised"]
+            assert d["observed"]
+
+    def test_it_says_whether_omt_is_inside_another_multiplexer(
+        self, client: Client
+    ) -> None:
+        # The most common reason a prefix key appears not to work, and nothing
+        # on screen tells you.
+        out = client.call("term.profile")
+        assert "nested" in out

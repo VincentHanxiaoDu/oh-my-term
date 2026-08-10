@@ -5945,6 +5945,8 @@ pub fn registry_full(
     let hints = std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Hints::default()));
     r.register::<crate::onboarding::HintState, _>(crate::onboarding::HintsHandler(hints.clone()))?;
     r.register::<crate::onboarding::DismissHints, _>(crate::onboarding::HintsHandler(hints))?;
+    r.register::<crate::setup::DetectAgents, _>(crate::setup::SetupHandler)?;
+    r.register::<crate::setup::TermProfile, _>(crate::setup::SetupHandler)?;
     r.register::<crate::onboarding::HelpTopics, _>(crate::onboarding::HelpHandler)?;
     r.register::<crate::onboarding::HelpRender, _>(crate::onboarding::HelpHandler)?;
     r.register::<crate::doctor::DoctorRun, _>(crate::doctor::DoctorHandler(state.clone()))?;
