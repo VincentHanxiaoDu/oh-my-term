@@ -12,6 +12,7 @@ pub mod events;
 pub mod pairing;
 pub mod persist;
 pub mod media;
+pub mod queue;
 pub mod migrate;
 pub mod onboarding;
 pub mod setup;

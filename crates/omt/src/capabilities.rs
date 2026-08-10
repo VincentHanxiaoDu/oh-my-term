@@ -5968,6 +5968,14 @@ pub fn registry_full(
     r.register::<crate::media::OpenClick, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenRulesList, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenRulesTest, _>(crate::media::MediaHandler(blobs))?;
+    let queues: crate::queue::Queues = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::BTreeMap::new(),
+    ));
+    r.register::<crate::queue::QueueEnqueue, _>(crate::queue::QueueHandler(queues.clone()))?;
+    r.register::<crate::queue::QueueList, _>(crate::queue::QueueHandler(queues.clone()))?;
+    r.register::<crate::queue::QueueRemove, _>(crate::queue::QueueHandler(queues.clone()))?;
+    r.register::<crate::queue::QueueEdit, _>(crate::queue::QueueHandler(queues.clone()))?;
+    r.register::<crate::queue::QueueReorder, _>(crate::queue::QueueHandler(queues))?;
     let mirrors: crate::media::Mirrors = std::sync::Arc::new(std::sync::Mutex::new(
         std::collections::BTreeMap::new(),
     ));
@@ -6063,12 +6071,6 @@ pub fn registry_full(
         state.clone(),
     ))?;
     r.register::<crate::surfaces::BlockRerun, _>(crate::surfaces::BlockRerunHandler(
-        state.clone(),
-    ))?;
-    r.register::<crate::surfaces::QueueEnqueue, _>(crate::surfaces::QueueEnqueueHandler(
-        state.clone(),
-    ))?;
-    r.register::<crate::surfaces::QueueRemove, _>(crate::surfaces::QueueRemoveHandler(
         state.clone(),
     ))?;
     r.register::<InstanceInfo, _>(InstanceInfoHandler)?;

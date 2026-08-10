@@ -413,11 +413,51 @@ export const HANDLERS = {
   'block.rerun': (request: RequestId, session: string, block: string, epoch: number) =>
     call(request, 'block.rerun', { session, block, epoch }),
 
-  'queue.enqueue': (request: RequestId, session: string, text: string) =>
-    call(request, 'queue.enqueue', { session, text }),
+  // A binding, never a session. A replayed enqueue against a session whose
+  // agent has since exited types the text into a shell prompt, where it runs
+  // as a command.
+  'queue.enqueue': (request: RequestId, binding: string, state: string, text: string) =>
+    call(request, 'queue.enqueue', { binding, state, text }),
 
-  'queue.remove': (request: RequestId, session: string, index: number) =>
-    call(request, 'queue.remove', { session, index }),
+  'queue.list': (request: RequestId, binding: string) =>
+    call(request, 'queue.list', { binding }),
+
+  // Named by text as well as by id: an id alone is a position, and a position
+  // in a draining queue is not a stable target.
+  'queue.remove': (
+    request: RequestId,
+    binding: string,
+    state: string,
+    entry: number,
+    expectedText: string,
+  ) => call(request, 'queue.remove', { binding, state, entry, expected_text: expectedText }),
+
+  // Both are unsupported on an agent's own queue, and the client hides the
+  // controls rather than disabling them.
+  'queue.edit': (
+    request: RequestId,
+    binding: string,
+    state: string,
+    entry: number,
+    expectedVersion: number,
+    text: string,
+  ) =>
+    call(request, 'queue.edit', {
+      binding,
+      state,
+      entry,
+      expected_version: expectedVersion,
+      text,
+    }),
+
+  'queue.reorder': (
+    request: RequestId,
+    binding: string,
+    state: string,
+    order: number[],
+    expectedVersion: number,
+  ) =>
+    call(request, 'queue.reorder', { binding, state, order, expected_version: expectedVersion }),
 
   'onboarding.hint_state': (request: RequestId) =>
     call(request, 'onboarding.hint_state', {}),

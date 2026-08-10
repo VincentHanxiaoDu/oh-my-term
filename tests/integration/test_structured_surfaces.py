@@ -259,36 +259,103 @@ class TestRerun:
 
 
 class TestQueueHonesty:
-    def test_writing_to_a_mirrored_queue_is_refused_rather_than_dropped(
-        self, client: Client, session: str
-    ) -> None:
-        # omt mirrors a queue it learned about from the agent's own events; it
-        # does not own one. Accepting a write into a mirror produces a queue the
-        # agent does not have, and the divergence shows up as a message that is
-        # never sent while omt insists it is pending.
-        _, refusal = client.try_call("queue.enqueue", session=session, text="later")
-        assert refusal is not None
-        assert refusal.code == "unsupported"
-        assert "mirrored" in refusal.message
+    """`docs/architecture/06-agent-layer.md` §8."""
 
-    def test_removing_from_a_mirrored_queue_is_refused_too(
-        self, client: Client, session: str
-    ) -> None:
-        # And for the harder reason: a removal omt cannot confirm loses the
-        # message with no record of what it was.
-        _, refusal = client.try_call("queue.remove", session=session, index=0)
-        assert refusal is not None
-        assert refusal.code == "unsupported"
+    BINDING = "bind_000000000000000000000000000000ff"
 
-    def test_an_unknown_session_is_still_an_error_not_unsupported(
+    def test_an_enqueue_needs_a_binding_not_just_a_session(
         self, client: Client
     ) -> None:
-        # The two are different answers: one says "not here", the other says
-        # "here, and omt cannot do that".
+        # The session id alone is not a sufficient target. A replayed or delayed
+        # enqueue against a session whose agent has since exited types the text
+        # into the shell prompt, where it is executed as a command.
+        _, refusal = client.try_call("queue.enqueue", binding="nonsense", state="working", text="x")
+        assert refusal is not None
+        assert refusal.code == "invalid_input"
+
+    def test_an_enqueue_against_an_idle_agent_is_refused(self, client: Client) -> None:
+        # There is no turn to queue behind, and what is at the prompt is a shell.
         _, refusal = client.try_call(
-            "queue.enqueue",
-            session="sess_00000000000000000000000000000000",
-            text="x",
+            "queue.enqueue", binding=self.BINDING, state="idle", text="x"
         )
         assert refusal is not None
-        assert refusal.code == "not_found"
+        assert refusal.code == "precondition_failed"
+
+    def test_a_queue_nobody_has_reported_is_unknown_not_empty(
+        self, client: Client
+    ) -> None:
+        # An empty queue is a claim, and a reader that has never spoken must not
+        # be able to make it.
+        result, refusal = client.try_call("queue.list", binding=self.BINDING)
+        assert refusal is None, refusal
+        assert result["kind"] == "unknown"
+        assert result["entries"] == []
+
+    def test_the_flagship_agent_is_the_one_that_cannot_edit_its_queue(
+        self, client: Client
+    ) -> None:
+        # omt holds every other agent's queue, so an edit is a row rewrite.
+        # Claude Code holds its own and emits enqueue and remove and no third
+        # verb, so there is no edit primitive to drive and no receipt for one.
+        result, refusal = client.try_call(
+            "queue.enqueue",
+            binding=self.BINDING,
+            state="working",
+            ownership="mirrored",
+            text="run the tests",
+        )
+        assert refusal is None, refusal
+        entry = result["entry"]
+        assert result["state"] == "pending", "it waits for the agent's receipt"
+
+        _, refusal = client.try_call(
+            "queue.edit",
+            binding=self.BINDING,
+            state="working",
+            entry=entry,
+            expected_version=1,
+            text="different",
+        )
+        assert refusal is not None
+        assert refusal.code == "unsupported"
+
+        _, refusal = client.try_call(
+            "queue.reorder",
+            binding=self.BINDING,
+            state="working",
+            order=[entry],
+            expected_version=1,
+        )
+        assert refusal is not None
+        assert refusal.code == "unsupported"
+
+    def test_a_removal_whose_text_has_moved_writes_nothing(
+        self, client: Client
+    ) -> None:
+        # An id alone is a position, and a position in a draining queue is not a
+        # stable target.
+        managed = "bind_000000000000000000000000000000fe"
+        result, refusal = client.try_call(
+            "queue.enqueue",
+            binding=managed,
+            state="working",
+            ownership="managed",
+            text="deploy",
+        )
+        assert refusal is None, refusal
+        entry = result["entry"]
+
+        _, refusal = client.try_call(
+            "queue.remove",
+            binding=managed,
+            state="working",
+            entry=entry,
+            expected_text="something else",
+        )
+        assert refusal is not None
+        assert refusal.code == "precondition_failed"
+
+        listed, refusal = client.try_call("queue.list", binding=managed)
+        assert refusal is None, refusal
+        assert [e["text"] for e in listed["entries"]] == ["deploy"]
+        assert listed["can_rearrange"] is True, "omt owns this one"

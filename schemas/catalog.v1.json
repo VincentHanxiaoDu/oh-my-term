@@ -1607,16 +1607,35 @@
     },
     {
       "aliases": [],
-      "doc": "Add a message to an agent's queue. Refused where omt only mirrors the queue rather than owning it: a client must be told it cannot write rather than shown a control that silently does nothing.",
+      "doc": "Unsupported on an agent's own queue, which emits enqueue and remove and no third verb. The pair is not a substitute: the removal is the unconfirmable half.",
+      "effects": [],
+      "group": "queue",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "queue.edit",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/queue/edit",
+      "since": "0.1.0",
+      "title": "Edit a queued message",
+      "verb": "edit"
+    },
+    {
+      "aliases": [],
+      "doc": "Takes a binding rather than a session. A replayed enqueue against a session whose agent has exited types the text into a shell prompt, where it runs as a command.",
       "effects": [
         "writes_pty"
       ],
       "group": "queue",
       "hidden": false,
       "intent": {
-        "class": "append",
-        "dedup": "intent_id",
-        "ttl_secs": 600
+        "class": "externally_confirmed",
+        "confirm_within_ms": 5000
       },
       "kind": "command",
       "name": "queue.enqueue",
@@ -1631,14 +1650,33 @@
     },
     {
       "aliases": [],
-      "doc": "Take a message out of an agent's queue. Refused on a mirrored queue for the same reason enqueue is: a removal omt cannot confirm loses the message with no record of what it was.",
+      "doc": "Reports `unknown` when the reader is stale or has never spoken. An empty queue is a claim, and a broken reader must not be able to make it.",
+      "effects": [],
+      "group": "queue",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "queue.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/queue/list",
+      "since": "0.1.0",
+      "title": "List the queue",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "Never retried automatically: a repeated removal against a queue that has since drained removes a different message.",
       "effects": [
         "writes_pty"
       ],
       "group": "queue",
       "hidden": false,
       "intent": {
-        "class": "cas"
+        "class": "externally_confirmed",
+        "confirm_within_ms": 5000
       },
       "kind": "command",
       "name": "queue.remove",
@@ -1648,8 +1686,28 @@
       "role": "operator",
       "route": "/v1/queue/remove",
       "since": "0.1.0",
-      "title": "Unqueue a message",
+      "title": "Remove a queued message",
       "verb": "remove"
+    },
+    {
+      "aliases": [],
+      "doc": "This is what a client's queue-reorder check asks for. Unsupported on an agent's own queue, and the client hides the drag handles rather than disabling them.",
+      "effects": [],
+      "group": "queue",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "queue.reorder",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/queue/reorder",
+      "since": "0.1.0",
+      "title": "Reorder the queue",
+      "verb": "reorder"
     },
     {
       "aliases": [],

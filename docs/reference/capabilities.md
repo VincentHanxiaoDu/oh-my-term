@@ -91,8 +91,11 @@ vanishing.
 | `plugin.list` | query | viewer | Installed plugins with what each was granted, and which of those grants are high-consequence. |
 | `plugin.start` | command | admin | Run a plugin, handing it a socket and a token whose role comes from what it was granted. A plugin reaches omt through the same capability surface as any other client — there is no second API. |
 | `presence.list` | query | viewer | Every client connected right now. "Is somebody else looking at this" is a question people ask before they type, and a terminal that cannot answer it is one where two people interleave keystrokes into one shell. |
-| `queue.enqueue` | command | operator | Add a message to an agent's queue. Refused where omt only mirrors the queue rather than owning it: a client must be told it cannot write rather than shown a control that silently does nothing. |
-| `queue.remove` | command | operator | Take a message out of an agent's queue. Refused on a mirrored queue for the same reason enqueue is: a removal omt cannot confirm loses the message with no record of what it was. |
+| `queue.edit` | command | operator | Unsupported on an agent's own queue, which emits enqueue and remove and no third verb. The pair is not a substitute: the removal is the unconfirmable half. |
+| `queue.enqueue` | command | operator | Takes a binding rather than a session. A replayed enqueue against a session whose agent has exited types the text into a shell prompt, where it runs as a command. |
+| `queue.list` | query | viewer | Reports `unknown` when the reader is stale or has never spoken. An empty queue is a claim, and a broken reader must not be able to make it. |
+| `queue.remove` | command | operator | Never retried automatically: a repeated removal against a queue that has since drained removes a different message. |
+| `queue.reorder` | command | operator | This is what a client's queue-reorder check asks for. Unsupported on an agent's own queue, and the client hides the drag handles rather than disabling them. |
 | `recall.policy` | query | viewer | A search index nobody can enumerate is one nobody can reason about. Reasoning is excluded by default: it is the most privacy-sensitive text an agent produces. |
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
 | `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
@@ -137,4 +140,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-127 capabilities.
+130 capabilities.

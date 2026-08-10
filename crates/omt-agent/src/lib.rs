@@ -9,6 +9,7 @@
 //! an answer delivered until something observed the agent record it.
 
 pub mod binding;
+pub mod queue;
 pub mod ledger;
 pub mod merge;
 pub mod threads;
