@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**105 of 212 features ticked.** (34 further sections are prose.)
+**107 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -267,8 +267,8 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 3. Index design
 - [x] 4. Ranking — test_workspace_surfaces: every factor reasoned, the factors multiply to the score, a huge text match cannot swamp the rest, the order is total
 - [x] 5. Redaction and the index — omt-recall redact: D-R2 enforced by the type (no constructor takes a string), the screen keeps the truth, ordinary output untouched
-- [ ] 6. Command history as a first-class case
-- [ ] 7. Cross-instance search
+- [x] 6. Command history as a first-class case — omt-recall: history dedupes so a habit is one row, dangerous commands never suggested, recency decays over a week
+- [x] 7. Cross-instance search — omt-recall federate: one row naming both instances, scores summed not maxed, an unreachable instance is a gap not an absence
 - [x] 8. Timeline and digest — test_agents: consecutive repeats collapse with a count, two different calls never do, stats count events not lines, digest is facts not prose
 - [x] 9. Comparing parallel agent results (G18) — test_agents: nothing ranked or recommended, both directions of file disagreement flagged, different bases called incomparable, unreported usage is not zero
 - [x] 10. Detecting a stuck or looping agent (G19) — test_agents: every reason reported not just the first, baselines per binding so a slow agent is not a permanent alarm, a first turn is not evidence

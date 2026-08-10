@@ -186,6 +186,109 @@ impl History {
     }
 }
 
+/// Merging results from several instances.
+///
+/// `docs/architecture/20-recall-and-usage.md` §7. Somebody with a laptop and
+/// two boxes has three histories, and the question "when did I run that" does
+/// not care which machine it was on.
+///
+/// Merging is a client-side concern because the alternative is a shared index,
+/// and a shared index means every instance's output leaves the machine it was
+/// produced on. That is a much larger promise than "search works across your
+/// boxes", and it is not one this feature needs.
+pub mod federate {
+    use super::Suggestion;
+
+    /// One instance's answer to the same query.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Answer {
+        /// Which instance.
+        pub instance: String,
+        /// Whether it answered at all.
+        ///
+        /// An instance that timed out is not an instance with no results, and
+        /// showing them the same way turns "the box is down" into "you never
+        /// ran that".
+        pub reachable: bool,
+        /// What it found.
+        pub suggestions: Vec<Suggestion>,
+    }
+
+    /// A merged result, with the instance it came from.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct Merged {
+        /// The command.
+        pub command: String,
+        /// Its combined score.
+        pub score: f64,
+        /// Which instances have it, so somebody can tell local from remote.
+        pub instances: Vec<String>,
+    }
+
+    /// What a merge could not include.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Gap {
+        /// Which instance.
+        pub instance: String,
+        /// What to say about it.
+        pub why: String,
+    }
+
+    /// Merge several instances' answers.
+    ///
+    /// The same command from two machines is one row that names both, not two
+    /// rows. Two rows would fill a palette with duplicates of whatever somebody
+    /// runs everywhere, which is most of what they run.
+    #[must_use]
+    pub fn merge(answers: &[Answer]) -> (Vec<Merged>, Vec<Gap>) {
+        let mut by_command: std::collections::BTreeMap<&str, (f64, Vec<String>)> =
+            std::collections::BTreeMap::new();
+        let mut gaps = Vec::new();
+
+        for answer in answers {
+            if !answer.reachable {
+                gaps.push(Gap {
+                    instance: answer.instance.clone(),
+                    why: format!(
+                        "`{}` did not answer, so its history is missing from these results.",
+                        answer.instance
+                    ),
+                });
+                continue;
+            }
+            for suggestion in &answer.suggestions {
+                let entry = by_command
+                    .entry(suggestion.command.as_str())
+                    .or_insert((0.0, Vec::new()));
+                // Summed rather than maxed: a command run on three machines is
+                // more of a habit than one run once on the fastest.
+                entry.0 += suggestion.score;
+                entry.1.push(answer.instance.clone());
+            }
+        }
+
+        let mut merged: Vec<Merged> = by_command
+            .into_iter()
+            .map(|(command, (score, mut instances))| {
+                instances.sort();
+                instances.dedup();
+                Merged {
+                    command: command.to_owned(),
+                    score,
+                    instances,
+                }
+            })
+            .collect();
+        merged.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.command.cmp(&b.command))
+        });
+        (merged, gaps)
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -194,6 +297,98 @@ impl History {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn history_is_deduplicated_so_a_habit_is_one_row() {
+        // Otherwise a palette fills with copies of whatever somebody runs
+        // fifty times a day, which is most of what they run.
+        // The helpers below already build these; duplicating a literal here
+        // would drift the moment `HistoryEntry` gains a field.
+        let mut h = History::new(100);
+        let here = workspace("/repo");
+        for i in 0..20 {
+            h.record(entry("cargo test", here, 1_000 + i));
+        }
+        let out = h.suggest("cargo", here, 10);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].uses_here, 20);
+    }
+
+    #[test]
+    fn merging_two_instances_gives_one_row_naming_both() {
+        use federate::{Answer, merge};
+        let suggestion = |command: &str, score: f64| Suggestion {
+            command: command.to_owned(),
+            score,
+            uses_here: 1,
+        };
+        let (merged, gaps) = merge(&[
+            Answer {
+                instance: "laptop".to_owned(),
+                reachable: true,
+                suggestions: vec![suggestion("cargo test", 2.0)],
+            },
+            Answer {
+                instance: "box".to_owned(),
+                reachable: true,
+                suggestions: vec![suggestion("cargo test", 1.0)],
+            },
+        ]);
+        assert!(gaps.is_empty());
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].instances, ["box", "laptop"]);
+        assert!((merged[0].score - 3.0).abs() < 1e-9, "summed, not maxed");
+    }
+
+    #[test]
+    fn an_instance_that_did_not_answer_is_a_gap_not_an_absence() {
+        // Showing them the same way turns "the box is down" into "you never
+        // ran that", and somebody retypes a command they already have.
+        use federate::{Answer, merge};
+        let (merged, gaps) = merge(&[
+            Answer {
+                instance: "laptop".to_owned(),
+                reachable: true,
+                suggestions: vec![Suggestion {
+                    command: "cargo test".to_owned(),
+                    score: 1.0,
+                    uses_here: 1,
+                }],
+            },
+            Answer {
+                instance: "box".to_owned(),
+                reachable: false,
+                suggestions: Vec::new(),
+            },
+        ]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(gaps.len(), 1);
+        assert!(gaps[0].why.contains("did not answer"), "{}", gaps[0].why);
+    }
+
+    #[test]
+    fn merging_nothing_is_empty_rather_than_a_panic() {
+        let (merged, gaps) = federate::merge(&[]);
+        assert!(merged.is_empty());
+        assert!(gaps.is_empty());
+    }
+
+    #[test]
+    fn a_merge_is_ordered_totally_so_the_palette_does_not_jump() {
+        use federate::{Answer, merge};
+        let answers = vec![Answer {
+            instance: "a".to_owned(),
+            reachable: true,
+            suggestions: vec![
+                Suggestion { command: "b".to_owned(), score: 1.0, uses_here: 1 },
+                Suggestion { command: "a".to_owned(), score: 1.0, uses_here: 1 },
+            ],
+        }];
+        let once = merge(&answers).0;
+        for _ in 0..5 {
+            assert_eq!(merge(&answers).0, once);
+        }
+    }
+
 
     fn entry(command: &str, workspace: WorkspaceId, secs: i64) -> HistoryEntry {
         HistoryEntry {
