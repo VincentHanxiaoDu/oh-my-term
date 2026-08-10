@@ -100,6 +100,32 @@ impl Log {
         write_record(&mut self.writer, payload)
     }
 
+    /// Append terminal text, through a redactor.
+    ///
+    /// `docs/architecture/21-data-lifecycle.md` §2.1: redaction runs once, on
+    /// the path from the terminal into durable storage, and never at display
+    /// time. A display-time filter is the intuitive design and it is wrong in
+    /// the way that matters — the plaintext is already on disk, so it protects
+    /// the screen of the person who already saw it and protects nothing from
+    /// the backup, the sync client, or the stolen laptop.
+    ///
+    /// The redactor is a parameter rather than a dependency because it belongs
+    /// to a crate above this one, and because passing it here means there is no
+    /// spelling of "write terminal text" that skips it. `append` still takes
+    /// bytes, for payloads that are not terminal output and have nothing to
+    /// redact — a snapshot header, a boundary marker — but text arrives only
+    /// through this door.
+    ///
+    /// # Errors
+    /// Fails if the underlying write does.
+    pub fn append_text(
+        &mut self,
+        text: &str,
+        redact: &dyn Fn(&str) -> String,
+    ) -> io::Result<()> {
+        self.append(redact(text).as_bytes())
+    }
+
     /// Append a serializable record.
     ///
     /// # Errors
@@ -259,6 +285,45 @@ fn quarantine(path: &Path, from: u64) -> io::Result<PathBuf> {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_text_goes_through_the_redactor_on_the_way_to_disk() {
+        // The load-bearing rule. A display-time filter protects the screen of
+        // the person who already saw it and protects nothing from the backup,
+        // the sync client, or the stolen laptop.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("session.log");
+        {
+            let mut log = Log::open(&path).expect("open");
+            log.append_text("token: ghp_secret", &|text| {
+                text.replace("ghp_secret", "[redacted]")
+            })
+            .expect("append");
+            log.close_cleanly().expect("close");
+        }
+        let raw = std::fs::read(&path).expect("read");
+        let text = String::from_utf8_lossy(&raw);
+        assert!(!text.contains("ghp_secret"), "the plaintext reached the disk");
+        assert!(text.contains("[redacted]"));
+    }
+
+    #[test]
+    fn a_redactor_that_changes_nothing_still_writes_what_it_returned() {
+        // So a caller cannot pass a redactor and have the original written
+        // anyway, which would make the whole door decorative.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("session.log");
+        {
+            let mut log = Log::open(&path).expect("open");
+            log.append_text("anything at all", &|_| "replaced entirely".to_owned())
+                .expect("append");
+            log.close_cleanly().expect("close");
+        }
+        let (records, _) = restore(&path).expect("restore");
+        assert_eq!(records.len(), 1);
+        assert_eq!(String::from_utf8_lossy(&records[0]), "replaced entirely");
+    }
+
 
     fn dir() -> tempfile::TempDir {
         tempfile::tempdir().expect("tempdir")
