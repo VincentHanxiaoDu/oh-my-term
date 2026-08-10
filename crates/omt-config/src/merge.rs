@@ -75,6 +75,8 @@ pub const DROPPED_BY_SCOPE: &str = "OMT-C201";
 pub const UNKNOWN_KEY: &str = "OMT-C101";
 /// A secret written into the configuration itself.
 pub const INLINE_SECRET: &str = "OMT-C301";
+/// A value of the wrong shape for its key.
+pub const BAD_VALUE: &str = "OMT-C102";
 
 /// Keys that may never carry a value, only a path to one.
 ///
@@ -137,6 +139,13 @@ pub fn merge(layers: &[LayerInput], schema: &[KeySpec]) -> Resolved {
 
     let mut ordered: Vec<&LayerInput> = layers.iter().collect();
     ordered.sort_by_key(|l| l.layer);
+
+    // Type and enumeration checks, over the values as written. Run at the end
+    // so the pass sees the resolved view rather than each layer separately: a
+    // value overridden by a later layer is not worth complaining about, and
+    // complaining about it would send somebody to fix a line that has no
+    // effect.
+    let mut validated_after = Vec::new();
 
     for input in ordered {
         let mut flat = BTreeMap::new();
@@ -230,6 +239,17 @@ pub fn merge(layers: &[LayerInput], schema: &[KeySpec]) -> Resolved {
             );
         }
     }
+
+    for problem in crate::schema::validate(&out.values) {
+        validated_after.push(Diagnostic {
+            code: BAD_VALUE,
+            key: problem.key,
+            message: problem.message,
+            help: Some(problem.help),
+            severity: Severity::Error,
+        });
+    }
+    out.diagnostics.extend(validated_after);
 
     out
 }
@@ -326,6 +346,66 @@ fn distance(a: &str, b: &str) -> usize {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_value_of_the_wrong_type_is_a_merge_diagnostic() {
+        // The validator existed in the schema module and nothing called it,
+        // so a mistyped setting merged cleanly and was applied.
+        let setting = crate::schema::SETTINGS
+            .iter()
+            .find(|s| s.kind == crate::schema::Kind::Bool)
+            .expect("a bool setting");
+        let mut nested = serde_json::Map::new();
+        let mut cursor = &mut nested;
+        let parts: Vec<&str> = setting.key.split('.').collect();
+        for part in &parts[..parts.len() - 1] {
+            cursor = cursor
+                .entry((*part).to_owned())
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+                .as_object_mut()
+                .expect("an object");
+        }
+        cursor.insert(
+            parts[parts.len() - 1].to_owned(),
+            serde_json::Value::String("yes".to_owned()),
+        );
+
+        let resolved = merge(
+            &[layer(Layer::User, serde_json::Value::Object(nested))],
+            &crate::schema::key_specs(),
+        );
+        assert!(
+            resolved.diagnostics().iter().any(|d| d.code == BAD_VALUE),
+            "{:?}",
+            resolved.diagnostics()
+        );
+    }
+
+    #[test]
+    fn a_value_overridden_by_a_later_layer_is_not_complained_about() {
+        // Validation runs over the resolved view rather than each layer, so
+        // nobody is sent to fix a line that has no effect.
+        let setting = crate::schema::SETTINGS
+            .iter()
+            .find(|s| s.kind == crate::schema::Kind::Bool && !s.key.contains('.'))
+            .map(|s| s.key.to_owned());
+        let Some(key) = setting else {
+            return;
+        };
+        let resolved = merge(
+            &[
+                layer(Layer::User, serde_json::json!({ key.clone(): "wrong" })),
+                layer(Layer::Project, serde_json::json!({ key: true })),
+            ],
+            &crate::schema::key_specs(),
+        );
+        assert!(
+            !resolved.diagnostics().iter().any(|d| d.code == BAD_VALUE),
+            "{:?}",
+            resolved.diagnostics()
+        );
+    }
+
 
     #[test]
     fn a_secret_in_the_config_file_is_an_error_with_somewhere_to_put_it() {
