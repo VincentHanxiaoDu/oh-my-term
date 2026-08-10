@@ -292,7 +292,7 @@ Unticked means not done. Partly built stays unticked.
 ## 22-operations
 
 - [x] 1. Daemon lifecycle — §1.1's discovery ladder in `crates/omt/src/discovery.rs`, wired into `attach::run` so it is the real path: `$OMT_SOCK` first, then probe every socket and unlink the ones that do not answer, one live means use it and several means say which. `the_environment_wins_over_everything_else`, `a_socket_that_does_not_answer_is_unlinked_not_reported`, `several_live_instances_are_listed_rather_than_chosen_between`, `stale_sockets_do_not_make_a_single_live_one_ambiguous` (10 tests; 459 integration tests pass on the new path). §1.2's service units are not written.
-- [ ] 2. Multi-user machines
+- [x] 2. Multi-user machines — `crates/omt/src/multiuser.rs`, enforced in `serve()`: `umask(0o077)` set before anything is opened, and the socket's parent checked at startup — a symlink or another uid's directory refuses to start, a mode of ours is narrowed and said out loud. `the_fallback_path_carries_the_uid`, `a_directory_owned_by_someone_else_is_refused`, `a_world_readable_directory_of_ours_is_corrected_rather_than_fatal`, `a_token_on_the_command_line_is_caught`, `a_system_service_is_refused_with_a_reason_and_an_alternative` (13 tests; peer-uid check already in `omt-transport`; 459 integration tests pass with the startup guard live).
 - [x] 3. `omt doctor` — test_doctor: every group, remedy on every failure
 - [x] 4. Health, metrics, logs and fault isolation — test_watching: metrics
 - [x] 5. Diagnostics panel and `omt bug-report` — test_doctor: bug report carries no credential

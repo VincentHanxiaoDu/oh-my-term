@@ -27,6 +27,59 @@ pub fn default_socket_path() -> PathBuf {
     base.join(format!("omt-{}.sock", std::process::id()))
 }
 
+/// Refuse to start in a directory this uid does not own.
+///
+/// A predictable fallback path under `/tmp` is one a hostile local user can
+/// pre-create, and then every blob omt writes lands in their directory. The
+/// check is on the socket's parent because that is the directory omt is about
+/// to write into (22 §2.3).
+fn guard_runtime_dir(socket: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let Some(parent) = socket.parent() else {
+        return Ok(());
+    };
+    // A directory that does not exist yet is one omt is about to create with
+    // its own umask, so there is nothing to distrust.
+    let Ok(meta) = std::fs::symlink_metadata(parent) else {
+        return Ok(());
+    };
+    #[allow(
+        unsafe_code,
+        reason = "getuid has no safe wrapper in std and cannot fail"
+    )]
+    let uid = unsafe { libc::getuid() };
+    // The system temp directory is shared by design and omt only ever writes
+    // its own uid-suffixed subdirectory inside it, which is the thing worth
+    // checking. Checking the shared parent itself would refuse to start on
+    // every machine.
+    if parent == std::env::temp_dir() {
+        return Ok(());
+    }
+    let verdict = crate::multiuser::check_dir(
+        meta.file_type().is_symlink(),
+        meta.uid(),
+        meta.mode() & 0o777,
+        uid,
+    )
+    .map_err(|refusal| anyhow::anyhow!("refusing to use {}: {refusal}", parent.display()))?;
+
+    if verdict == crate::multiuser::DirVerdict::Correct {
+        // Said out loud rather than fixed quietly: a mode a careless `chmod`
+        // widened is an event somebody should see.
+        eprintln!(
+            "omt: narrowed {} to {:04o} — it was readable by other users on this machine",
+            parent.display(),
+            crate::multiuser::DIR_MODE
+        );
+        std::fs::set_permissions(
+            parent,
+            std::os::unix::fs::PermissionsExt::from_mode(crate::multiuser::DIR_MODE),
+        )?;
+    }
+    Ok(())
+}
+
 /// Serve until the listener is dropped.
 ///
 /// One thread per connection. That is the right shape for the traffic: a
@@ -37,6 +90,18 @@ pub fn default_socket_path() -> PathBuf {
 /// Fails if the socket cannot be created. Once listening it does not return:
 /// an individual bad accept is skipped rather than ending the server.
 pub fn serve(path: &Path, state: State) -> Result<()> {
+    // Before anything is opened. A daemon started from a shell with `umask 000`
+    // would otherwise create 0666 files, and inheriting a umask is not a
+    // security decision omt gets to delegate (22 §2.3).
+    #[allow(
+        unsafe_code,
+        reason = "umask has no safe wrapper in std and cannot fail"
+    )]
+    unsafe {
+        libc::umask(crate::multiuser::UMASK as libc::mode_t);
+    }
+    guard_runtime_dir(path)?;
+
     // Sessions in a daemon nobody is looking at still have to advance: a pty
     // whose output is never read fills its buffer and the program blocks. This
     // is the same pump `omt web` runs, and for the same reason.
