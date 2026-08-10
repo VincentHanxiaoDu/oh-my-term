@@ -276,6 +276,28 @@
     },
     {
       "aliases": [],
+      "doc": "The label is the only thing distinguishing two devices in a list, and a list of three `iPhone`s is one nobody can revoke from — so renaming is part of revocation working.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "device",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "device.rename",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/device/rename",
+      "since": "0.1.0",
+      "title": "Rename a device",
+      "verb": "rename"
+    },
+    {
+      "aliases": [],
       "doc": "Stop one device's credential working, leaving every other device alone. This is what makes a lost phone something somebody can act on.",
       "effects": [
         "destructive"
@@ -295,6 +317,29 @@
       "since": "0.1.0",
       "title": "Revoke a device",
       "verb": "revoke"
+    },
+    {
+      "aliases": [],
+      "doc": "The `I lost a device and do not know which` button. Keeps the one asking, because revoking that too locks somebody out of the machine they were securing.",
+      "effects": [
+        "destructive",
+        "writes_fs"
+      ],
+      "group": "device",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "device.revoke_all",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/device/revoke_all",
+      "since": "0.1.0",
+      "title": "Revoke every other device",
+      "verb": "revoke_all"
     },
     {
       "aliases": [],

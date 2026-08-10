@@ -809,3 +809,143 @@ impl CapabilityHandler<IdentityRevoke> for IdentityRevokeHandler {
         })
     }
 }
+
+// ---------------------------------------------------------------------------
+// Renaming and mass revocation — 23 §12
+// ---------------------------------------------------------------------------
+
+/// Input to `device.rename`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DeviceRenameIn {
+    /// Which credential.
+    pub device: String,
+    /// What to call it.
+    pub label: String,
+}
+
+/// What `device.rename` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct DeviceRenameOut {
+    /// What it is called now.
+    pub label: String,
+}
+
+omt_catalog::capability! {
+    /// Rename a paired device.
+    pub struct DeviceRename;
+    input  = DeviceRenameIn,
+    output = DeviceRenameOut,
+    decl = omt_catalog::Decl {
+        name: "device.rename",
+        group: "device",
+        verb: "rename",
+        title: "Rename a device",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Command,
+        role: omt_types::Role::Admin,
+        effects: omt_catalog::Effects::WRITES_FS,
+        // Cas: renaming to the same thing twice is the same rename, so a retry
+        // after a lost acknowledgement lands on the same answer.
+        intent: Some(omt_catalog::Intent::Cas),
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The label is the only thing distinguishing two devices in a list, and a list of three `iPhone`s is one nobody can revoke from — so renaming is part of revocation working.",
+    },
+}
+
+/// Serves renaming.
+pub struct DeviceRenameHandler(pub std::sync::Arc<std::sync::Mutex<omt_auth::CredentialStore>>);
+
+impl CapabilityHandler<DeviceRename> for DeviceRenameHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: DeviceRenameIn,
+    ) -> Result<DeviceRenameOut, CapabilityError> {
+        let mut store = self
+            .0
+            .lock()
+            .map_err(|_| CapabilityError::internal("the credential lock was poisoned"))?;
+        if !store.rename(&input.device, &input.label) {
+            return Err(CapabilityError::invalid_input(format!(
+                "no device `{}`, or the name was empty",
+                input.device
+            )));
+        }
+        Ok(DeviceRenameOut {
+            label: input.label.trim().to_owned(),
+        })
+    }
+}
+
+/// Input to `device.revoke_all`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RevokeAllIn {
+    /// The device to keep, which is the one asking.
+    ///
+    /// Required rather than optional. Revoking everything including the device
+    /// in your hand locks you out of the machine you were securing, and the
+    /// recovery for that is physical access — so there is no spelling of this
+    /// call that does it by accident.
+    pub keep: String,
+}
+
+/// What `device.revoke_all` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RevokeAllOut {
+    /// How many were revoked.
+    pub revoked: usize,
+    /// Which one was kept.
+    pub kept: String,
+}
+
+omt_catalog::capability! {
+    /// Revoke every device except the one asking.
+    pub struct DeviceRevokeAll;
+    input  = RevokeAllIn,
+    output = RevokeAllOut,
+    decl = omt_catalog::Decl {
+        name: "device.revoke_all",
+        group: "device",
+        verb: "revoke_all",
+        title: "Revoke every other device",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Command,
+        role: omt_types::Role::Admin,
+        effects: omt_catalog::Effects::WRITES_FS.union(omt_catalog::Effects::DESTRUCTIVE),
+        intent: Some(omt_catalog::Intent::Cas),
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The `I lost a device and do not know which` button. Keeps the one asking, because revoking that too locks somebody out of the machine they were securing.",
+    },
+}
+
+impl CapabilityHandler<DeviceRevokeAll> for DeviceRenameHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: RevokeAllIn,
+    ) -> Result<RevokeAllOut, CapabilityError> {
+        let mut store = self
+            .0
+            .lock()
+            .map_err(|_| CapabilityError::internal("the credential lock was poisoned"))?;
+        if !store.list().iter().any(|c| c.id == input.keep) {
+            // Refused rather than treated as "keep nothing". A typo in the id
+            // would otherwise revoke every device including the caller's, which
+            // is the one outcome this call is shaped to prevent.
+            return Err(CapabilityError::invalid_input(format!(
+                "no device `{}` to keep; refusing rather than revoking everything",
+                input.keep
+            )));
+        }
+        Ok(RevokeAllOut {
+            revoked: store.revoke_all_except(&input.keep),
+            kept: input.keep,
+        })
+    }
+}

@@ -434,6 +434,12 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'device.rename': (request: RequestId, device: string, label: string) =>
+    call(request, 'device.rename', { device, label }),
+
+  'device.revoke_all': (request: RequestId, keep: string) =>
+    call(request, 'device.revoke_all', { keep }),
+
   'identity.reauth_check': (request: RequestId, check: Record<string, unknown>) =>
     call(request, 'identity.reauth_check', check),
 

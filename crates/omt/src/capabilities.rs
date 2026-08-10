@@ -6038,6 +6038,12 @@ pub fn registry_full(
     r.register::<crate::reach::DeviceRevoke, _>(crate::reach::DeviceRevokeHandler(
         credentials.clone(),
     ))?;
+    r.register::<crate::reach::DeviceRename, _>(crate::reach::DeviceRenameHandler(
+        credentials.clone(),
+    ))?;
+    r.register::<crate::reach::DeviceRevokeAll, _>(crate::reach::DeviceRenameHandler(
+        credentials.clone(),
+    ))?;
     r.register::<crate::reach::InviteCreate, _>(crate::reach::InviteCreateHandler(credentials))?;
     r.register::<crate::surfaces::BlockBody, _>(crate::surfaces::BlockBodyHandler(state.clone()))?;
     r.register::<crate::surfaces::SessionScrollback, _>(

@@ -23,7 +23,9 @@ vanishing.
 | `config.reload_class` | query | viewer | A setting that quietly waits for a restart is changed, nothing happens, and the conclusion is that the setting does not work. |
 | `config.schema` | query | viewer | Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be. |
 | `device.list` | query | operator | Every device that has been let in, by the name it gave. Pairing mints a credential per device, and a credential nobody can see is one nobody revokes. |
+| `device.rename` | command | admin | The label is the only thing distinguishing two devices in a list, and a list of three `iPhone`s is one nobody can revoke from — so renaming is part of revocation working. |
 | `device.revoke` | command | admin | Stop one device's credential working, leaving every other device alone. This is what makes a lost phone something somebody can act on. |
+| `device.revoke_all` | command | admin | The `I lost a device and do not know which` button. Keeps the one asking, because revoking that too locks somebody out of the machine they were securing. |
 | `doctor.report` | query | operator | The diagnosis, the version and what the person was doing, as readable text they can check before sending. Nothing is uploaded: omt has no cloud, and a report somebody cannot read is one they have to trust blindly about their own machine. |
 | `doctor.run` | query | viewer | Per-link diagnosis with a remedy on every failure. A check this build cannot perform is reported as not checked rather than as passing: an unrun check reported green is how a diagnosis stops somebody investigating the real problem. |
 | `events.subscribe` | query | viewer | Subscribe to the event stream. |
@@ -131,4 +133,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-121 capabilities.
+123 capabilities.

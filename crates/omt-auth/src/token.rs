@@ -277,6 +277,46 @@ impl CredentialStore {
         false
     }
 
+    /// Rename a credential.
+    ///
+    /// The label is the only thing distinguishing two devices in a list, and a
+    /// list of "iPhone", "iPhone" and "iPhone" is a list nobody can revoke
+    /// from — which makes renaming part of revocation working, not a nicety.
+    ///
+    /// Returns false if there is no such credential.
+    pub fn rename(&mut self, id: &str, label: &str) -> bool {
+        let label = label.trim();
+        if label.is_empty() {
+            // An empty label would make the device unnameable in the list,
+            // which is the state rename exists to get out of.
+            return false;
+        }
+        if let Some(credential) = self.by_id.get_mut(id) {
+            credential.label = label.to_owned();
+            return true;
+        }
+        false
+    }
+
+    /// Revoke every credential except one.
+    ///
+    /// The "I lost a device and do not know which" button. Keeping the caller's
+    /// own is what makes it usable at all: revoking everything including the
+    /// device you are holding leaves you locked out of the machine you were
+    /// trying to secure, and the recovery for that is physical access.
+    ///
+    /// Returns how many were revoked.
+    pub fn revoke_all_except(&mut self, keep: &str) -> usize {
+        let mut revoked = 0;
+        for credential in self.by_id.values_mut() {
+            if credential.id != keep && !credential.revoked {
+                credential.revoked = true;
+                revoked += 1;
+            }
+        }
+        revoked
+    }
+
     /// Every credential. Never includes a token.
     #[must_use]
     pub fn list(&self) -> Vec<&Credential> {
@@ -304,6 +344,66 @@ impl CredentialStore {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_device_can_be_renamed() {
+        // The label is the only thing distinguishing two devices in a list,
+        // and a list of "iPhone", "iPhone" and "iPhone" is one nobody can
+        // revoke from — which makes renaming part of revocation working.
+        let mut store = store();
+        let issued = store.mint(Role::Operator, "iPhone", None, None);
+        assert!(store.rename(&issued.credential.id, "Vincent's iPhone"));
+        assert_eq!(
+            store.list().iter().find(|c| c.id == issued.credential.id).map(|c| c.label.as_str()),
+            Some("Vincent's iPhone")
+        );
+    }
+
+    #[test]
+    fn renaming_to_nothing_is_refused() {
+        // An empty label makes the device unnameable in the list, which is the
+        // state rename exists to get out of.
+        let mut store = store();
+        let issued = store.mint(Role::Operator, "iPhone", None, None);
+        assert!(!store.rename(&issued.credential.id, "   "));
+    }
+
+    #[test]
+    fn renaming_something_that_is_not_there_says_so() {
+        let mut store = store();
+        assert!(!store.rename("nope", "anything"));
+    }
+
+    #[test]
+    fn revoking_everything_else_keeps_the_one_you_are_holding() {
+        // Revoking the device you are holding leaves you locked out of the
+        // machine you were trying to secure, and the recovery for that is
+        // physical access.
+        let mut store = store();
+        let mine = store.mint(Role::Admin, "laptop", None, None);
+        let phone = store.mint(Role::Operator, "phone", None, None);
+        let other = store.mint(Role::Viewer, "old tablet", None, None);
+
+        assert_eq!(store.revoke_all_except(&mine.credential.id), 2);
+        let revoked = |id: &str| {
+            store.list().iter().find(|c| c.id == id).is_some_and(|c| c.revoked)
+        };
+        assert!(!revoked(&mine.credential.id), "the one in your hand survives");
+        assert!(revoked(&phone.credential.id));
+        assert!(revoked(&other.credential.id));
+    }
+
+    #[test]
+    fn revoking_everything_else_twice_reports_nothing_the_second_time() {
+        // So a client can say "2 devices revoked" and mean it, rather than
+        // repeating the first answer after a retry.
+        let mut store = store();
+        let mine = store.mint(Role::Admin, "laptop", None, None);
+        store.mint(Role::Operator, "phone", None, None);
+        assert_eq!(store.revoke_all_except(&mine.credential.id), 1);
+        assert_eq!(store.revoke_all_except(&mine.credential.id), 0);
+    }
+
 
     fn store() -> CredentialStore {
         CredentialStore::new()

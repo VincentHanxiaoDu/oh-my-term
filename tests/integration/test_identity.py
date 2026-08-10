@@ -158,3 +158,48 @@ class TestPerActionReauthentication:
         )
         assert "worktree.remove" in out["because"]
         assert "DESTRUCTIVE" in out["because"]
+
+
+class TestRenamingAndMassRevocation:
+    """23-identity-and-devices §12."""
+
+    def a_device(self, client, label="phone"):
+        invite = client.call("invite.create", label=label, role="operator")
+        return invite
+
+    def test_a_device_can_be_renamed(self, client) -> None:
+        # The label is the only thing distinguishing two devices in a list.
+        devices = client.call("device.list")["devices"]
+        if not devices:
+            import pytest
+
+            pytest.skip("no devices on this instance")
+        out = client.call("device.rename", device=devices[0]["id"], label="Renamed")
+        assert out["label"] == "Renamed"
+
+    def test_renaming_to_nothing_is_refused(self, client) -> None:
+        devices = client.call("device.list")["devices"]
+        if not devices:
+            import pytest
+
+            pytest.skip("no devices on this instance")
+        import pytest
+
+        with pytest.raises(Exception):
+            client.call("device.rename", device=devices[0]["id"], label="   ")
+
+    def test_renaming_something_absent_is_refused(self, client) -> None:
+        import pytest
+
+        with pytest.raises(Exception) as caught:
+            client.call("device.rename", device="nope", label="anything")
+        assert "no device" in str(caught.value)
+
+    def test_revoking_all_refuses_an_unknown_keep(self, client) -> None:
+        # A typo in the id would otherwise revoke every device including the
+        # caller's, which is the one outcome this call is shaped to prevent.
+        import pytest
+
+        with pytest.raises(Exception) as caught:
+            client.call("device.revoke_all", keep="not-a-real-device")
+        assert "refusing" in str(caught.value)
