@@ -72,7 +72,7 @@ Unticked means not done. Partly built stays unticked.
 ## 06-agent-layer
 
 - [ ] 1. What this layer must deliver
-- [ ] 2. The two-axis model
+- [x] 2. The two-axis model — `crates/omt-agent/src/binding.rs`. Binding (which agent, with a lifetime) is a separate type from state, reconciled on its own slow axis. `learning_the_agents_own_id_is_not_a_rebind`, `a_binding_keeps_its_start_time_when_it_is_only_refined`, `an_agents_own_id_is_never_forgotten_once_known`, `a_worse_tier_never_downgrades_a_binding` (9 tests, omt-agent 79 green).
 - [x] 3. Source model — test_agent_native: messages, tools, results
 - [x] 4. Merging: confidence tiers, not voting — omt-agent merge: the highest fresh tier wins, a lower one may fill a gap but never contradict a live higher one, a stale source stops speaking, an authoritative source suspends the heuristic
 - [x] 5. Interactions — the flagship path — test_agents: interactions and deliverable

@@ -8,6 +8,7 @@
 //! [`ledger`] holds interactions to exactly-once resolution and refuses to call
 //! an answer delivered until something observed the agent record it.
 
+pub mod binding;
 pub mod ledger;
 pub mod merge;
 pub mod threads;
