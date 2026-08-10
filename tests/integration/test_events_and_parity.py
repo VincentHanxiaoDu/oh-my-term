@@ -191,3 +191,96 @@ class TestLiveDelivery:
 
         assert seen, "nothing arrived after a session was created on another socket"
         assert bare in scopes, f"no event for the new session; saw {scopes}"
+
+
+def scope_matches(event: dict, session: str) -> bool:
+    """Whether an event belongs to a session.
+
+    The scope carries a bare uuid and a capability input carries the prefixed
+    spelling; comparing the two directly is comparing two encodings of the same
+    id and finding them different — which is how a filter silently matches
+    nothing and every assertion after it passes over an empty list.
+    """
+    bare = session.split("_", 1)[-1].replace("-", "")
+    got = str(event.get("scope", {}).get("session", "")).replace("-", "")
+    return got == bare
+
+
+class TestOrderingAndCausality:
+    """12-collaboration §5."""
+
+    def test_one_sessions_events_are_totally_ordered(
+        self, client: Client, session: str
+    ) -> None:
+        # G1. A subscriber that saw them out of order could not tell a lost
+        # event from a late one, and every resume rule depends on this.
+        client.subscribe()
+        for i in range(5):
+            type_into(client, session, f"echo ordered-{i}\r")
+        seqs = [
+            e["seq"] for e in client.events(timeout=5.0) if scope_matches(e, session)
+        ]
+        assert seqs, "no events for this session, so the ordering check saw nothing"
+        assert seqs == sorted(seqs), seqs
+        assert len(set(seqs)) == len(seqs), "no sequence number is handed out twice"
+
+    def test_a_sequence_number_is_never_reused_within_one_scope(
+        self, client: Client, session: str
+    ) -> None:
+        # G3 rests on this: a client that has seen N has seen everything up to
+        # N for *that scope*, which is only true if N means one thing there.
+        # Across scopes the counters are independent and may collide freely.
+        client.subscribe()
+        type_into(client, session, "echo once\r")
+        first = [e["seq"] for e in client.events(timeout=5.0) if scope_matches(e, session)]
+        type_into(client, session, "echo twice\r")
+        second = [e["seq"] for e in client.events(timeout=5.0) if scope_matches(e, session)]
+        assert first and second, "one of the batches was empty"
+        assert not (set(first) & set(second)), "a seq came back a second time"
+
+    def test_each_scope_counts_independently(self, client: Client, session: str) -> None:
+        # The other half: seq 1 in a session scope and seq 1 in the instance
+        # scope are different positions, and a client that pooled them would
+        # think it had seen things it had not.
+        client.subscribe()
+        type_into(client, session, "echo scoped\r")
+        by_scope: dict[str, list[int]] = {}
+        for event in client.events(timeout=5.0):
+            key = repr(event.get("scope"))
+            by_scope.setdefault(key, []).append(event["seq"])
+        assert by_scope, "nothing arrived"
+        for key, seqs in by_scope.items():
+            assert seqs == sorted(seqs), f"{key} is out of order: {seqs}"
+
+    def test_two_sessions_share_no_ordering_relationship(
+        self, client: Client
+    ) -> None:
+        # G6, a deliberate non-guarantee. A global total order would make the
+        # sequence allocator a contention point across every PTY on the machine
+        # for a property no UI needs -- so the two streams may interleave, and
+        # each is ordered only within itself.
+        workspace = client.call("workspace.list")["workspaces"][0]["id"]
+        a = client.call("session.create", workspace=workspace)["session"]
+        b = client.call("session.create", workspace=workspace)["session"]
+        client.subscribe()
+        type_into(client, a, "echo from-a\r")
+        type_into(client, b, "echo from-b\r")
+
+        events = list(client.events(timeout=5.0))
+        for name, sid in (("a", a), ("b", b)):
+            seqs = [e["seq"] for e in events if scope_matches(e, sid)]
+            assert seqs == sorted(seqs), f"session {name} is out of order: {seqs}"
+
+    def test_every_event_carries_a_timestamp_for_people_and_a_seq_for_machines(
+        self, client: Client, session: str
+    ) -> None:
+        # §5.2: `ts` is for logs, never for sorting -- two events can share a
+        # millisecond, so sorting by it silently reorders them. Both are
+        # present, and only one of them is the order.
+        client.subscribe()
+        for i in range(5):
+            type_into(client, session, f"echo stamped-{i}\r")
+        events = [e for e in client.events(timeout=5.0) if scope_matches(e, session)]
+        assert events, "nothing to check"
+        assert all("ts" in e for e in events), events[0]
+        assert all("seq" in e for e in events), events[0]

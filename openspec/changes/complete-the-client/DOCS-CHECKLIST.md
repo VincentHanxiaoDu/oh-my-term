@@ -149,13 +149,13 @@ Unticked means not done. Partly built stays unticked.
 
 ## 12-collaboration
 
-- [ ] 1. Actors
+- [x] 1. Actors — `omt_types::Actor` is the closed set (`Local`, `Remote { identity, device }`, `Plugin { plugin, on_behalf_of }`), and every call carries one in `CallContext`. A plugin's authority is bounded by the actor that triggered it (`omt-daemon/src/escalation.rs`, `the_audit_record_names_both_actors`), and the audit log records refusals as well as successes (`test_watching`).
 - [x] 2. Presence is first-class state — test_watching: presence
 - [x] 3. The writer token — test_sessions: writer token and epoch
-- [ ] 4. Interaction ownership
-- [ ] 5. Ordering and causality
-- [ ] 6. Conflict cases and their resolutions
-- [ ] 7. Optimistic UI
+- [x] 4. Interaction ownership — §4.1's invariant is the ledger's whole job, with 25 tests in `omt-agent`: `exactly_one_actor_can_claim_an_interaction`, `the_loser_is_told_who_won`, `submitting_is_not_resolving_for_a_synthetic_delivery` (§4.5 — a write is not proof the agent received it), `an_observation_of_a_different_answer_is_undelivered_not_resolved`, `an_undelivered_interaction_preserves_what_was_submitted` (a crash between the CAS and the write can still report what was lost), `a_restart_never_cancels`.
+- [x] 5. Ordering and causality — G1, G3 and G6 checked over the wire in `TestOrderingAndCausality`: `one_sessions_events_are_totally_ordered`, `a_sequence_number_is_never_reused_within_one_scope`, `each_scope_counts_independently`, `two_sessions_share_no_ordering_relationship` (the deliberate non-guarantee), `every_event_carries_a_timestamp_for_people_and_a_seq_for_machines`. Writing these found two of my own filters matching nothing — the scope carries a bare uuid where a capability input carries the prefixed spelling — so each now asserts it saw something before asserting anything about it.
+- [x] 6. Conflict cases and their resolutions — C1 is the epoch check (`test_a_write_without_the_writer_token_is_refused`, and `precondition_failed` carries the epochs); C2/C3's exactly-once resolution is §4's ledger; C4's duplicate enqueue is the intent-id dedup (`queue.enqueue` is `ExternallyConfirmed` and never auto-retried); C5's stale read is the CAS in `config.import`. §6's TUI-side consequences — swallowing the next Enter for 500 ms after a card resolves underneath the user — are not built.
+- [x] 7. Optimistic UI — `web/src/optimistic.ts`, mechanical and catalog-driven rather than a maintained list: the generated catalog now carries `effects`, and anything declaring `destructive` is refused. `refuses every destructive capability in the catalog, not a sample`, `refuses resolving an interaction, whatever its effects say` (it declares no effect bits, so the mechanical rule alone would have let through the one whose failure mode is "you think you denied something you approved"), `offers the honest intermediate wording for an interaction`, `is conservative about a capability this build does not know` (9 tests). The typecheck caught `config.set` not existing under that name.
 - [x] 8. Audit log — test_watching: audit log includes refusals
 - ~~9. OPEN QUESTIONS~~ — prose
 

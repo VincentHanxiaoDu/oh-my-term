@@ -696,15 +696,32 @@ fn typescript(entries: &[serde_json::Value]) -> String {
     out.push_str("/** A capability this build declares. */\nexport type Capability = (typeof CAPABILITIES)[number]\n\n");
 
     out.push_str("/** What each capability is, for a palette or a settings screen. */\n");
-    out.push_str("export const CAPABILITY_INFO: Record<Capability, { title: string; group: string; kind: string; role: string; doc: string }> = {\n");
+    out.push_str("export const CAPABILITY_INFO: Record<Capability, { title: string; group: string; kind: string; role: string; effects: readonly string[]; doc: string }> = {\n");
     for e in entries {
+        // Effects are carried into the client because 12 §7's optimistic-UI
+        // rule is mechanical: nothing DESTRUCTIVE may be applied before it is
+        // confirmed. A client that had to keep its own list of which those are
+        // would be wrong the day one is added.
+        let effects = e
+            .get("effects")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|i| i.as_str())
+                    .map(|s| format!("'{s}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
         out.push_str(&format!(
-            "  '{}': {{ title: {}, group: '{}', kind: '{}', role: '{}', doc: {} }},\n",
+            "  '{}': {{ title: {}, group: '{}', kind: '{}', role: '{}', effects: [{}], doc: {} }},\n",
             field(e, "name"),
             json_string(&field(e, "title")),
             field(e, "group"),
             e.get("kind").map_or("query".to_owned(), render_tag),
             e.get("role").map_or("viewer".to_owned(), render_tag),
+            effects,
             json_string(&field(e, "doc")),
         ));
     }
