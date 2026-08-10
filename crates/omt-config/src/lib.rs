@@ -5,6 +5,7 @@
 //! traced is a setting nobody can debug, and "why is my font wrong" is
 //! otherwise unanswerable across four files.
 
+pub mod launch;
 pub mod schema;
 pub use schema::{SETTINGS, Setting, key_specs, setting};
 pub mod import;

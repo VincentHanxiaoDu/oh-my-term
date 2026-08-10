@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**120 of 212 features ticked.** (34 further sections are prose.)
+**121 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -130,7 +130,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 6. Live reload — test_configuration: appearance is hot, listener settings rebuild only the listener, the store needs the process back, what will not take effect yet is listed separately
 - [ ] 7. The settings surface
 - [ ] 8. Themes and keybindings
-- [ ] 9. Profiles: launch configurations and workflows
+- [x] 9. Profiles: launch configurations and workflows — test_configuration: an agent gets an argument vector, a prompt with shell syntax stays one argument, focus always lands somewhere, every problem at once (workflows are §9.2 and not built)
 - [x] 10. Config capabilities — test_configuration: config capabilities
 - [ ] 11. Testing
 - ~~12. Open questions~~ — prose

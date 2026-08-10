@@ -55,6 +55,7 @@ vanishing.
 | `keys.flavour` | query | viewer | A modal keymap governs omt's own surfaces only. It never governs a pane whose keys are passing through, which is what stops omt and an inner vim from contending over hjkl. |
 | `keys.list` | query | viewer | In a stable order, so two calls can be compared. An unordered list makes a diff between two configurations unreadable. |
 | `keys.registry` | query | viewer | The registry is data, so a new agent CLI is a file rather than a release. This says how much of it is loaded. |
+| `launch.preview` | query | operator | An agent is spawned with an argument vector, never by typing into a shell — a launch file is copied from a colleague and the prompt is the part people edit. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
 | `layout.restore` | query | operator | Keeps the panes that still exist and names the rest. Failing outright gives somebody nothing; keeping dead names gives them panes they have to close one by one. |
 | `layout.save` | command | operator | The tree and nothing else. Rects are a function of the tree and the screen, so saving them would restore a desktop layout onto a phone as a desktop layout. |
@@ -128,4 +129,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-118 capabilities.
+119 capabilities.

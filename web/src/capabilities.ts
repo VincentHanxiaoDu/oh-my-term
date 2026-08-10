@@ -434,6 +434,9 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'launch.preview': (request: RequestId, launch: Record<string, unknown>) =>
+    call(request, 'launch.preview', { launch }),
+
   'config.reload_class': (request: RequestId, keys: string[]) =>
     call(request, 'config.reload_class', { keys }),
 

@@ -234,3 +234,80 @@ class TestTheSettingsReferenceIsGenerated:
         page = (REPO_ROOT / "docs" / "reference" / "settings.md").read_text()
         assert "immediately" in page
         assert "Reload" in page
+
+
+class TestLaunchConfigurations:
+    """10-configuration §9.1."""
+
+    def launch(self, panes, name="review"):
+        return {"name": name, "panes": panes}
+
+    def test_an_agent_is_spawned_with_an_argument_vector(self, client) -> None:
+        out = client.call(
+            "launch.preview",
+            launch=self.launch(
+                [
+                    {
+                        "start": {
+                            "agent": {
+                                "id": "claude_code",
+                                "args": ["--permission-mode", "plan"],
+                                "prompt": "Review the diff",
+                            }
+                        }
+                    }
+                ]
+            ),
+        )
+        assert out["panes"][0]["argv"] == [
+            "claude",
+            "--permission-mode",
+            "plan",
+            "Review the diff",
+        ]
+
+    def test_a_prompt_with_shell_syntax_stays_one_argument(self, client) -> None:
+        # A launch file is copied from a colleague, and the prompt is the part
+        # people edit. Through a shell, a backtick would be execution.
+        prompt = "look at `rm -rf /` and $(whoami)"
+        out = client.call(
+            "launch.preview",
+            launch=self.launch(
+                [{"start": {"agent": {"id": "claude_code", "prompt": prompt}}}]
+            ),
+        )
+        argv = out["panes"][0]["argv"]
+        assert len(argv) == 2, argv
+        assert argv[1] == prompt
+
+    def test_a_pane_with_no_start_is_a_shell(self, client) -> None:
+        out = client.call("launch.preview", launch=self.launch([{"cwd": "/src"}]))
+        assert out["panes"][0]["start"] == "shell"
+
+    def test_focus_always_lands_somewhere(self, client) -> None:
+        out = client.call("launch.preview", launch=self.launch([{}, {}]))
+        assert out["focused"] == 0
+
+    def test_two_focused_panes_are_reported_rather_than_resolved_silently(
+        self, client
+    ) -> None:
+        # Picking one would make the choice depend on file order, which the
+        # person writing it cannot see.
+        out = client.call(
+            "launch.preview",
+            launch=self.launch([{"focused": True}, {"focused": True}]),
+        )
+        assert out["problems"], out
+
+    def test_every_problem_comes_back_at_once_with_help(self, client) -> None:
+        out = client.call("launch.preview", launch=self.launch([], name=""))
+        assert len(out["problems"]) >= 2
+        assert all(p["remedy"] for p in out["problems"])
+
+    def test_something_that_is_not_a_launch_configuration_is_refused(
+        self, client
+    ) -> None:
+        import pytest
+
+        with pytest.raises(Exception):
+            client.call("launch.preview", launch={"nonsense": True})

@@ -2813,6 +2813,101 @@ impl CapabilityHandler<ReloadClass> for SecurityHandler {
     }
 }
 
+/// Input to `launch.preview`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct LaunchPreviewIn {
+    /// The launch configuration, as JSON.
+    pub launch: serde_json::Value,
+}
+
+/// One pane omt would open.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct LaunchPane {
+    /// Where it starts.
+    pub cwd: Option<String>,
+    /// What runs in it: `shell`, `commands` or `agent`.
+    pub start: String,
+    /// The argument vector, for an agent pane.
+    ///
+    /// A vector, never a string. There is no shell in this path, so a prompt
+    /// containing a backtick is a prompt rather than an execution.
+    pub argv: Vec<String>,
+}
+
+/// What `launch.preview` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct LaunchPreviewOut {
+    /// What omt would open.
+    pub panes: Vec<LaunchPane>,
+    /// Which pane focus lands in.
+    pub focused: Option<usize>,
+    /// Everything wrong with it, all at once.
+    pub problems: Vec<RefusalOut>,
+}
+
+omt_catalog::capability! {
+    /// What a launch configuration would start.
+    pub struct LaunchPreview;
+    input  = LaunchPreviewIn,
+    output = LaunchPreviewOut,
+    decl = omt_catalog::Decl {
+        name: "launch.preview",
+        group: "launch",
+        verb: "preview",
+        title: "Preview a launch configuration",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "An agent is spawned with an argument vector, never by typing into a shell — a launch file is copied from a colleague and the prompt is the part people edit.",
+    },
+}
+
+impl CapabilityHandler<LaunchPreview> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: LaunchPreviewIn,
+    ) -> Result<LaunchPreviewOut, CapabilityError> {
+        let launch: omt_config::launch::Launch = serde_json::from_value(input.launch)
+            .map_err(|e| CapabilityError::invalid_input(format!("that is not a launch configuration: {e}")))?;
+        let problems = omt_config::launch::check(&launch);
+        Ok(LaunchPreviewOut {
+            focused: omt_config::launch::focused(&launch),
+            panes: launch
+                .panes
+                .iter()
+                .map(|p| LaunchPane {
+                    cwd: p.cwd.clone(),
+                    start: match &p.start {
+                        omt_config::launch::Start::Shell => "shell".to_owned(),
+                        omt_config::launch::Start::Commands { .. } => "commands".to_owned(),
+                        omt_config::launch::Start::Agent { .. } => "agent".to_owned(),
+                    },
+                    argv: match &p.start {
+                        omt_config::launch::Start::Agent { id, args, prompt } => {
+                            omt_config::launch::agent_argv(id, args, prompt.as_deref())
+                        }
+                        _ => Vec::new(),
+                    },
+                })
+                .collect(),
+            problems: problems
+                .into_iter()
+                .map(|r| RefusalOut {
+                    problem: r.problem,
+                    remedy: r.help,
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -896,6 +896,24 @@
     },
     {
       "aliases": [],
+      "doc": "An agent is spawned with an argument vector, never by typing into a shell — a launch file is copied from a colleague and the prompt is the part people edit.",
+      "effects": [],
+      "group": "launch",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "launch.preview",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/launch/preview",
+      "since": "0.1.0",
+      "title": "Preview a launch configuration",
+      "verb": "preview"
+    },
+    {
+      "aliases": [],
       "doc": "Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed.",
       "effects": [
         "spawns_process"
