@@ -5959,6 +5959,11 @@ pub fn registry_full(
     r.register::<crate::media::OpenClick, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenRulesList, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenRulesTest, _>(crate::media::MediaHandler(blobs))?;
+    let mirrors: crate::media::Mirrors = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::BTreeMap::new(),
+    ));
+    r.register::<crate::media::RemoteList, _>(crate::media::MirrorHandler(mirrors.clone()))?;
+    r.register::<crate::media::RemoteDiscard, _>(crate::media::MirrorHandler(mirrors))?;
     r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(

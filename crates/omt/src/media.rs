@@ -913,6 +913,154 @@ impl CapabilityHandler<OpenRulesTest> for MediaHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Remote mirrors — 18 §6.3
+// ---------------------------------------------------------------------------
+
+/// Every mirror this instance holds, keyed by local path.
+pub type Mirrors = std::sync::Arc<
+    std::sync::Mutex<std::collections::BTreeMap<String, omt_media::mirror::Mirror>>,
+>;
+
+/// Input to `open.remote_list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RemoteListIn {}
+
+/// One mirrored file.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct MirrorOut {
+    /// Where it is locally.
+    pub local_path: String,
+    /// Where it came from.
+    pub remote_path: String,
+    /// Which host.
+    pub host: String,
+    /// When it was fetched.
+    pub fetched_at: u64,
+    /// A hash of what was fetched, so staleness is checkable.
+    pub digest: String,
+    /// Whether omt will refuse to write it back.
+    pub read_only: bool,
+}
+
+/// What `open.remote_list` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RemoteListOut {
+    /// Every mirror, newest first.
+    pub files: Vec<MirrorOut>,
+}
+
+omt_catalog::capability! {
+    /// Every remote file mirrored locally.
+    pub struct RemoteList;
+    input  = RemoteListIn,
+    output = RemoteListOut,
+    decl = omt_catalog::Decl {
+        name: "open.remote_list",
+        group: "open",
+        verb: "remote_list",
+        title: "List mirrored remote files",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::READS_FS,
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A mirror nobody can see is a copy of somebody's file sitting on disk with no way to tell where it came from or to get rid of it.",
+    },
+}
+
+/// Serves the mirror registry.
+pub struct MirrorHandler(pub Mirrors);
+
+impl CapabilityHandler<RemoteList> for MirrorHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        _input: RemoteListIn,
+    ) -> Result<RemoteListOut, CapabilityError> {
+        let held = self
+            .0
+            .lock()
+            .map_err(|_| CapabilityError::internal("the mirror lock was poisoned"))?;
+        let mut files: Vec<MirrorOut> = held
+            .iter()
+            .map(|(local, m)| MirrorOut {
+                local_path: local.clone(),
+                remote_path: m.remote_path.clone(),
+                host: m.host.clone(),
+                fetched_at: m.fetched_at,
+                digest: m.digest.clone(),
+                read_only: m.read_only,
+            })
+            .collect();
+        files.sort_by(|a, b| b.fetched_at.cmp(&a.fetched_at).then(a.local_path.cmp(&b.local_path)));
+        Ok(RemoteListOut { files })
+    }
+}
+
+/// Input to `open.remote_discard`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RemoteDiscardIn {
+    /// The local path of the mirror to drop.
+    pub path: String,
+}
+
+/// What `open.remote_discard` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RemoteDiscardOut {
+    /// Whether anything was there to drop.
+    pub discarded: bool,
+    /// How many mirrors remain.
+    pub remaining: usize,
+}
+
+omt_catalog::capability! {
+    /// Drop a mirrored file and stop watching it.
+    pub struct RemoteDiscard;
+    input  = RemoteDiscardIn,
+    output = RemoteDiscardOut,
+    decl = omt_catalog::Decl {
+        name: "open.remote_discard",
+        group: "open",
+        verb: "remote_discard",
+        title: "Discard a mirrored file",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Command,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::WRITES_FS,
+        // Cas: discarding twice is the same as discarding once, so a retry
+        // after a dropped acknowledgement is safe and returns the same answer.
+        intent: Some(omt_catalog::Intent::Cas),
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Unpins the blob so the sweeper can take it. Discarding something already gone is reported, not an error — a retry after a lost acknowledgement must not look like a failure.",
+    },
+}
+
+impl CapabilityHandler<RemoteDiscard> for MirrorHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: RemoteDiscardIn,
+    ) -> Result<RemoteDiscardOut, CapabilityError> {
+        let mut held = self
+            .0
+            .lock()
+            .map_err(|_| CapabilityError::internal("the mirror lock was poisoned"))?;
+        let discarded = held.remove(&input.path).is_some();
+        Ok(RemoteDiscardOut {
+            discarded,
+            remaining: held.len(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

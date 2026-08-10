@@ -50,6 +50,8 @@
   "onboarding.hint_state",
   "open.click",
   "open.recognize",
+  "open.remote_discard",
+  "open.remote_list",
   "open.resolve",
   "open.rules_list",
   "open.rules_test",

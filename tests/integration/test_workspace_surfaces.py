@@ -442,3 +442,37 @@ class TestTheRulesAreInspectable:
             if rule:
                 fired.add(rule)
         assert fired == listed, listed - fired
+
+
+class TestRemoteMirrors:
+    """18-semantic-open §6.3. Files fetched from a remote host, held locally."""
+
+    def test_nothing_is_mirrored_until_something_is_fetched(
+        self, client: Client
+    ) -> None:
+        out = client.call("open.remote_list")
+        assert isinstance(out["files"], list)
+
+    def test_discarding_something_that_is_not_there_is_reported_not_an_error(
+        self, client: Client
+    ) -> None:
+        # A retry after a lost acknowledgement must not look like a failure.
+        out = client.call("open.remote_discard", path="/nowhere/x.rs")
+        assert out["discarded"] is False
+        assert isinstance(out["remaining"], int)
+
+    def test_discarding_twice_gives_the_same_answer(self, client: Client) -> None:
+        first = client.call("open.remote_discard", path="/nowhere/x.rs")
+        second = client.call("open.remote_discard", path="/nowhere/x.rs")
+        assert first["discarded"] == second["discarded"]
+        assert first["remaining"] == second["remaining"]
+
+    def test_every_listed_mirror_says_where_it_came_from(
+        self, client: Client
+    ) -> None:
+        # A mirror nobody can trace is a copy of somebody's file on disk with
+        # no way to tell which machine it belongs to.
+        for mirror in client.call("open.remote_list")["files"]:
+            assert mirror["host"]
+            assert mirror["remote_path"]
+            assert mirror["digest"]

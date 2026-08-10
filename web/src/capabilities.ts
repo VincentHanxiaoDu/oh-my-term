@@ -434,6 +434,11 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'open.remote_list': (request: RequestId) => call(request, 'open.remote_list', {}),
+
+  'open.remote_discard': (request: RequestId, path: string) =>
+    call(request, 'open.remote_discard', { path }),
+
   'open.rules_list': (request: RequestId) => call(request, 'open.rules_list', {}),
 
   'open.rules_test': (request: RequestId, text: string) =>

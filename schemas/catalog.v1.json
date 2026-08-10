@@ -1006,6 +1006,48 @@
     },
     {
       "aliases": [],
+      "doc": "Unpins the blob so the sweeper can take it. Discarding something already gone is reported, not an error — a retry after a lost acknowledgement must not look like a failure.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "open",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "open.remote_discard",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/open/remote_discard",
+      "since": "0.1.0",
+      "title": "Discard a mirrored file",
+      "verb": "remote_discard"
+    },
+    {
+      "aliases": [],
+      "doc": "A mirror nobody can see is a copy of somebody's file sitting on disk with no way to tell where it came from or to get rid of it.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "open",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "open.remote_list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/open/remote_list",
+      "since": "0.1.0",
+      "title": "List mirrored remote files",
+      "verb": "remote_list"
+    },
+    {
+      "aliases": [],
       "doc": "A path resolved against the wrong root opens somebody else's file, so the root that was used is part of the answer and anything escaping every root is refused rather than clamped.",
       "effects": [
         "reads_fs"

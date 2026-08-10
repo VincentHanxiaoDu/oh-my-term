@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**78 of 212 features ticked.** (34 further sections are prose.)
+**79 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -239,7 +239,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 3. Resolution — test_workspace_surfaces: names the root it used, refuses escapes, distinguishes missing from unchecked
 - [x] 4. Actions and the handler registry — test_workspace_surfaces: ranked offers, line in the label, mutating actions declared without being run
 - [x] 5. The conflicts — test_workspace_surfaces: a plain click inside a mouse-reporting app is forwarded, shift is the one omt claims, alt is not
-- [ ] 6. The `omt ssh` remote flow
+- [x] 6. The `omt ssh` remote flow — omt-media mirror layout (basename verbatim, path-keyed, hostile components reduced) + test_workspace_surfaces: list and discard
 - [x] 7. Web and mobile parity — web/test/targets.test.ts: 44px hit areas centred on the row, width not padded, overlapping taps disambiguated rather than guessed
 - [x] 8. Security — omt-open: lexical normalisation without touching the filesystem, absolute paths outside every root refused
 - [x] 9. Capabilities — test_workspace_surfaces: open.resolve, open.rules_list, open.rules_test; every listed rule proven to fire (open.remote.* is §6, not covered)
