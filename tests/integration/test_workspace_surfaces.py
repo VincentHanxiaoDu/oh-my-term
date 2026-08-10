@@ -777,3 +777,53 @@ class TestRetention:
     def test_an_unknown_kind_is_refused(self, client: Client) -> None:
         with pytest.raises(Exception):
             client.call("store.retention", kind="nonsense", age_days=1)
+
+
+class TestWhatOmtWritesDown:
+    """21-data-lifecycle §8."""
+
+    def test_everything_omt_persists_is_listed(self, client: Client) -> None:
+        # The alternative is reading twelve crates, which nobody does.
+        out = client.call("store.paths")
+        assert len(out["artefacts"]) >= 10
+        assert all(a["location"] and a["what"] for a in out["artefacts"])
+
+    def test_nothing_is_readable_by_anybody_else(self, client: Client) -> None:
+        out = client.call("store.paths")
+        assert all(a["mode"] == "600" for a in out["artefacts"]), out["artefacts"]
+
+    def test_everything_says_when_it_goes(self, client: Client) -> None:
+        out = client.call("store.paths")
+        assert all(a["delete_after_days"] > 0 for a in out["artefacts"])
+
+    def test_the_encryption_answer_is_no_and_says_so_first(
+        self, client: Client
+    ) -> None:
+        out = client.call("store.paths")
+        assert out["at_rest"].startswith("omt does not encrypt")
+
+    def test_a_store_from_the_future_cannot_be_opened(self, client: Client) -> None:
+        # A partial read of a newer format silently drops whatever that version
+        # added, and writes the store back without it.
+        out = client.call("store.migrate_status", marker="999")
+        assert out["openable"] is False
+        assert out["remedy"]
+
+    def test_a_current_store_needs_no_migration(self, client: Client) -> None:
+        out = client.call("store.migrate_status", marker="1")
+        assert out["openable"] is True
+        assert out["steps"] == []
+
+    def test_the_redactor_can_be_tried_before_it_is_trusted(
+        self, client: Client
+    ) -> None:
+        # So somebody finds out what it catches before trusting it with
+        # something, rather than after.
+        out = client.call("store.redaction_test", text="export TOKEN=ghp_secret")
+        assert "ghp_secret" not in out["redacted"]
+        assert out["removed"] >= 1
+
+    def test_ordinary_text_comes_back_untouched(self, client: Client) -> None:
+        out = client.call("store.redaction_test", text="Compiling omt v0.1.0")
+        assert out["redacted"] == "Compiling omt v0.1.0"
+        assert out["removed"] == 0

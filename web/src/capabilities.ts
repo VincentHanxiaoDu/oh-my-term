@@ -440,6 +440,14 @@ export const HANDLERS = {
   'device.revoke_all': (request: RequestId, keep: string) =>
     call(request, 'device.revoke_all', { keep }),
 
+  'store.paths': (request: RequestId) => call(request, 'store.paths', {}),
+
+  'store.migrate_status': (request: RequestId, marker: string) =>
+    call(request, 'store.migrate_status', { marker }),
+
+  'store.redaction_test': (request: RequestId, text: string) =>
+    call(request, 'store.redaction_test', { text }),
+
   'store.retention': (request: RequestId, query: Record<string, unknown>) =>
     call(request, 'store.retention', query),
 

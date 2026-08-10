@@ -3185,6 +3185,212 @@ impl CapabilityHandler<StoreRetention> for SecurityHandler {
     }
 }
 
+/// Input to `store.paths`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct StorePathsIn {}
+
+/// One thing omt writes down.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ArtefactOut {
+    /// What it is.
+    pub what: String,
+    /// Where it lives, relative to the state directory.
+    pub location: String,
+    /// The permission bits it must have.
+    pub mode: String,
+    /// Whether it can hold something somebody would not want copied.
+    pub sensitive: bool,
+    /// When it is deleted.
+    pub delete_after_days: u32,
+}
+
+/// What `store.paths` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct StorePathsOut {
+    /// Everything omt persists.
+    pub artefacts: Vec<ArtefactOut>,
+    /// One line somebody deciding whether to run this can read.
+    pub summary: String,
+    /// What omt does and does not encrypt.
+    pub at_rest: String,
+}
+
+omt_catalog::capability! {
+    /// Everything omt writes to disk, and what happens to it.
+    pub struct StorePaths;
+    input  = StorePathsIn,
+    output = StorePathsOut,
+    decl = omt_catalog::Decl {
+        name: "store.paths",
+        group: "store",
+        verb: "paths",
+        title: "What omt writes down",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The alternative to this list is finding out what omt persists by reading twelve crates, which nobody does — least of all somebody deciding whether to run it on a work machine.",
+    },
+}
+
+impl CapabilityHandler<StorePaths> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        _input: StorePathsIn,
+    ) -> Result<StorePathsOut, CapabilityError> {
+        Ok(StorePathsOut {
+            artefacts: omt_store::inventory::INVENTORY
+                .iter()
+                .map(|a| ArtefactOut {
+                    what: a.what.to_owned(),
+                    location: a.where_.to_owned(),
+                    mode: format!("{:o}", a.mode),
+                    sensitive: a.sensitive,
+                    delete_after_days: omt_store::retention::ladder(a.retention).delete_after_days,
+                })
+                .collect(),
+            summary: omt_store::inventory::summary(),
+            at_rest: omt_store::inventory::at_rest_summary(),
+        })
+    }
+}
+
+/// Input to `store.migrate_status`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MigrateStatusIn {
+    /// The contents of the store's version marker.
+    pub marker: String,
+}
+
+/// What `store.migrate_status` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct MigrateStatusOut {
+    /// Whether this build can open it.
+    pub openable: bool,
+    /// The migrations that would run, in order.
+    pub steps: Vec<u32>,
+    /// Why not, when it cannot.
+    pub problem: Option<String>,
+    /// What to do about it.
+    pub remedy: Option<String>,
+}
+
+omt_catalog::capability! {
+    /// Whether this build can open a store, and what it would migrate.
+    pub struct MigrateStatus;
+    input  = MigrateStatusIn,
+    output = MigrateStatusOut,
+    decl = omt_catalog::Decl {
+        name: "store.migrate_status",
+        group: "store",
+        verb: "migrate_status",
+        title: "Can this store be opened",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Admin,
+        effects: omt_catalog::Effects::READS_FS,
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "There is no best-effort partial parse. A partial read of a newer format silently drops whatever that version added, and writes the store back without it.",
+    },
+}
+
+impl CapabilityHandler<MigrateStatus> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: MigrateStatusIn,
+    ) -> Result<MigrateStatusOut, CapabilityError> {
+        match omt_store::version::plan(&input.marker) {
+            Ok(steps) => Ok(MigrateStatusOut {
+                openable: true,
+                steps,
+                problem: None,
+                remedy: None,
+            }),
+            Err(refusal) => {
+                let json = serde_json::to_value(&refusal).unwrap_or_default();
+                Ok(MigrateStatusOut {
+                    openable: false,
+                    steps: Vec::new(),
+                    problem: Some(
+                        json.get("code")
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("unreadable")
+                            .to_owned(),
+                    ),
+                    remedy: json
+                        .get("remedy")
+                        .and_then(|r| r.as_str())
+                        .map(str::to_owned),
+                })
+            }
+        }
+    }
+}
+
+/// Input to `store.redaction_test`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RedactionTestIn {
+    /// The text to try.
+    pub text: String,
+}
+
+/// What `store.redaction_test` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RedactionTestOut {
+    /// What would be written.
+    pub redacted: String,
+    /// How many spans were replaced.
+    pub removed: usize,
+}
+
+omt_catalog::capability! {
+    /// What the redactor would do to this text.
+    pub struct RedactionTest;
+    input  = RedactionTestIn,
+    output = RedactionTestOut,
+    decl = omt_catalog::Decl {
+        name: "store.redaction_test",
+        group: "store",
+        verb: "redaction_test",
+        title: "Try the redactor",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "So somebody can find out what the detector catches before trusting it with something, rather than after.",
+    },
+}
+
+impl CapabilityHandler<RedactionTest> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: RedactionTestIn,
+    ) -> Result<RedactionTestOut, CapabilityError> {
+        let out = omt_recall::redact::redact(&omt_recall::redact::Raw::new(input.text));
+        Ok(RedactionTestOut {
+            redacted: out.text().to_owned(),
+            removed: out.removed,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -2161,6 +2161,62 @@
     },
     {
       "aliases": [],
+      "doc": "There is no best-effort partial parse. A partial read of a newer format silently drops whatever that version added, and writes the store back without it.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "store",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "store.migrate_status",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/store/migrate_status",
+      "since": "0.1.0",
+      "title": "Can this store be opened",
+      "verb": "migrate_status"
+    },
+    {
+      "aliases": [],
+      "doc": "The alternative to this list is finding out what omt persists by reading twelve crates, which nobody does — least of all somebody deciding whether to run it on a work machine.",
+      "effects": [],
+      "group": "store",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "store.paths",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/store/paths",
+      "since": "0.1.0",
+      "title": "What omt writes down",
+      "verb": "paths"
+    },
+    {
+      "aliases": [],
+      "doc": "So somebody can find out what the detector catches before trusting it with something, rather than after.",
+      "effects": [],
+      "group": "store",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "store.redaction_test",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/store/redaction_test",
+      "since": "0.1.0",
+      "title": "Try the redactor",
+      "verb": "redaction_test"
+    },
+    {
+      "aliases": [],
       "doc": "Compact first, delete second. The output of a build from three months ago is worthless; the fact that you ran it, where, and that it failed, is still useful and costs two hundred bytes.",
       "effects": [],
       "group": "store",

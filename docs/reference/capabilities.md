@@ -119,6 +119,9 @@ vanishing.
 | `ssh.plan` | query | operator | An argument vector, never a shell string: a hostname from a config file with a quote in it would otherwise become remote execution. |
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
 | `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |
+| `store.migrate_status` | query | admin | There is no best-effort partial parse. A partial read of a newer format silently drops whatever that version added, and writes the store back without it. |
+| `store.paths` | query | operator | The alternative to this list is finding out what omt persists by reading twelve crates, which nobody does — least of all somebody deciding whether to run it on a work machine. |
+| `store.redaction_test` | query | operator | So somebody can find out what the detector catches before trusting it with something, rather than after. |
 | `store.retention` | query | viewer | Compact first, delete second. The output of a build from three months ago is worthless; the fact that you ran it, where, and that it failed, is still useful and costs two hundred bytes. |
 | `term.profile` | query | viewer | A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree. |
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
@@ -134,4 +137,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-124 capabilities.
+127 capabilities.

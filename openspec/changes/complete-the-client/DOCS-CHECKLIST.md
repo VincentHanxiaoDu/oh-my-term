@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**139 of 212 features ticked.** (34 further sections are prose.)
+**140 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -286,7 +286,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 5. Encryption at rest — omt-store inventory: the answer is no and says so first, names what is relied on instead, gives the reason, and nothing claims encryption omt does not do
 - [x] 6. Crash consistency — omt-store record: a torn tail is distinguished from corruption in the middle, a file of another kind is rejected before its length is believed, an absurd length is refused rather than allocated
 - [x] 7. Migration of on-disk formats — omt-store version: a store from the future is refused rather than partly read, the two directions are different refusals with opposite remedies, no best-effort parse
-- [ ] 8. Capabilities
+- [x] 8. Capabilities — test_workspace_surfaces: store.paths, store.retention, store.migrate_status, store.redaction_test (export, import, purge, repair and quarantine are not built)
 - ~~9. OPEN QUESTIONS~~ — prose
 
 ## 22-operations
