@@ -10,11 +10,12 @@ fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         Some("layering") => layering(),
         Some("licensing") => licensing(std::env::args().nth(2)),
-        Some("codegen") => codegen(false),
+        Some("handlers") => handlers(),
+        Some("codegen") => codegen(false).and_then(|()| handlers()),
         Some("codegen-check") => codegen(true),
         Some(other) => bail!("unknown task `{other}`"),
         None => {
-            eprintln!("usage: cargo xtask <layering|licensing|codegen|codegen-check>");
+            eprintln!("usage: cargo xtask <layering|licensing|handlers|codegen|codegen-check>");
             Ok(())
         }
     }
@@ -317,6 +318,52 @@ fn dependency_licences(root: &std::path::Path) -> Result<Vec<(String, Option<Str
         out.push((name, package["license"].as_str().map(str::to_owned)));
     }
     Ok(out)
+}
+
+/// Regenerate `web/src/generated/handlers.json` from the web client's own
+/// handler table.
+///
+/// It used to be maintained by hand beside `capabilities.ts`, which meant two
+/// gates checking the same property from two sources: the Rust parity test
+/// reads this file and the Python one reads the TypeScript. They drifted, and
+/// the drift was invisible until a capability happened to be added to one and
+/// not the other. Derived from the single source, they cannot disagree.
+fn handlers() -> Result<()> {
+    let root = repo_root()?;
+    let source = std::fs::read_to_string(root.join("web/src/capabilities.ts"))?;
+    let mut names: Vec<String> = Vec::new();
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        // A handler entry is `'name': (` at the start of a line. Comments
+        // mentioning a capability in prose are indented differently and do not
+        // match, which is why the shape is required rather than just the quotes.
+        let Some(rest) = trimmed.strip_prefix('\'') else {
+            continue;
+        };
+        let Some(end) = rest.find('\'') else { continue };
+        let name = &rest[..end];
+        if rest[end + 1..].trim_start().starts_with(':') && name.contains('.') {
+            names.push(name.to_owned());
+        }
+    }
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        bail!("no handlers found in web/src/capabilities.ts — the shape must have changed");
+    }
+    let path = root.join("web/src/generated/handlers.json");
+    let mut json = String::from("[\n");
+    for (i, name) in names.iter().enumerate() {
+        json.push_str(&format!("  \"{name}\""));
+        if i + 1 < names.len() {
+            json.push(',');
+        }
+        json.push('\n');
+    }
+    json.push_str("]\n");
+    std::fs::write(&path, json)?;
+    println!("wrote {} ({} handlers)", path.display(), names.len());
+    Ok(())
 }
 
 /// The repository root, from this file's location rather than the cwd.

@@ -214,3 +214,65 @@ class TestRecall:
         assert any(
             s["command"] == "rm -rf ./build" for s in suggestions["suggestions"]
         )
+
+
+class TestTheFormatsToolsActuallyPrint:
+    """18-semantic-open §2.7. The lines people most want to click.
+
+    Whitespace splitting finds `src/main.rs:42`. It cannot find a quoted path
+    with a space in it, and it cannot find rustc's arrow form without dragging
+    the arrow along — and those are the lines printed when something is broken.
+    """
+
+    def test_a_python_traceback_frame_is_clickable(self, client: Client) -> None:
+        found = client.call(
+            "open.recognize", line='  File "/app/service.py", line 42, in handle'
+        )
+        first = found["matches"][0]
+        assert first["target"] == "/app/service.py"
+        assert first["line_number"] == 42
+
+    def test_a_quoted_path_with_a_space_survives(self, client: Client) -> None:
+        # The whole reason that rule outranks whitespace splitting.
+        found = client.call(
+            "open.recognize", line='File "/home/me/my project/app.py", line 7'
+        )
+        assert found["matches"][0]["target"] == "/home/me/my project/app.py"
+
+    def test_the_rustc_arrow_does_not_travel_with_the_path(
+        self, client: Client
+    ) -> None:
+        found = client.call("open.recognize", line="  --> crates/omt/src/main.rs:9:5")
+        first = found["matches"][0]
+        assert first["target"] == "crates/omt/src/main.rs"
+        assert first["line_number"] == 9
+
+    def test_a_rust_panic_location_is_found(self, client: Client) -> None:
+        found = client.call(
+            "open.recognize", line="thread 'main' panicked at src/lib.rs:120:9:"
+        )
+        assert found["matches"][0]["target"] == "src/lib.rs"
+
+    def test_both_node_frame_shapes_work(self, client: Client) -> None:
+        # Half a clickable stack trace is worse than none: the frames people
+        # want are usually the named ones.
+        for line, expected in [
+            ("    at handleRequest (/app/server.js:12:15)", "/app/server.js"),
+            ("    at /app/index.js:3:1", "/app/index.js"),
+        ]:
+            found = client.call("open.recognize", line=line)
+            assert found["matches"][0]["target"] == expected, line
+
+    def test_prose_containing_at_is_not_made_tappable(self, client: Client) -> None:
+        # `" at "` occurs in English. A rule that fired on it would make every
+        # log line tappable and none of them meaningful.
+        found = client.call("open.recognize", line="the file is at the top")
+        assert found["matches"] == []
+
+    def test_a_diagnostic_line_yields_one_target_not_two(
+        self, client: Client
+    ) -> None:
+        # Two overlapping matches in one span give a client two things to make
+        # tappable in the same place, and no basis for choosing.
+        found = client.call("open.recognize", line="  --> src/x.rs:9:5")
+        assert len(found["matches"]) == 1

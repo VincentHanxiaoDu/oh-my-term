@@ -81,6 +81,14 @@ pub fn recognize(line: &str) -> Vec<Match> {
     let mut out = Vec::new();
     let mut index = 0usize;
 
+    // The rule table first. It knows the formats compilers print, where the
+    // path is delimited by something other than whitespace — a quoted Python
+    // path may contain spaces, and rustc's arrow would otherwise be swept into
+    // the token. Whitespace splitting cannot see either.
+    if let Some(matched) = crate::rules::apply(line) {
+        out.push(matched);
+    }
+
     for token in line.split_whitespace() {
         // Find the token's real offset rather than assuming, since runs of
         // whitespace collapse in the iterator.
@@ -99,6 +107,13 @@ pub fn recognize(line: &str) -> Vec<Match> {
         }
         let start = start + lead;
         let end = start + trimmed.len();
+
+        // Skip anything the rule table already claimed: two overlapping
+        // matches in the same span give a client two things to make tappable
+        // in the same place, and it has no basis for choosing.
+        if out.iter().any(|m| start < m.end && m.start < end) {
+            continue;
+        }
 
         if let Some(url) = as_url(trimmed) {
             out.push(Match {
