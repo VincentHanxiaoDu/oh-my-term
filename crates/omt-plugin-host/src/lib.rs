@@ -7,6 +7,7 @@
 //! enforcement.
 
 pub mod api;
+pub mod distribution;
 pub mod fanout;
 pub mod lifecycle;
 pub mod manifest;
