@@ -99,6 +99,11 @@ impl Modes {
     pub fn contains(&self, m: TermMode) -> bool {
         self.set.contains(&m)
     }
+
+    /// Every mode that is on.
+    pub fn iter(&self) -> impl Iterator<Item = TermMode> + '_ {
+        self.set.iter().copied()
+    }
 }
 
 impl Terminal {
@@ -696,14 +701,17 @@ impl Perform for State {
                 };
                 self.grid_mut().erase_line(extent);
             }
+            // IL and DL act from the cursor row, not from the top of the
+            // scrolling region. Scrolling the whole region instead moves the
+            // rows above the cursor, so an editor deleting a line mid-file
+            // redraws the screen one row off.
             'L' => {
                 let n = arg(params, 0, 1);
-                self.grid_mut().scroll_down(n);
+                self.grid_mut().insert_lines(n);
             }
             'M' => {
                 let n = arg(params, 0, 1);
-                let off = self.grid_mut().scroll_up(n);
-                self.retire(off);
+                self.grid_mut().delete_lines(n);
             }
             'P' => self.grid_mut().delete_cells(arg(params, 0, 1)),
             '@' => self.grid_mut().insert_cells(arg(params, 0, 1)),
@@ -826,11 +834,21 @@ impl Perform for State {
             (None, b'c') => {
                 // RIS. The scrollback survives: a program resetting the
                 // terminal has not asked to destroy the user's history.
+                let was = std::mem::take(&mut self.modes);
                 self.primary.hard_reset();
                 self.alternate.hard_reset();
                 self.active = Which::Primary;
-                self.modes = Modes::default();
                 self.tab_stops = default_tab_stops(self.primary.size().cols);
+                // Every mode a reset turned off is announced. A client tracking
+                // modes by event -- which is the only way a remote one can --
+                // would otherwise still believe the terminal was on the
+                // alternate screen, in bracketed paste, or reporting mouse.
+                for mode in was.iter() {
+                    self.emit(HostAction::ModeChanged {
+                        mode,
+                        enabled: false,
+                    });
+                }
             }
             _ => {}
         }

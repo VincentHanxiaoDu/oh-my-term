@@ -347,6 +347,63 @@ impl Grid {
         }
     }
 
+    /// Insert blank lines at the cursor, pushing the rest of the region down.
+    ///
+    /// IL, and *not* the same as scrolling the region: the rows above the
+    /// cursor must not move. An editor deleting a line in the middle of a file
+    /// would otherwise redraw the whole screen one row off.
+    ///
+    /// Outside the scrolling region it does nothing, which is what every real
+    /// terminal does and what full-screen programs rely on when they set a
+    /// region and then address rows outside it.
+    pub fn insert_lines(&mut self, n: u16) {
+        let row = self.cursor.row;
+        if row < self.margins.top || row > self.margins.bottom {
+            return;
+        }
+        let bottom = self.margins.bottom as usize;
+        let at = row as usize;
+        let n = (n as usize).min(bottom - at + 1);
+        if n == 0 {
+            return;
+        }
+        self.rows.drain(bottom + 1 - n..=bottom);
+        let template = self.cursor.erase_cell();
+        for _ in 0..n {
+            let mut blank = Line::new();
+            blank.reset(template);
+            self.rows.insert(at, blank);
+        }
+    }
+
+    /// Delete lines at the cursor, pulling the rest of the region up.
+    ///
+    /// DL, the mirror of [`Self::insert_lines`], and outside the region it
+    /// likewise does nothing.
+    ///
+    /// The deleted rows are dropped rather than returned: they left from the
+    /// middle of the screen, not off the top, so they are not scrollback. A
+    /// line an editor deleted is not history.
+    pub fn delete_lines(&mut self, n: u16) {
+        let row = self.cursor.row;
+        if row < self.margins.top || row > self.margins.bottom {
+            return;
+        }
+        let bottom = self.margins.bottom as usize;
+        let at = row as usize;
+        let n = (n as usize).min(bottom - at + 1);
+        if n == 0 {
+            return;
+        }
+        self.rows.drain(at..at + n);
+        let template = self.cursor.erase_cell();
+        for i in 0..n {
+            let mut blank = Line::new();
+            blank.reset(template);
+            self.rows.insert(bottom + 1 - n + i, blank);
+        }
+    }
+
     /// Erase part of the cursor's line.
     pub fn erase_line(&mut self, extent: EraseExtent) {
         let template = self.cursor.erase_cell();
