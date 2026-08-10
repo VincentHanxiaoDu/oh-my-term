@@ -10,8 +10,6 @@
 import { devices, expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-test.use({ ...devices['iPhone 13'] })
-
 // The credential the global setup joined with, not the invite: an invite is
 // exchanged once, and every test after the first would be refused.
 const TOKEN = process.env['OMT_CREDENTIAL'] ?? process.env['OMT_TOKEN'] ?? ''
@@ -52,7 +50,7 @@ test('the terminal is always one tap away', async ({ page }) => {
 
 test('block view lists the commands run in a session', async ({ page }) => {
   await openASession(page)
-  await page.locator('.hidden-input').pressSequentially('echo block-view-probe\r')
+  await page.locator('.composer-field').pressSequentially('echo block-view-probe\r')
   await page.waitForTimeout(1500)
 
   const commands = page.locator('.surface').filter({ hasText: 'Commands' })
@@ -86,7 +84,7 @@ test('search finds something written earlier in the session', async ({ page }) =
   // Over the instance's own view of the session, not the visible grid: the
   // answer to "where did that error go" is almost always above the fold.
   await openASession(page)
-  await page.locator('.hidden-input').pressSequentially('echo search-me-later\r')
+  await page.locator('.composer-field').pressSequentially('echo search-me-later\r')
   await page.waitForTimeout(1200)
 
   await page.getByRole('button', { name: 'Search this session' }).tap()

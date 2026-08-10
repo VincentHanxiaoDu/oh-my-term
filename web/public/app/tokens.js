@@ -150,10 +150,12 @@ html, body {
 .bar {
   display: flex;
   align-items: center;
-  /* Wraps, because the surface switcher is a full-width row *inside* the bar.
-     Without this it sits alongside the title and pushes the header 14px wider
-     than the screen, and the whole page pans sideways. */
-  flex-wrap: wrap;
+  /* Never wraps. It wrapped, so the switcher could be a full-width row inside
+     it — and then a long instance name pushed the action button onto a third
+     line, where nobody taps because nobody expects it there. The switcher is
+     its own row now, outside the bar, and this stays one line at any width and
+     any font scale. */
+  flex-wrap: nowrap;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
@@ -164,6 +166,9 @@ html, body {
 
 .bar h1 {
   margin: 0;
+  /* Allowed to be narrower than its text, or the title refuses to shrink and
+     pushes everything to its right off the bar. */
+  min-width: 0;
   font-size: var(--text-lg);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -177,9 +182,16 @@ html, body {
    and not as a button: it is the name of the thing, and a chevron is enough to
    say it can be tapped. */
 .title-button {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-1);
+  /* The same shrink-and-ellipsis the heading has. An inline-flex button does
+     not inherit it, so a tailnet name — which is what an instance is called by
+     default — grew the bar until the controls fell off it. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
   min-height: var(--touch-min);
   margin: 0;
   padding: 0;
@@ -189,7 +201,13 @@ html, body {
   font: inherit;
   cursor: pointer;
 }
+.title-button .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .title-button .chevron-down {
+  flex: 0 0 auto;
   font-size: var(--text-sm);
   color: var(--fg-muted);
 }
@@ -459,18 +477,55 @@ html, body {
   mix-blend-mode: difference;
 }
 
-/* The key bar. Fixed to the bottom of the shell rather than the page, so the
-   on-screen keyboard pushes it rather than covering it. */
-.keybar {
-  display: flex;
-  gap: var(--space-1);
-  padding: var(--space-2);
+/* Everything below the grid: the keys a phone does not have, and the field a
+   command is typed into. Fixed to the bottom of the shell rather than the
+   page, so the on-screen keyboard pushes it rather than covering it. */
+.terminal-foot {
+  flex: 0 0 auto;
   border-top: 1px solid var(--border);
   background: var(--bg);
-  flex: 0 0 auto;
-  overflow-x: auto;
 }
-.keybar button {
+.keybar-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  padding-bottom: 0;
+}
+/* Wraps rather than scrolls. Eleven keys in one scrolling row hides the last
+   four, and a key nobody can see is a key nobody knows exists. */
+.keybar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.keybar-controls {
+  display: flex;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+.keybar-control {
+  min-width: 40px;
+  height: var(--touch-min);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  font: var(--text-sm) ui-monospace, monospace;
+  cursor: pointer;
+}
+.keybar-handle {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  background: none;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.keybar > button {
   flex: 0 0 auto;
   min-width: var(--touch-min);
   height: var(--touch-min);
@@ -482,7 +537,7 @@ html, body {
   font: var(--text-sm) ui-monospace, monospace;
   cursor: pointer;
 }
-.keybar button[aria-pressed="true"] {
+.keybar > button[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: transparent;
@@ -522,18 +577,20 @@ html, body {
 
 /* --- The structured surfaces ------------------------------------------- */
 
-/* The surface switcher. A row of tabs under the title rather than a menu:
-   each is a complete way of reading the session, and which one somebody wants
-   depends on what they came to find out. */
+/* The surface switcher. Its own row under the bar rather than inside it: as a
+   full-width flex child it forced the bar to wrap, and a wrapped bar puts the
+   action button somewhere nobody taps. */
 .surfaces {
   display: flex;
   gap: var(--space-1);
-  flex: 0 0 100%;
-  order: 9;
-  margin-top: var(--space-2);
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
   overflow-x: auto;
   scrollbar-width: none;
 }
+.surfaces::-webkit-scrollbar { display: none; }
 .surface {
   flex: 0 0 auto;
   min-height: 36px;
@@ -710,9 +767,14 @@ html, body {
   flex: 0 0 auto;
   padding: var(--space-2);
   padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
   background: var(--bg);
   flex-wrap: wrap;
+}
+.composer-note {
+  flex: 1 1 100%;
+  padding: var(--space-2) var(--space-1);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
 }
 .composer-field {
   flex: 1 1 auto;
@@ -724,8 +786,13 @@ html, body {
   background: var(--bg-elevated);
   color: var(--fg);
   /* Not smaller: iOS zooms into a focused control with text under 16px and
-     does not zoom back out. */
-  font: 16px/1.4 inherit;
+     does not zoom back out.
+     Written long-hand: the font shorthand with "inherit" as the family is not
+     valid CSS, so the browser dropped the whole declaration and the field
+     rendered at 11px. */
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.4;
   resize: none;
 }
 .composer-send {
@@ -787,7 +854,9 @@ html, body {
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   color: var(--fg);
-  font: 16px/1.4 inherit;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.4;
 }
 .search-hit .meta {
   flex: 0 0 auto;
@@ -804,7 +873,12 @@ html, body {
 /* The mark. */
 .mark { display: inline-flex; color: var(--accent); }
 .mark-agent { color: var(--working); }
-.bar .mark { margin-right: var(--space-1); }
+.bar .mark {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: var(--space-1);
+}
+.mark svg { display: block; }
 
 
 /* --- Interaction cards -------------------------------------------------- */

@@ -13,8 +13,6 @@
  */
 import { devices, expect, test } from '@playwright/test'
 
-test.use({ ...devices['iPhone 13'] })
-
 // The credential the global setup joined with, not the invite: an invite is
 // exchanged once, and every test after the first would be refused.
 const TOKEN = process.env['OMT_CREDENTIAL'] ?? process.env['OMT_TOKEN'] ?? ''
@@ -52,7 +50,7 @@ test('there is something a soft keyboard can open on', async ({ page }) => {
   // read-only on the only device this product exists for.
   await openASession(page)
 
-  const input = page.locator('.hidden-input')
+  const input = page.locator('.composer-field')
   await expect(input).toBeAttached()
   await expect(input).toBeFocused()
 })
@@ -62,46 +60,37 @@ test('the font is big enough that iOS does not zoom into it', async ({ page }) =
   // does not zoom back out — the terminal ends up half off-screen and stays
   // there. The fix is invisible on desktop, so it needs a test that is not.
   await openASession(page)
+  await expect(page.locator('.composer-field')).toBeVisible()
   const size = await page
-    .locator('.hidden-input')
+    .locator('.composer-field')
     .evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize))
   expect(size).toBeGreaterThanOrEqual(16)
 })
 
-test('the keyboard is not torn down by every repaint', async ({ page }) => {
-  // The terminal repaints every 150ms. Rebuilding the input on each repaint is
-  // a keyboard that closes six times a second, an IME composition that can
-  // never finish, and dictation that stops mid-sentence — and none of it shows
-  // on a desktop, where the keyboard is not attached to the element.
+test('the field survives a repaint, keeping focus and a half-typed command', async ({
+  page,
+}) => {
+  // The terminal repaints continuously. Rebuilding the screen each time detaches
+  // the field — which blurs it, closes the keyboard, and throws away whatever
+  // was being typed.
   await openASession(page)
-  const input = page.locator('.hidden-input')
+  const input = page.locator('.composer-field')
+  await input.fill('half typed')
   await expect(input).toBeFocused()
 
   // Several repaints' worth.
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(1200)
   await expect(input).toBeFocused()
-
-  // And it is still the same element, not a replacement that happens to be
-  // focused: a replaced node loses an in-progress composition even when focus
-  // is handed back.
-  const same = await page.evaluate(() => {
-    const node = document.querySelector('.hidden-input')
-    ;(node as HTMLElement & { marked?: boolean }).marked = true
-    return true
-  })
-  expect(same).toBe(true)
-  await page.waitForTimeout(600)
-  const survived = await page.evaluate(
-    () =>
-      (document.querySelector('.hidden-input') as (HTMLElement & { marked?: boolean }) | null)
-        ?.marked === true,
-  )
-  expect(survived, 'the input element was replaced by a repaint').toBe(true)
+  await expect(input).toHaveValue('half typed')
 })
 
-test('typing reaches the shell and the echo comes back', async ({ page }) => {
+test('a command typed and sent reaches the shell', async ({ page }) => {
+  // Drafted in a real field and sent as one line. Putting a paragraph into a
+  // pty one keystroke at a time is miserable, and a one-pixel transparent
+  // capture field is a shape an input method cannot work with at all.
   await openASession(page)
-  await page.locator('.hidden-input').pressSequentially('echo omt-typed')
+  await page.locator('.composer-field').fill('echo omt-typed')
+  await page.locator('.composer-send').tap()
   await expect(page.locator('.terminal-body')).toContainText('omt-typed')
 })
 
@@ -119,7 +108,8 @@ test('a keystroke that is refused says so instead of doing nothing', async ({ pa
   const rows = second.locator('.body button.tap')
   await expect(rows.first()).toBeVisible()
   await rows.first().tap()
-  await second.locator('.hidden-input').pressSequentially('echo second')
+  await second.locator('.composer-field').fill('echo second')
+  await second.locator('.composer-send').tap()
 
   // Either it was allowed and echoed, or it was refused and said so. What must
   // not happen is neither.
@@ -147,24 +137,78 @@ test('typing works in a session opened from the roster, not only a new one', asy
   await expect(rows.first()).toBeVisible()
   await rows.first().tap()
 
-  await page.locator('.hidden-input').pressSequentially('echo from-the-roster')
+  await page.locator('.composer-field').fill('echo from-the-roster')
+  await page.locator('.composer-send').tap()
   await expect(page.locator('.terminal-body')).toContainText('from-the-roster')
 })
 
-test('the input is emptied after every keystroke', async ({ page }) => {
-  // Left un-emptied, the element accumulates: the second keystroke sends both
-  // characters again, so "ls" arrives as "lls".
+test('the field keeps a draft while typing and empties on send', async ({ page }) => {
+  // The opposite of the old rule, and deliberately: a field cleared on every
+  // keystroke cannot hold a half-typed command, and cannot hold an input
+  // method's candidates either.
   await openASession(page)
-  const input = page.locator('.hidden-input')
-  await input.pressSequentially('ab')
+  const input = page.locator('.composer-field')
+  await input.pressSequentially('echo draft')
+  await expect(input).toHaveValue('echo draft')
+
+  await page.locator('.composer-send').tap()
   await expect(input).toHaveValue('')
 })
 
-test('tapping the terminal brings the keyboard back', async ({ page }) => {
+test('Enter sends, and shift-Enter does not', async ({ page }) => {
+  // Enter is how a command is run. Shift-Enter is the newline the paragraph
+  // this field exists for needs.
   await openASession(page)
-  await page.locator('.hidden-input').blur()
-  await page.locator('.terminal-body').tap()
-  await expect(page.locator('.hidden-input')).toBeFocused()
+  const input = page.locator('.composer-field')
+  await input.fill('echo enter-sends')
+  await input.press('Enter')
+  await expect(page.locator('.terminal-body')).toContainText('enter-sends')
+  await expect(input).toHaveValue('')
+
+  await input.pressSequentially('one')
+  await input.press('Shift+Enter')
+  await expect(input).toHaveValue(/one\n/)
+})
+
+test('the field is focused when a session opens, ready to type', async ({ page }) => {
+  await openASession(page)
+  await expect(page.locator('.composer-field')).toBeFocused()
+})
+
+test('every key a phone keyboard lacks is reachable', async ({ page }) => {
+  // Eleven of them. In one scrolling row the last four are invisible, and a key
+  // nobody can see is a key nobody knows exists.
+  await openASession(page)
+  const labels = await page.locator('.keybar > button').allTextContents()
+  for (const label of ['Esc', 'Tab', 'Ctrl', '↑', '↓', '←', '→', '/', '-', '|', '~']) {
+    expect(labels, `${label} is missing from the key bar`).toContain(label)
+  }
+  // And every one is on screen rather than scrolled out of sight: the bar
+  // wraps, so nothing is hidden behind a horizontal scroll nobody attempts.
+  const width = page.viewportSize()?.width ?? 0
+  const boxes = await page.locator('.keybar > button').evaluateAll((nodes) =>
+    nodes.map((n) => {
+      const r = n.getBoundingClientRect()
+      return { label: n.textContent ?? '', right: Math.round(r.right) }
+    }),
+  )
+  for (const box of boxes) {
+    expect(box.right, `${box.label} is off the right of the screen`).toBeLessThanOrEqual(width)
+  }
+})
+
+test('the agent keys are reachable, and the bar can be folded away', async ({ page }) => {
+  // A second row behind an undiscoverable swipe is a second row nobody finds,
+  // and a bar that cannot be hidden eats a forty-column screen.
+  await openASession(page)
+  await page.getByRole('button', { name: 'Show the agent keys' }).tap()
+  const labels = await page.locator('.keybar > button').allTextContents()
+  expect(labels).toContain('^C')
+
+  await page.getByRole('button', { name: 'Hide the key bar' }).tap()
+  await expect(page.locator('.keybar')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Show the key bar' }).tap()
+  await expect(page.locator('.keybar')).toBeVisible()
 })
 
 test('going back and returning shows the terminal, not a spinner', async ({ page }) => {
@@ -209,7 +253,7 @@ test('a full screen of output is shown, not the last few lines', async ({ page }
   // With a four-row grid, `git status` showed one fragment of one line. This
   // asserts the grid is tall enough to be a terminal.
   await openASession(page)
-  await page.locator('.hidden-input').pressSequentially('printf "L1\\nL2\\nL3\\nL4\\nL5\\nL6\\nL7\\nL8\\n"\r')
+  await page.locator('.composer-field').pressSequentially('printf "L1\\nL2\\nL3\\nL4\\nL5\\nL6\\nL7\\nL8\\n"\r')
   await page.waitForTimeout(1200)
   const body = page.locator('.terminal-body')
   await expect(body).toContainText('L1')
@@ -264,9 +308,7 @@ test('forgetting an instance is offered, and is not a swipe', async ({ page }) =
   await expect(page.getByRole('button', { name: /^Forget / })).toBeVisible()
 })
 
-test('a word typed through an input method arrives once, when it is committed', async ({
-  page,
-}) => {
+test('a word typed through an input method survives to the field', async ({ page }) => {
   // The failure this exists for: a pinyin keyboard puts `n i h a o` in the
   // field and waits for a character to be chosen, and clearing the field on
   // every `input` event wiped the candidate buffer on the first keystroke — so
@@ -275,28 +317,31 @@ test('a word typed through an input method arrives once, when it is committed', 
   // Playwright's typing does not go through an input method, so this drives the
   // composition events by hand. It is the only way to reach this path at all.
   await openASession(page)
-  const input = page.locator('.hidden-input')
+  const input = page.locator('.composer-field')
   await expect(input).toBeFocused()
 
   await page.evaluate(() => {
-    const field = document.querySelector('.hidden-input') as HTMLTextAreaElement
+    const field = document.querySelector('.composer-field') as HTMLTextAreaElement
     const compose = (data: string, type: 'compositionstart' | 'compositionupdate') => {
       field.value = data
       field.dispatchEvent(new CompositionEvent(type, { data, bubbles: true }))
-      // Chrome fires an `input` with isComposing during composition.
       field.dispatchEvent(new InputEvent('input', { data, isComposing: true, bubbles: true }))
     }
     compose('n', 'compositionstart')
     compose('ni', 'compositionupdate')
     compose('nihao', 'compositionupdate')
-    // The character the person chose, which is what should be sent.
     field.value = '你好'
     field.dispatchEvent(new CompositionEvent('compositionend', { data: '你好', bubbles: true }))
+    field.dispatchEvent(new InputEvent('input', { data: '你好', bubbles: true }))
   })
 
-  // The composing keystrokes must not have been sent; the committed word must.
-  await expect(page.locator('.terminal-body')).toContainText('你好', { timeout: 5000 })
+  // The chosen characters are in the field, and the letters that produced them
+  // are not. Nothing has been sent yet — that is what the send button is for,
+  // and it is the whole reason a field beats a capture box on a phone.
+  await expect(input).toHaveValue('你好')
   await expect(page.locator('.terminal-body')).not.toContainText('nihao')
-  // And the field is empty afterwards, ready for the next word.
+
+  await page.locator('.composer-send').tap()
+  await expect(page.locator('.terminal-body')).toContainText('你好', { timeout: 5000 })
   await expect(input).toHaveValue('')
 })

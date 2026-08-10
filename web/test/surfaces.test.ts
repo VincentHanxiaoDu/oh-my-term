@@ -359,3 +359,36 @@ describe('what happens to a tap made offline', () => {
     expect(waiting(3, 'Offline')).toContain('3 actions are waiting')
   })
 })
+
+describe('the stylesheet itself', () => {
+  it('contains no backtick, which would end the template literal', async () => {
+    // Hit three times: a backtick inside a CSS comment terminates the string
+    // the stylesheet lives in, and the failure is a TypeScript parse error
+    // hundreds of lines away that says nothing about CSS.
+    const { STYLES } = await import('../src/tokens.js')
+    expect(STYLES).not.toContain('`')
+  })
+
+  it('has no font shorthand that names inherit as a family', async () => {
+    // `font: 16px/1.4 inherit` is not valid CSS. The browser drops the whole
+    // declaration, so a field meant to be 16px renders at 11px and iOS zooms
+    // into it and never zooms back out.
+    const { STYLES } = await import('../src/tokens.js')
+    const bad = [...STYLES.matchAll(/font:\s*[^;]*\binherit\s*;/g)]
+      .map((m) => m[0])
+      .filter((decl) => decl !== 'font: inherit;')
+    expect(bad).toEqual([])
+  })
+
+  it('sets every text input to at least 16px', async () => {
+    // Anything smaller and Safari zooms the page in on focus and does not zoom
+    // back out, which leaves the terminal half off-screen for good.
+    const { STYLES } = await import('../src/tokens.js')
+    for (const rule of ['.composer-field', '.search-field', '.hidden-input']) {
+      const block = STYLES.slice(STYLES.indexOf(rule))
+      const size = /font-size:\s*(\d+)px/.exec(block.slice(0, block.indexOf('}')))
+      expect(size?.[1], `${rule} has no explicit font size`).toBeTruthy()
+      expect(Number(size?.[1]), `${rule} is under 16px`).toBeGreaterThanOrEqual(16)
+    }
+  })
+})

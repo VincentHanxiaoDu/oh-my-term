@@ -237,6 +237,13 @@ export class App {
     #shellIntegration = {};
     /** What is in the search field, kept so returning to it does not clear it. */
     #query = '';
+    /** A half-typed command per session, so a repaint does not lose it. */
+    #draft = {};
+    /** Whether the key bar is folded away. It eats viewport, and on a
+     * forty-column screen that matters. */
+    #keysHidden = false;
+    /** Whether the key bar is showing the agent row. */
+    #keysSecondary = false;
     /** Devices this instance has let in. */
     #devices = [];
     /** Other instances whose rosters join this one. */
@@ -359,6 +366,13 @@ export class App {
                 this.#paintList();
                 return;
             }
+            if (route.screen === 'terminal') {
+                // The terminal decides for itself whether this is a repaint or a
+                // rebuild: what is at the bottom of it depends on what the program is
+                // doing, not only on which session is open.
+                this.#renderTerminal(route.session);
+                return;
+            }
             if (route.screen === 'search') {
                 // Nothing here is driven by the store, and repainting would take the
                 // field out from under whoever is typing in it.
@@ -422,7 +436,6 @@ export class App {
                 onTap: () => this.go({ screen: 'search', session }),
             },
         });
-        bar.append(this.#surfaceSwitch(session, 'blocks'));
         const body = el('div', 'body');
         // Said rather than shown as an empty list, which reads as "you have run
         // nothing" about a shell that has run plenty.
@@ -451,7 +464,7 @@ export class App {
         };
         this.#paint();
         body.append(notice, list);
-        this.#shell(bar, body);
+        this.#shell(bar, body, undefined, this.#surfaceSwitch(session, 'blocks'));
     }
     /** One command, as a card. */
     #blockCard(session, block) {
@@ -680,7 +693,6 @@ export class App {
                 onTap: () => this.go({ screen: 'search', session }),
             },
         });
-        bar.append(this.#surfaceSwitch(session, 'transcript'));
         const body = el('div', 'body transcript');
         const list = el('div', 'transcript-list');
         this.#list = list;
@@ -690,7 +702,7 @@ export class App {
         };
         this.#paint();
         body.append(list);
-        this.#shell(bar, body, this.#composer(session));
+        this.#shell(bar, body, this.#composer(session), this.#surfaceSwitch(session, 'transcript'));
     }
     /**
      * Search within a session.
@@ -1080,8 +1092,14 @@ export class App {
                     : waiting(this.#store.queued, 'Offline — showing what was last known.');
         return box;
     }
-    #shell(bar, body, keybar) {
+    #shell(bar, body, keybar, under) {
         this.#root.append(bar);
+        // Under the bar, never inside it: as a full-width child of a flex row it
+        // forced the bar to wrap, and a wrapped bar puts the action button on a
+        // line nobody taps.
+        if (under) {
+            this.#root.append(under);
+        }
         // Under the bar and above everything else, on every screen: a connection
         // that has gone is a fact about all of them, and saying it once per screen
         // would mean forgetting it on the screen where it matters.
@@ -1177,14 +1195,21 @@ export class App {
      * keyboard is not attached to the element at all.
      */
     #renderTerminal(session) {
-        const input = this.#terminalInput();
-        if (this.#mountedSession === session && this.#grid !== null && this.#root.contains(input)) {
-            // Already on screen: repaint the grid and leave everything else, above
-            // all the focused input, exactly where it is.
+        // Mounted per session, and the mount is keyed on what the bottom of the
+        // screen is: a full-screen program takes keys directly and an ordinary
+        // shell is typed into through a field, and switching between them is a
+        // different screen rather than a repaint.
+        const direct = this.#directInput();
+        const shape = `${session}:${direct ? 'direct' : 'compose'}:${this.#keysHidden}:${this.#keysSecondary}`;
+        if (this.#mountedSession === shape && this.#grid !== null) {
             this.#paintGrid();
             this.#paintNotice();
             return;
         }
+        // A different shape is a rebuild, and a rebuild starts from nothing.
+        // Appending to what is already there is how one screen ends up with two key
+        // bars and two of every control on them.
+        this.#root.textContent = '';
         const title = this.#store.state.sessions.find((s) => s.id === session)?.title;
         const bar = appBar({
             title: title ?? 'Terminal',
@@ -1194,24 +1219,24 @@ export class App {
                 onTap: () => this.go({ screen: 'search', session }),
             },
         });
-        bar.append(this.#surfaceSwitch(session, 'terminal'));
         const body = el('div', 'body terminal-body');
         const notice = el('div', 'notice');
         this.#notice = notice;
         const grid = el('div', 'terminal-grid');
         this.#grid = grid;
         body.append(notice, grid);
-        body.append(input);
         this.#paintGrid();
         this.#paintNotice();
-        // Tapping the terminal brings the keyboard back after it was dismissed,
-        // which is the gesture every mobile terminal uses.
-        body.addEventListener('click', () => input.focus());
-        this.#shell(bar, body, this.#keybar());
-        this.#mountedSession = session;
-        // After it is in the document, or focus does nothing. Opening a session is
-        // the one moment focus is taken: from then on it follows the person.
-        input.focus();
+        const foot = el('div', 'terminal-foot');
+        foot.append(this.#keybar(), this.#terminalComposer(session));
+        this.#shell(bar, body, foot, this.#surfaceSwitch(session, 'terminal'));
+        this.#mountedSession = shape;
+        // Focus goes to whichever field this screen is typed through, after it is
+        // in the document — before, focus does nothing.
+        const field = this.#root.querySelector('.composer-field, .hidden-input');
+        if (field instanceof HTMLElement) {
+            field.focus();
+        }
     }
     /**
      * Say why a keystroke did nothing.
@@ -1365,22 +1390,129 @@ export class App {
         this.#input = input;
         return input;
     }
+    /**
+     * The keys a phone keyboard does not have.
+     *
+     * Eleven of them, and every one has to be reachable. Crammed into one
+     * scrolling row — which is what this was — the last four are invisible, and
+     * an invisible key is one nobody knows exists. They wrap instead, and the
+     * second row of agent keys has a control rather than living behind a swipe
+     * nobody discovers.
+     */
     #keybar() {
+        const wrap = el('div', 'keybar-wrap');
+        if (this.#keysHidden) {
+            // Hideable, because it eats viewport and on a forty-column screen that
+            // matters. Shown as a thin handle rather than vanishing, or there is no
+            // way back.
+            const show = el('button', 'keybar-handle', '⌨ keys');
+            show.setAttribute('aria-label', 'Show the key bar');
+            show.addEventListener('click', () => {
+                this.#keysHidden = false;
+                this.render();
+            });
+            wrap.append(show);
+            return wrap;
+        }
+        const keys = this.#keysSecondary ? KEY_BAR_SECONDARY : KEY_BAR;
         const bar = el('div', 'keybar');
-        KEY_BAR.forEach((key, index) => {
+        keys.forEach((key, index) => {
             const button = el('button', undefined, key.label);
+            button.setAttribute('aria-label', key.label);
             if ('latch' in key.action) {
                 button.setAttribute('aria-pressed', String(this.#latched === key.action.latch));
             }
             button.addEventListener('click', () => {
-                const bytes = this.pressBarKey(index);
+                const bytes = this.pressBarKey(index, this.#keysSecondary);
                 if (bytes !== null) {
                     void this.type(bytes);
                 }
             });
             bar.append(button);
         });
-        return bar;
+        const controls = el('div', 'keybar-controls');
+        const swap = el('button', 'keybar-control', this.#keysSecondary ? 'abc' : '^C…');
+        swap.setAttribute('aria-label', this.#keysSecondary ? 'Show the ordinary keys' : 'Show the agent keys');
+        swap.addEventListener('click', () => {
+            this.#keysSecondary = !this.#keysSecondary;
+            this.render();
+        });
+        const hide = el('button', 'keybar-control', '⌄');
+        hide.setAttribute('aria-label', 'Hide the key bar');
+        hide.addEventListener('click', () => {
+            this.#keysHidden = true;
+            this.render();
+        });
+        controls.append(swap, hide);
+        wrap.append(bar, controls);
+        return wrap;
+    }
+    /**
+     * Where somebody types on a phone.
+     *
+     * A real, visible field. The capture field this replaces was one pixel square
+     * and transparent, which is a shape an input method cannot work with — the
+     * keyboard opened, the candidates went nowhere, and nothing arrived. And per
+     * `24 §3.1` drafting belongs in a text field anyway: putting a
+     * paragraph-long prompt into a pty one keystroke at a time is miserable.
+     *
+     * A full-screen program is the exception. In the alternate screen every
+     * keystroke means something immediately — `j` moves in vim — so a field you
+     * submit is useless there, and omt switches to sending keys directly. It
+     * knows which it is looking at, so nobody has to tell it.
+     */
+    #terminalComposer(session) {
+        const box = el('div', 'composer');
+        const direct = this.#directInput();
+        if (direct) {
+            const note = el('span', 'composer-note', 'Full-screen program — keys go straight through');
+            const field = this.#terminalInput();
+            box.append(note, field);
+            return box;
+        }
+        const field = document.createElement('textarea');
+        field.className = 'composer-field';
+        field.rows = 1;
+        field.placeholder = 'Type a command';
+        field.setAttribute('aria-label', 'Type a command');
+        field.setAttribute('autocapitalize', 'off');
+        field.setAttribute('autocorrect', 'off');
+        field.setAttribute('spellcheck', 'false');
+        field.value = this.#draft[session] ?? '';
+        const send = () => {
+            const text = field.value;
+            if (text === '') {
+                return;
+            }
+            field.value = '';
+            delete this.#draft[session];
+            field.style.height = 'auto';
+            void this.type(`${text}\r`);
+        };
+        field.addEventListener('input', () => {
+            // Kept, so a repaint does not lose a half-typed command.
+            this.#draft[session] = field.value;
+            field.style.height = 'auto';
+            field.style.height = `${Math.min(field.scrollHeight, 140)}px`;
+        });
+        field.addEventListener('keydown', (event) => {
+            // Enter sends; shift-enter is a newline, for the paragraph this exists
+            // for. Never while an input method is composing — there Enter chooses a
+            // candidate and sending would cut the word in half.
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+                event.preventDefault();
+                send();
+            }
+        });
+        const button = el('button', 'composer-send', 'Send');
+        button.setAttribute('aria-label', 'Send');
+        button.addEventListener('click', send);
+        box.append(field, button);
+        return box;
+    }
+    /** Whether keys should go straight through rather than through a field. */
+    #directInput() {
+        return this.#terminal.kind === 'content' && this.#terminal.value.alternate_screen;
     }
     #renderThreads(session) {
         const title = this.#store.state.sessions.find((s) => s.id === session)?.title;
