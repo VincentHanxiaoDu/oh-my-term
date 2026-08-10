@@ -8,8 +8,10 @@
 pub mod app;
 pub mod chrome;
 pub mod hint;
+pub mod overlay;
 
 pub use chrome::{Chrome, Tab, status_line, tab_bar};
+pub use overlay::{Choice, Overlay, render as render_overlay};
 pub mod layout;
 pub mod render;
 

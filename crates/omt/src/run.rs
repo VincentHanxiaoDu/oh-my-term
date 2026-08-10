@@ -79,6 +79,10 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let mut shown_hint: Option<Option<&'static str>> = None;
     let mut shown_bar: Option<String> = None;
     let mut shown_bottom: Option<String> = None;
+    // The list on screen, if any: the palette, the agents, or the sessions.
+    let mut overlay: Option<omt_tui::Overlay> = None;
+    let mut shown_overlay: Option<Vec<String>> = None;
+    let mut chosen: Option<String> = None;
     let mut term_rows = rows;
     let mut term_cols = cols;
     let mut layout_dirty = true;
@@ -203,6 +207,17 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 })
                 .collect(),
         };
+        if let Some(open) = &overlay {
+            let lines = omt_tui::render_overlay(open, term_cols, term_rows.saturating_sub(2));
+            if shown_overlay.as_ref() != Some(&lines) {
+                for (i, line) in lines.iter().enumerate() {
+                    write!(out, "\x1b[{};1H\x1b[7m{line}\x1b[0m", i as u16 + 2)
+                        .context("drawing the overlay")?;
+                }
+                shown_overlay = Some(lines);
+            }
+        }
+
         let bar = omt_tui::tab_bar(&chrome, term_cols);
         if shown_bar.as_deref() != Some(bar.as_str()) {
             write!(out, "\x1b[1;1H\x1b[7m{bar}\x1b[0m").context("drawing the tab bar")?;
@@ -231,6 +246,43 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
         if crossterm::event::poll(TICK).context("polling for input")? {
             let event = crossterm::event::read().context("reading input")?;
+            // An open overlay takes every key: it is a list somebody is
+            // choosing from, and letting a keystroke reach the shell underneath
+            // would type into a program nobody is looking at.
+            if let Some(open) = overlay.as_mut() {
+                if let crossterm::event::Event::Key(key) = &event {
+                    match key.code {
+                        crossterm::event::KeyCode::Esc => overlay = None,
+                        crossterm::event::KeyCode::Up => open.move_by(-1),
+                        crossterm::event::KeyCode::Down => open.move_by(1),
+                        crossterm::event::KeyCode::Backspace => open.backspace(),
+                        crossterm::event::KeyCode::Enter => {
+                            // Picking is closing. What a choice *does* depends
+                            // on which list it came from, and that is decided
+                            // where the list was built.
+                            chosen = open.selected().map(|c| c.label.clone());
+                            overlay = None;
+                        }
+                        crossterm::event::KeyCode::Char(ch) => open.push(ch),
+                        _ => {}
+                    }
+                }
+                layout_dirty = true;
+                shown_overlay = None;
+                if let Some(label) = chosen.take() {
+                    // A workspace row is a session to focus; anything else is a
+                    // capability name, which the palette shows and the CLI runs.
+                    if let Some(index) = panes.iter().position(|p| {
+                        instance
+                            .session(p.session)
+                            .is_some_and(|s| s.title == label)
+                    }) {
+                        focus = index;
+                    }
+                }
+                continue;
+            }
+
             let (input, next) = omt_tui::translate(&event, armed, mode);
             // Recorded the moment it is first armed: somebody who has pressed
             // it knows it exists, and the introduction stops being useful.
@@ -244,6 +296,66 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &bytes)
                             .context("writing input")?;
                     }
+                }
+                Input::Palette => {
+                    // Built from the catalog, so the list is what this build
+                    // actually registers rather than a menu maintained beside
+                    // it — which is how a palette comes to offer something that
+                    // is not there.
+                    overlay = Some(omt_tui::Overlay::new(
+                        "Commands",
+                        omt_tui::ACTIONS
+                            .iter()
+                            .map(|a| omt_tui::Choice {
+                                label: a.capability.to_owned(),
+                                detail: String::new(),
+                                chord: a.binding.map(str::to_owned),
+                            })
+                            .collect(),
+                    ));
+                    layout_dirty = true;
+                }
+                Input::Agents => {
+                    // Every thread, with what it is doing. Waiting first,
+                    // because that is the reason anybody opens this list.
+                    let mut rows: Vec<omt_tui::Choice> = Vec::new();
+                    for pane in &panes {
+                        let Some(roster) = instance.threads(pane.session) else {
+                            continue;
+                        };
+                        let title = instance
+                            .session(pane.session)
+                            .map_or_else(|| "shell".to_owned(), |s| s.title.clone());
+                        for thread in roster.threads() {
+                            rows.push(omt_tui::Choice {
+                                label: title.clone(),
+                                detail: format!("{:?}", thread.state).to_lowercase(),
+                                chord: None,
+                            });
+                        }
+                    }
+                    rows.sort_by_key(|c| usize::from(!c.detail.starts_with("blocked")));
+                    overlay = Some(omt_tui::Overlay::new("Agents", rows));
+                    layout_dirty = true;
+                }
+                Input::Sessions => {
+                    overlay = Some(omt_tui::Overlay::new(
+                        "Sessions",
+                        panes
+                            .iter()
+                            .map(|pane| omt_tui::Choice {
+                                label: instance
+                                    .session(pane.session)
+                                    .map_or_else(|| "shell".to_owned(), |s| s.title.clone()),
+                                detail: instance
+                                    .session(pane.session)
+                                    .and_then(|s| s.cwd.clone())
+                                    .unwrap_or_default(),
+                                chord: None,
+                            })
+                            .collect(),
+                    ));
+                    layout_dirty = true;
                 }
                 Input::Resize { cols, rows } => {
                     term_rows = rows;

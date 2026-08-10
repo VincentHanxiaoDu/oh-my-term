@@ -132,3 +132,65 @@ class TestTheShellStillWorks:
     def test_the_hint_row_is_still_there(self, tui: Tui) -> None:
         painted = strip(tui.read(2.0))
         assert "detaches" in painted or "shows every key" in painted, painted[-400:]
+
+
+class TestTheLists:
+    def test_the_palette_opens_and_shows_the_catalog(self, tui: Tui) -> None:
+        # `ACTIONS` was a table with no code that drew it, and the parity gate
+        # passed on the table — which is how a capability can be "reachable from
+        # the palette" when there is no palette.
+        tui.send("\x01p")
+        painted = strip(tui.read(2.0))
+        assert "Commands" in painted, painted[-700:]
+        assert "session" in painted, painted[-700:]
+
+    def test_typing_narrows_the_palette(self, tui: Tui) -> None:
+        tui.send("\x01p")
+        tui.read(1.0)
+        tui.send("worktree")
+        painted = strip(tui.read(2.0))
+        assert "worktree" in painted, painted[-700:]
+
+    def test_a_filter_that_matches_nothing_says_so(self, tui: Tui) -> None:
+        # An empty box looks like a broken one; the useful information is that
+        # the filter matched nothing.
+        tui.send("\x01p")
+        tui.read(1.0)
+        tui.send("zzzzzz")
+        painted = strip(tui.read(2.0))
+        assert "nothing matches" in painted, painted[-700:]
+
+    def test_escape_closes_it_and_the_shell_takes_keys_again(self, tui: Tui) -> None:
+        # A list that keeps the keyboard after it is dismissed is a terminal
+        # that has stopped responding.
+        tui.send("\x01p")
+        tui.read(1.0)
+        tui.send("\x1b")
+        tui.read(0.5)
+        tui.send("echo after-palette\r")
+        painted = strip(tui.read(3.0))
+        assert "after-palette" in painted, painted[-700:]
+
+    def test_the_sessions_list_opens(self, tui: Tui) -> None:
+        # Moving between sessions by name rather than counting how many times
+        # to press next.
+        tui.send("\x01w")
+        painted = strip(tui.read(2.0))
+        assert "Sessions" in painted, painted[-700:]
+
+    def test_the_agents_list_opens(self, tui: Tui) -> None:
+        tui.send("\x01a")
+        painted = strip(tui.read(2.0))
+        assert "Agents" in painted, painted[-700:]
+
+    def test_the_keys_typed_into_a_list_do_not_reach_the_shell(
+        self, tui: Tui
+    ) -> None:
+        # Letting a keystroke through would type into a program nobody is
+        # looking at.
+        tui.send("\x01p")
+        tui.read(1.0)
+        tui.send("rm -rf")
+        tui.send("\x1b")
+        painted = strip(tui.read(2.0))
+        assert "rm -rf" not in painted.split("Commands")[-1] or "nothing matches" in painted

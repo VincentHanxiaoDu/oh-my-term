@@ -71,6 +71,17 @@ pub enum Input {
     ClosePane,
     /// Show every binding.
     Help,
+    /// Open the command palette.
+    ///
+    /// The palette is what makes the small binding table honest: every
+    /// capability is reachable through it, so the ones without a chord are
+    /// unbound rather than unavailable.
+    Palette,
+    /// Show the agent threads, and which of them are waiting on a human.
+    Agents,
+    /// Show the sessions, to move between them by name rather than by counting
+    /// how many times to press next.
+    Sessions,
     /// Nothing to do.
     Ignore,
 }
@@ -116,6 +127,9 @@ fn translate_key(key: &KeyEvent, armed: bool, mode: EncodeMode) -> (Input, bool)
             KeyCode::Char('o' | 'n') => (Input::NextPane, false),
             KeyCode::Char('x') => (Input::ClosePane, false),
             KeyCode::Char('?') => (Input::Help, false),
+            KeyCode::Char('p') => (Input::Palette, false),
+            KeyCode::Char('a') if !key.modifiers.contains(PREFIX) => (Input::Agents, false),
+            KeyCode::Char('w') => (Input::Sessions, false),
             // The prefix twice sends a literal prefix, which is how a user
             // types the chord the multiplexer took.
             KeyCode::Char(c) if c == PREFIX_KEY && key.modifiers.contains(PREFIX) => (
