@@ -7,6 +7,8 @@
 //! enforcement.
 
 pub mod api;
+pub mod fanout;
+pub mod manifest;
 
 pub use api::{
     CallError, MAX_WRITE_BYTES, NotifyLevel, PluginCall, authorize, is_workspace_relative,

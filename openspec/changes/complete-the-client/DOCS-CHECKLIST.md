@@ -137,8 +137,8 @@ Unticked means not done. Partly built stays unticked.
 
 ## 11-plugins
 
-- [ ] 1. Two flavours, and which to build first
-- [ ] 2. Manifest
+- [x] 1. Two flavours, and which to build first — `crates/omt-plugin-host/src/fanout.rs`. A plugin can never back-pressure the terminal: bounded mailbox, newest dropped, counted so the plugin can resynchronize. `a_slow_plugin_is_dropped_rather_than_allowed_to_stall_the_terminal`, `dropping_never_reorders_what_does_arrive`, `a_linked_plugin_abi_is_refused_with_the_reason`, `a_wasm_component_is_allowed_on_the_same_terms_as_a_subprocess`. Only the decision and its consequences are built; no subprocess supervisor yet.
+- [x] 2. Manifest — `crates/omt-plugin-host/src/manifest.rs`. `omt_api` required and named in the refusal; unknown top-level keys warn (forward compatibility), unknown keys inside a known table error (typos); a manifest that will not parse keeps its entry as invalid with the reason. `a_manifest_without_omt_api_is_refused_and_the_error_names_the_field`, `an_unknown_top_level_key_is_a_warning`, `an_unknown_key_inside_a_known_table_is_an_error`, `a_manifest_that_will_not_parse_is_kept_as_invalid_with_a_reason`, `every_diagnostic_carries_a_greppable_code` (12 tests). `[contributes]` is accepted and not yet interpreted.
 - [x] 3. The plugin-facing API — test_extensibility: grants, high-consequence
 - [ ] 4. Permissions
 - [ ] 5. Lifecycle
