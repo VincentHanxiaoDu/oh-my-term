@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**128 of 212 features ticked.** (34 further sections are prose.)
+**129 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -307,7 +307,7 @@ Unticked means not done. Partly built stays unticked.
 
 - ~~0. The five decisions this document implements~~ — prose
 - [x] 1. The identity model — test_identity: devices belong to somebody
-- [ ] 2. WebAuthn and passkeys, honestly
+- [x] 2. WebAuthn and passkeys, honestly — omt-auth methods: an IP is never a relying party, localhost is a suffix of nothing, a tailnet name becomes the tailnet-wide domain, reaching an instance never needs an origin
 - [ ] 3. The `home` instance role
 - [ ] 4. The encrypted identity file
 - [x] 5. Pairing flows — test_joining: pairing

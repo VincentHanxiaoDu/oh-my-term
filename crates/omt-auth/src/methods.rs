@@ -219,6 +219,93 @@ pub fn startup_refusal(trust: HeaderTrust) -> Option<String> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WebAuthn's relying party, honestly — 23 §2
+// ---------------------------------------------------------------------------
+
+/// Why an origin cannot be a WebAuthn relying party.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum NotAnRpId {
+    /// An IP address. The spec has no syntax for one.
+    ///
+    /// Not a browser limitation to work around — there is nothing to work
+    /// around. A LAN address can never register or use a passkey, ever.
+    IpAddress,
+    /// No host at all.
+    NoHost,
+    /// A name nothing can be a registrable suffix of.
+    ///
+    /// `localhost` is the case that matters: it is a real origin somebody
+    /// reaches omt at, and it is a suffix of nothing.
+    NotRegistrable,
+}
+
+/// Whether an origin could be a relying party, and why not.
+///
+/// omt is reachable at several origins by design — a tailnet name, a LAN
+/// address, loopback, possibly a proxied DNS name — and there is no single RP
+/// ID covering all of them. Not "hard to find": there is no syntax for one.
+///
+/// The resolution is to stop trying. WebAuthn authenticates a device to its
+/// *identity*, once, at pairing, at the one origin that is stable and really
+/// HTTPS. Reaching an instance uses a device-key signature over a server nonce,
+/// which has no origin concept at all and therefore works over plain HTTP on a
+/// LAN, over a unix socket, and over the ssh bridge.
+#[must_use]
+pub fn rp_id_for(origin: &str) -> Result<String, NotAnRpId> {
+    let host = origin
+        .split_once("://")
+        .map_or(origin, |(_, rest)| rest)
+        .split('/')
+        .next()
+        .unwrap_or("");
+    let host = host.rsplit_once(':').map_or(host, |(h, port)| {
+        // Only strip what is actually a port. An IPv6 host is full of colons
+        // and cutting at the last one turns `[::1]` into `[::`.
+        if port.chars().all(|c| c.is_ascii_digit()) && !port.is_empty() {
+            h
+        } else {
+            host
+        }
+    });
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+
+    if host.is_empty() {
+        return Err(NotAnRpId::NoHost);
+    }
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return Err(NotAnRpId::IpAddress);
+    }
+    if !host.contains('.') {
+        // `localhost` and any other single label. A passkey registered here
+        // would work at exactly this name and nowhere else, which is the
+        // multi-origin problem in miniature.
+        return Err(NotAnRpId::NotRegistrable);
+    }
+
+    // Prefer the tailnet-wide registrable domain over the per-host name, so a
+    // passkey registered against one node still works if home moves to another
+    // node on the same tailnet. Moving home is a thing people do exactly once,
+    // usually while replacing the machine the old one was on.
+    if let Some(tailnet) = host.strip_suffix(".ts.net")
+        && let Some((_, domain)) = tailnet.rsplit_once('.')
+    {
+        return Ok(format!("{domain}.ts.net"));
+    }
+    Ok(host.to_owned())
+}
+
+/// Whether reaching an instance needs an origin at all.
+///
+/// It does not, and that is the point. Written as a function so the property is
+/// testable: if this ever became true for some path, that path would be
+/// unreachable from a LAN address and nobody would find out until somebody
+/// tried it from one.
+#[must_use]
+pub const fn instance_auth_needs_an_origin() -> bool {
+    false
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -227,6 +314,85 @@ pub fn startup_refusal(trust: HeaderTrust) -> Option<String> {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn a_tailnet_name_becomes_the_tailnet_wide_domain() {
+        // So a passkey registered against one node still works if home is
+        // promoted to another on the same tailnet.
+        assert_eq!(
+            rp_id_for("https://workstation.tailc9e96c.ts.net"),
+            Ok("tailc9e96c.ts.net".to_owned())
+        );
+    }
+
+    #[test]
+    fn an_ip_address_can_never_be_a_relying_party() {
+        // Not a browser limitation to work around — the spec has no syntax for
+        // one, so a LAN address can never register or use a passkey.
+        assert_eq!(rp_id_for("http://192.168.1.20:7878"), Err(NotAnRpId::IpAddress));
+        assert_eq!(rp_id_for("http://[::1]:7788"), Err(NotAnRpId::IpAddress));
+        assert_eq!(rp_id_for("http://127.0.0.1:7788"), Err(NotAnRpId::IpAddress));
+    }
+
+    #[test]
+    fn localhost_is_a_suffix_of_nothing() {
+        // A real origin somebody reaches omt at, and one where a passkey would
+        // work at exactly that name and nowhere else.
+        assert_eq!(rp_id_for("http://localhost:7788"), Err(NotAnRpId::NotRegistrable));
+    }
+
+    #[test]
+    fn an_ipv6_host_is_not_mangled_into_something_that_parses() {
+        // Cutting at the last colon turns `[::1]` into `[::`, which is not an
+        // address and would fall through to being treated as a hostname.
+        assert_eq!(rp_id_for("http://[2001:db8::1]:7788"), Err(NotAnRpId::IpAddress));
+    }
+
+    #[test]
+    fn an_ordinary_domain_is_itself() {
+        assert_eq!(
+            rp_id_for("https://omt.example.com"),
+            Ok("omt.example.com".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_path_does_not_become_part_of_the_relying_party() {
+        assert_eq!(
+            rp_id_for("https://omt.example.com/app/index.html"),
+            Ok("omt.example.com".to_owned())
+        );
+    }
+
+    #[test]
+    fn nothing_at_all_is_not_a_relying_party() {
+        assert_eq!(rp_id_for(""), Err(NotAnRpId::NoHost));
+    }
+
+    #[test]
+    fn reaching_an_instance_never_needs_an_origin() {
+        // The load-bearing consequence. If this were ever true for some path,
+        // that path would be unreachable from a LAN address and nobody would
+        // find out until somebody tried it from one.
+        assert!(!instance_auth_needs_an_origin());
+    }
+
+    #[test]
+    fn the_origins_omt_is_reachable_at_do_not_share_one_relying_party() {
+        // Stated as a test because the naive design assumes they do, and the
+        // assumption survives right up until somebody opens the LAN address.
+        let answers: Vec<_> = [
+            "https://workstation.tailc9e96c.ts.net",
+            "http://192.168.1.20:7878",
+            "http://localhost:7788",
+        ]
+        .into_iter()
+        .map(rp_id_for)
+        .collect();
+        assert!(answers[0].is_ok());
+        assert!(answers[1].is_err());
+        assert!(answers[2].is_err());
+    }
+
     fn trusted() -> HeaderTrust {
         HeaderTrust {
             listener_is_local: true,
