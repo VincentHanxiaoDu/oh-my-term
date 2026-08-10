@@ -372,6 +372,171 @@ pub fn compute_zoomed(tree: &Node, area: Rect, zoomed: &str) -> Geometry {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Floats, stacks, and moving panes — §5
+// ---------------------------------------------------------------------------
+
+/// A pane that sits above the layout rather than in it.
+///
+/// Floats exist for the things that are not part of the arrangement: a scratch
+/// shell, a quick `git log`. They are clamped into the area rather than
+/// scrolled to, because a float that opens partly off-screen on a narrow client
+/// is a float somebody cannot close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Float {
+    /// Which pane.
+    pub pane: String,
+    /// Where it would like to be.
+    pub rect: Rect,
+}
+
+/// Several panes sharing one slot, one of them visible.
+///
+/// A stack is not a layout of its own — it occupies exactly one leaf's rect, so
+/// collapsing or expanding one never reflows anything around it. That is the
+/// property worth having: a stack that resized its neighbours would move the
+/// pane somebody is reading every time they cycled a background one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stack {
+    /// The leaf whose rect the stack occupies.
+    pub at: String,
+    /// Every member, in order.
+    pub members: Vec<String>,
+    /// Which member is showing.
+    pub visible: usize,
+}
+
+/// Place floats and stacks on top of a computed geometry.
+///
+/// Floats are clamped to the area and dropped if they cannot meet the minimum,
+/// through the same rule as any other pane — a float is not exempt from being
+/// too small to read.
+#[must_use]
+pub fn overlay(base: Geometry, area: Rect, floats: &[Float], stacks: &[Stack]) -> Geometry {
+    let mut panes = base.panes;
+    let mut hidden = base.hidden;
+
+    for stack in stacks {
+        let Some(slot) = panes.iter().position(|p| p.pane == stack.at) else {
+            continue;
+        };
+        let Some(showing) = stack.members.get(stack.visible) else {
+            continue;
+        };
+        let rect = panes[slot].outer;
+        let index = panes[slot].index;
+        panes[slot] = Placement {
+            pane: showing.clone(),
+            outer: rect,
+            index,
+        };
+        // The rest are hidden rather than absent: somebody has to be able to
+        // see that four things are in this stack and one is showing.
+        hidden.extend(
+            stack
+                .members
+                .iter()
+                .filter(|m| *m != showing)
+                .cloned(),
+        );
+    }
+
+    for float in floats {
+        let clamped = clamp(float.rect, area);
+        if clamped.width < MIN_WIDTH || clamped.height < MIN_HEIGHT {
+            hidden.push(float.pane.clone());
+            continue;
+        }
+        // Floats are appended, so they are drawn last and therefore on top.
+        // Order in this list is the z-order, which is the simplest thing that
+        // is also true.
+        let index = u32::try_from(panes.len()).unwrap_or(u32::MAX);
+        panes.push(Placement {
+            pane: float.pane.clone(),
+            outer: clamped,
+            index,
+        });
+    }
+
+    let degraded = if hidden.is_empty() {
+        None
+    } else {
+        Some(Degradation {
+            dropped: hidden.len(),
+            reason: format!("{} pane(s) not drawn: {}", hidden.len(), hidden.join(", ")),
+        })
+    };
+    Geometry {
+        panes,
+        hidden,
+        degraded,
+    }
+}
+
+/// Pull a rectangle inside another, preserving its size where it can.
+fn clamp(rect: Rect, area: Rect) -> Rect {
+    let width = rect.width.min(area.width);
+    let height = rect.height.min(area.height);
+    Rect {
+        left: rect.left.min(area.right().saturating_sub(width)).max(area.left),
+        top: rect.top.min(area.bottom().saturating_sub(height)).max(area.top),
+        width,
+        height,
+    }
+}
+
+/// Swap two panes' positions in a tree.
+///
+/// A swap rather than a cut-and-paste. Moving a pane by removing and
+/// re-inserting it changes the shape of the tree around the hole, so the panes
+/// that did not move end up somewhere new — which is not what anybody means by
+/// "move this pane there".
+#[must_use]
+pub fn swap(tree: &Node, one: &str, other: &str) -> Node {
+    // Both have to exist. Without this check, swapping with a name that is not
+    // in the tree *renames* the pane that is — it silently becomes the missing
+    // one, and the session it was showing is still running with nothing
+    // pointing at it.
+    if one == other || !contains(tree, one) || !contains(tree, other) {
+        return tree.clone();
+    }
+    swap_unchecked(tree, one, other)
+}
+
+/// Whether a pane is anywhere in a tree.
+#[must_use]
+pub fn contains(tree: &Node, id: &str) -> bool {
+    match tree {
+        Node::Leaf { id: leaf } => leaf == id,
+        Node::Split { first, second, .. } => contains(first, id) || contains(second, id),
+    }
+}
+
+fn swap_unchecked(tree: &Node, one: &str, other: &str) -> Node {
+    match tree {
+        Node::Leaf { id } => Node::Leaf {
+            id: if id == one {
+                other.to_owned()
+            } else if id == other {
+                one.to_owned()
+            } else {
+                id.clone()
+            },
+        },
+        Node::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => Node::Split {
+            direction: *direction,
+            ratio: *ratio,
+            first: Box::new(swap_unchecked(first, one, other)),
+            second: Box::new(swap_unchecked(second, one, other)),
+        },
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -380,6 +545,148 @@ pub fn compute_zoomed(tree: &Node, area: Rect, zoomed: &str) -> Geometry {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn a_float_sits_on_top_of_the_layout() {
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        let g = overlay(
+            compute(&tree, area),
+            area,
+            &[Float {
+                pane: "scratch".to_owned(),
+                rect: Rect { left: 10, top: 4, width: 40, height: 10 },
+            }],
+            &[],
+        );
+        assert_eq!(g.panes.last().expect("last").pane, "scratch", "drawn last");
+        assert_eq!(g.panes.len(), 3);
+    }
+
+    #[test]
+    fn a_float_is_clamped_into_the_screen_rather_than_hanging_off_it() {
+        // One that opens partly off-screen on a narrow client is one somebody
+        // cannot close.
+        let area = Rect { left: 0, top: 0, width: 40, height: 20 };
+        let g = overlay(
+            compute(&leaf("a"), area),
+            area,
+            &[Float {
+                pane: "f".to_owned(),
+                rect: Rect { left: 200, top: 200, width: 30, height: 8 },
+            }],
+            &[],
+        );
+        let f = g.panes.iter().find(|p| p.pane == "f").expect("placed");
+        assert!(f.outer.right() <= area.right(), "{:?}", f.outer);
+        assert!(f.outer.bottom() <= area.bottom(), "{:?}", f.outer);
+    }
+
+    #[test]
+    fn a_float_too_small_to_read_is_dropped_like_any_other_pane() {
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let g = overlay(
+            compute(&leaf("a"), area),
+            area,
+            &[Float {
+                pane: "f".to_owned(),
+                rect: Rect { left: 0, top: 0, width: 5, height: 1 },
+            }],
+            &[],
+        );
+        assert!(g.hidden.contains(&"f".to_owned()));
+    }
+
+    #[test]
+    fn a_stack_occupies_exactly_one_slot_and_reflows_nothing() {
+        // A stack that resized its neighbours would move the pane somebody is
+        // reading every time they cycled a background one.
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        let plain = compute(&tree, area);
+        let b_rect = plain.panes.iter().find(|p| p.pane == "b").expect("b").outer;
+        let stacked = overlay(
+            plain,
+            area,
+            &[],
+            &[Stack {
+                at: "b".to_owned(),
+                members: ids(&["b", "b2", "b3"]),
+                visible: 0,
+            }],
+        );
+        let a = stacked.panes.iter().find(|p| p.pane == "a").expect("a");
+        assert_eq!(a.outer.width, 40, "the neighbour did not move");
+        let showing = stacked.panes.iter().find(|p| p.pane == "b").expect("b");
+        assert_eq!(showing.outer, b_rect);
+    }
+
+    #[test]
+    fn cycling_a_stack_swaps_which_member_is_drawn_in_the_same_rect() {
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        let stack = |visible| Stack {
+            at: "b".to_owned(),
+            members: ids(&["b", "b2"]),
+            visible,
+        };
+        let first = overlay(compute(&tree, area), area, &[], &[stack(0)]);
+        let second = overlay(compute(&tree, area), area, &[], &[stack(1)]);
+        let rect_of = |g: &Geometry, id: &str| {
+            g.panes.iter().find(|p| p.pane == id).map(|p| p.outer)
+        };
+        assert_eq!(rect_of(&first, "b"), rect_of(&second, "b2"));
+        assert!(rect_of(&second, "b").is_none());
+    }
+
+    #[test]
+    fn the_members_a_stack_conceals_are_reported_as_hidden() {
+        // Somebody has to be able to see that four things are in this stack
+        // and one is showing.
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let g = overlay(
+            compute(&leaf("b"), area),
+            area,
+            &[],
+            &[Stack { at: "b".to_owned(), members: ids(&["b", "b2", "b3"]), visible: 0 }],
+        );
+        assert_eq!(g.hidden.len(), 2);
+    }
+
+    #[test]
+    fn moving_a_pane_swaps_it_rather_than_reshaping_the_tree() {
+        // Removing and re-inserting changes the shape around the hole, so
+        // panes that did not move end up somewhere new — which is not what
+        // anybody means by "move this pane there".
+        let area = Rect { left: 0, top: 0, width: 120, height: 40 };
+        let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c"])).expect("t");
+        let before = compute(&tree, area);
+        let after = compute(&swap(&tree, "a", "c"), area);
+        let rect_of = |g: &Geometry, id: &str| {
+            g.panes.iter().find(|p| p.pane == id).map(|p| p.outer)
+        };
+        assert_eq!(rect_of(&before, "a"), rect_of(&after, "c"));
+        assert_eq!(rect_of(&before, "c"), rect_of(&after, "a"));
+        assert_eq!(rect_of(&before, "b"), rect_of(&after, "b"), "b did not move");
+    }
+
+    #[test]
+    fn swapping_a_pane_with_itself_changes_nothing() {
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        assert_eq!(swap(&tree, "a", "a"), tree);
+    }
+
+    #[test]
+    fn swapping_something_absent_leaves_the_tree_alone() {
+        // The first version compared swap(a, nope) with swap(nope, a) and
+        // passed — both renamed `a` to `nope`. Two wrong answers agreeing is
+        // not a test, and the real cost would have been a pane silently
+        // becoming a name nothing refers to while its session kept running.
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        assert_eq!(swap(&tree, "a", "nope"), tree);
+        assert_eq!(swap(&tree, "nope", "a"), tree);
+        assert!(contains(&swap(&tree, "a", "nope"), "a"));
+    }
+
     fn ids(names: &[&str]) -> Vec<String> {
         names.iter().map(|s| (*s).to_owned()).collect()
     }

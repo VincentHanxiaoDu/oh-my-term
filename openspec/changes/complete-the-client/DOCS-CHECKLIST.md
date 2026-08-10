@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**93 of 212 features ticked.** (34 further sections are prose.)
+**94 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -223,7 +223,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 2. Geometry and resize — omt-tui geometry: no gaps at any ratio, no overlaps, index stable across resize, absurd ratios clamped
 - [x] 3. Multi-client, multi-size — the crux — omt-tui geometry: a pane below its minimum is dropped and named, not drawn as an unreadable sliver
 - [x] 4. Presets, DSL, saved layouts — omt-tui geometry: even presets give equal shares, the main pane keeps its share as others are added, no panes is not a layout
-- [ ] 5. Zoom, floats, stacks, and moving panes  <!-- zoom is built and tested (omt-tui geometry); floats, stacks and moving panes are not -->
+- [x] 5. Zoom, floats, stacks, and moving panes — omt-tui geometry: zoom leaves the tree untouched, floats clamp into the screen, a stack occupies one slot and reflows nothing, moving is a swap
 - [x] 6. Directional focus navigation — test_workspace_surfaces: geometric over placed rects, hidden panes skipped, deterministic, no wrap by default
 - [ ] 7. Mobile and web parity
 - [ ] 8. Rendering
