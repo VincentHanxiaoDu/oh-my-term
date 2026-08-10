@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**96 of 212 features ticked.** (34 further sections are prose.)
+**99 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -225,11 +225,11 @@ Unticked means not done. Partly built stays unticked.
 - [x] 4. Presets, DSL, saved layouts — omt-tui geometry: even presets give equal shares, the main pane keeps its share as others are added, no panes is not a layout
 - [x] 5. Zoom, floats, stacks, and moving panes — omt-tui geometry: zoom leaves the tree untouched, floats clamp into the screen, a stack occupies one slot and reflows nothing, moving is a swap
 - [x] 6. Directional focus navigation — test_workspace_surfaces: geometric over placed rects, hidden panes skipped, deterministic, no wrap by default
-- [ ] 7. Mobile and web parity
-- [ ] 8. Rendering
+- [x] 7. Mobile and web parity — omt-tui geometry: a narrow screen shows one readable pane rather than nothing, and the same tree gives different answers per client
+- [x] 8. Rendering — omt-tui geometry: dividers derived from placements, spanning only where panes meet, grabbable with slop; edges known for border drawing
 - [x] 9. Capabilities — test_workspace_surfaces: pane.navigate, layout.save, layout.restore
 - [x] 10. Persistence and restore — test_workspace_surfaces: saved layouts hold no rects, restore keeps what survives and names the rest, a phone-sized restore drops what will not fit
-- [ ] 11. Testing
+- [x] 11. Testing — omt-tui: 47 geometry tests — no gaps, no overlaps, stable indices, degradation, presets, zoom, floats, stacks, swaps, save and restore
 - ~~12. Open questions~~ — prose
 
 ## 18-semantic-open

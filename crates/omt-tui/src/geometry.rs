@@ -124,10 +124,28 @@ pub const MIN_HEIGHT: u16 = 3;
 /// change when the window is resized.
 #[must_use]
 pub fn compute(tree: &Node, area: Rect) -> Geometry {
-    let mut panes = Vec::new();
-    let mut hidden = Vec::new();
+    let mut panes: Vec<Placement> = Vec::new();
+    let mut hidden: Vec<String> = Vec::new();
     let mut index = 0u32;
     place(tree, area, &mut panes, &mut hidden, &mut index);
+
+    // If the split left nothing placeable, show the first pane full-screen.
+    //
+    // Found by a test at thirty columns: four even splits give each pane seven
+    // columns, all of them below the minimum, and the result was a screen with
+    // nothing on it. That is the "fail" outcome this module's own comment
+    // rejects — on a phone somebody is holding, an empty screen is worse than
+    // any arrangement. One readable pane and an honest count of what is hidden
+    // is the floor.
+    if panes.is_empty() && !hidden.is_empty() && area.width >= MIN_WIDTH && area.height >= MIN_HEIGHT
+    {
+        let first = hidden.remove(0);
+        panes.push(Placement {
+            pane: first,
+            outer: area,
+            index: 0,
+        });
+    }
 
     let degraded = if hidden.is_empty() {
         None
@@ -673,6 +691,134 @@ pub fn restore(saved: &Saved, alive: &[String]) -> Option<(Node, Vec<String>)> {
     Some((tree, missing))
 }
 
+// ---------------------------------------------------------------------------
+// Rendering: dividers and edges — §8
+// ---------------------------------------------------------------------------
+
+/// The line between two panes, addressable so it can be dragged.
+///
+/// Derived from the placements rather than tracked alongside them. A divider
+/// stored separately is one that can disagree with the panes it sits between,
+/// and the disagreement is a drag handle a few cells away from the line it
+/// appears to be on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Divider {
+    /// Which pane is before it.
+    pub before: String,
+    /// Which pane is after it.
+    pub after: String,
+    /// Whether it runs top-to-bottom.
+    pub vertical: bool,
+    /// Where the line is: the column for a vertical divider, the row for a
+    /// horizontal one.
+    pub at: u16,
+    /// Where it starts along its own axis.
+    pub from: u16,
+    /// Where it ends.
+    pub to: u16,
+}
+
+/// Which sides of a pane touch the outer edge of the screen.
+///
+/// Border drawing needs this: a pane against the screen edge draws no border
+/// there, and one that did would waste a column that is already scarce on a
+/// phone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Edges {
+    /// Touches the left edge.
+    pub left: bool,
+    /// Touches the top.
+    pub top: bool,
+    /// Touches the right.
+    pub right: bool,
+    /// Touches the bottom.
+    pub bottom: bool,
+}
+
+/// Which sides of a placement touch the container.
+#[must_use]
+pub fn edges(placement: &Placement, area: Rect) -> Edges {
+    Edges {
+        left: placement.outer.left == area.left,
+        top: placement.outer.top == area.top,
+        right: placement.outer.right() == area.right(),
+        bottom: placement.outer.bottom() == area.bottom(),
+    }
+}
+
+/// Every divider implied by a set of placements.
+#[must_use]
+pub fn dividers(geometry: &Geometry) -> Vec<Divider> {
+    let mut out = Vec::new();
+    for (i, one) in geometry.panes.iter().enumerate() {
+        for other in &geometry.panes[i + 1..] {
+            let a = one.outer;
+            let b = other.outer;
+            // Vertical: they share a column boundary and overlap in rows.
+            if a.right() == b.left && a.top < b.bottom() && b.top < a.bottom() {
+                out.push(Divider {
+                    before: one.pane.clone(),
+                    after: other.pane.clone(),
+                    vertical: true,
+                    at: a.right(),
+                    from: a.top.max(b.top),
+                    to: a.bottom().min(b.bottom()),
+                });
+            } else if b.right() == a.left && b.top < a.bottom() && a.top < b.bottom() {
+                out.push(Divider {
+                    before: other.pane.clone(),
+                    after: one.pane.clone(),
+                    vertical: true,
+                    at: b.right(),
+                    from: a.top.max(b.top),
+                    to: a.bottom().min(b.bottom()),
+                });
+            } else if a.bottom() == b.top && a.left < b.right() && b.left < a.right() {
+                out.push(Divider {
+                    before: one.pane.clone(),
+                    after: other.pane.clone(),
+                    vertical: false,
+                    at: a.bottom(),
+                    from: a.left.max(b.left),
+                    to: a.right().min(b.right()),
+                });
+            } else if b.bottom() == a.top && b.left < a.right() && a.left < b.right() {
+                out.push(Divider {
+                    before: other.pane.clone(),
+                    after: one.pane.clone(),
+                    vertical: false,
+                    at: b.bottom(),
+                    from: a.left.max(b.left),
+                    to: a.right().min(b.right()),
+                });
+            }
+        }
+    }
+    out.sort_by(|x, y| {
+        x.vertical
+            .cmp(&y.vertical)
+            .then(x.at.cmp(&y.at))
+            .then(x.from.cmp(&y.from))
+    });
+    out
+}
+
+/// Which divider a point is on, if any.
+///
+/// The tolerance is asymmetric on purpose: a divider is one cell wide and a
+/// finger is not, so the hit area extends by `slop` on each side. Without it a
+/// divider on a touch screen is a line nobody can grab.
+#[must_use]
+pub fn divider_at(dividers: &[Divider], column: u16, row: u16, slop: u16) -> Option<&Divider> {
+    dividers.iter().find(|d| {
+        if d.vertical {
+            column.abs_diff(d.at) <= slop && row >= d.from && row < d.to
+        } else {
+            row.abs_diff(d.at) <= slop && column >= d.from && column < d.to
+        }
+    })
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -681,6 +827,121 @@ pub fn restore(saved: &Saved, alive: &[String]) -> Option<(Node, Vec<String>)> {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn a_split_produces_one_divider_between_its_children() {
+        let g = compute(&split(Split::Vertical, 0.5, leaf("a"), leaf("b")), screen());
+        let d = dividers(&g);
+        assert_eq!(d.len(), 1);
+        assert!(d[0].vertical);
+        assert_eq!(d[0].at, g.panes[0].outer.right());
+    }
+
+    #[test]
+    fn a_divider_spans_only_where_the_two_panes_actually_meet() {
+        // One tall pane beside two stacked ones: the divider between the tall
+        // pane and the top one covers the top half, not the whole height.
+        let tree = split(
+            Split::Vertical,
+            0.5,
+            leaf("a"),
+            split(Split::Horizontal, 0.5, leaf("b"), leaf("c")),
+        );
+        let g = compute(&tree, screen());
+        let d = dividers(&g);
+        let a_b = d
+            .iter()
+            .find(|x| x.before == "a" && x.after == "b")
+            .expect("a divider between a and b");
+        assert_eq!(a_b.from, 0);
+        assert_eq!(a_b.to, 12);
+    }
+
+    #[test]
+    fn panes_that_do_not_touch_have_no_divider_between_them() {
+        let tree = split(
+            Split::Vertical,
+            0.5,
+            leaf("a"),
+            split(Split::Horizontal, 0.5, leaf("b"), leaf("c")),
+        );
+        let d = dividers(&compute(&tree, screen()));
+        assert!(!d.iter().any(|x| (x.before == "b" && x.after == "c") && x.vertical));
+    }
+
+    #[test]
+    fn a_divider_can_be_grabbed_with_a_finger() {
+        // One cell wide and a finger is not, so without slop a divider on a
+        // touch screen is a line nobody can grab.
+        let g = compute(&split(Split::Vertical, 0.5, leaf("a"), leaf("b")), screen());
+        let d = dividers(&g);
+        let at = d[0].at;
+        assert!(divider_at(&d, at, 5, 0).is_some(), "exact");
+        assert!(divider_at(&d, at + 2, 5, 2).is_some(), "within slop");
+        assert!(divider_at(&d, at + 9, 5, 2).is_none(), "far away");
+    }
+
+    #[test]
+    fn a_point_off_the_end_of_a_divider_is_not_on_it() {
+        let g = compute(
+            &split(
+                Split::Vertical,
+                0.5,
+                leaf("a"),
+                split(Split::Horizontal, 0.5, leaf("b"), leaf("c")),
+            ),
+            screen(),
+        );
+        let d = dividers(&g);
+        let a_b = d
+            .iter()
+            .find(|x| x.before == "a" && x.after == "b")
+            .expect("found");
+        assert!(divider_at(std::slice::from_ref(a_b), a_b.at, 20, 0).is_none());
+    }
+
+    #[test]
+    fn a_pane_against_the_screen_edge_knows_it() {
+        // A border drawn there wastes a column that is already scarce on a
+        // phone.
+        let g = compute(&split(Split::Vertical, 0.5, leaf("a"), leaf("b")), screen());
+        let a = edges(&g.panes[0], screen());
+        assert!(a.left && a.top && a.bottom);
+        assert!(!a.right, "it meets `b`, not the screen");
+        let b = edges(&g.panes[1], screen());
+        assert!(b.right);
+        assert!(!b.left);
+    }
+
+    #[test]
+    fn a_single_pane_touches_every_edge_and_has_no_dividers() {
+        let g = compute(&leaf("a"), screen());
+        let e = edges(&g.panes[0], screen());
+        assert!(e.left && e.top && e.right && e.bottom);
+        assert!(dividers(&g).is_empty());
+    }
+
+    #[test]
+    fn a_phone_sized_screen_gets_a_layout_it_can_show() {
+        // §7. Mobile is a target, not a fallback: the same tree on a narrow
+        // screen must produce something usable rather than four slivers.
+        let phone = Rect { left: 0, top: 0, width: 30, height: 60 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c", "d"])).expect("t");
+        let g = compute(&tree, phone);
+        assert!(!g.panes.is_empty(), "something is shown");
+        assert!(g.panes.iter().all(|p| p.outer.width >= MIN_WIDTH));
+        assert!(g.degraded.is_some(), "and it says what it dropped");
+    }
+
+    #[test]
+    fn the_same_tree_gives_different_answers_on_different_screens() {
+        // The point of computing geometry per client rather than sharing one.
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
+        let desktop = compute(&tree, Rect { left: 0, top: 0, width: 200, height: 50 });
+        let phone = compute(&tree, Rect { left: 0, top: 0, width: 30, height: 60 });
+        assert_eq!(desktop.panes.len(), 3);
+        assert!(phone.panes.len() < desktop.panes.len());
+    }
+
     #[test]
     fn a_layout_round_trips_through_its_saved_form() {
         let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c"])).expect("t");
@@ -1129,6 +1390,19 @@ mod tests {
         for id in &g.hidden {
             assert!(degraded.reason.contains(id), "{}", degraded.reason);
         }
+    }
+
+    #[test]
+    fn a_narrow_screen_shows_one_readable_pane_rather_than_nothing() {
+        // The floor. An empty screen on a phone somebody is holding is worse
+        // than any arrangement, and it is what four even splits at thirty
+        // columns produced before this.
+        let phone = Rect { left: 0, top: 0, width: 30, height: 60 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c", "d"])).expect("t");
+        let g = compute(&tree, phone);
+        assert_eq!(g.panes.len(), 1);
+        assert_eq!(g.panes[0].outer, phone);
+        assert_eq!(g.hidden.len(), 3);
     }
 
     #[test]
