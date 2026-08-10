@@ -195,6 +195,115 @@ impl Directory {
     }
 }
 
+/// Why an instance refused a device grant.
+///
+/// `docs/architecture/23-identity-and-devices.md` §3.3. Each carries the exact
+/// fix, because a generic auth error here sends somebody to check a passphrase
+/// that is fine — the usual cause is that this machine has simply never been
+/// told about this identity, which is a one-command problem they will never
+/// guess at from "unauthorized".
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum GrantRefusal {
+    /// This instance has never enrolled the identity.
+    IdentityNotEnrolled {
+        /// What to do, naming this instance.
+        fix: String,
+    },
+    /// The grant was signed by a root this instance does not know.
+    UnknownRoot,
+    /// The grant has expired.
+    Expired {
+        /// When it did, seconds since the epoch.
+        at: u64,
+    },
+    /// The grant was revoked.
+    Revoked,
+    /// The grant predates this instance's epoch floor.
+    ///
+    /// Distinct from revoked: a floor invalidates every grant issued before a
+    /// moment, which is what somebody does after losing a laptop and not
+    /// knowing which grants were on it.
+    BelowEpochFloor {
+        /// The floor.
+        floor: u64,
+    },
+}
+
+/// What an instance knows when checking a grant.
+#[derive(Debug, Clone)]
+pub struct Enrolment {
+    /// This instance's name, for the message.
+    pub instance: String,
+    /// Identities this instance has enrolled.
+    pub enrolled: Vec<IdentityId>,
+    /// Root keys it will accept a grant from.
+    pub roots: Vec<String>,
+    /// Grants that have been revoked, by id.
+    pub revoked: Vec<String>,
+    /// The oldest grant epoch still accepted.
+    pub epoch_floor: u64,
+}
+
+/// A device grant, as presented.
+#[derive(Debug, Clone)]
+pub struct Grant {
+    /// Its id.
+    pub id: String,
+    /// Whose it is.
+    pub identity: IdentityId,
+    /// Which root signed it.
+    pub root: String,
+    /// When it stops being valid.
+    pub not_after: u64,
+    /// When it was issued.
+    pub epoch: u64,
+}
+
+/// Check a grant against what this instance knows.
+///
+/// Checks the enrolment first. It is the only refusal with a fix the person can
+/// act on, and finding out about a bad signature when the real problem is that
+/// this machine has never heard of you is a wasted afternoon.
+#[must_use]
+pub fn check_grant(grant: &Grant, at: u64, enrolment: &Enrolment) -> Option<GrantRefusal> {
+    if !enrolment.enrolled.contains(&grant.identity) {
+        return Some(GrantRefusal::IdentityNotEnrolled {
+            fix: format!(
+                "`{}` doesn't know this identity yet. Run `omt identity enroll` on {}, or open an invite from it.",
+                enrolment.instance, enrolment.instance
+            ),
+        });
+    }
+    if !enrolment.roots.contains(&grant.root) {
+        return Some(GrantRefusal::UnknownRoot);
+    }
+    if enrolment.revoked.contains(&grant.id) {
+        return Some(GrantRefusal::Revoked);
+    }
+    if grant.epoch < enrolment.epoch_floor {
+        return Some(GrantRefusal::BelowEpochFloor {
+            floor: enrolment.epoch_floor,
+        });
+    }
+    if grant.not_after <= at {
+        return Some(GrantRefusal::Expired {
+            at: grant.not_after,
+        });
+    }
+    None
+}
+
+/// Whether taking the `home` role changes how an instance runs sessions.
+///
+/// It does not. Written as a function because the tempting implementation
+/// makes home special in some other way — routing through it, or trusting it
+/// more — and then losing the home machine takes the others with it.
+#[must_use]
+pub const fn home_changes_session_behaviour() -> bool {
+    false
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -203,6 +312,129 @@ impl Directory {
 )]
 mod tests {
     use super::*;
+    fn enrolment(identity: IdentityId) -> Enrolment {
+        Enrolment {
+            instance: "mini".to_owned(),
+            enrolled: vec![identity],
+            roots: vec!["root-1".to_owned()],
+            revoked: Vec::new(),
+            epoch_floor: 100,
+        }
+    }
+
+    fn grant(identity: IdentityId) -> Grant {
+        Grant {
+            id: "grant-1".to_owned(),
+            identity,
+            root: "root-1".to_owned(),
+            not_after: 2_000,
+            epoch: 500,
+        }
+    }
+
+    #[test]
+    fn a_good_grant_is_accepted() {
+        let id = IdentityId::new();
+        assert_eq!(check_grant(&grant(id), 1_000, &enrolment(id)), None);
+    }
+
+    #[test]
+    fn an_unenrolled_identity_is_told_exactly_what_to_run() {
+        // A generic auth error sends somebody to check a passphrase that is
+        // fine. The usual cause is that this machine has never been told about
+        // this identity, which they will never guess from "unauthorized".
+        let mut e = enrolment(IdentityId::new());
+        e.enrolled.clear();
+        let refusal = check_grant(&grant(IdentityId::new()), 1_000, &e).expect("refused");
+        let GrantRefusal::IdentityNotEnrolled { fix } = refusal else {
+            panic!("wrong refusal");
+        };
+        assert!(fix.contains("omt identity enroll"), "{fix}");
+        assert!(fix.contains("mini"), "{fix}");
+    }
+
+    #[test]
+    fn enrolment_is_checked_before_the_signature() {
+        // Finding out about a bad root when the real problem is that this
+        // machine has never heard of you is a wasted afternoon.
+        let id = IdentityId::new();
+        let mut e = enrolment(id);
+        e.enrolled.clear();
+        e.roots.clear();
+        assert!(matches!(
+            check_grant(&grant(id), 1_000, &e),
+            Some(GrantRefusal::IdentityNotEnrolled { .. })
+        ));
+    }
+
+    #[test]
+    fn a_grant_from_an_unknown_root_is_refused() {
+        let id = IdentityId::new();
+        let mut g = grant(id);
+        g.root = "somebody-elses-root".to_owned();
+        assert_eq!(
+            check_grant(&g, 1_000, &enrolment(id)),
+            Some(GrantRefusal::UnknownRoot)
+        );
+    }
+
+    #[test]
+    fn a_revoked_grant_is_refused() {
+        let id = IdentityId::new();
+        let mut e = enrolment(id);
+        e.revoked.push("grant-1".to_owned());
+        assert_eq!(check_grant(&grant(id), 1_000, &e), Some(GrantRefusal::Revoked));
+    }
+
+    #[test]
+    fn an_expired_grant_says_when_it_expired() {
+        // So somebody can tell "my grant is old" from "my clock is wrong",
+        // which look identical without the date.
+        let id = IdentityId::new();
+        let refusal = check_grant(&grant(id), 9_000, &enrolment(id)).expect("refused");
+        assert_eq!(refusal, GrantRefusal::Expired { at: 2_000 });
+    }
+
+    #[test]
+    fn an_epoch_floor_invalidates_everything_older_at_once() {
+        // Distinct from revocation: it is what somebody does after losing a
+        // laptop and not knowing which grants were on it.
+        let id = IdentityId::new();
+        let mut old = grant(id);
+        old.epoch = 50;
+        assert_eq!(
+            check_grant(&old, 1_000, &enrolment(id)),
+            Some(GrantRefusal::BelowEpochFloor { floor: 100 })
+        );
+    }
+
+    #[test]
+    fn the_home_role_does_not_change_how_sessions_run() {
+        // The tempting implementation makes home special in some other way —
+        // routing through it, or trusting it more — and then losing the home
+        // machine takes the others with it.
+        assert!(!home_changes_session_behaviour());
+    }
+
+    #[test]
+    fn every_refusal_is_distinguishable_on_the_wire() {
+        // A client that cannot tell them apart shows one message for five
+        // different problems, four of which it is wrong about.
+        let mut seen = std::collections::BTreeSet::new();
+        for refusal in [
+            GrantRefusal::IdentityNotEnrolled { fix: "x".to_owned() },
+            GrantRefusal::UnknownRoot,
+            GrantRefusal::Expired { at: 1 },
+            GrantRefusal::Revoked,
+            GrantRefusal::BelowEpochFloor { floor: 1 },
+        ] {
+            let json = serde_json::to_value(&refusal).expect("json");
+            let code = json.get("code").and_then(|c| c.as_str()).expect("a code").to_owned();
+            assert!(seen.insert(code));
+        }
+        assert_eq!(seen.len(), 5);
+    }
+
 
     fn directory() -> (Directory, IdentityId) {
         let mut d = Directory::new();

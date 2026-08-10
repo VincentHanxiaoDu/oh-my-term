@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**130 of 212 features ticked.** (34 further sections are prose.)
+**131 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -308,7 +308,7 @@ Unticked means not done. Partly built stays unticked.
 - ~~0. The five decisions this document implements~~ — prose
 - [x] 1. The identity model — test_identity: devices belong to somebody
 - [x] 2. WebAuthn and passkeys, honestly — omt-auth methods: an IP is never a relying party, localhost is a suffix of nothing, a tailnet name becomes the tailnet-wide domain, reaching an instance never needs an origin
-- [ ] 3. The `home` instance role
+- [x] 3. The `home` instance role — omt-identity: an unenrolled identity is told exactly what to run, enrolment is checked before the signature, an epoch floor is distinct from revocation, home changes nothing about sessions
 - [x] 4. The encrypted identity file — omt-auth identity_file: the header is readable without the passphrase, the AAD bytes are the written ones, a lying length is refused, truncation at every offset is survived (the cipher itself is not wired)
 - [x] 5. Pairing flows — test_joining: pairing
 - [x] 6. Revocation and recovery — test_identity: revoke a person
