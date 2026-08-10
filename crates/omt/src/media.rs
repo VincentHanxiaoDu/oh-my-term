@@ -1968,6 +1968,125 @@ impl CapabilityHandler<SearchExplain> for SearchHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Is this agent stuck? — 20 §10
+// ---------------------------------------------------------------------------
+
+/// Input to `agent.attention`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AttentionIn {
+    /// How long it has been working, in seconds.
+    #[serde(default)]
+    pub working_secs: u64,
+    /// The usual working time for this binding.
+    #[serde(default)]
+    pub baseline_working_secs: u64,
+    /// How long since anything happened.
+    #[serde(default)]
+    pub silent_secs: u64,
+    /// The usual gap between events.
+    #[serde(default)]
+    pub baseline_gap_secs: u64,
+    /// Recent tool calls, canonicalised.
+    #[serde(default)]
+    pub recent_calls: Vec<String>,
+    /// How many results in a row have failed.
+    #[serde(default)]
+    pub consecutive_failures: u32,
+    /// The most recent failure.
+    #[serde(default)]
+    pub last_failure: Option<String>,
+    /// Tokens spent since a file last changed.
+    #[serde(default)]
+    pub tokens_since_file_change: u64,
+    /// How long since a file last changed.
+    #[serde(default)]
+    pub since_file_change_secs: u64,
+}
+
+/// What `agent.attention` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct AttentionOut {
+    /// Whether anything fired.
+    pub needs_attention: bool,
+    /// Every reason, never just the first.
+    pub reasons: Vec<String>,
+    /// `weak` or `strong`.
+    pub confidence: Option<String>,
+    /// A line somebody can act on.
+    pub detail: Option<String>,
+}
+
+omt_catalog::capability! {
+    /// Whether an agent has stopped making progress.
+    pub struct AgentAttention;
+    input  = AttentionIn,
+    output = AttentionOut,
+    decl = omt_catalog::Decl {
+        name: "agent.attention",
+        group: "agent",
+        verb: "attention",
+        title: "Is this agent stuck",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Baselines are per binding and learned from its own history: thirty seconds is an eternity for a linter and a blink for a test suite, so a fixed threshold is wrong for everybody.",
+    },
+}
+
+/// Serves attention detection.
+pub struct AttentionHandler;
+
+impl CapabilityHandler<AgentAttention> for AttentionHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: AttentionIn,
+    ) -> Result<AttentionOut, CapabilityError> {
+        let observation = omt_recall::stuck::Observation {
+            working_secs: input.working_secs,
+            baseline_working_secs: input.baseline_working_secs,
+            silent_secs: input.silent_secs,
+            baseline_gap_secs: input.baseline_gap_secs,
+            recent_calls: input.recent_calls.into_iter().collect(),
+            consecutive_failures: input.consecutive_failures,
+            last_failure: input.last_failure,
+            tokens_since_file_change: input.tokens_since_file_change,
+            since_file_change_secs: input.since_file_change_secs,
+        };
+        let signal = omt_recall::stuck::examine(&observation, &omt_recall::stuck::Thresholds::default());
+        Ok(match signal {
+            None => AttentionOut {
+                needs_attention: false,
+                reasons: Vec::new(),
+                confidence: None,
+                detail: None,
+            },
+            Some(s) => AttentionOut {
+                needs_attention: true,
+                reasons: s
+                    .reasons
+                    .iter()
+                    .map(|r| {
+                        serde_json::to_value(r)
+                            .ok()
+                            .and_then(|v| v.get("reason").and_then(|x| x.as_str()).map(str::to_owned))
+                            .unwrap_or_else(|| "unknown".to_owned())
+                    })
+                    .collect(),
+                confidence: Some(format!("{:?}", s.confidence).to_lowercase()),
+                detail: Some(s.detail),
+            },
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -122,3 +122,60 @@ class TestUsage:
         # said it spent, and nothing said anything here.
         report = client.call("usage.report")
         assert "sessions" in report or "total" in report
+
+
+class TestStuckAgentDetection:
+    """20-recall-and-usage §10. Working for 22 minutes looks like working for 20
+    seconds, except by elapsed time."""
+
+    def test_a_working_agent_is_not_a_stuck_one(self, client) -> None:
+        # The detector has to be quiet almost always, or it is one people mute
+        # and then never hear from again.
+        out = client.call(
+            "agent.attention",
+            working_secs=20,
+            baseline_working_secs=30,
+            silent_secs=2,
+            baseline_gap_secs=5,
+        )
+        assert out["needs_attention"] is False
+        assert out["reasons"] == []
+
+    def test_far_beyond_its_own_baseline_fires(self, client) -> None:
+        out = client.call(
+            "agent.attention", working_secs=1320, baseline_working_secs=30
+        )
+        assert out["needs_attention"] is True
+        assert "long_working" in out["reasons"]
+
+    def test_a_slow_agent_is_not_a_permanent_alarm(self, client) -> None:
+        # Thirty seconds is an eternity for a linter and a blink for a test
+        # suite, so the baseline is the binding's own.
+        out = client.call(
+            "agent.attention", working_secs=1500, baseline_working_secs=1200
+        )
+        assert out["needs_attention"] is False
+
+    def test_every_reason_that_fired_is_reported(self, client) -> None:
+        # An agent looping and burning tokens has two problems, and being told
+        # about one sends somebody looking in the wrong place.
+        out = client.call(
+            "agent.attention",
+            recent_calls=["Bash(x)"] * 4,
+            consecutive_failures=5,
+            last_failure="exit 1",
+            tokens_since_file_change=90000,
+        )
+        assert len(out["reasons"]) == 3, out["reasons"]
+
+    def test_an_unambiguous_signal_is_strong_and_a_circumstantial_one_is_weak(
+        self, client
+    ) -> None:
+        weak = client.call("agent.attention", working_secs=1320, baseline_working_secs=30)
+        assert weak["confidence"] == "weak"
+        strong = client.call("agent.attention", consecutive_failures=3)
+        assert strong["confidence"] == "strong"
+
+    def test_a_first_turn_with_no_history_is_not_evidence(self, client) -> None:
+        out = client.call("agent.attention", working_secs=3600, silent_secs=3600)
+        assert out["needs_attention"] is False

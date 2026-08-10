@@ -434,6 +434,21 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'agent.attention': (
+    request: RequestId,
+    observation: {
+      working_secs?: number
+      baseline_working_secs?: number
+      silent_secs?: number
+      baseline_gap_secs?: number
+      recent_calls?: string[]
+      consecutive_failures?: number
+      last_failure?: string | null
+      tokens_since_file_change?: number
+      since_file_change_secs?: number
+    } = {},
+  ) => call(request, 'agent.attention', observation),
+
   'search.explain': (
     request: RequestId,
     candidates: {
