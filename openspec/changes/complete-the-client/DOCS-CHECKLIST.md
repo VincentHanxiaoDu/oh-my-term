@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**140 of 212 features ticked.** (34 further sections are prose.)
+**141 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -74,7 +74,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 1. What this layer must deliver
 - [ ] 2. The two-axis model
 - [x] 3. Source model — test_agent_native: messages, tools, results
-- [ ] 4. Merging: confidence tiers, not voting
+- [x] 4. Merging: confidence tiers, not voting — omt-agent merge: the highest fresh tier wins, a lower one may fill a gap but never contradict a live higher one, a stale source stops speaking, an authoritative source suspends the heuristic
 - [x] 5. Interactions — the flagship path — test_agents: interactions and deliverable
 - [ ] 6. The heuristic floor
 - [ ] 7. Adapters
