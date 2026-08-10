@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**89 of 212 features ticked.** (34 further sections are prose.)
+**90 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -224,7 +224,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 3. Multi-client, multi-size — the crux
 - [ ] 4. Presets, DSL, saved layouts
 - [ ] 5. Zoom, floats, stacks, and moving panes
-- [ ] 6. Directional focus navigation
+- [x] 6. Directional focus navigation — test_workspace_surfaces: geometric over placed rects, hidden panes skipped, deterministic, no wrap by default
 - [ ] 7. Mobile and web parity
 - [ ] 8. Rendering
 - [ ] 9. Capabilities

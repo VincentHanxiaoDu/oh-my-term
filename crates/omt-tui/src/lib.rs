@@ -8,6 +8,7 @@
 pub mod app;
 pub mod chrome;
 pub mod hint;
+pub mod navigate;
 pub mod overlay;
 
 pub use chrome::{Chrome, Tab, status_line, tab_bar};

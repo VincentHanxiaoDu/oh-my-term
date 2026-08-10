@@ -64,6 +64,7 @@
   "pane.close",
   "pane.focus",
   "pane.list",
+  "pane.navigate",
   "pane.open",
   "plugin.enable",
   "plugin.install",

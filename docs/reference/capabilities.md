@@ -74,6 +74,7 @@ vanishing.
 | `pane.close` | command | operator | Close a pane. The session it showed keeps running — closing a view of something is not ending it. |
 | `pane.focus` | command | operator | Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored. |
 | `pane.list` | query | viewer | Panes in a workspace's primary view, which one has focus, and how many fit on a standard terminal. |
+| `pane.navigate` | query | viewer | Geometric, over the placed rectangles rather than tree order — tree order gives wrong answers in asymmetric layouts. Deterministic, because breaking ties by recency makes the same keypress do two different things for reasons the user cannot see. |
 | `pane.open` | command | operator | Open a pane onto an existing session. Presentation only: no process is started and none is stopped. |
 | `plugin.enable` | command | operator | Switch a plugin on or off. Idempotent: setting the state it already has is not an error. |
 | `plugin.install` | command | operator | Install a plugin with an explicit grant. What it asks for and what it receives are separate, and what was refused is reported. |
@@ -117,4 +118,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-107 capabilities.
+108 capabilities.

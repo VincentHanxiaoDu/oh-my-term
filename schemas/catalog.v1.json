@@ -1270,6 +1270,24 @@
     },
     {
       "aliases": [],
+      "doc": "Geometric, over the placed rectangles rather than tree order — tree order gives wrong answers in asymmetric layouts. Deterministic, because breaking ties by recency makes the same keypress do two different things for reasons the user cannot see.",
+      "effects": [],
+      "group": "pane",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "pane.navigate",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/pane/navigate",
+      "since": "0.1.0",
+      "title": "Move focus in a direction",
+      "verb": "navigate"
+    },
+    {
+      "aliases": [],
       "doc": "Open a pane onto an existing session. Presentation only: no process is started and none is stopped.",
       "effects": [],
       "group": "pane",

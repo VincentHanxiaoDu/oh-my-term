@@ -476,3 +476,62 @@ class TestRemoteMirrors:
             assert mirror["host"]
             assert mirror["remote_path"]
             assert mirror["digest"]
+
+
+class TestDirectionalFocus:
+    """17-panes-and-layout §6. Geometric, over the placed rectangles."""
+
+    # One tall pane on the left, two stacked on the right.
+    PANES = [
+        {"id": "a", "left": 0, "top": 0, "right": 40, "bottom": 24, "placement_index": 0},
+        {"id": "b", "left": 40, "top": 0, "right": 80, "bottom": 12, "placement_index": 1},
+        {"id": "c", "left": 40, "top": 12, "right": 80, "bottom": 24, "placement_index": 2},
+    ]
+
+    def test_focus_moves_to_the_pane_that_is_actually_there(
+        self, client: Client
+    ) -> None:
+        out = client.call("pane.navigate", panes=self.PANES, **{"from": "b"}, direction="left")
+        assert out["focus"] == "a"
+
+    def test_there_is_nothing_past_the_edge_without_wrap(self, client: Client) -> None:
+        # A focus key that leaves the edge of the screen reads as a bug before
+        # it reads as a feature.
+        out = client.call("pane.navigate", panes=self.PANES, **{"from": "a"}, direction="left")
+        assert out["focus"] is None
+
+    def test_wrap_jumps_to_the_far_side_when_asked(self, client: Client) -> None:
+        out = client.call(
+            "pane.navigate", panes=self.PANES, **{"from": "a"}, direction="left", wrap=True
+        )
+        assert out["focus"] in {"b", "c"}
+
+    def test_the_answer_does_not_depend_on_history(self, client: Client) -> None:
+        # The deliberate divergence from tmux and zellij: recency makes the
+        # same keypress in the same visible layout do two different things for
+        # reasons the user cannot see.
+        answers = {
+            client.call(
+                "pane.navigate", panes=self.PANES, **{"from": "a"}, direction="right"
+            )["focus"]
+            for _ in range(5)
+        }
+        assert len(answers) == 1, answers
+
+    def test_a_hidden_pane_is_skipped(self, client: Client) -> None:
+        panes = [
+            {"id": "a", "left": 0, "top": 0, "right": 20, "bottom": 24, "placement_index": 0},
+            {"id": "b", "left": 20, "top": 0, "right": 40, "bottom": 24, "hidden": True, "placement_index": 1},
+            {"id": "c", "left": 40, "top": 0, "right": 60, "bottom": 24, "placement_index": 2},
+        ]
+        out = client.call("pane.navigate", panes=panes, **{"from": "a"}, direction="right")
+        assert out["focus"] == "c"
+
+    def test_an_unknown_direction_is_refused_and_says_what_exists(
+        self, client: Client
+    ) -> None:
+        with pytest.raises(Exception) as caught:
+            client.call(
+                "pane.navigate", panes=self.PANES, **{"from": "a"}, direction="sideways"
+            )
+        assert "left" in str(caught.value).lower()

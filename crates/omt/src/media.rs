@@ -1518,6 +1518,112 @@ impl CapabilityHandler<KeysRegistry> for KeysHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Directional focus — 17 §6
+// ---------------------------------------------------------------------------
+
+/// One placed pane, as the caller describes it.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PlacedIn {
+    /// Which pane.
+    pub id: String,
+    /// Column of the left edge.
+    pub left: u16,
+    /// Row of the top edge.
+    pub top: u16,
+    /// One past the right edge.
+    pub right: u16,
+    /// One past the bottom edge.
+    pub bottom: u16,
+    /// Whether it is currently drawn.
+    #[serde(default)]
+    pub hidden: bool,
+    /// Its stable pre-order index, the total tie-break.
+    pub placement_index: u32,
+}
+
+/// Input to `pane.navigate`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NavigateIn {
+    /// Every placed pane.
+    pub panes: Vec<PlacedIn>,
+    /// Where focus is now.
+    pub from: String,
+    /// `left`, `right`, `up` or `down`.
+    pub direction: String,
+    /// Whether to jump to the far side when there is nothing that way.
+    #[serde(default)]
+    pub wrap: bool,
+}
+
+/// What `pane.navigate` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct NavigateOut {
+    /// Where focus should go, or nothing.
+    pub focus: Option<String>,
+}
+
+omt_catalog::capability! {
+    /// Move focus in a direction, geometrically.
+    pub struct PaneNavigate;
+    input  = NavigateIn,
+    output = NavigateOut,
+    decl = omt_catalog::Decl {
+        name: "pane.navigate",
+        group: "pane",
+        verb: "navigate",
+        title: "Move focus in a direction",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Geometric, over the placed rectangles rather than tree order — tree order gives wrong answers in asymmetric layouts. Deterministic, because breaking ties by recency makes the same keypress do two different things for reasons the user cannot see.",
+    },
+}
+
+impl CapabilityHandler<PaneNavigate> for KeysHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: NavigateIn,
+    ) -> Result<NavigateOut, CapabilityError> {
+        let direction = match input.direction.to_lowercase().as_str() {
+            "left" => omt_tui::navigate::Direction::Left,
+            "right" => omt_tui::navigate::Direction::Right,
+            "up" => omt_tui::navigate::Direction::Up,
+            "down" => omt_tui::navigate::Direction::Down,
+            other => {
+                return Err(CapabilityError::invalid_input(format!(
+                    "no direction `{other}`; omt has left, right, up and down"
+                )));
+            }
+        };
+        let panes: Vec<omt_tui::navigate::Placed> = input
+            .panes
+            .into_iter()
+            .map(|p| omt_tui::navigate::Placed {
+                id: p.id,
+                rect: omt_tui::navigate::Rect {
+                    left: p.left,
+                    top: p.top,
+                    right: p.right,
+                    bottom: p.bottom,
+                },
+                hidden: p.hidden,
+                placement_index: p.placement_index,
+            })
+            .collect();
+        Ok(NavigateOut {
+            focus: omt_tui::navigate::navigate(&panes, &input.from, direction, input.wrap),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

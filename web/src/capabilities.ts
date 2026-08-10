@@ -434,6 +434,22 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'pane.navigate': (
+    request: RequestId,
+    panes: {
+      id: string
+      left: number
+      top: number
+      right: number
+      bottom: number
+      hidden?: boolean
+      placement_index: number
+    }[],
+    from: string,
+    direction: string,
+    wrap = false,
+  ) => call(request, 'pane.navigate', { panes, from, direction, wrap }),
+
   'keys.list': (request: RequestId) => call(request, 'keys.list', {}),
 
   'keys.explain': (request: RequestId, chord: string) =>
