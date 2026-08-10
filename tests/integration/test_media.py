@@ -118,3 +118,39 @@ class TestClipboardAcrossSsh:
     def test_copying_nothing_is_refused(self, client: Client) -> None:
         with pytest.raises(Exception):
             client.call("media.clipboard", text="", term="xterm")
+
+
+class TestHandingAFileToAnAgent:
+    """§7.1. Per-adapter, because one format for all of them is ignored by most."""
+
+    def test_each_agent_gets_its_own_syntax(self, client: Client) -> None:
+        forms = {
+            agent: client.call("media.attach", agent=agent, path="/tmp/a.png")[
+                "reference"
+            ]
+            for agent in ("claude-code", "aider", "gemini")
+        }
+        assert forms["claude-code"] == '@"/tmp/a.png"'
+        assert forms["aider"] == "/add /tmp/a.png"
+        assert forms["gemini"] == "@/tmp/a.png"
+
+    def test_every_reference_carries_the_path(self, client: Client) -> None:
+        # A reference that lost the path is one the agent cannot act on, and
+        # the failure is silent.
+        for agent in ("claude-code", "aider", "gemini", "codex", "brand-new"):
+            out = client.call("media.attach", agent=agent, path="/tmp/needle.png")
+            assert "/tmp/needle.png" in out["reference"], agent
+
+    def test_an_unknown_agent_is_asked_in_english_and_says_it_is_a_fallback(
+        self, client: Client
+    ) -> None:
+        out = client.call("media.attach", agent="brand-new", path="/tmp/a.png")
+        assert out["confidence"] == "fallback"
+        assert "look at" in out["reference"]
+
+    def test_a_relative_path_is_refused(self, client: Client) -> None:
+        # It would resolve against whatever directory the agent happens to be
+        # in, which is not knowable from here.
+        with pytest.raises(Exception) as caught:
+            client.call("media.attach", agent="claude-code", path="shot.png")
+        assert "absolute" in str(caught.value).lower()

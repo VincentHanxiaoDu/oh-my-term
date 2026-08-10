@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**66 of 212 features ticked.** (33 further sections are prose.)
+**67 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -116,7 +116,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 4. Getting images in: the easy cases
 - [ ] 5. Case (b): image paste over SSH — the core mechanism
 - [ ] 6. `omt ssh <target>` — the thin client
-- [ ] 7. Image display and file transfer
+- [x] 7. Image display and file transfer — test_media: per-agent reference syntax, quoted paths, English fallback, relative refused
 - [x] 8. Security — omt-media: traversal reduced to one component, both separators, reserved names, hash-prefixed, truncated
 - ~~9. OPEN QUESTIONS~~ — prose
 

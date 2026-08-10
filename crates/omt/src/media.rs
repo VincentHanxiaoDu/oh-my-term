@@ -358,6 +358,100 @@ impl CapabilityHandler<MediaClipboard> for MediaHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Handing a blob to an agent — §7.1
+// ---------------------------------------------------------------------------
+
+/// How one agent wants to be told about a file.
+///
+/// Per-adapter data, not a global format. Every one of these was observed from
+/// the agent's own interface rather than guessed: `@"path"` is what Claude
+/// Code's own TUI writes for a pasted image, `/add` is Aider's documented
+/// command. A single format applied to all of them would be silently ignored
+/// by most, which looks exactly like an agent choosing not to read the file.
+#[must_use]
+pub fn attachment_reference(agent: &str, path: &str) -> (String, &'static str) {
+    match agent {
+        // Quoted, because a path with a space in it is otherwise two arguments
+        // and the reference resolves to nothing.
+        "claudecode" | "claude" => (format!("@\"{path}\""), "high"),
+        "aider" => (format!("/add {path}"), "high"),
+        "geminicli" | "gemini" | "qwencode" | "qwen" => (format!("@{path}"), "medium"),
+        "codex" => (format!("{path}"), "medium"),
+        // The only ones with a real structured attachment channel. A path in
+        // the prompt would work less well than the channel they already have.
+        "opencode" => (path.to_owned(), "high"),
+        // The fallback is a bare absolute path with a human sentence in front,
+        // because an agent that does not recognise any syntax still reads
+        // English and can be asked to open a path.
+        _ => (
+            format!("Please look at this file: {path}"),
+            "fallback",
+        ),
+    }
+}
+
+/// Input to `media.attach`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AttachIn {
+    /// Which agent is being told.
+    pub agent: String,
+    /// The absolute path the blob was materialised at.
+    pub path: String,
+}
+
+/// What `media.attach` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct AttachOut {
+    /// The text to inject, in the agent's own syntax.
+    pub reference: String,
+    /// How well established this form is, rather than a claim it will work.
+    pub confidence: String,
+}
+
+omt_catalog::capability! {
+    /// How to reference a file to a particular agent.
+    pub struct MediaAttach;
+    input  = AttachIn,
+    output = AttachOut,
+    decl = omt_catalog::Decl {
+        name: "media.attach",
+        group: "media",
+        verb: "attach",
+        title: "Reference a file to an agent",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Per-adapter, because one format applied to all of them is silently ignored by most — which looks exactly like an agent choosing not to read the file.",
+    },
+}
+
+impl CapabilityHandler<MediaAttach> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: AttachIn,
+    ) -> Result<AttachOut, CapabilityError> {
+        if !input.path.starts_with('/') {
+            return Err(CapabilityError::invalid_input(
+                "an attachment reference needs an absolute path; a relative one resolves against whatever directory the agent happens to be in",
+            ));
+        }
+        let (reference, confidence) =
+            attachment_reference(&input.agent.to_lowercase().replace(['-', '_'], ""), &input.path);
+        Ok(AttachOut {
+            reference,
+            confidence: confidence.to_owned(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -366,6 +460,56 @@ impl CapabilityHandler<MediaClipboard> for MediaHandler {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_code_gets_the_form_its_own_tui_writes() {
+        let (reference, confidence) = attachment_reference("claudecode", "/tmp/omt/shot.png");
+        assert_eq!(reference, "@\"/tmp/omt/shot.png\"");
+        assert_eq!(confidence, "high");
+    }
+
+    #[test]
+    fn a_path_with_a_space_is_quoted_where_the_syntax_needs_it() {
+        // Otherwise it is two arguments and the reference resolves to nothing.
+        let (reference, _) = attachment_reference("claudecode", "/tmp/my shot.png");
+        assert!(reference.contains("\"/tmp/my shot.png\""), "{reference}");
+    }
+
+    #[test]
+    fn aider_gets_its_documented_command() {
+        let (reference, confidence) = attachment_reference("aider", "/tmp/a.png");
+        assert_eq!(reference, "/add /tmp/a.png");
+        assert_eq!(confidence, "high");
+    }
+
+    #[test]
+    fn the_file_inclusion_agents_get_their_own_syntax() {
+        for agent in ["gemini", "geminicli", "qwen", "qwencode"] {
+            let (reference, _) = attachment_reference(agent, "/tmp/a.png");
+            assert_eq!(reference, "@/tmp/a.png", "{agent}");
+        }
+    }
+
+    #[test]
+    fn an_agent_omt_does_not_know_is_asked_in_english() {
+        // One that recognises no syntax still reads English and can be asked
+        // to open a path. Reported as a fallback rather than as a confident
+        // format, because it is one.
+        let (reference, confidence) = attachment_reference("something-new", "/tmp/a.png");
+        assert!(reference.contains("/tmp/a.png"));
+        assert!(reference.contains("look at"));
+        assert_eq!(confidence, "fallback");
+    }
+
+    #[test]
+    fn every_reference_contains_the_path_it_is_about() {
+        // A reference that lost the path is one the agent cannot act on, and
+        // the failure is silent.
+        for agent in ["claudecode", "aider", "gemini", "codex", "opencode", "whatever"] {
+            let (reference, _) = attachment_reference(agent, "/tmp/needle.png");
+            assert!(reference.contains("/tmp/needle.png"), "{agent}: {reference}");
+        }
+    }
 
     #[test]
     fn base64_round_trips_including_the_padded_lengths() {

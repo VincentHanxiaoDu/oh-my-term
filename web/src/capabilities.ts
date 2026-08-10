@@ -434,6 +434,9 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'media.attach': (request: RequestId, agent: string, path: string) =>
+    call(request, 'media.attach', { agent, path }),
+
   'media.clipboard': (request: RequestId, text: string, term?: string) =>
     call(request, 'media.clipboard', term === undefined ? { text } : { text, term }),
 

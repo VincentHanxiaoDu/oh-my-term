@@ -758,6 +758,24 @@
     },
     {
       "aliases": [],
+      "doc": "Per-adapter, because one format applied to all of them is silently ignored by most — which looks exactly like an agent choosing not to read the file.",
+      "effects": [],
+      "group": "media",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "media.attach",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/media/attach",
+      "since": "0.1.0",
+      "title": "Reference a file to an agent",
+      "verb": "attach"
+    },
+    {
+      "aliases": [],
       "doc": "OSC 52, wrapped for tmux when TERM says so. omt does not claim the copy succeeded: there is no acknowledgement to base that on.",
       "effects": [],
       "group": "media",
