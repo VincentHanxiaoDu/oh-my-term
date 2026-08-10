@@ -92,6 +92,7 @@
   "session.restart",
   "session.scrollback",
   "session.snapshot",
+  "session.timeline",
   "session.transcript",
   "session.write",
   "setup.detect_agents",

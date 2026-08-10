@@ -102,6 +102,7 @@ vanishing.
 | `session.restart` | command | operator | Respawn the command behind a session restored from a snapshot, keeping the old output above a separator. |
 | `session.scrollback` | query | viewer | History as styled lines, by absolute row. Structured rather than raw bytes, so a browser needs no second terminal emulator to show what scrolled past. |
 | `session.snapshot` | query | viewer | The visible screen as styled runs, so a remote client renders the same picture as the terminal without emulating one. |
+| `session.timeline` | query | viewer | Derived from the event log, so it can be rebuilt at any time. Only consecutive identical calls collapse, and the canonicaliser strips whitespace and nothing else — one that ignored arguments would collapse `rm -rf build` and `rm -rf /`. |
 | `session.transcript` | query | viewer | Messages, reasoning, tool calls and results for an agent session. An agent emits no command marks, so blocks do not apply to it; this is what it is read through instead. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `setup.detect_agents` | query | viewer | Every agent omt can drive, found or not. Listing only what is present hides the difference between an agent omt did not find and one it has never heard of. |
@@ -123,4 +124,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-113 capabilities.
+114 capabilities.

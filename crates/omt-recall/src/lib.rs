@@ -9,6 +9,7 @@ pub mod ranking;
 pub mod redact;
 pub mod schedule;
 pub mod stuck;
+pub mod timeline;
 
 pub use schedule::{FAILURES_BEFORE_DISABLING, Job, JobState, Schedule, Skipped, Trigger};
 

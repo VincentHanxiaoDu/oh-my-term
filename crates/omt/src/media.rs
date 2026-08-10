@@ -2269,6 +2269,138 @@ impl CapabilityHandler<AgentCompare> for AttentionHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Timeline and digest — 20 §8
+// ---------------------------------------------------------------------------
+
+/// One event, as the caller describes it.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TimelineEventIn {
+    /// Its per-session sequence number.
+    pub seq: u64,
+    /// When, in seconds since the epoch.
+    pub at: u64,
+    /// `user_message`, `assistant_message`, `tool_call`, `file_changed`,
+    /// `interaction` or `failed_block`.
+    pub kind: String,
+    /// What it was, in the agent's own words.
+    pub label: String,
+}
+
+/// Input to `session.timeline`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TimelineIn {
+    /// The events to assemble.
+    pub events: Vec<TimelineEventIn>,
+}
+
+/// One assembled line.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TimelineEntryOut {
+    /// Where it starts.
+    pub seq: u64,
+    /// When.
+    pub at: u64,
+    /// What kind.
+    pub kind: String,
+    /// What it was.
+    pub label: String,
+    /// How many identical events collapsed into it.
+    pub count: u32,
+    /// From the first to the last, in seconds.
+    pub spanned_secs: u64,
+}
+
+/// What `session.timeline` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TimelineOut {
+    /// The lines, in sequence order.
+    pub entries: Vec<TimelineEntryOut>,
+    /// How many events went in.
+    pub events: u32,
+    /// How many tool calls.
+    pub tool_calls: u32,
+    /// How many files changed.
+    pub files_changed: u32,
+    /// How many questions were asked.
+    pub interactions: u32,
+    /// How many commands failed.
+    pub failed_blocks: u32,
+    /// A short account for somebody who was away.
+    pub digest: String,
+}
+
+omt_catalog::capability! {
+    /// What happened in a session, assembled and collapsed.
+    pub struct SessionTimeline;
+    input  = TimelineIn,
+    output = TimelineOut,
+    decl = omt_catalog::Decl {
+        name: "session.timeline",
+        group: "session",
+        verb: "timeline",
+        title: "What happened here",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Derived from the event log, so it can be rebuilt at any time. Only consecutive identical calls collapse, and the canonicaliser strips whitespace and nothing else — one that ignored arguments would collapse `rm -rf build` and `rm -rf /`.",
+    },
+}
+
+impl CapabilityHandler<SessionTimeline> for AttentionHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: TimelineIn,
+    ) -> Result<TimelineOut, CapabilityError> {
+        let events: Vec<omt_recall::timeline::Event> = input
+            .events
+            .into_iter()
+            .map(|e| omt_recall::timeline::Event {
+                seq: e.seq,
+                at: e.at,
+                kind: match e.kind.as_str() {
+                    "user_message" => omt_recall::timeline::Kind::UserMessage,
+                    "assistant_message" => omt_recall::timeline::Kind::AssistantMessage,
+                    "file_changed" => omt_recall::timeline::Kind::FileChanged,
+                    "interaction" => omt_recall::timeline::Kind::Interaction,
+                    "failed_block" => omt_recall::timeline::Kind::FailedBlock,
+                    _ => omt_recall::timeline::Kind::ToolCall,
+                },
+                label: e.label,
+            })
+            .collect();
+        let timeline = omt_recall::timeline::assemble(&events);
+        let digest = omt_recall::timeline::digest(&timeline);
+        Ok(TimelineOut {
+            entries: timeline
+                .entries
+                .iter()
+                .map(|e| TimelineEntryOut {
+                    seq: e.seq,
+                    at: e.at,
+                    kind: format!("{:?}", e.kind).to_lowercase(),
+                    label: e.label.clone(),
+                    count: e.count,
+                    spanned_secs: e.spanned_secs,
+                })
+                .collect(),
+            events: timeline.stats.events,
+            tool_calls: timeline.stats.tool_calls,
+            files_changed: timeline.stats.files_changed,
+            interactions: timeline.stats.interactions,
+            failed_blocks: timeline.stats.failed_blocks,
+            digest,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

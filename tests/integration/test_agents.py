@@ -245,3 +245,54 @@ class TestComparingParallelRuns:
     def test_comparing_nothing_is_empty_rather_than_an_error(self, client) -> None:
         out = client.call("agent.compare", runs=[])
         assert out["rows"] == []
+
+
+class TestSessionTimeline:
+    """20-recall-and-usage §8. Assembly, not observation."""
+
+    def events(self, specs):
+        return [
+            {"seq": i, "at": 100 + i, "kind": kind, "label": label}
+            for i, (kind, label) in enumerate(specs)
+        ]
+
+    def test_repeated_calls_collapse_with_a_count(self, client) -> None:
+        # A raw stream for a twenty-minute turn is hundreds of entries, and
+        # reading it is worse than the scrollback it replaced.
+        events = self.events([("tool_call", "Bash(cargo test)")] * 7)
+        out = client.call("session.timeline", events=events)
+        assert len(out["entries"]) == 1
+        assert out["entries"][0]["count"] == 7
+
+    def test_two_different_calls_never_collapse(self, client) -> None:
+        # A canonicaliser that ignored arguments would collapse `rm -rf build`
+        # and `rm -rf /`, and the line would be a lie about what happened.
+        events = self.events(
+            [("tool_call", "Bash(rm -rf build)"), ("tool_call", "Bash(rm -rf /)")]
+        )
+        assert len(client.call("session.timeline", events=events)["entries"]) == 2
+
+    def test_only_consecutive_repeats_collapse(self, client) -> None:
+        events = self.events(
+            [
+                ("tool_call", "Bash(cargo test)"),
+                ("file_changed", "src/a.rs"),
+                ("tool_call", "Bash(cargo test)"),
+            ]
+        )
+        assert len(client.call("session.timeline", events=events)["entries"]) == 3
+
+    def test_the_counts_are_of_events_not_collapsed_lines(self, client) -> None:
+        # Otherwise seven runs of a failing command report as one failure,
+        # which is the opposite of what somebody needs to know.
+        events = self.events([("failed_block", "cargo test")] * 5)
+        out = client.call("session.timeline", events=events)
+        assert out["failed_blocks"] == 5
+        assert len(out["entries"]) == 1
+
+    def test_a_loop_shows_up_in_the_digest(self, client) -> None:
+        events = self.events([("tool_call", "Bash(cargo test)")] * 6)
+        assert "×6" in client.call("session.timeline", events=events)["digest"]
+
+    def test_nothing_happening_says_so(self, client) -> None:
+        assert client.call("session.timeline", events=[])["digest"] == "Nothing happened."

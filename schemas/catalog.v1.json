@@ -1834,6 +1834,24 @@
     },
     {
       "aliases": [],
+      "doc": "Derived from the event log, so it can be rebuilt at any time. Only consecutive identical calls collapse, and the canonicaliser strips whitespace and nothing else — one that ignored arguments would collapse `rm -rf build` and `rm -rf /`.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.timeline",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/timeline",
+      "since": "0.1.0",
+      "title": "What happened here",
+      "verb": "timeline"
+    },
+    {
+      "aliases": [],
       "doc": "Messages, reasoning, tool calls and results for an agent session. An agent emits no command marks, so blocks do not apply to it; this is what it is read through instead.",
       "effects": [],
       "group": "session",

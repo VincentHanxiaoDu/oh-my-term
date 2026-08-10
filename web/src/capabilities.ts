@@ -434,6 +434,11 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'session.timeline': (
+    request: RequestId,
+    events: { seq: number; at: number; kind: string; label: string }[],
+  ) => call(request, 'session.timeline', { events }),
+
   'agent.compare': (request: RequestId, runs: Record<string, unknown>[]) =>
     call(request, 'agent.compare', { runs }),
 
