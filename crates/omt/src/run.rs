@@ -54,10 +54,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         .open_workspace(&cwd)
         .context("opening a workspace")?;
 
-    // One row is the hint's, so every pane is sized one short of the terminal.
-    // Taking it rather than drawing over it is the only version that works: a
-    // program that believes it owns the last row will draw there.
-    let usable_rows = rows.saturating_sub(1).max(1);
+    // Two rows are omt's: a tab bar at the top and the hint at the bottom. Taken
+    // rather than drawn over, because a program that believes it owns a row will
+    // draw there — and the screen was omt's *only* contribution to the display
+    // before this, which made a multiplexer indistinguishable from the shell it
+    // wraps.
+    let usable_rows = rows.saturating_sub(2).max(1);
     let mut panes = vec![LocalPane::open(
         &mut instance,
         workspace,
@@ -75,6 +77,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let started = std::time::Instant::now();
     let mut has_used_prefix = false;
     let mut shown_hint: Option<Option<&'static str>> = None;
+    let mut shown_bar: Option<String> = None;
+    let mut shown_bottom: Option<String> = None;
     let mut term_rows = rows;
     let mut term_cols = cols;
     let mut layout_dirty = true;
@@ -105,7 +109,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
         let rects = omt_tui::tile(
             term_cols,
-            term_rows.saturating_sub(1).max(1),
+            term_rows.saturating_sub(2).max(1),
             omt_tui::Split::Vertical,
             panes.len(),
         );
@@ -139,7 +143,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 };
             }
             pane.screen
-                .draw_at(&mut out, runtime.terminal().grid(), rect.col, rect.row)
+                // Offset by the tab bar, which owns the first row.
+                .draw_at(&mut out, runtime.terminal().grid(), rect.col, rect.row + 1)
                 .context("drawing")?;
         }
 
@@ -170,19 +175,58 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             remote_clients: 0,
             has_used_prefix,
         };
-        let hint = omt_tui::hint_for(&situation);
-        if shown_hint != Some(hint) {
-            // Saved and restored around the write, or the cursor ends parked on
-            // the hint row and the program's own cursor appears to vanish.
-            write!(
-                out,
-                "\x1b7\x1b[{};1H{}\x1b8",
-                term_rows,
-                omt_tui::render_hint(hint, term_cols)
-            )
-            .context("drawing the hint")?;
-            shown_hint = Some(hint);
+        // The tab bar. Everything omt knows that the shell does not — which
+        // workspace this is, what else is open, what is waiting on somebody —
+        // and until now it appeared nowhere at all.
+        let chrome = omt_tui::Chrome {
+            workspace: std::path::Path::new(&cwd)
+                .file_name()
+                .map_or_else(|| cwd.clone(), |n| n.to_string_lossy().into_owned()),
+            // Read once per frame from what git says, not cached: a branch
+            // shown after a checkout that changed it is worse than none.
+            branch: omt_workspace_fs::git::status(std::path::Path::new(&cwd))
+                .ok()
+                .and_then(|s| s.branch),
+            tabs: panes
+                .iter()
+                .enumerate()
+                .map(|(i, pane)| {
+                    let roster = instance.threads(pane.session);
+                    omt_tui::Tab {
+                        title: instance
+                            .session(pane.session)
+                            .map_or_else(|| "shell".to_owned(), |s| s.title.clone()),
+                        focused: i == focus,
+                        blocked: roster.map_or(0, |r| r.awaiting_human().len()),
+                        working: roster.is_some_and(|r| !r.is_empty()),
+                    }
+                })
+                .collect(),
+        };
+        let bar = omt_tui::tab_bar(&chrome, term_cols);
+        if shown_bar.as_deref() != Some(bar.as_str()) {
+            write!(out, "\x1b[1;1H\x1b[7m{bar}\x1b[0m").context("drawing the tab bar")?;
+            shown_bar = Some(bar);
         }
+
+        // The bottom row carries a hint when there is one to give, and says
+        // where you are the rest of the time. A row reserved for a hint that
+        // usually has none is a row spent on nothing — and the status it shows
+        // instead is counted from the same tabs the bar above renders, so the
+        // two cannot disagree.
+        let hint = omt_tui::hint_for(&situation);
+        let bottom = hint.map_or_else(
+            || omt_tui::status_line(&chrome, term_cols),
+            |text| omt_tui::render_hint(Some(text), term_cols),
+        );
+        if shown_bottom.as_deref() != Some(bottom.as_str()) {
+            // Saved and restored around the write, or the cursor ends parked on
+            // the bottom row and the program's own cursor appears to vanish.
+            write!(out, "\x1b7\x1b[{};1H{bottom}\x1b8", term_rows)
+                .context("drawing the status row")?;
+            shown_bottom = Some(bottom);
+        }
+        let _ = &mut shown_hint;
         out.flush().context("flushing")?;
 
         if crossterm::event::poll(TICK).context("polling for input")? {
@@ -206,6 +250,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     term_cols = cols;
                     layout_dirty = true;
                     shown_hint = None;
+                    shown_bar = None;
+                    shown_bottom = None;
                 }
                 Input::Split => {
                     // Refused rather than attempted when there is no room. Two
@@ -228,6 +274,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 Input::NextPane => {
                     focus = (focus + 1) % panes.len();
                     shown_hint = None;
+                    shown_bar = None;
+                    shown_bottom = None;
                 }
                 Input::ClosePane => {
                     // The pane goes; the session does not. Closing a view of
@@ -246,6 +294,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     // The cheat sheet is a capability, and duplicating it here
                     // would be a second list to keep in step with the keymap.
                     shown_hint = None;
+                    shown_bar = None;
+                    shown_bottom = None;
                 }
                 Input::Detach => break,
                 Input::Ignore => {}

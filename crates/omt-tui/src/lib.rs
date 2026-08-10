@@ -6,7 +6,10 @@
 //! silently pass.
 
 pub mod app;
+pub mod chrome;
 pub mod hint;
+
+pub use chrome::{Chrome, Tab, status_line, tab_bar};
 pub mod layout;
 pub mod render;
 
