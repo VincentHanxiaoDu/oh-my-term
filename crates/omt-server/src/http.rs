@@ -31,6 +31,14 @@ use crate::dispatch::{Peer, catalog_hash, handle};
 pub struct HttpState {
     /// The capabilities this instance offers.
     pub registry: Arc<CapabilityRegistry>,
+    /// Origins a browser request may come from.
+    ///
+    /// 13 §6. The daemon serves the web client and must assume the same
+    /// browser is running hostile pages: `evil.example` can open a socket to
+    /// loopback, and the browser tells omt where the page came from without
+    /// letting it lie. Empty means nothing browser-originated is accepted,
+    /// which is the safe direction for a misconfiguration.
+    pub allowed_origins: Vec<String>,
     /// Who may connect.
     pub credentials: Arc<std::sync::Mutex<CredentialStore>>,
     /// What this instance calls itself, for a device list somebody reads.
@@ -92,11 +100,22 @@ impl HttpState {
         Self {
             registry: Arc::new(registry),
             credentials: Arc::new(std::sync::Mutex::new(credentials)),
+            allowed_origins: Vec::new(),
             name: hostname(),
             watch: Arc::default(),
             identities: Arc::default(),
             events: None,
         }
+    }
+
+    /// Accept browser requests from these origins.
+    ///
+    /// Builder-style rather than a constructor argument, because most callers
+    /// serve no browser at all and should not have to say so.
+    #[must_use]
+    pub fn with_origins(mut self, origins: Vec<String>) -> Self {
+        self.allowed_origins = origins;
+        self
     }
 
     /// Build the state around a credential store somebody else already holds.
@@ -112,6 +131,7 @@ impl HttpState {
         Self {
             registry: Arc::new(registry),
             credentials,
+            allowed_origins: Vec::new(),
             name: hostname(),
             watch: Arc::default(),
             identities: Arc::default(),
@@ -168,8 +188,37 @@ impl HttpState {
     /// not: a token in the subprotocol list. A browser cannot set a header on a
     /// `WebSocket`, so that is the only channel it has — and keeping it to this
     /// method means an ordinary API request still cannot authenticate that way.
+    /// Whether this request's `Origin` is one omt serves.
+    ///
+    /// Checked before the credential, because a hostile page holding a stolen
+    /// token is exactly the case this defends against — and answering "bad
+    /// token" to it would confirm the token is the only thing missing.
+    #[must_use]
+    pub fn origin_allowed(&self, headers: &HeaderMap, state_changing: bool) -> bool {
+        let origin = headers
+            .get(axum::http::header::ORIGIN)
+            .and_then(|v| v.to_str().ok());
+        // A request with no `Origin` at all is not from a browser: `curl`, the
+        // TUI and the thin client all omit it. Browsers always send it on an
+        // upgrade, so its absence cannot be a page pretending — and requiring
+        // it would break every non-browser client for no gain.
+        if origin.is_none() {
+            return true;
+        }
+        crate::origin::check(origin, &self.allowed_origins, state_changing).allowed()
+    }
+
+    /// Check the credential on a WebSocket upgrade.
+    ///
+    /// Separate from `authorize` because it accepts one thing that method must
+    /// not: a token in the subprotocol list. A browser cannot set a header on a
+    /// `WebSocket`, so that is the only channel it has — and keeping it to this
+    /// method means an ordinary API request still cannot authenticate that way.
     #[must_use]
     pub fn authorize_upgrade(&self, headers: &HeaderMap) -> Option<Role> {
+        if !self.origin_allowed(headers, true) {
+            return None;
+        }
         if let Some(role) = self.authorize(headers) {
             return Some(role);
         }
@@ -852,5 +901,68 @@ mod tests {
     fn a_router_can_be_built() {
         let (state, _) = state_with_token();
         let _ = router(state);
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod origin_tests {
+    use super::*;
+
+    fn state() -> HttpState {
+        HttpState::new(
+            CapabilityRegistry::new(),
+            CredentialStore::new(),
+        )
+        .with_origins(vec!["http://127.0.0.1:7788".to_owned()])
+    }
+
+    fn headers(origin: Option<&str>) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        if let Some(origin) = origin {
+            h.insert(
+                axum::http::header::ORIGIN,
+                origin.parse().expect("a header value"),
+            );
+        }
+        h
+    }
+
+    #[test]
+    fn an_upgrade_from_a_hostile_page_is_refused_before_the_credential() {
+        // A hostile page holding a stolen token is exactly this case, and
+        // answering "bad token" to it would confirm the token is the only
+        // thing missing.
+        assert!(!state().origin_allowed(&headers(Some("https://evil.example")), true));
+        assert!(state().authorize_upgrade(&headers(Some("https://evil.example"))).is_none());
+    }
+
+    #[test]
+    fn an_upgrade_from_the_page_omt_serves_passes_the_origin_check() {
+        assert!(state().origin_allowed(&headers(Some("http://127.0.0.1:7788")), true));
+    }
+
+    #[test]
+    fn a_request_with_no_origin_is_not_from_a_browser() {
+        // curl, the TUI and the thin client all omit it; browsers always send
+        // it on an upgrade. Requiring it would break every non-browser client
+        // for no gain, because its absence cannot be a page pretending.
+        assert!(state().origin_allowed(&headers(None), true));
+    }
+
+    #[test]
+    fn an_instance_serving_no_browser_still_refuses_a_page() {
+        // The default allow-list is empty, so a daemon nobody configured for
+        // the web does not quietly accept browser traffic.
+        let bare = HttpState::new(
+            CapabilityRegistry::new(),
+            CredentialStore::new(),
+        );
+        assert!(!bare.origin_allowed(&headers(Some("http://127.0.0.1:7788")), true));
+        assert!(bare.origin_allowed(&headers(None), true), "and the TUI still connects");
     }
 }
