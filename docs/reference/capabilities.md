@@ -47,6 +47,7 @@ vanishing.
 | `instance.catalog` | query | viewer | Every capability this instance offers. |
 | `instance.info` | query | viewer | Version and protocol of this instance. |
 | `instance.metrics` | query | operator | Clients, sessions, calls and refusals. The health route says the process is up and says nothing else, which is not the same as knowing it is doing anything. |
+| `instance.shutdown` | command | admin | Refuses while an agent is working or blocked, naming the sessions. A shutdown that takes an agent down mid-turn is the same loss an upgrade refuses to cause. |
 | `interaction.list` | query | viewer | Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot. |
 | `interaction.resolve` | command | operator | Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state. |
 | `invite.create` | command | admin | A fresh invite, so a second device can be paired from a device already paired. Without it the only invite is the one printed at startup, and adding a phone means restarting the instance everybody else is connected to. |
@@ -100,6 +101,7 @@ vanishing.
 | `recall.policy` | query | viewer | A search index nobody can enumerate is one nobody can reason about. Reasoning is excluded by default: it is the most privacy-sensitive text an agent produces. |
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
 | `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
+| `remote.probe` | query | operator | Operator, not Viewer, because it makes this machine reach out to a host the caller chose. Viewer with NETWORK has no carve-out. |
 | `search.explain` | query | viewer | A transparent weighted product with no learning and no hidden state. Search over somebody's own history is where a wrong answer looks exactly like a right one, and a ranker that cannot explain itself gives them no way to notice. |
 | `search.session` | query | viewer | Find text across a session's screen and history, with the row and offsets of each hit so a client can scroll to it and highlight exactly that span. |
 | `security.bind_check` | query | admin | A misconfiguration fails the daemon rather than warning. A warning about an open port is printed once, into a log nobody reads, on a machine that is now reachable from the network. |
@@ -128,10 +130,14 @@ vanishing.
 | `store.paths` | query | operator | The alternative to this list is finding out what omt persists by reading twelve crates, which nobody does — least of all somebody deciding whether to run it on a work machine. |
 | `store.redaction_test` | query | operator | So somebody can find out what the detector catches before trusting it with something, rather than after. |
 | `store.retention` | query | viewer | Compact first, delete second. The output of a build from three months ago is worthless; the fact that you ran it, where, and that it failed, is still useful and costs two hundred bytes. |
+| `task.cancel` | command | operator | Cooperative: it stops at its next checkpoint. One past its point of no return refuses with the reason rather than reporting a success it cannot deliver. |
+| `task.get` | query | viewer | Where one operation got to, so a client that reconnected mid-job learns the answer it can no longer hear. |
+| `task.list` | query | viewer | 22 §10.1's job registry. Named `task` because `job` already means a scheduled job, and one name for two things would resolve by load order. |
 | `term.profile` | query | viewer | A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree. |
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
 | `uninstall.apply` | command | admin | Refuses unless it is given the hash of a plan that still matches the disk. A confirmation against a plan that has since changed is a confirmation of something the user never saw. |
 | `uninstall.plan` | query | admin | Driven by the setup manifest. Anything absent from it is never touched — an uninstall that reasons about what it probably wrote eventually removes somebody else's configuration. |
+| `upgrade.check` | query | operator | omt never checks on its own. This reaches the network because the user typed it, and reports who owns the binary so a package manager's file is delegated to rather than overwritten. |
 | `usage.report` | query | viewer | Tokens spent per session and in total, with whatever the agent said about its rate limit. Cost appears only when the agent stated one — omt never computes it from a price table of its own. |
 | `voice.append` | command | operator | Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending. |
 | `voice.clear` | command | operator | Discard a session's dictation buffer. Idempotent. |
@@ -142,4 +148,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-132 capabilities.
+138 capabilities.

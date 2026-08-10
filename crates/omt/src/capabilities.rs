@@ -5976,6 +5976,15 @@ pub fn registry_full(
     r.register::<crate::surfaces::SessionCapture, _>(crate::surfaces::SessionCaptureHandler(
         state.clone(),
     ))?;
+    let tasks: crate::ops::Tasks = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::BTreeMap::new(),
+    ));
+    r.register::<crate::ops::TaskList, _>(crate::ops::TaskHandler(tasks.clone()))?;
+    r.register::<crate::ops::TaskGet, _>(crate::ops::TaskHandler(tasks.clone()))?;
+    r.register::<crate::ops::TaskCancel, _>(crate::ops::TaskHandler(tasks))?;
+    r.register::<crate::ops::UpgradeCheck, _>(crate::ops::UpgradeHandler(state.clone()))?;
+    r.register::<crate::ops::InstanceShutdown, _>(crate::ops::LifecycleHandler(state.clone()))?;
+    r.register::<crate::ops::RemoteProbe, _>(crate::ops::RemoteHandler)?;
     let queues: crate::queue::Queues = std::sync::Arc::new(std::sync::Mutex::new(
         std::collections::BTreeMap::new(),
     ));

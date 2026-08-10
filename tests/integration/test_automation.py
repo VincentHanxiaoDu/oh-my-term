@@ -150,3 +150,53 @@ class TestTheContract:
             "events.subscribe",
         ):
             assert required in names, required
+
+
+class TestOperations:
+    """22-operations §10 -- the capabilities that operate the instance."""
+
+    def test_a_task_that_does_not_exist_is_not_found(self, client: Client) -> None:
+        _, refusal = client.try_call("task.get", task="task_nope")
+        assert refusal is not None
+        assert refusal.code == "not_found"
+
+    def test_the_task_list_is_empty_rather_than_missing(self, client: Client) -> None:
+        # A registry with nothing in it is a real answer. A client polling it
+        # should not have to tell "no jobs" from "no such capability".
+        listed = client.call("task.list")
+        assert listed["tasks"] == []
+
+    def test_an_upgrade_check_reports_who_owns_the_binary(self, client: Client) -> None:
+        # Overwriting a package manager's file leaves it certain it has a
+        # version it does not have.
+        out = client.call("upgrade.check")
+        assert out["current"]
+        assert out["installed_by"]
+        # Nothing is downloaded and no feed is contacted, so `available` is
+        # honestly unknown rather than invented.
+        assert out["available"] is None
+
+    def test_shutdown_reports_what_is_running_rather_than_taking_it_down(
+        self, client: Client, session: str
+    ) -> None:
+        # A shutdown that takes an agent down mid-turn is the same loss an
+        # upgrade refuses to cause. With nothing working it proceeds.
+        out = client.call("instance.shutdown")
+        assert "shutting_down" in out
+        assert isinstance(out["blocked_by"], list)
+
+    def test_probing_a_host_that_is_not_there_fails_rather_than_hanging(
+        self, client: Client
+    ) -> None:
+        _, refusal = client.try_call("remote.probe", host="omt-nonexistent-host.invalid")
+        assert refusal is not None
+        assert refusal.code == "precondition_failed"
+
+    def test_remote_probe_is_operator_because_it_makes_this_machine_connect_out(
+        self, client: Client
+    ) -> None:
+        # A read-only shared link must not be able to make this machine reach a
+        # host the caller chose. Viewer + NETWORK has no carve-out.
+        by_name = {c["name"]: c for c in client.call("instance.catalog")["entries"]}
+        assert by_name["remote.probe"]["role"] == "operator"
+        assert "network" in [e.lower() for e in by_name["remote.probe"]["effects"]]

@@ -430,6 +430,25 @@ export const HANDLERS = {
   'session.capture': (request: RequestId, session: string, format?: string, lines?: number) =>
     call(request, 'session.capture', { session, format, lines }),
 
+  // 22 §10.1's job registry. Named `task` because `job` already means a
+  // scheduled job in the catalog, and one name for two things would resolve by
+  // load order.
+  'task.list': (request: RequestId, includeFinished?: boolean) =>
+    call(request, 'task.list', { include_finished: includeFinished }),
+
+  'task.get': (request: RequestId, task: string) => call(request, 'task.get', { task }),
+
+  // Cooperative: it reports `cancelling`, not `cancelled`.
+  'task.cancel': (request: RequestId, task: string) => call(request, 'task.cancel', { task }),
+
+  'upgrade.check': (request: RequestId, channel?: string) =>
+    call(request, 'upgrade.check', { channel }),
+
+  'instance.shutdown': (request: RequestId, force?: boolean) =>
+    call(request, 'instance.shutdown', { force }),
+
+  'remote.probe': (request: RequestId, host: string) => call(request, 'remote.probe', { host }),
+
   'queue.enqueue': (request: RequestId, binding: string, state: string, text: string) =>
     call(request, 'queue.enqueue', { binding, state, text }),
 

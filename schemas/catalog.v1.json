@@ -749,6 +749,28 @@
     },
     {
       "aliases": [],
+      "doc": "Refuses while an agent is working or blocked, naming the sessions. A shutdown that takes an agent down mid-turn is the same loss an upgrade refuses to cause.",
+      "effects": [
+        "destructive"
+      ],
+      "group": "instance",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "instance.shutdown",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/instance/shutdown",
+      "since": "0.1.0",
+      "title": "Shut down",
+      "verb": "shutdown"
+    },
+    {
+      "aliases": [],
       "doc": "Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot.",
       "effects": [],
       "group": "interaction",
@@ -1789,6 +1811,26 @@
     },
     {
       "aliases": [],
+      "doc": "Operator, not Viewer, because it makes this machine reach out to a host the caller chose. Viewer with NETWORK has no carve-out.",
+      "effects": [
+        "network"
+      ],
+      "group": "remote",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "remote.probe",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/remote/probe",
+      "since": "0.1.0",
+      "title": "Probe a host",
+      "verb": "probe"
+    },
+    {
+      "aliases": [],
       "doc": "A transparent weighted product with no learning and no hidden state. Search over somebody's own history is where a wrong answer looks exactly like a right one, and a ranker that cannot explain itself gives them no way to notice.",
       "effects": [],
       "group": "search",
@@ -2331,6 +2373,62 @@
     },
     {
       "aliases": [],
+      "doc": "Cooperative: it stops at its next checkpoint. One past its point of no return refuses with the reason rather than reporting a success it cannot deliver.",
+      "effects": [],
+      "group": "task",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "task.cancel",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/task/cancel",
+      "since": "0.1.0",
+      "title": "Cancel an operation",
+      "verb": "cancel"
+    },
+    {
+      "aliases": [],
+      "doc": "Where one operation got to, so a client that reconnected mid-job learns the answer it can no longer hear.",
+      "effects": [],
+      "group": "task",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "task.get",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/task/get",
+      "since": "0.1.0",
+      "title": "Get a running operation",
+      "verb": "get"
+    },
+    {
+      "aliases": [],
+      "doc": "22 §10.1's job registry. Named `task` because `job` already means a scheduled job, and one name for two things would resolve by load order.",
+      "effects": [],
+      "group": "task",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "task.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/task/list",
+      "since": "0.1.0",
+      "title": "List running operations",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
       "doc": "A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree.",
       "effects": [
         "reads_fs"
@@ -2409,6 +2507,26 @@
       "since": "0.1.0",
       "title": "Preview an uninstall",
       "verb": "plan"
+    },
+    {
+      "aliases": [],
+      "doc": "omt never checks on its own. This reaches the network because the user typed it, and reports who owns the binary so a package manager's file is delegated to rather than overwritten.",
+      "effects": [
+        "network"
+      ],
+      "group": "upgrade",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "upgrade.check",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/upgrade/check",
+      "since": "0.1.0",
+      "title": "Check for an upgrade",
+      "verb": "check"
     },
     {
       "aliases": [],

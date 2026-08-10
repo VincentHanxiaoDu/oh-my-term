@@ -371,19 +371,26 @@ fn resolving_an_interaction_needs_operator_not_admin() {
 /// outbound connections by default — no telemetry, no crash reporting, no
 /// analytics — and the way that stays true is that a new one has to appear
 /// here in front of somebody.
-const MAY_REACH_A_THIRD_PARTY: &[&str] = &["upgrade.check", "stt.transcribe"];
+const MAY_REACH_A_THIRD_PARTY: &[&str] = &[
+    "upgrade.check",
+    "stt.transcribe",
+    // Reaches a host the *caller* named over ssh, which is why it is Operator
+    // rather than Viewer: a read-only shared link must not be able to make this
+    // machine connect somewhere (22 §10).
+    "remote.probe",
+];
 
 #[test]
-fn omt_currently_reaches_nobody_and_the_count_says_so() {
-    // §9.1's claim is that omt makes zero outbound connections by default, and
-    // this asserts the strong form of it: *no* capability declares NETWORK at
-    // all today. Stated as a count rather than as "none unexpected", because
-    // the second passes whether the answer is zero or the list is simply not
-    // being checked — and this change has already found three gates checking
-    // an empty set and reporting success.
+fn everything_that_reaches_out_is_on_the_reviewed_list() {
+    // §9.1's claim is that omt makes zero outbound connections *by default*.
+    // The strong form -- that nothing declares NETWORK at all -- held until
+    // `upgrade.check` and `remote.probe` arrived, and both reach out only
+    // because a user asked, one by typing `omt upgrade` and the other by naming
+    // a host. So the assertion is now the list rather than the count.
     //
-    // When the first one arrives it will fail here, and the fix is to put it
-    // on the reviewed list below, which is a diff somebody sees.
+    // Both halves matter. The membership check catches a new capability that
+    // reaches out without review; the count catches this list growing while
+    // nobody looks, which is how a reviewed list stops being reviewed.
     let r = registry();
     let reaching: Vec<&str> = r
         .decls()
@@ -396,8 +403,12 @@ fn omt_currently_reaches_nobody_and_the_count_says_so() {
     );
     assert_eq!(
         reaching.len(),
-        0,
-        "the egress list is no longer empty: {reaching:?} — update this count deliberately"
+        2,
+        "the egress list changed size: {reaching:?} — update this count deliberately"
+    );
+    assert!(
+        !reaching.is_empty(),
+        "a gate that checks an empty set reports success without checking anything"
     );
 }
 
