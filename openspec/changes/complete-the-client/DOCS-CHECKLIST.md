@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**114 of 212 features ticked.** (34 further sections are prose.)
+**115 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -169,7 +169,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 6. Browser-side controls — omt-server origin: a hostile page is refused before the credential, prefixes and paths do not pass, a non-browser client still connects; CSP names no host omt does not serve
 - [x] 7. The two high-consequence capabilities — parity.rs + test_security: no PTY write is Viewer, no second permission model exists by name, an agent that offered nothing gets an empty list rather than an invented one
 - [ ] 8. Secret redaction
-- [ ] 9. Network egress and supply chain
+- [x] 9. Network egress and supply chain — parity.rs: zero capabilities declare NETWORK today and the count is asserted, nothing is named like telemetry, the reachable-but-uncalled STT path is written down (supply chain: xtask licensing over 311 deps)
 - [ ] 10. Checklist — publishing an instance over Tailscale Funnel
 - ~~11. OPEN QUESTIONS~~ — prose
 

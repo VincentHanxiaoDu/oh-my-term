@@ -360,3 +360,94 @@ fn resolving_an_interaction_needs_operator_not_admin() {
         .expect("an interaction command");
     assert_eq!(resolve.role, Role::Operator, "`{}`", resolve.name);
 }
+
+// ---------------------------------------------------------------------------
+// Network egress — 13-security §9
+// ---------------------------------------------------------------------------
+
+/// Capabilities allowed to reach a machine that is not the user's.
+///
+/// A short list, checked in, so adding one is a reviewed diff. omt makes zero
+/// outbound connections by default — no telemetry, no crash reporting, no
+/// analytics — and the way that stays true is that a new one has to appear
+/// here in front of somebody.
+const MAY_REACH_A_THIRD_PARTY: &[&str] = &["upgrade.check", "stt.transcribe"];
+
+#[test]
+fn omt_currently_reaches_nobody_and_the_count_says_so() {
+    // §9.1's claim is that omt makes zero outbound connections by default, and
+    // this asserts the strong form of it: *no* capability declares NETWORK at
+    // all today. Stated as a count rather than as "none unexpected", because
+    // the second passes whether the answer is zero or the list is simply not
+    // being checked — and this change has already found three gates checking
+    // an empty set and reporting success.
+    //
+    // When the first one arrives it will fail here, and the fix is to put it
+    // on the reviewed list below, which is a diff somebody sees.
+    let r = registry();
+    let reaching: Vec<&str> = r
+        .decls()
+        .filter(|d| d.effects.contains(Effects::NETWORK))
+        .map(|d| d.name)
+        .collect();
+    assert!(
+        reaching.iter().all(|n| MAY_REACH_A_THIRD_PARTY.contains(n)),
+        "these declare NETWORK without being on the reviewed list: {reaching:?}"
+    );
+    assert_eq!(
+        reaching.len(),
+        0,
+        "the egress list is no longer empty: {reaching:?} — update this count deliberately"
+    );
+}
+
+#[test]
+fn the_provider_that_can_reach_a_third_party_has_no_capability_yet() {
+    // Honest scope. `omt-stt` contains code that posts to Deepgram or OpenAI,
+    // and nothing in the catalog calls it — so the transcription path is not
+    // reachable from any client today. That is why the NETWORK count above is
+    // zero, and it is worth writing down: the count being zero is not the same
+    // as the code being absent, and somebody reading only the count would
+    // conclude the wrong thing.
+    let r = registry();
+    let voice: Vec<&str> = r
+        .decls()
+        .filter(|d| d.group == "voice")
+        .map(|d| d.name)
+        .collect();
+    assert!(!voice.is_empty(), "voice capabilities exist");
+    for decl in r.decls().filter(|d| d.group == "voice") {
+        assert!(
+            !decl.effects.contains(Effects::NETWORK),
+            "`{}` reaches the network; it belongs on the reviewed list",
+            decl.name
+        );
+    }
+}
+
+#[test]
+fn nothing_that_reaches_a_third_party_is_available_to_a_viewer() {
+    // A Viewer credential is what somebody hands a colleague to watch. It
+    // should not be able to make the machine talk to anybody.
+    let r = registry();
+    for decl in r.decls() {
+        if decl.effects.contains(Effects::NETWORK) {
+            assert_ne!(decl.role, Role::Viewer, "`{}`", decl.name);
+        }
+    }
+}
+
+#[test]
+fn no_capability_is_named_like_telemetry() {
+    // There is none, and the way it stays that way is that adding one has to
+    // get past a test that says so out loud. A metrics endpoint arrives
+    // sounding harmless.
+    let forbidden = ["telemetry", "analytics", "crash_report", "phone_home", "usage_ping"];
+    let r = registry();
+    for decl in r.decls() {
+        let name = decl.name.to_lowercase();
+        for word in forbidden {
+            assert!(!name.contains(word), "`{}`", decl.name);
+        }
+    }
+}
