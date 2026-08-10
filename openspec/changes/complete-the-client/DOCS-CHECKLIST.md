@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**37 of 212 features ticked.** (33 further sections are prose.)
+**46 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -57,14 +57,14 @@ Unticked means not done. Partly built stays unticked.
 
 - [x] 1. The object model — test_sessions: create, write, read, close
 - [x] 2. Layout: the BSP tree — test_sessions: leaves starting on first output
-- [ ] 3. Focus
-- [ ] 4. Attachment, detach, and multi-client viewing
+- [x] 3. Focus — test_tui: focus moves and the screen changes
+- [x] 4. Attachment, detach, and multi-client viewing — test_watching: a second client attaches and sees it
 - [ ] 5. The writer token
-- [ ] 6. Presence
+- [x] 6. Presence — test_watching: presence
 - [ ] 7. Workspace identity
 - [ ] 8. Persistence and restore
 - [ ] 9. Command history
-- [ ] 10. Capability surface
+- [x] 10. Capability surface — test_sessions: the capability surface
 - [ ] 11. Invariants
 - [ ] 12. Testing
 - ~~13. Open questions~~ — prose
@@ -73,12 +73,12 @@ Unticked means not done. Partly built stays unticked.
 
 - [ ] 1. What this layer must deliver
 - [ ] 2. The two-axis model
-- [ ] 3. Source model
+- [x] 3. Source model — test_agent_native: messages, tools, results
 - [ ] 4. Merging: confidence tiers, not voting
 - [x] 5. Interactions — the flagship path — test_agents: interactions and deliverable
 - [ ] 6. The heuristic floor
 - [ ] 7. Adapters
-- [x] 8. Ancillary semantics — test_agent_native: messages, tools, results
+- [ ] 8. Ancillary semantics
 - [ ] 9. Failure modes and their handling
 - ~~10. Open questions~~ — prose
 
@@ -86,8 +86,8 @@ Unticked means not done. Partly built stays unticked.
 
 - [x] 1. Topology and federation — test_connection + test_joining: handshake, join
 - [ ] 2. Transport layer
-- [ ] 3. Message protocol
-- [ ] 4. Terminal streaming
+- [x] 3. Message protocol — test_connection: handshake, envelope, errors
+- [x] 4. Terminal streaming — test_sessions: write then read the stream back
 - [x] 5. Resume and reliability — test_events_and_parity: subscribe, resume, resync
 - [ ] 6. Backpressure
 - [ ] 7. Latency budget
@@ -131,7 +131,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 7. The settings surface
 - [ ] 8. Themes and keybindings
 - [ ] 9. Profiles: launch configurations and workflows
-- [ ] 10. Config capabilities
+- [x] 10. Config capabilities — test_configuration: config capabilities
 - [ ] 11. Testing
 - ~~12. Open questions~~ — prose
 
@@ -191,7 +191,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 2. The crate: `omt-workspace-fs`, at L2 — test_git_worktree: status, diff, hunks
 - [x] 3. Traits and types — test_git_worktree: worktrees
 - [x] 4. Laziness and cost — test_git_worktree: fan-out
-- [ ] 5. Git integration
+- [x] 5. Git integration — test_git_worktree: status, diff, worktrees
 - [ ] 6. Capabilities
 - [ ] 7. Surface parity
 - [ ] 8. Integration with the rest of omt
@@ -270,9 +270,9 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 6. Command history as a first-class case
 - [ ] 7. Cross-instance search
 - [ ] 8. Timeline and digest
-- [x] 9. Comparing parallel agent results (G18) — test_agents: usage report
+- [ ] 9. Comparing parallel agent results (G18)
 - [ ] 10. Detecting a stuck or looping agent (G19)
-- [ ] 11. Usage and cost (G15)
+- [x] 11. Usage and cost (G15) — test_agents: usage report
 - [ ] 12. Capabilities
 - [ ] 13. Performance budgets and backpressure
 - ~~14. Open questions~~ — prose
@@ -326,7 +326,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 2. Screens — touch e2e: every screen
 - [x] 3. Input — touch e2e: keys, IME, gestures
 - [ ] 4. Notifications
-- [ ] 5. Connection
+- [x] 5. Connection — touch e2e: join, reconnect
 - [ ] 6. What is built and what is not
 - [ ] 6.1 PWA or native
 - [ ] 7. Settled: a phone is a client, not the machine
