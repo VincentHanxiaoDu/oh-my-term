@@ -251,7 +251,6 @@ pub enum NotAnRpId {
 /// HTTPS. Reaching an instance uses a device-key signature over a server nonce,
 /// which has no origin concept at all and therefore works over plain HTTP on a
 /// LAN, over a unix socket, and over the ssh bridge.
-#[must_use]
 pub fn rp_id_for(origin: &str) -> Result<String, NotAnRpId> {
     let host = origin
         .split_once("://")
