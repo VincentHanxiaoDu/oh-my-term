@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**124 of 212 features ticked.** (34 further sections are prose.)
+**125 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -132,7 +132,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 8. Themes and keybindings — test_tui: a binding naming no capability is caught with a near-miss suggestion, contexts live on the trigger, every problem carries help (theme contrast checks live in omt-theme)
 - [x] 9. Profiles: launch configurations and workflows — test_configuration: an agent gets an argument vector, a prompt with shell syntax stays one argument, focus always lands somewhere, every problem at once (workflows are §9.2 and not built)
 - [x] 10. Config capabilities — test_configuration: config capabilities
-- [ ] 11. Testing
+- [x] 11. Testing — omt-config: every diagnostic code scraped from source and matched against its entry, defaults round-trip, layer precedence table-driven over the chain (fuzzing and comment-preservation property tests are not built)
 - ~~12. Open questions~~ — prose
 
 ## 11-plugins

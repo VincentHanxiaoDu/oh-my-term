@@ -347,6 +347,122 @@ fn distance(a: &str, b: &str) -> usize {
 mod tests {
     use super::*;
 
+    /// Every diagnostic code, with what it means.
+    ///
+    /// Beside the constants rather than in a document, so a new code cannot be
+    /// added without an entry — a code somebody meets in their terminal and
+    /// cannot look up is a code that tells them only that something is wrong.
+    const DOCUMENTED: &[(&str, &str)] = &[
+        (UNKNOWN_KEY, "a key nothing knows about"),
+        (BAD_VALUE, "a value of the wrong shape for its key"),
+        (DROPPED_BY_SCOPE, "a key its layer may not set"),
+        (INLINE_SECRET, "a secret written into the configuration itself"),
+    ];
+
+    #[test]
+    fn every_diagnostic_code_is_documented() {
+        // Scraped from this file rather than listed by hand, so adding a
+        // constant and forgetting the entry fails here.
+        let source = include_str!("merge.rs");
+        let mut codes: Vec<&str> = source
+            .match_indices("OMT-C")
+            .map(|(at, _)| {
+                let rest = &source[at..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+                    .unwrap_or(rest.len());
+                &rest[..end]
+            })
+            // Digits required, or the scrape matches its own search literal
+            // two lines up — which it did, and reported the prefix as an
+            // undocumented code.
+            .filter(|code| code.len() > 5 && code[5..].chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert!(codes.len() >= 4, "the scrape found {codes:?}");
+
+        let documented: std::collections::BTreeSet<&str> =
+            DOCUMENTED.iter().map(|(code, _)| *code).collect();
+        for code in codes {
+            assert!(documented.contains(code), "`{code}` has no entry");
+        }
+    }
+
+    #[test]
+    fn every_documented_code_explains_itself() {
+        for (code, meaning) in DOCUMENTED {
+            assert!(meaning.len() > 10, "`{code}` says nothing useful");
+        }
+    }
+
+    #[test]
+    fn the_codes_are_unique() {
+        // Two diagnostics sharing a code makes the code useless for looking
+        // anything up, which is the only thing a code is for.
+        let mut seen = std::collections::BTreeSet::new();
+        for (code, _) in DOCUMENTED {
+            assert!(seen.insert(*code), "`{code}` is used twice");
+        }
+    }
+
+    #[test]
+    fn the_defaults_round_trip_through_their_serialised_form() {
+        // Every default is stored as JSON text and parsed on load. One that
+        // does not survive the trip is a setting whose default is not what the
+        // table says it is, and nothing else would notice.
+        for setting in crate::schema::SETTINGS {
+            let value: serde_json::Value = serde_json::from_str(setting.default)
+                .unwrap_or_else(|e| panic!("{}: {e}", setting.key));
+            let text = serde_json::to_string(&value).expect("to text");
+            let back: serde_json::Value = serde_json::from_str(&text).expect("from text");
+            assert_eq!(back, value, "{}", setting.key);
+        }
+    }
+
+    #[test]
+    fn a_later_layer_overrides_an_earlier_one_leaf_by_leaf() {
+        // Table-driven over the layer order, because precedence is the whole
+        // point of having layers and a single example proves only itself.
+        for (weaker, stronger) in [
+            (Layer::Builtin, Layer::User),
+            (Layer::User, Layer::Project),
+            (Layer::Project, Layer::Instance),
+            (Layer::Instance, Layer::Session),
+        ] {
+            let key = crate::schema::SETTINGS
+                .iter()
+                .find(|s| s.kind == crate::schema::Kind::Text)
+                .map(|s| s.key)
+                .expect("a text setting");
+            let resolved = merge(
+                &[
+                    layer(weaker, nested(key, "weaker")),
+                    layer(stronger, nested(key, "stronger")),
+                ],
+                &crate::schema::key_specs(),
+            );
+            assert_eq!(
+                resolved.get(key).and_then(|v| v.as_str()),
+                Some("stronger"),
+                "{weaker:?} then {stronger:?}"
+            );
+        }
+    }
+
+    /// Build a nested object for a dotted key.
+    fn nested(key: &str, value: &str) -> serde_json::Value {
+        let parts: Vec<&str> = key.split('.').collect();
+        let mut current = serde_json::Value::String(value.to_owned());
+        for part in parts.iter().rev() {
+            let mut object = serde_json::Map::new();
+            object.insert((*part).to_owned(), current);
+            current = serde_json::Value::Object(object);
+        }
+        current
+    }
+
+
     #[test]
     fn a_value_of_the_wrong_type_is_a_merge_diagnostic() {
         // The validator existed in the schema module and nothing called it,
