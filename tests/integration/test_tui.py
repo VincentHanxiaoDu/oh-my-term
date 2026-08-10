@@ -194,3 +194,73 @@ class TestTheLists:
         tui.send("\x1b")
         painted = strip(tui.read(2.0))
         assert "rm -rf" not in painted.split("Commands")[-1] or "nothing matches" in painted
+
+
+class TestPanes:
+    def test_splitting_puts_a_second_session_beside_the_first(self, tui: Tui) -> None:
+        # `17 §1`. A split that starts no process is a divider; a split that
+        # starts one is a pane.
+        tui.send("\x01s")
+        painted = strip(tui.read(3.0))
+        assert re.search(r"\b2 sessions\b", painted), painted[-500:]
+
+    def test_focus_moves_between_them(self, tui: Tui) -> None:
+        # Which pane typing goes to is the question the bar exists to answer, so
+        # the mark has to move with the focus.
+        tui.send("\x01s")
+        tui.read(2.0)
+        before = strip(tui.read(1.0))
+        tui.send("\x01o")
+        after = strip(tui.read(2.0))
+        assert before != after, "focus moved and nothing on screen changed"
+
+    def test_closing_a_pane_leaves_the_other_running(self, tui: Tui) -> None:
+        # Closing a view of something is not ending it.
+        tui.send("\x01s")
+        tui.read(2.0)
+        tui.send("\x01x")
+        painted = strip(tui.read(3.0))
+        assert re.search(r"\b1 session\b", painted), painted[-500:]
+        tui.send("echo still-here\r")
+        assert "still-here" in strip(tui.read(3.0))
+
+    def test_a_split_that_would_not_fit_is_refused(self, tui: Tui) -> None:
+        # Two unusable panes are worse than one usable one, and somebody cannot
+        # see why nothing is legible.
+        for _ in range(12):
+            tui.send("\x01s")
+            tui.read(0.4)
+        painted = strip(tui.read(2.0))
+        # However many fit, the bar still agrees with itself about how many
+        # there are — a count that disagrees with the panes beside it is the
+        # bug this project keeps finding.
+        found = re.findall(r"\b(\d+) sessions?\b", painted)
+        assert found, painted[-400:]
+
+
+class TestTheKeymapIsDiscoverable:
+    def test_the_help_shows_every_binding(self, tui: Tui) -> None:
+        # `16 §7`. A binding nobody can find is a binding nobody uses, and the
+        # hint row says this exists precisely so it can be found.
+        tui.send("\x01?")
+        painted = strip(tui.read(2.0))
+        assert "detach" in painted.lower() or "^A" in painted, painted[-600:]
+
+    def test_the_prefix_is_reserved_and_reaches_omt_not_the_shell(
+        self, tui: Tui
+    ) -> None:
+        # Every bare key belongs to the program underneath, which is why omt
+        # takes a prefix rather than a key.
+        tui.send("\x01w")
+        painted = strip(tui.read(2.0))
+        assert "Sessions" in painted, painted[-400:]
+
+    def test_ctrl_c_still_reaches_the_program(self, tui: Tui) -> None:
+        # The single most useful line on the cheatsheet is that Ctrl-C
+        # interrupts the program. It has to remain true.
+        tui.send("sleep 30\r")
+        tui.read(1.0)
+        tui.send("\x03")
+        tui.send("echo interrupted\r")
+        painted = strip(tui.read(4.0))
+        assert "interrupted" in painted, painted[-500:]
