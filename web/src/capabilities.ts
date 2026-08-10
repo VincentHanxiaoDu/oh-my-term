@@ -434,6 +434,9 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'recall.policy': (request: RequestId, indexReasoning = false) =>
+    call(request, 'recall.policy', { index_reasoning: indexReasoning }),
+
   'session.timeline': (
     request: RequestId,
     events: { seq: number; at: number; kind: string; label: string }[],

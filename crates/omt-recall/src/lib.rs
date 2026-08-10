@@ -5,6 +5,7 @@
 //! wants here, and a history that offers it is one they stop reading.
 
 pub mod compare;
+pub mod policy;
 pub mod ranking;
 pub mod redact;
 pub mod schedule;

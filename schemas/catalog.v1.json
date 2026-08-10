@@ -1536,6 +1536,24 @@
     },
     {
       "aliases": [],
+      "doc": "A search index nobody can enumerate is one nobody can reason about. Reasoning is excluded by default: it is the most privacy-sensitive text an agent produces.",
+      "effects": [],
+      "group": "recall",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "recall.policy",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/recall/policy",
+      "since": "0.1.0",
+      "title": "What is indexed",
+      "verb": "policy"
+    },
+    {
+      "aliases": [],
       "doc": "Add a command to the history that suggestions are drawn from.",
       "effects": [],
       "group": "recall",

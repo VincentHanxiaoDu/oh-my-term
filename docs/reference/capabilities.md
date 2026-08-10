@@ -87,6 +87,7 @@ vanishing.
 | `presence.list` | query | viewer | Every client connected right now. "Is somebody else looking at this" is a question people ask before they type, and a terminal that cannot answer it is one where two people interleave keystrokes into one shell. |
 | `queue.enqueue` | command | operator | Add a message to an agent's queue. Refused where omt only mirrors the queue rather than owning it: a client must be told it cannot write rather than shown a control that silently does nothing. |
 | `queue.remove` | command | operator | Take a message out of an agent's queue. Refused on a mirrored queue for the same reason enqueue is: a removal omt cannot confirm loses the message with no record of what it was. |
+| `recall.policy` | query | viewer | A search index nobody can enumerate is one nobody can reason about. Reasoning is excluded by default: it is the most privacy-sensitive text an agent produces. |
 | `recall.record` | command | operator | Add a command to the history that suggestions are drawn from. |
 | `recall.suggest` | query | viewer | Commands from history matching a prefix, scored by use in this workspace. Destructive commands are never suggested. |
 | `search.explain` | query | viewer | A transparent weighted product with no learning and no hidden state. Search over somebody's own history is where a wrong answer looks exactly like a right one, and a ranker that cannot explain itself gives them no way to notice. |
@@ -124,4 +125,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-114 capabilities.
+115 capabilities.

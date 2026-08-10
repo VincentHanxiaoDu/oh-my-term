@@ -2401,6 +2401,114 @@ impl CapabilityHandler<SessionTimeline> for AttentionHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// What is indexed — 20 §2
+// ---------------------------------------------------------------------------
+
+/// Input to `recall.policy`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PolicyIn {
+    /// Whether the agent's reasoning is indexed.
+    #[serde(default)]
+    pub index_reasoning: bool,
+}
+
+/// What omt does with one source.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct SourcePolicy {
+    /// Which source.
+    pub source: String,
+    /// `full`, `capped`, `windowed`, `structured_only` or `excluded`.
+    pub treatment: String,
+    /// The cap or window, in bytes, where there is one.
+    pub bytes: Option<usize>,
+}
+
+/// What `recall.policy` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct PolicyOut {
+    /// Every source and what happens to it.
+    pub sources: Vec<SourcePolicy>,
+    /// Which fields of a tool call are indexed.
+    pub indexed_tool_fields: Vec<String>,
+}
+
+omt_catalog::capability! {
+    /// What goes into the search index, and what does not.
+    pub struct RecallPolicy;
+    input  = PolicyIn,
+    output = PolicyOut,
+    decl = omt_catalog::Decl {
+        name: "recall.policy",
+        group: "recall",
+        verb: "policy",
+        title: "What is indexed",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A search index nobody can enumerate is one nobody can reason about. Reasoning is excluded by default: it is the most privacy-sensitive text an agent produces.",
+    },
+}
+
+impl CapabilityHandler<RecallPolicy> for AttentionHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: PolicyIn,
+    ) -> Result<PolicyOut, CapabilityError> {
+        use omt_recall::policy::{Source, Treatment};
+        let settings = omt_recall::policy::Settings {
+            index_reasoning: input.index_reasoning,
+            ..omt_recall::policy::Settings::default()
+        };
+        let sources = [
+            Source::BlockCommand,
+            Source::BlockOutput,
+            Source::UserMessage,
+            Source::AssistantText,
+            Source::Reasoning,
+            Source::ToolCallInput,
+            Source::ToolResultOutput,
+            Source::FileChanged,
+            Source::Interaction,
+        ];
+        Ok(PolicyOut {
+            sources: sources
+                .into_iter()
+                .map(|source| {
+                    let t = omt_recall::policy::treatment(source, &settings);
+                    SourcePolicy {
+                        source: format!("{source:?}").to_lowercase(),
+                        treatment: match t {
+                            Treatment::Full => "full",
+                            Treatment::Capped { .. } => "capped",
+                            Treatment::Windowed { .. } => "windowed",
+                            Treatment::StructuredOnly => "structured_only",
+                            Treatment::Excluded => "excluded",
+                        }
+                        .to_owned(),
+                        bytes: match t {
+                            Treatment::Capped { bytes } => Some(bytes),
+                            Treatment::Windowed { head, tail } => Some(head + tail),
+                            _ => None,
+                        },
+                    }
+                })
+                .collect(),
+            indexed_tool_fields: omt_recall::policy::INDEXED_TOOL_FIELDS
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

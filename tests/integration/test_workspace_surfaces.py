@@ -665,3 +665,47 @@ class TestWhyAResultRankedThere:
             for _ in range(3)
         }
         assert len(orders) == 1
+
+
+class TestWhatIsIndexed:
+    """20-recall-and-usage §2. A value-per-byte argument, made checkable."""
+
+    def treatment(self, out, source):
+        return next(s for s in out["sources"] if s["source"] == source)
+
+    def test_the_command_is_indexed_in_full(self, client: Client) -> None:
+        out = client.call("recall.policy")
+        assert self.treatment(out, "blockcommand")["treatment"] == "full"
+
+    def test_reasoning_is_excluded_until_somebody_opts_in(
+        self, client: Client
+    ) -> None:
+        # The most privacy-sensitive text an agent produces. Somebody searching
+        # their own history for "password" should not find musings about one.
+        off = client.call("recall.policy")
+        assert self.treatment(off, "reasoning")["treatment"] == "excluded"
+        on = client.call("recall.policy", index_reasoning=True)
+        assert self.treatment(on, "reasoning")["treatment"] == "capped"
+
+    def test_tool_results_are_filters_not_text(self, client: Client) -> None:
+        out = client.call("recall.policy")
+        assert self.treatment(out, "toolresultoutput")["treatment"] == "structured_only"
+
+    def test_output_is_windowed_rather_than_truncated(self, client: Client) -> None:
+        # Errors live at the end, so truncating from the front drops exactly
+        # what somebody is searching for.
+        out = client.call("recall.policy")
+        assert self.treatment(out, "blockoutput")["treatment"] == "windowed"
+
+    def test_the_indexed_tool_fields_are_an_allow_list(self, client: Client) -> None:
+        # A new tool with a new payload field would otherwise be indexed in
+        # full the day it appears.
+        out = client.call("recall.policy")
+        assert "command" in out["indexed_tool_fields"]
+        assert "content" not in out["indexed_tool_fields"]
+
+    def test_every_source_has_a_stated_treatment(self, client: Client) -> None:
+        # A search index nobody can enumerate is one nobody can reason about.
+        out = client.call("recall.policy")
+        assert len(out["sources"]) >= 9
+        assert all(s["treatment"] for s in out["sources"])
