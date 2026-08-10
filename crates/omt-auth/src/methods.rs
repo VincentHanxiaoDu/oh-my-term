@@ -126,6 +126,99 @@ pub fn may_skip_authentication(peer: Peer) -> bool {
     peer == Peer::LocalSocket
 }
 
+// ---------------------------------------------------------------------------
+// Trusting an identity header — 23 §10.2
+// ---------------------------------------------------------------------------
+
+/// What is true about a request carrying tailnet identity headers.
+///
+/// The doc calls the rule below the single most dangerous line it contains, and
+/// it is: a backend on `0.0.0.0:7878` lets anyone on the LAN set
+/// `Tailscale-User-Login: someone@example.com` and become Admin. Headers are a
+/// thing the network can write; the only reason to believe one is that nothing
+/// on the network could have written it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HeaderTrust {
+    /// The listener is a unix socket or loopback — never an interface, never
+    /// the tailnet itself.
+    pub listener_is_local: bool,
+    /// `trust_proxy_headers = true` is written in the config file.
+    ///
+    /// Explicit, and in a file: this is the one setting where "it seemed to
+    /// work" is indistinguishable from "anybody can be you", so somebody has
+    /// to have written it down where a reviewer can see it.
+    pub trust_proxy_headers: bool,
+    /// The peer address is loopback, taken from the socket.
+    ///
+    /// From the socket and never from `X-Forwarded-For`, which is a header —
+    /// checking a header to decide whether to trust a header is not a check.
+    pub peer_is_loopback: bool,
+    /// The Tailscale LocalAPI confirms a serve mapping points at this port.
+    ///
+    /// Closes the one gap the other three do not: another local process
+    /// pretending to be `tailscale serve`. Cheap, because the answer is
+    /// already on the machine.
+    pub serve_config_confirms_port: bool,
+}
+
+/// Why omt will not honour identity headers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HeaderRefusal {
+    /// Which condition failed.
+    pub condition: String,
+    /// What it means.
+    pub because: String,
+}
+
+/// Whether identity headers may be believed.
+///
+/// Every condition, so a configuration that fails three of them is told about
+/// three. This is a startup check rather than a runtime hope: a request that
+/// arrives while the answer is "no" should never have been possible.
+#[must_use]
+pub fn may_trust_headers(trust: HeaderTrust) -> Vec<HeaderRefusal> {
+    let mut out = Vec::new();
+    if !trust.listener_is_local {
+        out.push(HeaderRefusal {
+            condition: "listener".to_owned(),
+            because: "identity headers are only believable on a unix socket or loopback; on any other interface anybody who can reach the port can set them".to_owned(),
+        });
+    }
+    if !trust.trust_proxy_headers {
+        out.push(HeaderRefusal {
+            condition: "trust_proxy_headers".to_owned(),
+            because: "`[auth.tailnet].trust_proxy_headers = true` is not set, and this is not a thing to infer".to_owned(),
+        });
+    }
+    if !trust.peer_is_loopback {
+        out.push(HeaderRefusal {
+            condition: "peer".to_owned(),
+            because: "the peer address is not loopback; it is taken from the socket and never from a forwarded-for header".to_owned(),
+        });
+    }
+    if !trust.serve_config_confirms_port {
+        out.push(HeaderRefusal {
+            condition: "serve_config".to_owned(),
+            because: "the Tailscale serve config does not point at this port, so something other than `tailscale serve` may be in front".to_owned(),
+        });
+    }
+    out
+}
+
+/// Whether the configuration is one omt will start on.
+///
+/// `trust_proxy_headers` together with a non-local listener is a startup
+/// failure rather than a request-time refusal. The alternative is a daemon that
+/// runs happily and rejects every request for a reason nobody reads until
+/// somebody turns the check off to make it work.
+#[must_use]
+pub fn startup_refusal(trust: HeaderTrust) -> Option<String> {
+    (trust.trust_proxy_headers && !trust.listener_is_local).then(|| {
+        "`trust_proxy_headers = true` with a non-loopback listener: anybody who can reach the port could set an identity header. Bind loopback, or turn it off."
+            .to_owned()
+    })
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -134,6 +227,91 @@ pub fn may_skip_authentication(peer: Peer) -> bool {
 )]
 mod tests {
     use super::*;
+    fn trusted() -> HeaderTrust {
+        HeaderTrust {
+            listener_is_local: true,
+            trust_proxy_headers: true,
+            peer_is_loopback: true,
+            serve_config_confirms_port: true,
+        }
+    }
+
+    #[test]
+    fn all_four_conditions_together_are_believed() {
+        assert!(may_trust_headers(trusted()).is_empty());
+    }
+
+    #[test]
+    fn a_public_listener_makes_the_headers_worthless() {
+        // A backend on 0.0.0.0 lets anyone on the LAN set the login header and
+        // become Admin.
+        let mut t = trusted();
+        t.listener_is_local = false;
+        assert!(!may_trust_headers(t).is_empty());
+    }
+
+    #[test]
+    fn the_setting_is_never_inferred() {
+        // This is the one place where "it seemed to work" is indistinguishable
+        // from "anybody can be you", so somebody has to have written it down.
+        let mut t = trusted();
+        t.trust_proxy_headers = false;
+        assert_eq!(may_trust_headers(t).len(), 1);
+    }
+
+    #[test]
+    fn the_peer_address_comes_from_the_socket() {
+        // Checking a header to decide whether to trust a header is not a check.
+        let mut t = trusted();
+        t.peer_is_loopback = false;
+        let refusals = may_trust_headers(t);
+        assert!(
+            refusals.iter().any(|r| r.because.contains("forwarded-for")),
+            "{refusals:?}"
+        );
+    }
+
+    #[test]
+    fn the_serve_config_closes_the_gap_the_others_leave() {
+        // Another local process pretending to be `tailscale serve` passes
+        // conditions one to three without trouble.
+        let mut t = trusted();
+        t.serve_config_confirms_port = false;
+        assert_eq!(may_trust_headers(t).len(), 1);
+    }
+
+    #[test]
+    fn every_failed_condition_is_reported_not_just_the_first() {
+        let refusals = may_trust_headers(HeaderTrust::default());
+        assert_eq!(refusals.len(), 4);
+        for refusal in refusals {
+            assert!(!refusal.because.is_empty(), "{}", refusal.condition);
+        }
+    }
+
+    #[test]
+    fn nothing_is_trusted_by_default() {
+        // The default has to be the safe one, because this is the setting
+        // where a wrong default is somebody else's admin session.
+        assert_eq!(may_trust_headers(HeaderTrust::default()).len(), 4);
+    }
+
+    #[test]
+    fn the_dangerous_combination_fails_at_startup_rather_than_per_request() {
+        // A daemon that runs happily and rejects every request gets the check
+        // turned off by whoever is trying to make it work.
+        let mut t = trusted();
+        t.listener_is_local = false;
+        let refusal = startup_refusal(t).expect("refuses");
+        assert!(refusal.contains("loopback"), "{refusal}");
+    }
+
+    #[test]
+    fn a_safe_configuration_starts() {
+        assert!(startup_refusal(trusted()).is_none());
+        assert!(startup_refusal(HeaderTrust::default()).is_none());
+    }
+
 
     fn everything() -> Backends {
         Backends {

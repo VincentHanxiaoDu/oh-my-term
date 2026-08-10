@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**127 of 212 features ticked.** (34 further sections are prose.)
+**128 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -315,7 +315,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 7. Per-action re-authentication — test_identity: off by default, named capabilities and effect bits both challenge, freshness clamped at both ends, failing never narrows authority
 - [ ] 8. Device identity in the collaboration model
 - [x] 9. What the browser actually caches — web/test/cache.test.ts: the trim never proposes a store that would un-pair the device, trims exactly the overage, says when trimming cannot help, only the terminal store holds output
-- [ ] 10. Tailnet identity as an alternative front door
+- [x] 10. Tailnet identity as an alternative front door — omt-auth methods: all four conditions required, nothing trusted by default, every failed condition reported, the dangerous combination refuses at startup
 - ~~11. Threat model deltas vs. [13](13-security.md)~~ — prose
 - [ ] 12. Capabilities
 - ~~13. OPEN QUESTIONS~~ — prose
