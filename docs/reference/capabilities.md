@@ -15,6 +15,7 @@ vanishing.
 | `agent.interrupt` | command | operator | Stop an agent. For an agent with no protocol of its own this is the entire remote control surface. |
 | `agent.offers` | query | viewer | Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none. |
 | `agent.threads` | query | viewer | Every thread in a session — the main one and each subagent — with what it is doing and any card it raised. |
+| `agent.wait` | query | viewer | The primitive that stops every script being a sleep loop. `blocked` is a state and matches at once; `interaction` is an edge and matches only a card that opens after the wait began. |
 | `audit.list` | query | admin | Every call, with who made it and whether it worked. Refusals included: a log of only what succeeded answers the wrong question, because who *tried* to do what is most of what an audit is for. |
 | `block.body` | query | viewer | The output of one command block, as styled lines. Paged, because a block can hold a whole test run and a phone asking for one over a slow link stalls. |
 | `block.rerun` | command | operator | Send a block's command to its session again. Refused for a block omt never saw the command of, because the alternative is scraping the screen for something that looks like a prompt. |
@@ -47,7 +48,7 @@ vanishing.
 | `instance.info` | query | viewer | Version and protocol of this instance. |
 | `instance.metrics` | query | operator | Clients, sessions, calls and refusals. The health route says the process is up and says nothing else, which is not the same as knowing it is doing anything. |
 | `interaction.list` | query | viewer | Every interaction waiting for a human, with whether omt can answer it from here and why not when it cannot. |
-| `interaction.respond` | command | operator | Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state. |
+| `interaction.resolve` | command | operator | Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state. |
 | `invite.create` | command | admin | A fresh invite, so a second device can be paired from a device already paired. Without it the only invite is the one printed at startup, and adding a phone means restarting the instance everybody else is connected to. |
 | `job.create` | command | operator | Create a scheduled job, replacing any job of the same name. A missed window is skipped rather than caught up. |
 | `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
@@ -105,6 +106,7 @@ vanishing.
 | `security.publish_check` | query | admin | Funnel puts the instance on the open internet, and the difference between that and a tailnet is not visible in any configuration omt reads. Somebody who enabled it for a demo and forgot is who this is for. |
 | `session.acquire` | command | operator | Take the writer token for a session, returning the epoch every write is checked against. |
 | `session.blocks` | query | viewer | Commands run in a session with their output ranges and exit codes, from OSC 133. A shell that emits no marks reports none rather than guesses. |
+| `session.capture` | query | viewer | The thing every migrating script asks for first. Reports the total as well as what it returned, so a truncated capture is visible rather than looking complete. |
 | `session.close` | command | operator | End a session and stop the process on it. Idempotent. |
 | `session.create` | command | operator | Start a session in a workspace, running a program on a pty. Deduplicated by intent id, so a reconnect retry does not start a second process. |
 | `session.list` | query | viewer | Every session this instance holds, optionally filtered to one workspace. |
@@ -140,4 +142,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-130 capabilities.
+132 capabilities.

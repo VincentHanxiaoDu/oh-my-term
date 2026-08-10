@@ -124,6 +124,24 @@
     },
     {
       "aliases": [],
+      "doc": "The primitive that stops every script being a sleep loop. `blocked` is a state and matches at once; `interaction` is an edge and matches only a card that opens after the wait began.",
+      "effects": [],
+      "group": "agent",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent.wait",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/agent/wait",
+      "since": "0.1.0",
+      "title": "Wait for an agent",
+      "verb": "wait"
+    },
+    {
+      "aliases": [],
       "doc": "Every call, with who made it and whether it worked. Refusals included: a log of only what succeeded answers the wrong question, because who *tried* to do what is most of what an audit is for.",
       "effects": [],
       "group": "audit",
@@ -748,7 +766,9 @@
       "verb": "list"
     },
     {
-      "aliases": [],
+      "aliases": [
+        "interaction.respond"
+      ],
       "doc": "Answer an open interaction. Exactly once: a second answer is refused with who won, and answerability comes from the deliverable rather than the state.",
       "effects": [],
       "group": "interaction",
@@ -757,15 +777,15 @@
         "class": "cas"
       },
       "kind": "command",
-      "name": "interaction.respond",
+      "name": "interaction.resolve",
       "parity": {
         "parity": "full"
       },
       "role": "operator",
-      "route": "/v1/interaction/respond",
+      "route": "/v1/interaction/resolve",
       "since": "0.1.0",
       "title": "Answer a question",
-      "verb": "respond"
+      "verb": "resolve"
     },
     {
       "aliases": [],
@@ -1876,6 +1896,24 @@
       "since": "0.1.0",
       "title": "List command blocks",
       "verb": "blocks"
+    },
+    {
+      "aliases": [],
+      "doc": "The thing every migrating script asks for first. Reports the total as well as what it returned, so a truncated capture is visible rather than looking complete.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "session.capture",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/session/capture",
+      "since": "0.1.0",
+      "title": "Capture scrollback",
+      "verb": "capture"
     },
     {
       "aliases": [],

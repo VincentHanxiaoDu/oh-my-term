@@ -610,7 +610,7 @@ impl CapabilityHandler<AgentThreads> for AgentThreadsHandler {
     }
 }
 
-fn describe_agent_state(state: &omt_types::AgentState) -> String {
+pub(crate) fn describe_agent_state(state: &omt_types::AgentState) -> String {
     match state {
         omt_types::AgentState::Starting => "starting".to_owned(),
         omt_types::AgentState::Idle => "idle".to_owned(),
@@ -2351,7 +2351,7 @@ fn state_name(state: &omt_events::InteractionState) -> &'static str {
     }
 }
 
-/// Input to `interaction.respond`.
+/// Input to `interaction.resolve`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct InteractionRespondIn {
     /// Which card.
@@ -2364,7 +2364,7 @@ pub struct InteractionRespondIn {
     pub text: Option<String>,
 }
 
-/// What `interaction.respond` reports.
+/// What `interaction.resolve` reports.
 #[derive(Serialize, schemars::JsonSchema)]
 pub struct InteractionRespondOut {
     /// Its state after the answer.
@@ -2382,11 +2382,15 @@ capability! {
     input  = InteractionRespondIn,
     output = InteractionRespondOut,
     decl = Decl {
-        name: "interaction.respond",
+        name: "interaction.resolve",
         group: "interaction",
-        verb: "respond",
+        verb: "resolve",
         title: "Answer a question",
-        aliases: &[],
+        // The name it shipped under. Every document calls this `resolve` and
+        // none of them calls it `respond`, so the code was the odd one out --
+        // but a capability name is a wire contract, and dropping the old one
+        // outright would break a client mid-upgrade.
+        aliases: &["interaction.respond"],
         hidden: false,
         hidden_reason: None,
         kind: Kind::Command,
@@ -5968,6 +5972,10 @@ pub fn registry_full(
     r.register::<crate::media::OpenClick, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenRulesList, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenRulesTest, _>(crate::media::MediaHandler(blobs))?;
+    r.register::<crate::surfaces::AgentWait, _>(crate::surfaces::AgentWaitHandler(state.clone()))?;
+    r.register::<crate::surfaces::SessionCapture, _>(crate::surfaces::SessionCaptureHandler(
+        state.clone(),
+    ))?;
     let queues: crate::queue::Queues = std::sync::Arc::new(std::sync::Mutex::new(
         std::collections::BTreeMap::new(),
     ));

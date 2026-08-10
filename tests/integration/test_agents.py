@@ -39,7 +39,7 @@ class TestInteractions:
         # no card was answered, leaves an agent blocked forever.
         with pytest.raises(CapabilityError):
             client.call(
-                "interaction.respond",
+                "interaction.resolve",
                 interaction="intr_00000000000000000000000000000000",
                 option="Yes",
             )

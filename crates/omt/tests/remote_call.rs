@@ -828,7 +828,7 @@ fn a_remote_client_answers_a_card_and_the_second_answer_is_refused() {
     let answered = call_ok(
         &mut client,
         2,
-        "interaction.respond",
+        "interaction.resolve",
         serde_json::json!({ "interaction": id.to_wire(), "option": "No" }),
         true,
     );
@@ -840,7 +840,7 @@ fn a_remote_client_answers_a_card_and_the_second_answer_is_refused() {
         &mut client,
         &ProtoMessage::Call(Call {
             request: request(3),
-            capability: "interaction.respond".to_owned(),
+            capability: "interaction.resolve".to_owned(),
             input: serde_json::json!({ "interaction": id.to_wire(), "option": "Yes" }),
             intent: Some(omt_types::IntentId::new()),
         }),
@@ -904,7 +904,7 @@ fn a_card_omt_cannot_deliver_is_refused_even_while_it_is_open() {
         &mut client,
         &ProtoMessage::Call(Call {
             request: request(2),
-            capability: "interaction.respond".to_owned(),
+            capability: "interaction.resolve".to_owned(),
             input: serde_json::json!({ "interaction": id.to_wire(), "option": "Yes" }),
             intent: Some(omt_types::IntentId::new()),
         }),

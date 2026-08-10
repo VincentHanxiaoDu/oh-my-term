@@ -313,8 +313,8 @@ export const HANDLERS = {
   'interaction.list': (request: RequestId, session?: string) =>
     call(request, 'interaction.list', session === undefined ? {} : { session }),
 
-  'interaction.respond': (request: RequestId, interaction: string, option: string, text?: string) =>
-    call(request, 'interaction.respond', {
+  'interaction.resolve': (request: RequestId, interaction: string, option: string, text?: string) =>
+    call(request, 'interaction.resolve', {
       interaction,
       option,
       ...(text === undefined ? {} : { text }),
@@ -416,6 +416,20 @@ export const HANDLERS = {
   // A binding, never a session. A replayed enqueue against a session whose
   // agent has since exited types the text into a shell prompt, where it runs
   // as a command.
+  // The primitive that stops every script being a sleep loop. `blocked` is a
+  // state and matches at once; `interaction` is an edge and matches only a card
+  // that opens after the wait began.
+  'agent.wait': (
+    request: RequestId,
+    session: string,
+    until: string[],
+    timeoutMs: number,
+    immediate?: boolean,
+  ) => call(request, 'agent.wait', { session, until, timeout_ms: timeoutMs, immediate }),
+
+  'session.capture': (request: RequestId, session: string, format?: string, lines?: number) =>
+    call(request, 'session.capture', { session, format, lines }),
+
   'queue.enqueue': (request: RequestId, binding: string, state: string, text: string) =>
     call(request, 'queue.enqueue', { binding, state, text }),
 

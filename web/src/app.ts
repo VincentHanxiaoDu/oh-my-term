@@ -1260,7 +1260,7 @@ export class App {
   /** Answer a card. */
   async answer(interaction: string, option: string): Promise<void> {
     try {
-      await this.#store.call('interaction.respond', interaction, option)
+      await this.#store.call('interaction.resolve', interaction, option)
       this.#cards = undefined
       await this.#store.refresh()
       this.#nav.back()

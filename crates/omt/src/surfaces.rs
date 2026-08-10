@@ -641,3 +641,276 @@ impl CapabilityHandler<BlockRerun> for BlockRerunHandler {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Automation primitives (22 §8.3)
+// ---------------------------------------------------------------------------
+
+/// Input to `agent.wait`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WaitIn {
+    /// Which session.
+    pub session: String,
+    /// Any of these ends the wait.
+    pub until: Vec<crate::automation::WaitCondition>,
+    /// How long to wait, in milliseconds.
+    pub timeout_ms: u64,
+    /// Resolve at once if the condition already holds.
+    ///
+    /// Default true: the alternative is a guaranteed race, because a script
+    /// that checks and then waits misses the transition in between.
+    #[serde(default = "waits_immediately")]
+    pub immediate: bool,
+}
+
+const fn waits_immediately() -> bool {
+    true
+}
+
+/// What `agent.wait` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct WaitOut {
+    /// Which condition ended it, if one did.
+    pub matched: Option<crate::automation::WaitCondition>,
+    /// The state when it returned.
+    pub state: String,
+    /// How long it waited, in milliseconds.
+    pub waited_ms: u64,
+    /// Whether the deadline passed first.
+    pub timed_out: bool,
+}
+
+omt_catalog::capability! {
+    /// Block until a session's agent reaches one of the requested states.
+    pub struct AgentWait;
+    input  = WaitIn,
+    output = WaitOut,
+    decl = omt_catalog::Decl {
+        name: "agent.wait",
+        group: "agent",
+        verb: "wait",
+        title: "Wait for an agent",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        // It observes; it mutates nothing.
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The primitive that stops every script being a sleep loop. `blocked` is a state and matches at once; `interaction` is an edge and matches only a card that opens after the wait began.",
+    },
+}
+
+/// Serves `agent.wait`.
+pub struct AgentWaitHandler(pub State);
+
+impl CapabilityHandler<AgentWait> for AgentWaitHandler {
+    fn call(&self, _ctx: &omt_catalog::CallContext, input: WaitIn) -> Result<WaitOut, CapabilityError> {
+        use crate::automation::{already_satisfied, WaitCondition};
+
+        let id = session_id(&input.session)?;
+        if input.until.is_empty() {
+            // A wait with nothing to wait for is a sleep, and a script that
+            // wrote one meant something else.
+            return Err(CapabilityError::invalid_input(
+                "name at least one condition to wait for",
+            ));
+        }
+        // A cap rather than an unbounded wait: a request that never returns
+        // holds a connection thread for as long as the caller lives.
+        let timeout_ms = input.timeout_ms.min(24 * 60 * 60 * 1_000);
+
+        let started = std::time::Instant::now();
+        let deadline = started + std::time::Duration::from_millis(timeout_ms);
+        let mut first = true;
+
+        loop {
+            let state = {
+                let instance = self.0.lock()?;
+                if instance.session(id).is_none() {
+                    return Err(CapabilityError::not_found(format!(
+                        "no session {}",
+                        input.session
+                    )));
+                }
+                // A session with no agent in it has no state to reach. Reported
+                // as a refusal rather than waited out, because waiting thirty
+                // minutes for an agent that was never there is the sleep loop
+                // this capability exists to replace.
+                let Some(roster) = instance.threads(id) else {
+                    return Err(CapabilityError::precondition_failed(
+                        "no agent is bound to that session",
+                    ));
+                };
+                roster
+                    .threads()
+                    .into_iter()
+                    .find(|t| !t.is_subagent)
+                    .map(|t| t.state.clone())
+                    .ok_or_else(|| {
+                        CapabilityError::precondition_failed("no agent is bound to that session")
+                    })?
+            };
+
+            // On the first pass `immediate` decides; after that any state match
+            // is by definition a transition the wait saw.
+            let matched = already_satisfied(&input.until, &state, !first || input.immediate);
+            if let Some(matched) = matched {
+                return Ok(WaitOut {
+                    matched: Some(matched),
+                    state: crate::capabilities::describe_agent_state(&state),
+                    waited_ms: started.elapsed().as_millis() as u64,
+                    timed_out: false,
+                });
+            }
+            first = false;
+
+            if std::time::Instant::now() >= deadline {
+                return Ok(WaitOut {
+                    matched: None,
+                    state: crate::capabilities::describe_agent_state(&state),
+                    waited_ms: started.elapsed().as_millis() as u64,
+                    // Reported rather than raised: a timeout is an outcome a
+                    // script branches on, and the state it timed out in is the
+                    // useful part.
+                    timed_out: true,
+                });
+            }
+            let _ = WaitCondition::Idle;
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    }
+}
+
+/// Input to `session.capture`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CaptureIn {
+    /// Which session.
+    pub session: String,
+    /// `text` or `jsonl`.
+    #[serde(default)]
+    pub format: Option<String>,
+    /// Most lines to return, counting back from the end.
+    #[serde(default = "default_capture_lines")]
+    pub lines: u32,
+}
+
+const fn default_capture_lines() -> u32 {
+    1_000
+}
+
+/// What `session.capture` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CaptureOut {
+    /// The capture.
+    pub content: String,
+    /// How many lines it holds.
+    pub lines: u32,
+    /// Which format it is in.
+    pub format: String,
+    /// How many lines the session has in total.
+    ///
+    /// So a script can tell a complete capture from a truncated one, which a
+    /// line count alone cannot.
+    pub total: u64,
+}
+
+omt_catalog::capability! {
+    /// A session's scrollback as text a script can read.
+    pub struct SessionCapture;
+    input  = CaptureIn,
+    output = CaptureOut,
+    decl = omt_catalog::Decl {
+        name: "session.capture",
+        group: "session",
+        verb: "capture",
+        title: "Capture scrollback",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The thing every migrating script asks for first. Reports the total as well as what it returned, so a truncated capture is visible rather than looking complete.",
+    },
+}
+
+/// Serves `session.capture`.
+pub struct SessionCaptureHandler(pub State);
+
+impl CapabilityHandler<SessionCapture> for SessionCaptureHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: CaptureIn,
+    ) -> Result<CaptureOut, CapabilityError> {
+        let id = session_id(&input.session)?;
+        let format = input.format.unwrap_or_else(|| "text".to_owned());
+        if format != "text" && format != "jsonl" {
+            return Err(CapabilityError::invalid_input(
+                "format must be `text` or `jsonl`",
+            ));
+        }
+        let instance = self.0.lock()?;
+        let terminal = instance
+            .runtime(id)
+            .map(omt_daemon::SessionRuntime::terminal)
+            .or_else(|| instance.orphan_terminal(id))
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?;
+
+        let total = terminal.total_rows();
+        let wanted = u64::from(input.lines);
+        let from = total.saturating_sub(wanted);
+        let mut rows = Vec::new();
+        for absolute in from..total {
+            if let Some(line) = terminal.line_at(absolute) {
+                let mut text = String::new();
+                for cell in line.cells() {
+                    // The spacer half of a wide character carries no glyph, and
+                    // emitting one would shift the rest of the line right.
+                    if cell.flags.contains(omt_term::Flags::WIDE_SPACER) {
+                        continue;
+                    }
+                    match cell.resolve() {
+                        // An untouched cell is a space, not a NUL: a script
+                        // grepping the capture should not find control bytes
+                        // the terminal never showed.
+                        omt_term::Resolved::Char('\0') => text.push(' '),
+                        omt_term::Resolved::Char(c) => text.push(c),
+                        // A grapheme lives in the terminal's side table, which
+                        // a capture has no handle on. `?` is what the styled
+                        // path already emits, and inventing a different
+                        // placeholder here would make two views disagree.
+                        omt_term::Resolved::Grapheme(_) => text.push('?'),
+                    }
+                }
+                rows.push(text.trim_end().to_owned());
+            }
+        }
+
+        let content = if format == "jsonl" {
+            rows.iter()
+                .enumerate()
+                .map(|(i, text)| {
+                    serde_json::json!({ "row": from + i as u64, "text": text }).to_string()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            rows.join("\n")
+        };
+
+        Ok(CaptureOut {
+            lines: u32::try_from(rows.len()).unwrap_or(u32::MAX),
+            content,
+            format,
+            total,
+        })
+    }
+}
