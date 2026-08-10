@@ -84,6 +84,8 @@ vanishing.
 | `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |
 | `term.profile` | query | viewer | A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree. |
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
+| `uninstall.apply` | command | admin | Refuses unless it is given the hash of a plan that still matches the disk. A confirmation against a plan that has since changed is a confirmation of something the user never saw. |
+| `uninstall.plan` | query | admin | Driven by the setup manifest. Anything absent from it is never touched — an uninstall that reasons about what it probably wrote eventually removes somebody else's configuration. |
 | `usage.report` | query | viewer | Tokens spent per session and in total, with whatever the agent said about its rate limit. Cost appears only when the agent stated one — omt never computes it from a price table of its own. |
 | `voice.append` | command | operator | Append a transcript chunk to a session's dictation buffer. Partial chunks are replaced by later ones; only the settled part is offered for sending. |
 | `voice.clear` | command | operator | Discard a session's dictation buffer. Idempotent. |
@@ -94,4 +96,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-84 capabilities.
+86 capabilities.

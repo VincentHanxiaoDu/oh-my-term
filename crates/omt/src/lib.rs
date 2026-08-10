@@ -13,6 +13,7 @@ pub mod pairing;
 pub mod persist;
 pub mod onboarding;
 pub mod setup;
+pub mod uninstall;
 pub mod reach;
 pub mod run;
 pub mod scheduler;

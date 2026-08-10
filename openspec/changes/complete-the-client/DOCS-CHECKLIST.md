@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**55 of 212 features ticked.** (33 further sections are prose.)
+**56 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -256,7 +256,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 5. tmux and zellij: migration and coexistence
 - [ ] 6. Progressive disclosure of advanced features
 - [x] 7. `TERM` and terminfo — R6 — test_onboarding: TERM, terminfo, nesting, and a remedy on every disagreement
-- [ ] 8. Uninstall and rollback
+- [x] 8. Uninstall and rollback — test_onboarding: plan, accept, stale-plan refusal; unit: an edited block is commented out, not deleted
 - ~~9. Capabilities this document requires~~ — prose
 - ~~10. OPEN QUESTIONS~~ — prose
 

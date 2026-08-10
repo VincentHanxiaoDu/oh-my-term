@@ -436,6 +436,26 @@ export const HANDLERS = {
   'setup.detect_agents': (request: RequestId) => call(request, 'setup.detect_agents', {}),
 
   'term.profile': (request: RequestId) => call(request, 'term.profile', {}),
+
+  'uninstall.plan': (request: RequestId, keepConfig = false, keepData = false) =>
+    call(request, 'uninstall.plan', { keep_config: keepConfig, keep_data: keepData }),
+
+  // `plan` is the hash the preview returned, and apply re-checks it against the
+  // disk. A confirm button that could not name which plan it confirmed would be
+  // confirming whatever the machine looks like at the moment it is pressed.
+  'uninstall.apply': (
+    request: RequestId,
+    plan: string,
+    accept: boolean,
+    keepConfig = false,
+    keepData = false,
+  ) =>
+    call(request, 'uninstall.apply', {
+      plan,
+      accept,
+      keep_config: keepConfig,
+      keep_data: keepData,
+    }),
 } as const
 
 /** The capability names this client handles. */

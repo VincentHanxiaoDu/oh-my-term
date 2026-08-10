@@ -5945,6 +5945,11 @@ pub fn registry_full(
     let hints = std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Hints::default()));
     r.register::<crate::onboarding::HintState, _>(crate::onboarding::HintsHandler(hints.clone()))?;
     r.register::<crate::onboarding::DismissHints, _>(crate::onboarding::HintsHandler(hints))?;
+    let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
+    r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(
+        roots.clone(),
+    ))?;
+    r.register::<crate::uninstall::UninstallApply, _>(crate::uninstall::UninstallHandler(roots))?;
     r.register::<crate::setup::DetectAgents, _>(crate::setup::SetupHandler)?;
     r.register::<crate::setup::TermProfile, _>(crate::setup::SetupHandler)?;
     r.register::<crate::onboarding::HelpTopics, _>(crate::onboarding::HelpHandler)?;

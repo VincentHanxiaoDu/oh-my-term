@@ -200,3 +200,40 @@ class TestThisTerminal:
         # on screen tells you.
         out = client.call("term.profile")
         assert "nested" in out
+
+
+class TestUninstall:
+    """§8. A tool that cannot cleanly uninstall does not get installed."""
+
+    def test_a_plan_says_what_it_would_do_and_does_none_of_it(
+        self, client: Client
+    ) -> None:
+        out = client.call("uninstall.plan")
+        assert "steps" in out
+        assert out["plan"], "a plan hash, so accepting one means something"
+
+    def test_it_will_not_delete_its_own_binary(self, client: Client) -> None:
+        # A program that deletes its own executable mid-run leaves a
+        # half-finished uninstall with nothing left to finish it.
+        out = client.call("uninstall.plan")
+        assert "package manager" in out["binary"]
+
+    def test_applying_without_an_explicit_accept_is_refused(
+        self, client: Client
+    ) -> None:
+        with pytest.raises(Exception) as caught:
+            client.call("uninstall.apply", plan="whatever", accept=False)
+        assert "accept" in str(caught.value).lower()
+
+    def test_applying_a_plan_the_machine_no_longer_matches_is_refused(
+        self, client: Client
+    ) -> None:
+        # A confirmation against a plan that has since changed is a
+        # confirmation of something the user never saw.
+        with pytest.raises(Exception) as caught:
+            client.call("uninstall.apply", plan="not-the-plan", accept=True)
+        assert "changed" in str(caught.value).lower()
+
+    def test_every_step_explains_itself(self, client: Client) -> None:
+        for step in client.call("uninstall.plan")["steps"]:
+            assert step["reason"], step
