@@ -311,3 +311,64 @@ class TestLaunchConfigurations:
 
         with pytest.raises(Exception):
             client.call("launch.preview", launch={"nonsense": True})
+
+
+class TestTheSettingsSurfaceMatchesTheDocument:
+    """10-configuration §7. The document's tables and the schema are the same
+    list, or one of them is fiction."""
+
+    def documented(self):
+        import re
+
+        from omt_client import REPO_ROOT
+
+        doc = (REPO_ROOT / "docs" / "architecture" / "10-configuration.md").read_text()
+        section = doc[
+            doc.index("## 7. The settings surface") : doc.index("## 8. Themes")
+        ]
+
+        def cells(line):
+            parts, cur, i = [], "", 0
+            while i < len(line):
+                if line[i] == "\\" and i + 1 < len(line):
+                    cur += line[i + 1]
+                    i += 2
+                    continue
+                if line[i] == "|":
+                    parts.append(cur.strip())
+                    cur = ""
+                    i += 1
+                    continue
+                cur += line[i]
+                i += 1
+            parts.append(cur.strip())
+            return [p for p in parts if p]
+
+        prefix, keys = None, set()
+        for line in section.splitlines():
+            header = re.match(r"### 7\.\d+ `\[([a-z._]+)\]`", line)
+            if header:
+                prefix = header.group(1)
+                continue
+            if not line.startswith("|") or not prefix:
+                continue
+            columns = cells(line)
+            if len(columns) < 3 or not columns[0].startswith("`"):
+                continue
+            key = columns[0].strip("`")
+            if re.match(r"^[a-z][a-z0-9_.]*$", key):
+                keys.add(f"{prefix}.{key}")
+        return keys
+
+    def test_every_documented_setting_exists(self, client) -> None:
+        # A settings table in a document that the code does not have is a
+        # promise to somebody reading it, and they find out by setting one and
+        # watching nothing happen.
+        have = {s["key"] for s in client.call("config.schema")["settings"]}
+        missing = sorted(self.documented() - have)
+        assert missing == [], missing
+
+    def test_the_document_is_not_empty_so_the_check_means_something(self) -> None:
+        # The parser silently returning nothing would make the test above pass
+        # over an empty set — the shape this change has found five times.
+        assert len(self.documented()) > 40
