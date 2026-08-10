@@ -7,6 +7,7 @@
 //! had expired confirms a guess that would otherwise be indistinguishable from
 //! noise.
 
+pub mod at_rest;
 pub mod bind;
 pub mod token;
 

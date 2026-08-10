@@ -73,6 +73,15 @@ pub enum Severity {
 pub const DROPPED_BY_SCOPE: &str = "OMT-C201";
 /// A key nothing knows about.
 pub const UNKNOWN_KEY: &str = "OMT-C101";
+/// A secret written into the configuration itself.
+pub const INLINE_SECRET: &str = "OMT-C301";
+
+/// Keys that may never carry a value, only a path to one.
+///
+/// 13 §5.1. Kept here rather than imported from `omt-auth`, which sits above
+/// this crate in the layering: a lower crate reaching upward for a constant is
+/// how a layering rule quietly stops meaning anything.
+pub const INLINE_SECRET_KEYS: &[&str] = &["auth.password", "auth.token", "auth.bearer"];
 
 impl Resolved {
     /// A resolved value by dotted key.
@@ -134,6 +143,25 @@ pub fn merge(layers: &[LayerInput], schema: &[KeySpec]) -> Resolved {
         flatten(&input.values, String::new(), &mut flat);
 
         for (key, value) in flat {
+            // A secret written into a config file, before anything else is
+            // decided about the key. 13 §5.1: the config may say *where* a
+            // secret is, never *what* it is — a config file is the thing
+            // people paste into an issue, commit to a dotfiles repository and
+            // copy between machines, and each of those is a way a secret gets
+            // out that nobody thinks of as leaking.
+            if INLINE_SECRET_KEYS.contains(&key.as_str()) {
+                out.diagnostics.push(Diagnostic {
+                    code: INLINE_SECRET,
+                    key: key.clone(),
+                    message: format!("`{key}` puts a secret in the configuration file"),
+                    help: Some(format!(
+                        "move the value into a file and set `{key}_file` instead, so the config can be shared and the secret cannot"
+                    )),
+                    severity: Severity::Error,
+                });
+                continue;
+            }
+
             match known.get(key.as_str()) {
                 Some(scope) if !scope.permits(input.layer) => {
                     // Dropped, never applied, and said out loud — a silently
@@ -298,6 +326,62 @@ fn distance(a: &str, b: &str) -> usize {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_secret_in_the_config_file_is_an_error_with_somewhere_to_put_it() {
+        // A config file is what people paste into an issue, commit to a
+        // dotfiles repository, and copy between machines. Each is a way a
+        // secret gets out that nobody thinks of as leaking.
+        // `layer()` below builds these; a literal here would miss the `file`
+        // field and drift again the next time one is added.
+        let resolved = merge(
+            &[layer(Layer::User, serde_json::json!({ "auth": { "password": "hunter2" } }))],
+            &[],
+        );
+        let found: Vec<&Diagnostic> = resolved
+            .diagnostics()
+            .iter()
+            .filter(|d| d.code == INLINE_SECRET)
+            .collect();
+        assert_eq!(found.len(), 1, "{:?}", resolved.diagnostics());
+        assert_eq!(found[0].severity, Severity::Error);
+        assert!(
+            found[0].help.as_ref().is_some_and(|h| h.contains("auth.password_file")),
+            "{:?}",
+            found[0].help
+        );
+    }
+
+    #[test]
+    fn a_secret_is_not_merely_flagged_but_kept_out_of_the_resolved_values() {
+        // Flagging it and applying it anyway would leave the secret in memory,
+        // in every dump of the resolved config, and in the settings surface —
+        // which is most of the ways it would have leaked from the file.
+        let resolved = merge(
+            &[layer(Layer::User, serde_json::json!({ "auth": { "token": "omt_c_secret" } }))],
+            &[],
+        );
+        assert!(resolved.get("auth.token").is_none());
+    }
+
+    #[test]
+    fn pointing_at_a_secret_file_is_not_flagged() {
+        // The whole point of the rule: the config may say where, never what.
+        // A check that also refused the pointer would leave nowhere to go.
+        let resolved = merge(
+            &[layer(
+                Layer::User,
+                serde_json::json!({ "auth": { "password_file": "/etc/omt/pw" } }),
+            )],
+            &[],
+        );
+        assert!(
+            !resolved.diagnostics().iter().any(|d| d.code == INLINE_SECRET),
+            "{:?}",
+            resolved.diagnostics()
+        );
+    }
+
     use serde_json::json;
 
     fn schema() -> Vec<KeySpec> {

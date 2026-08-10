@@ -130,11 +130,56 @@ pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()>
         identities.clone(),
     )
     .context("building the registry")?;
+    // The origins this instance is served from, which is what 13 §6 says the
+    // allow-list defaults to. Without this the check would reject the very
+    // page omt itself serves — the allow-list is empty by default so that a
+    // daemon serving no browser refuses browser traffic, and a daemon that
+    // *is* serving one has to say where from.
     let http = HttpState::sharing(registry, credentials)
+        .with_origins(served_origins(bind))
         .watching(watch)
         .with_identities(identities)
         .with_events(state_for_events);
     omt_server::http::run_with_tls(bind, http, tls).with_context(|| format!("serving on {bind}"))
+}
+
+/// Every origin a browser could legitimately reach this instance at.
+///
+/// Both schemes, because whether TLS terminates here or at a proxy in front is
+/// not knowable from the bind address — and a page served over https that omt
+/// rejected for saying so would be a very confusing afternoon.
+///
+/// A wildcard bind is served at every address, and the origin a browser reports
+/// is whichever one somebody typed. There is no list to enumerate, so the
+/// loopback forms are listed and anything else is configuration the operator
+/// states — which is the same shape as the bind policy: the escape hatch is a
+/// file, not a wildcard.
+fn served_origins(bind: &str) -> Vec<String> {
+    // Parsed rather than string-sliced, because `[::1]:7788` and `0.0.0.0:80`
+    // both have colons in places a naive split gets wrong.
+    let Ok(bind) = bind.parse::<std::net::SocketAddr>() else {
+        // An unparseable bind is a problem the listener will report properly.
+        // Guessing an origin from it would be inventing an allow-list entry
+        // out of a string omt does not understand.
+        return Vec::new();
+    };
+    let port = bind.port();
+    let mut out = Vec::new();
+    for host in ["127.0.0.1", "localhost", "[::1]"] {
+        out.push(format!("http://{host}:{port}"));
+        out.push(format!("https://{host}:{port}"));
+    }
+    if !bind.ip().is_loopback() && !bind.ip().is_unspecified() {
+        let ip = bind.ip();
+        let host = if ip.is_ipv6() {
+            format!("[{ip}]")
+        } else {
+            ip.to_string()
+        };
+        out.push(format!("http://{host}:{port}"));
+        out.push(format!("https://{host}:{port}"));
+    }
+    out
 }
 
 /// How often the pump looks for output.
@@ -208,5 +253,63 @@ mod tests {
         for bind in ["0.0.0.0:7777", "192.168.1.10:7777", "box.local:7777"] {
             assert!(!is_loopback(bind), "{bind} was treated as loopback");
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod origin_tests {
+    use super::served_origins;
+
+    #[test]
+    fn the_page_omt_serves_is_an_allowed_origin() {
+        // The check would otherwise reject the very page omt itself serves,
+        // which is how a security control gets turned off rather than fixed.
+        let origins = served_origins("127.0.0.1:7788");
+        assert!(origins.contains(&"http://127.0.0.1:7788".to_owned()));
+        assert!(origins.contains(&"http://localhost:7788".to_owned()));
+    }
+
+    #[test]
+    fn both_schemes_are_allowed_because_a_proxy_may_terminate_tls() {
+        // Whether TLS terminates here or in front is not knowable from the
+        // bind address, and rejecting an https page for saying so would be a
+        // very confusing afternoon.
+        let origins = served_origins("127.0.0.1:7788");
+        assert!(origins.contains(&"https://127.0.0.1:7788".to_owned()));
+    }
+
+    #[test]
+    fn a_tailnet_address_is_allowed_at_its_own_host() {
+        let origins = served_origins("100.100.1.3:7788");
+        assert!(origins.contains(&"http://100.100.1.3:7788".to_owned()));
+    }
+
+    #[test]
+    fn an_ipv6_host_is_bracketed() {
+        // `http://::1:7788` is not an origin any browser will send.
+        let origins = served_origins("[::1]:7788");
+        assert!(origins.contains(&"http://[::1]:7788".to_owned()));
+    }
+
+    #[test]
+    fn a_wildcard_bind_does_not_become_a_wildcard_allow_list() {
+        // Anything beyond loopback on an unspecified bind is configuration the
+        // operator states — the same shape as the bind policy, where the
+        // escape hatch is a file rather than a wildcard.
+        let origins = served_origins("0.0.0.0:7788");
+        assert!(origins.iter().all(|o| o.contains("127.0.0.1") || o.contains("localhost") || o.contains("[::1]")));
+        assert!(!origins.iter().any(|o| o.contains("0.0.0.0")));
+    }
+
+    #[test]
+    fn an_unparseable_bind_invents_nothing() {
+        // Guessing an origin out of a string omt does not understand would be
+        // inventing an allow-list entry.
+        assert!(served_origins("not-an-address").is_empty());
     }
 }
