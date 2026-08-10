@@ -139,7 +139,34 @@ impl Attached {
 /// Fails if the daemon cannot be reached, or if the terminal cannot be put into
 /// raw mode.
 pub fn run(socket: Option<&Path>, program: Option<String>) -> Result<()> {
-    let path = socket.map_or_else(daemon_socket_path, Path::to_path_buf);
+    let path = match socket {
+        Some(path) => path.to_path_buf(),
+        // The discovery ladder in 22 §1.1, in preference to the fixed
+        // per-user path: `$OMT_SOCK` first, so a pane omt spawned finds the
+        // instance it belongs to rather than whichever answers first.
+        None => {
+            let env = std::env::var_os("OMT_SOCK").map(PathBuf::from);
+            let found = crate::discovery::discover(
+                env.as_deref(),
+                &crate::discovery::runtime_dir(),
+                &|p| omt_transport::connect(p).is_ok(),
+                &mut |stale| {
+                    // A file a dead process left behind. Failing to remove it
+                    // is not worth reporting; it will be tried again.
+                    let _ = std::fs::remove_file(stale);
+                },
+            );
+            match found {
+                crate::discovery::Found::One(path) => path,
+                crate::discovery::Found::Several(sockets) => {
+                    anyhow::bail!(crate::discovery::ambiguous(&sockets))
+                }
+                // The per-user path is where a daemon started without one
+                // listens, so this is the spawn target rather than an error.
+                crate::discovery::Found::None => daemon_socket_path(),
+            }
+        }
+    };
     let mut daemon = Attached::connect(&path).with_context(|| {
         format!(
             "no omt daemon at {} — start one with `omt serve`",

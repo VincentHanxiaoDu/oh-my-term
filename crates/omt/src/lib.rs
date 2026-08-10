@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod events;
 pub mod pairing;
 pub mod persist;
+pub mod discovery;
 pub mod media;
 pub mod queue;
 pub mod migrate;
