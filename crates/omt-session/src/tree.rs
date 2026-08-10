@@ -331,6 +331,17 @@ impl Instance {
         }
     }
 
+    /// Drop a session from the flat map without touching anything pointing at
+    /// it.
+    ///
+    /// Only for the invariant tests, which need a tree that has gone wrong in a
+    /// specific way in order to prove the checker notices. There is no ordinary
+    /// path that leaves the tree like this, which is the point.
+    #[cfg(test)]
+    pub(crate) fn forget_session_for_test(&mut self, id: SessionId) {
+        self.sessions.remove(&id);
+    }
+
     /// Open a workspace, or return the one already open at that path.
     ///
     /// Idempotent by canonical path, because the path *is* the identity:
@@ -438,6 +449,30 @@ impl Instance {
             }
         }
         Ok(())
+    }
+
+    /// Close a workspace, and the sessions in it.
+    ///
+    /// Its sessions go with it rather than outliving it: a session whose
+    /// workspace is gone has no layout to appear in, no history scope to belong
+    /// to, and no honest answer to "where is this". Leaving them behind would
+    /// be a leak whose symptom is a session nothing can show.
+    ///
+    /// Returns the sessions that were closed, so the caller can stop whatever
+    /// is behind them — the tree holds no processes and must not pretend to.
+    ///
+    /// # Errors
+    /// Fails if there is no such workspace.
+    pub fn close_workspace(&mut self, id: WorkspaceId) -> Result<Vec<SessionId>, TreeError> {
+        let workspace = self
+            .workspaces
+            .remove(&id)
+            .ok_or(TreeError::NoWorkspace(id))?;
+        let closed = workspace.sessions.clone();
+        for session in &closed {
+            self.sessions.remove(session);
+        }
+        Ok(closed)
     }
 
     /// Every pane, in every view, showing a session.

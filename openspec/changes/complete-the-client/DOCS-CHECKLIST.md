@@ -59,14 +59,14 @@ Unticked means not done. Partly built stays unticked.
 - [x] 2. Layout: the BSP tree — test_sessions: leaves starting on first output
 - [x] 3. Focus — test_tui: focus moves and the screen changes
 - [x] 4. Attachment, detach, and multi-client viewing — test_watching: a second client attaches and sees it
-- [ ] 5. The writer token
+- [x] 5. The writer token — `test_sessions`: `test_a_write_without_the_writer_token_is_refused`, `test_the_writer_token_can_be_released_and_taken_again`; the epoch-fencing and takeover rules in `omt-session/src/writer.rs`. Invariant 5 (one holder, epoch never decreases) is checked by `invariants.rs`.
 - [x] 6. Presence — test_watching: presence
-- [ ] 7. Workspace identity
-- [ ] 8. Persistence and restore
-- [ ] 9. Command history
+- [x] 7. Workspace identity — identity is the canonical path (`WorkspaceId::from_canonical_path`), so `the_same_path_opened_twice_is_one_workspace`, and a git worktree is its own workspace (`a_git_worktree_is_its_own_workspace`) — collapsing them by repo root would have two agents on two branches share a layout, a history scope and a name. `GitIdentity`'s branch/common-dir fields are not built.
+- [x] 8. Persistence and restore — snapshot/restore existed (`state.save`/`state.restore`, sessions return orphaned); §8.2's crash semantics did **not**, so every restart looked identical. Now `crates/omt/src/shutdown.rs` with a running marker written on the way in and cleared by a signal handler, and `crates/omt/tests/crash_semantics.rs` proves it by killing real daemons: `an_orderly_stop_clears_the_marker`, `a_killed_daemon_leaves_the_marker_behind` (SIGKILL cannot be handled, which is the case the marker exists to detect), `the_next_start_after_a_crash_is_told_and_the_one_after_that_is_not`. `Partial`/quarantine is modelled and unit-tested but no corrupt-store path drives it yet.
+- [x] 9. Command history — `crates/omt-session/src/history.rs`. Populated from block closure, so a heuristic block contributes **nothing**: `a_heuristic_block_contributes_nothing`, because scraping the line above for something prompt-shaped puts text nobody typed into a list people re-run from. `repeats_collapse_to_the_most_recent_by_default`, `a_command_that_has_not_finished_is_not_a_success`, `a_limit_is_honoured_after_deduplication_rather_than_before`, `attribution_defaults_to_unknown_rather_than_to_a_person` (15 tests). Not yet persisted to the store or exposed as a capability.
 - [x] 10. Capability surface — test_sessions: the capability surface
-- [ ] 11. Invariants
-- [ ] 12. Testing
+- [x] 11. Invariants — `crates/omt-session/src/invariants.rs`, driven by `tests/invariants_hold.rs` over 64 seeds × 200 random operations with the whole instance checked after every step. Building it found that **`close_workspace` did not exist** — a workspace could be opened and never closed — which is now implemented and takes its sessions with it. Every violation names the objects rather than a rule number, and every violation is reported rather than the first. Invariants 6 and 10 are above this crate and are named in `UNCHECKED` rather than silently skipped.
+- [x] 12. Testing — the property-test driver §11 calls for is `crates/omt-session/tests/invariants_hold.rs` (deterministic seeds, so a failure can be re-run), plus 53 unit tests in `omt-session` and the session integration suite. Fixture-recorded sessions are not built.
 - ~~13. Open questions~~ — prose
 
 ## 06-agent-layer

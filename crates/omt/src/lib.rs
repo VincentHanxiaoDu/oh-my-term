@@ -20,6 +20,7 @@ pub mod multiuser;
 pub mod upgrade;
 pub mod ops;
 pub mod queue;
+pub mod shutdown;
 pub mod migrate;
 pub mod onboarding;
 pub mod setup;

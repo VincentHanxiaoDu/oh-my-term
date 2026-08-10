@@ -31,8 +31,30 @@ pub fn restore_on_start(state: &State) {
         Some(p) => p,
         None => return,
     };
+    // Whether the last omt stopped or fell over, decided before the marker is
+    // rewritten for this run (05 §8.2).
+    let state_dir = path.parent().map(std::path::Path::to_path_buf);
+    let ended_cleanly = state_dir
+        .as_deref()
+        .is_none_or(crate::shutdown::ended_cleanly);
+    if let Some(dir) = state_dir.as_deref() {
+        // Failing to write the marker is not a reason to refuse to start; it
+        // costs a crash report next time, which is worth less than the session.
+        let _ = crate::shutdown::mark_running(dir);
+        // And cleared when somebody stops this daemon, so an orderly stop does
+        // not read as a crash on the next start.
+        crate::shutdown::clear_on_signal(dir);
+    }
     if !path.exists() {
         return;
+    }
+    if !ended_cleanly {
+        // Said once, on the way in. Whatever was written after the last
+        // scrollback flush is gone, and a user weighing that against what they
+        // remember doing needs to be told rather than left to notice.
+        eprintln!(
+            "omt: the previous run did not shut down cleanly; output written just before the stop may be missing"
+        );
     }
     match crate::capabilities::restore_from(state, &path) {
         Ok(out) if out.sessions > 0 || out.workspaces > 0 => {

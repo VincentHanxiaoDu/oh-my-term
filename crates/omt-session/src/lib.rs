@@ -6,6 +6,8 @@
 //! so input in flight when the token changes hands is rejected rather than
 //! landing in somebody else's command line.
 
+pub mod history;
+pub mod invariants;
 pub mod fanout;
 pub mod tree;
 pub mod writer;
