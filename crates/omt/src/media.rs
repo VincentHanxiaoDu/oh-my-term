@@ -3093,6 +3093,98 @@ impl CapabilityHandler<ReauthCheck> for SecurityHandler {
     }
 }
 
+/// Input to `store.retention`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RetentionIn {
+    /// How old, in days.
+    pub age_days: u32,
+    /// `output`, `block_metadata`, `history`, `agent_events`, `interactions`
+    /// or `transcript`.
+    pub kind: String,
+    /// Whether the block exited non-zero.
+    #[serde(default)]
+    pub failed: bool,
+    /// Whether an agent was attributed to it.
+    #[serde(default)]
+    pub agent_touched: bool,
+    /// How large its output is.
+    #[serde(default)]
+    pub output_bytes: u64,
+}
+
+/// What `store.retention` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RetentionOut {
+    /// `keep`, `compact` or `delete`.
+    pub fate: String,
+    /// When it would be compacted, in days. Absent means never.
+    pub compact_after_days: Option<u32>,
+    /// When it would be deleted.
+    pub delete_after_days: u32,
+}
+
+omt_catalog::capability! {
+    /// What happens to a piece of data of this age.
+    pub struct StoreRetention;
+    input  = RetentionIn,
+    output = RetentionOut,
+    decl = omt_catalog::Decl {
+        name: "store.retention",
+        group: "store",
+        verb: "retention",
+        title: "What happens to this data",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Compact first, delete second. The output of a build from three months ago is worthless; the fact that you ran it, where, and that it failed, is still useful and costs two hundred bytes.",
+    },
+}
+
+impl CapabilityHandler<StoreRetention> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: RetentionIn,
+    ) -> Result<RetentionOut, CapabilityError> {
+        use omt_store::retention::{Block, Kind, compact, fate, ladder};
+        let kind = match input.kind.as_str() {
+            "block_metadata" => Kind::BlockMetadata,
+            "history" => Kind::History,
+            "agent_events" => Kind::AgentEvents,
+            "interactions" => Kind::Interactions,
+            "transcript" => Kind::Transcript,
+            "output" => Kind::Output,
+            other => {
+                return Err(CapabilityError::invalid_input(format!(
+                    "no data kind `{other}`"
+                )));
+            }
+        };
+        let decided = if kind == Kind::Output {
+            compact(&Block {
+                age_days: input.age_days,
+                failed: input.failed,
+                agent_touched: input.agent_touched,
+                output_bytes: input.output_bytes,
+            })
+        } else {
+            fate(kind, input.age_days)
+        };
+        let l = ladder(kind);
+        Ok(RetentionOut {
+            fate: format!("{decided:?}").to_lowercase(),
+            compact_after_days: l.compact_after_days,
+            delete_after_days: l.delete_after_days,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -440,6 +440,9 @@ export const HANDLERS = {
   'device.revoke_all': (request: RequestId, keep: string) =>
     call(request, 'device.revoke_all', { keep }),
 
+  'store.retention': (request: RequestId, query: Record<string, unknown>) =>
+    call(request, 'store.retention', query),
+
   'identity.reauth_check': (request: RequestId, check: Record<string, unknown>) =>
     call(request, 'identity.reauth_check', check),
 

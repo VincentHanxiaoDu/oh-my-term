@@ -2161,6 +2161,24 @@
     },
     {
       "aliases": [],
+      "doc": "Compact first, delete second. The output of a build from three months ago is worthless; the fact that you ran it, where, and that it failed, is still useful and costs two hundred bytes.",
+      "effects": [],
+      "group": "store",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "store.retention",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/store/retention",
+      "since": "0.1.0",
+      "title": "What happens to this data",
+      "verb": "retention"
+    },
+    {
+      "aliases": [],
       "doc": "A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree.",
       "effects": [
         "reads_fs"

@@ -119,6 +119,7 @@ vanishing.
 | `ssh.plan` | query | operator | An argument vector, never a shell string: a hostname from a config file with a quote in it would otherwise become remote execution. |
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
 | `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |
+| `store.retention` | query | viewer | Compact first, delete second. The output of a build from three months ago is worthless; the fact that you ran it, where, and that it failed, is still useful and costs two hundred bytes. |
 | `term.profile` | query | viewer | A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree. |
 | `theme.get` | query | viewer | The colours in force, so a remote client renders a session in the user's own theme rather than in its own defaults. |
 | `uninstall.apply` | command | admin | Refuses unless it is given the hash of a plan that still matches the disk. A confirmation against a plan that has since changed is a confirmation of something the user never saw. |
@@ -133,4 +134,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-123 capabilities.
+124 capabilities.

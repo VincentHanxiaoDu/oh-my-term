@@ -109,6 +109,7 @@
   "ssh.plan",
   "state.restore",
   "state.save",
+  "store.retention",
   "term.profile",
   "theme.get",
   "uninstall.apply",

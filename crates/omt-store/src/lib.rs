@@ -7,6 +7,7 @@
 //! The two want opposite responses, so the record frame is built to tell them
 //! apart, and a restore never silently drops either.
 
+pub mod retention;
 pub mod log;
 pub mod record;
 pub mod snapshot;

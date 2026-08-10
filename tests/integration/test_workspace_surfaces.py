@@ -709,3 +709,71 @@ class TestWhatIsIndexed:
         out = client.call("recall.policy")
         assert len(out["sources"]) >= 9
         assert all(s["treatment"] for s in out["sources"])
+
+
+class TestRetention:
+    """21-data-lifecycle §3. Compact first, delete second."""
+
+    def test_the_fact_outlives_what_it_printed(self, client: Client) -> None:
+        # The output of a build from three months ago is worthless; that you
+        # ran it, where, and that it failed, is still useful.
+        output = client.call("store.retention", kind="output", age_days=60)
+        metadata = client.call("store.retention", kind="block_metadata", age_days=60)
+        assert output["fate"] == "delete"
+        assert metadata["fate"] == "keep"
+
+    def test_a_failed_block_keeps_its_output_past_compaction(
+        self, client: Client
+    ) -> None:
+        # The failures are what people come back to.
+        plain = client.call(
+            "store.retention", kind="output", age_days=10, output_bytes=1000000
+        )
+        failed = client.call(
+            "store.retention",
+            kind="output",
+            age_days=10,
+            output_bytes=1000000,
+            failed=True,
+        )
+        assert plain["fate"] == "compact"
+        assert failed["fate"] == "keep"
+
+    def test_a_block_an_agent_touched_keeps_its_output(self, client: Client) -> None:
+        out = client.call(
+            "store.retention",
+            kind="output",
+            age_days=10,
+            output_bytes=1000000,
+            agent_touched=True,
+        )
+        assert out["fate"] == "keep"
+
+    def test_a_small_output_is_not_worth_compacting(self, client: Client) -> None:
+        out = client.call(
+            "store.retention", kind="output", age_days=10, output_bytes=100
+        )
+        assert out["fate"] == "keep"
+
+    def test_a_command_outlives_almost_everything(self, client: Client) -> None:
+        out = client.call("store.retention", kind="history", age_days=365)
+        assert out["fate"] == "keep"
+        assert out["compact_after_days"] is None
+
+    def test_every_kind_says_when_it_goes(self, client: Client) -> None:
+        # Data with no delete date grows without bound, and the machine it
+        # grows on is somebody's laptop.
+        for kind in (
+            "output",
+            "block_metadata",
+            "history",
+            "agent_events",
+            "interactions",
+            "transcript",
+        ):
+            out = client.call("store.retention", kind=kind, age_days=0)
+            assert out["delete_after_days"] > 0, kind
+
+    def test_an_unknown_kind_is_refused(self, client: Client) -> None:
+        with pytest.raises(Exception):
+            client.call("store.retention", kind="nonsense", age_days=1)

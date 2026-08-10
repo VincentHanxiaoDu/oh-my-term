@@ -5995,6 +5995,7 @@ pub fn registry_full(
     r.register::<crate::media::ReloadClass, _>(crate::media::SecurityHandler)?;
     r.register::<crate::media::LaunchPreview, _>(crate::media::SecurityHandler)?;
     r.register::<crate::media::ReauthCheck, _>(crate::media::SecurityHandler)?;
+    r.register::<crate::media::StoreRetention, _>(crate::media::SecurityHandler)?;
     // Filled after every registration, below. A binding file is checked
     // against what this instance actually offers, which is the only list that
     // answers "will this key do anything here".
