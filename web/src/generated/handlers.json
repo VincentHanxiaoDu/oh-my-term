@@ -10,6 +10,7 @@
   "block.rerun",
   "config.get",
   "config.import",
+  "config.reload_class",
   "config.schema",
   "device.list",
   "device.revoke",

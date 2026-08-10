@@ -20,6 +20,7 @@ vanishing.
 | `block.rerun` | command | operator | Send a block's command to its session again. Refused for a block omt never saw the command of, because the alternative is scraping the screen for something that looks like a prompt. |
 | `config.get` | query | viewer | Resolved settings, each with the layer and file it came from — which is what makes a surprising value traceable. |
 | `config.import` | query | viewer | Translate another terminal's settings into omt's, reporting what did not map rather than dropping it. A query: it says what the import would be, and writing it is a separate decision somebody makes. |
+| `config.reload_class` | query | viewer | A setting that quietly waits for a restart is changed, nothing happens, and the conclusion is that the setting does not work. |
 | `config.schema` | query | viewer | Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be. |
 | `device.list` | query | operator | Every device that has been let in, by the name it gave. Pairing mints a credential per device, and a credential nobody can see is one nobody revokes. |
 | `device.revoke` | command | admin | Stop one device's credential working, leaving every other device alone. This is what makes a lost phone something somebody can act on. |
@@ -127,4 +128,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-117 capabilities.
+118 capabilities.

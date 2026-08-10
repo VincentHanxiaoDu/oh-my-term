@@ -152,3 +152,38 @@ class TestInstanceIdentity:
             assert "effects" in entry
             assert entry["role"]
             assert entry["name"]
+
+
+class TestWhenASettingTakesEffect:
+    """10-configuration §6.3."""
+
+    def test_appearance_applies_immediately(self, client) -> None:
+        out = client.call("config.reload_class", keys=["ui.theme", "keys.leader"])
+        assert all(k["class"] == "hot" for k in out["keys"]), out
+        assert out["pending"] == []
+
+    def test_listener_settings_rebuild_the_listener(self, client) -> None:
+        # Losing a session to change a TLS certificate would be a poor trade,
+        # which is why this is its own class.
+        out = client.call("config.reload_class", keys=["server.bind", "server.tls.cert"])
+        assert all(k["class"] == "restart_server" for k in out["keys"]), out
+
+    def test_the_store_needs_the_process_back(self, client) -> None:
+        out = client.call("config.reload_class", keys=["store.backend"])
+        assert out["keys"][0]["class"] == "restart"
+
+    def test_what_will_not_take_effect_yet_is_listed_separately(
+        self, client
+    ) -> None:
+        # A setting that quietly waits for a restart is changed, nothing
+        # happens, and the conclusion is that the setting does not work.
+        out = client.call(
+            "config.reload_class", keys=["ui.theme", "store.path", "server.bind"]
+        )
+        assert set(out["pending"]) == {"store.path", "server.bind"}
+
+    def test_an_unknown_key_is_hot_rather_than_silently_pending(
+        self, client
+    ) -> None:
+        out = client.call("config.reload_class", keys=["some.new.setting"])
+        assert out["keys"][0]["class"] == "hot"

@@ -2721,6 +2721,98 @@ impl CapabilityHandler<PublishCheck> for SecurityHandler {
     }
 }
 
+/// Input to `config.reload_class`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ReloadClassIn {
+    /// The keys to ask about.
+    pub keys: Vec<String>,
+}
+
+/// One key and when a change to it takes effect.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ReloadEntry {
+    /// The key.
+    pub key: String,
+    /// `hot`, `restart_server` or `restart`.
+    pub class: String,
+}
+
+/// What `config.reload_class` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ReloadClassOut {
+    /// One entry per key asked about.
+    pub keys: Vec<ReloadEntry>,
+    /// Which of them will not take effect until something restarts.
+    ///
+    /// Listed separately because that is the answer somebody needs. A setting
+    /// that quietly waits for a restart is the worst of the three: it is
+    /// changed, nothing happens, and the conclusion is that the setting does
+    /// not work.
+    pub pending: Vec<String>,
+}
+
+omt_catalog::capability! {
+    /// When a change to a setting takes effect.
+    pub struct ReloadClass;
+    input  = ReloadClassIn,
+    output = ReloadClassOut,
+    decl = omt_catalog::Decl {
+        name: "config.reload_class",
+        group: "config",
+        verb: "reload_class",
+        title: "When a setting takes effect",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A setting that quietly waits for a restart is changed, nothing happens, and the conclusion is that the setting does not work.",
+    },
+}
+
+impl CapabilityHandler<ReloadClass> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ReloadClassIn,
+    ) -> Result<ReloadClassOut, CapabilityError> {
+        let entries: Vec<ReloadEntry> = input
+            .keys
+            .into_iter()
+            .map(|key| {
+                let class = omt_config::schema::reload_class(&key);
+                ReloadEntry {
+                    key,
+                    class: format!("{class:?}")
+                        .chars()
+                        .flat_map(|c| {
+                            if c.is_uppercase() {
+                                vec!['_', c.to_ascii_lowercase()]
+                            } else {
+                                vec![c]
+                            }
+                        })
+                        .collect::<String>()
+                        .trim_start_matches('_')
+                        .to_owned(),
+                }
+            })
+            .collect();
+        Ok(ReloadClassOut {
+            pending: entries
+                .iter()
+                .filter(|e| e.class != "hot")
+                .map(|e| e.key.clone())
+                .collect(),
+            keys: entries,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

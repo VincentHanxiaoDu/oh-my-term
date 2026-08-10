@@ -222,6 +222,24 @@
     },
     {
       "aliases": [],
+      "doc": "A setting that quietly waits for a restart is changed, nothing happens, and the conclusion is that the setting does not work.",
+      "effects": [],
+      "group": "config",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "config.reload_class",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/config/reload_class",
+      "since": "0.1.0",
+      "title": "When a setting takes effect",
+      "verb": "reload_class"
+    },
+    {
+      "aliases": [],
       "doc": "Every setting with its default, type and description — so a settings screen can be built without knowing the key names in advance. `config.get` reports what is set; this reports what could be.",
       "effects": [],
       "group": "config",

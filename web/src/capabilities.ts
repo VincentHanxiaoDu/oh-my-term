@@ -434,6 +434,9 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'config.reload_class': (request: RequestId, keys: string[]) =>
+    call(request, 'config.reload_class', { keys }),
+
   'security.publish_check': (request: RequestId, config: Record<string, unknown> = {}) =>
     call(request, 'security.publish_check', config),
 

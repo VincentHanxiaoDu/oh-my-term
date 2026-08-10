@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**118 of 212 features ticked.** (34 further sections are prose.)
+**119 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -127,7 +127,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 3. Per-instance and multi-instance configuration — test_configuration: schema has default, kind, doc
 - [ ] 4. Typed schema and generation
 - [x] 5. Validation and diagnostics — omt-config: every problem reported in one pass and in a stable order, both types named, enumerations list their choices, a value a later layer overrides is not complained about
-- [ ] 6. Live reload
+- [x] 6. Live reload — test_configuration: appearance is hot, listener settings rebuild only the listener, the store needs the process back, what will not take effect yet is listed separately
 - [ ] 7. The settings surface
 - [ ] 8. Themes and keybindings
 - [ ] 9. Profiles: launch configurations and workflows

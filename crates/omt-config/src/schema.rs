@@ -300,6 +300,60 @@ fn shape_name(value: &serde_json::Value) -> &'static str {
     }
 }
 
+/// When a change to a setting takes effect.
+///
+/// `docs/architecture/10-configuration.md` §6.3. The class matters because a
+/// setting that quietly needs a restart is the worst of the three: somebody
+/// changes it, nothing happens, and they conclude the setting does not work
+/// rather than that it is waiting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reload {
+    /// Applied immediately, visible in every attached surface.
+    Hot,
+    /// The listener is rebuilt; clients reconnect, PTYs are untouched.
+    RestartServer,
+    /// Recorded as pending until the process restarts.
+    Restart,
+}
+
+/// When a change to this key takes effect.
+///
+/// Derived from the key's own prefix rather than listed per setting. A list
+/// would need an entry for every new setting and would silently default to
+/// `Hot` for the ones somebody forgot — which is exactly the case that
+/// produces "I changed it and nothing happened".
+#[must_use]
+pub fn reload_class(key: &str) -> Reload {
+    // The store and the parser are built once at startup and handed to
+    // everything else; swapping either under a running session is not a
+    // reload, it is a different program.
+    const NEEDS_PROCESS: &[&str] = &["store.", "terminal.vt.", "media.tmp_dir"];
+    // The listener can be rebuilt without touching a PTY, which is why this is
+    // its own class rather than folded into a full restart: losing a session
+    // to change a TLS certificate would be a poor trade.
+    const NEEDS_LISTENER: &[&str] = &["server.bind", "server.tls", "server.auth", "server.tailscale"];
+
+    if NEEDS_PROCESS.iter().any(|p| key.starts_with(p)) {
+        Reload::Restart
+    } else if NEEDS_LISTENER.iter().any(|p| key.starts_with(p)) {
+        Reload::RestartServer
+    } else {
+        Reload::Hot
+    }
+}
+
+/// Whether changing this key loses something the user cannot get back.
+///
+/// Only shrinking scrollback, today. Reported so the surface that initiated
+/// the change can ask first — a setting that silently discards a day of output
+/// is one somebody adjusts once and never trusts again.
+#[must_use]
+pub fn is_lossy(key: &str, before: Option<i64>, after: Option<i64>) -> bool {
+    key == "terminal.scrollback_lines"
+        && matches!((before, after), (Some(b), Some(a)) if a < b)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -519,5 +573,71 @@ mod validation_tests {
         for problem in validate(&values(&[(setting.key, serde_json::json!(7))])) {
             assert!(!problem.help.is_empty(), "{}", problem.key);
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod reload_tests {
+    use super::*;
+
+    #[test]
+    fn appearance_and_keys_apply_immediately() {
+        // The whole point of a config file somebody edits while looking at the
+        // thing it configures.
+        for key in ["ui.theme", "keys.leader", "agent.detect", "log.level"] {
+            assert_eq!(reload_class(key), Reload::Hot, "{key}");
+        }
+    }
+
+    #[test]
+    fn the_listener_settings_rebuild_the_listener_and_nothing_else() {
+        // Losing a session to change a TLS certificate would be a poor trade,
+        // which is why this is its own class rather than a full restart.
+        for key in ["server.bind", "server.tls.cert", "server.auth.backends"] {
+            assert_eq!(reload_class(key), Reload::RestartServer, "{key}");
+        }
+    }
+
+    #[test]
+    fn the_store_and_the_parser_need_the_process_back() {
+        // Both are built once and handed to everything else; swapping either
+        // under a running session is not a reload, it is a different program.
+        for key in ["store.backend", "store.path", "terminal.vt.strict", "media.tmp_dir"] {
+            assert_eq!(reload_class(key), Reload::Restart, "{key}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_key_is_hot_rather_than_silently_pending() {
+        // Derived from the prefix rather than listed, because a list defaults
+        // to Hot for whatever somebody forgot to add — and "I changed it and
+        // nothing happened" is the worst of the three outcomes.
+        assert_eq!(reload_class("some.new.setting"), Reload::Hot);
+    }
+
+    #[test]
+    fn every_setting_omt_ships_has_a_class() {
+        for setting in SETTINGS {
+            let _ = reload_class(setting.key);
+        }
+    }
+
+    #[test]
+    fn shrinking_the_scrollback_is_lossy_and_growing_it_is_not() {
+        // A setting that silently discards a day of output is one somebody
+        // adjusts once and never trusts again.
+        assert!(is_lossy("terminal.scrollback_lines", Some(10_000), Some(1_000)));
+        assert!(!is_lossy("terminal.scrollback_lines", Some(1_000), Some(10_000)));
+        assert!(!is_lossy("terminal.scrollback_lines", Some(1_000), Some(1_000)));
+    }
+
+    #[test]
+    fn nothing_else_is_lossy() {
+        assert!(!is_lossy("ui.theme", Some(10), Some(1)));
     }
 }
