@@ -295,7 +295,10 @@ pub struct InstanceLimits {
 impl Default for InstanceLimits {
     fn default() -> Self {
         Self {
-            max_sessions: 256,
+            // 22 §9: above this, `session.create` refuses and names the limit
+            // rather than letting everything degrade. A refusal with a number
+            // is better than an instance that swaps.
+            max_sessions: 200,
             max_workspaces: 64,
         }
     }
