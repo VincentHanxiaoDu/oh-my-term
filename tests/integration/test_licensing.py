@@ -50,6 +50,16 @@ def fixture_repo(path) -> None:
     nothing to do with what the test is about.
     """
     (path / "LICENSE").write_text("Apache License Version 2.0")
+    # §8's contributor rule, as a file a reviewer sees. Without it the gate
+    # fails for a reason that has nothing to do with what most of these tests
+    # are about.
+    github = path / ".github"
+    github.mkdir(exist_ok=True)
+    (github / "PULL_REQUEST_TEMPLATE.md").write_text(
+        "- [ ] no code from any GPL source\n"
+        "- [ ] cited under docs/research/\n"
+        "- [ ] dependencies covered by deny.toml\n"
+    )
     (path / "NOTICE").write_text("oh-my-term\nApache\n" + "x" * 200)
     (path / ".gitignore").write_text(".research/\n")
     (path / "Cargo.toml").write_text(MINIMAL_MANIFEST)
@@ -246,3 +256,52 @@ class TestDependencyPolicy:
         # Each entry is a (name, justification) pair, so a bare name with no
         # following prose would show up as an odd count.
         assert len(entries) % 2 == 0, entries
+
+
+class TestTheContributorRule:
+    """`docs/architecture/14-licensing.md` §8."""
+
+    def test_this_repository_has_the_pull_request_template(self) -> None:
+        # A rule that lives only in an architecture document is one nobody
+        # opening a pull request reads, and the whole mechanism is that the
+        # question gets asked when the code arrives.
+        template = REPO_ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
+        assert template.is_file()
+        text = template.read_text()
+        for required in ("GPL", "docs/research/", "deny.toml"):
+            assert required in text, required
+
+    def test_the_gate_fires_when_the_template_is_missing(self, tmp_path) -> None:
+        # Proven to fail rather than assumed to: a gate that has only ever been
+        # observed passing is one nobody has shown to work.
+        fixture_repo(tmp_path)
+        (tmp_path / ".github" / "PULL_REQUEST_TEMPLATE.md").unlink()
+        result = xtask_at(str(tmp_path))
+        assert result.returncode != 0
+        assert "pull-request template" in result.stderr + result.stdout
+
+    def test_the_gate_fires_when_a_declaration_is_removed_from_it(
+        self, tmp_path
+    ) -> None:
+        # Deleting one checkbox is the realistic way this decays, and it must
+        # not pass just because the file still exists.
+        fixture_repo(tmp_path)
+        template = tmp_path / ".github" / "PULL_REQUEST_TEMPLATE.md"
+        template.write_text("- [ ] no code from any GPL source\n")
+        result = xtask_at(str(tmp_path))
+        assert result.returncode != 0
+        assert "lost" in result.stderr + result.stdout
+
+    def test_rewording_the_template_does_not_break_the_gate(self, tmp_path) -> None:
+        # The gate checks for the thing each declaration is about, not its
+        # wording — otherwise it fails on an edit that improved it.
+        fixture_repo(tmp_path)
+        template = tmp_path / ".github" / "PULL_REQUEST_TEMPLATE.md"
+        template.write_text(
+            "Please confirm:\n"
+            "* nothing here was lifted from a GPL or AGPL project\n"
+            "* behaviour reproduced from elsewhere is written up in docs/research/\n"
+            "* any crate added is listed in deny.toml\n"
+        )
+        result = xtask_at(str(tmp_path))
+        assert result.returncode == 0, result.stderr

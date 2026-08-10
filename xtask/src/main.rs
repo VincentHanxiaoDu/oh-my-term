@@ -210,6 +210,45 @@ fn licensing(root: Option<String>) -> Result<()> {
         }
     }
 
+    // §8. The contributor rule, as a file a reviewer actually sees. A rule that
+    // lives only in an architecture document is one nobody opening a pull
+    // request reads, and the whole mechanism is that the question gets asked at
+    // the moment the code arrives.
+    let template = root.join(".github/PULL_REQUEST_TEMPLATE.md");
+    if !template.is_file() {
+        problems.push(
+            "the pull-request template is missing, so §8's contributor rule is asked of nobody"
+                .to_owned(),
+        );
+    } else {
+        let text = std::fs::read_to_string(&template)?;
+        // Each of the three §8 asks, by the thing it is about rather than by
+        // its wording, so rephrasing the template does not break the gate and
+        // deleting a check does.
+        for (needle, what) in [
+            ("GPL", "the no-copied-code declaration"),
+            ("docs/research/", "the cite-your-source declaration"),
+            ("deny.toml", "the new-dependency declaration"),
+        ] {
+            if !text.contains(needle) {
+                problems.push(format!("the pull-request template has lost {what}"));
+            }
+        }
+    }
+
+    // §2 and §3. The classes that constrain omt are GPL and AGPL, and the claim
+    // that nothing is derived from them is what lets omt be Apache-2.0. The
+    // dependency scan above enforces it for code omt links; this asserts the
+    // forbidden families are still in the list that scan uses, so the check
+    // cannot be quietly emptied.
+    for family in ["GPL", "AGPL"] {
+        if !FORBIDDEN.contains(&family) {
+            problems.push(format!(
+                "`{family}` is no longer a forbidden licence family, which is the rule that lets omt be Apache-2.0"
+            ));
+        }
+    }
+
     // §6. Every crate in the workspace declares a licence, and it is omt's.
     // A crate that inherits nothing is one that is published under no terms.
     for member in workspace_members(&root)? {

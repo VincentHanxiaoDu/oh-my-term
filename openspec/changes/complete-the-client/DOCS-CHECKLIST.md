@@ -176,13 +176,13 @@ Unticked means not done. Partly built stays unticked.
 ## 14-licensing
 
 - [x] 1. omt's own licence — test_licensing: LICENSE is Apache, every crate declares it
-- [ ] 2. What was studied, and under which licences
-- [ ] 3. The line we draw
+- [x] 2. What was studied, and under which licences — the constraining classes are GPL and AGPL, and the claim that nothing derives from them is what lets omt be Apache-2.0. Enforced by the dependency scan (311 checked, forbidden families rejected) plus a gate asserting `GPL` and `AGPL` are still *in* the forbidden list, so the check cannot be quietly emptied. `.research/` unvendored is §5's gate, proven to fire on a fixture.
+- [x] 3. The line we draw — interfaces are facts, code is expression. Enforced where it is enforceable: no studied product is named in shipped source or docs (§4's gate), no studied code is vendored (§5's, proven to fire), no GPL/AGPL dependency is linked (§6's), and every pull request must declare it took no code (§8's template gate). The distinction itself is a review judgement and is stated where reviewers see it rather than only in this document.
 - [x] 4. Clean-room practice — test_licensing: no studied product is named in shipped source or docs
 - [x] 5. `.research/` is gitignored and must never be vendored — test_licensing: gitignored, nothing tracked, nothing imported; gate proven to fire on a vendored fixture
 - [x] 6. Third-party dependency policy — test_licensing: 311 dependencies checked, forbidden families rejected, dual licences pass on the acceptable arm, every exception justified
 - [x] 7. Attribution and NOTICE — test_licensing: NOTICE has substance, not merely presence
-- [ ] 8. Contributor rule
+- [x] 8. Contributor rule — `.github/PULL_REQUEST_TEMPLATE.md`, which did not exist, so §8's three declarations were asked of nobody. `cargo run -p xtask -- licensing` now fails without it or with a declaration removed, and checks for what each is *about* rather than its wording, so rewording it does not break the gate. `test_the_gate_fires_when_the_template_is_missing`, `test_the_gate_fires_when_a_declaration_is_removed_from_it`, `test_rewording_the_template_does_not_break_the_gate` (19 licensing tests).
 - ~~9. Open questions~~ — prose
 
 ## 15-workspace-explorer
