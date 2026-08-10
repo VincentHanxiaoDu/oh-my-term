@@ -5,6 +5,7 @@
 //! faster local route: a second path is how "remote is equivalent to local"
 //! stops being true without anybody noticing.
 
+pub mod backpressure;
 pub mod origin;
 pub mod dispatch;
 pub mod http;

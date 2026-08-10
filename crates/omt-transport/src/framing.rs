@@ -7,7 +7,7 @@
 
 use std::io::{self, Read, Write};
 
-use omt_proto::{FrameKind, MAX_TEXT_FRAME};
+use omt_proto::FrameKind;
 
 /// A frame's fixed prefix: length, then kind.
 pub const PREFIX_LEN: usize = 5;
@@ -23,15 +23,15 @@ pub fn write_frame(
     kind: FrameKind,
     payload: &[u8],
 ) -> Result<(), FramingError> {
-    if payload.len() > MAX_TEXT_FRAME {
+    if payload.len() > kind.max_payload() {
         return Err(FramingError::TooLarge {
             len: payload.len(),
-            max: MAX_TEXT_FRAME,
+            max: kind.max_payload(),
         });
     }
     let len = u32::try_from(payload.len()).map_err(|_| FramingError::TooLarge {
         len: payload.len(),
-        max: MAX_TEXT_FRAME,
+        max: kind.max_payload(),
     })?;
     out.write_all(&len.to_be_bytes())?;
     out.write_all(&[kind as u8])?;
@@ -56,14 +56,18 @@ pub fn read_frame(mut input: impl Read) -> Result<(FrameKind, Vec<u8>), FramingE
     }
 
     let len = u32::from_be_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]) as usize;
-    if len > MAX_TEXT_FRAME {
-        return Err(FramingError::TooLarge {
-            len,
-            max: MAX_TEXT_FRAME,
-        });
-    }
+    // The kind is read before the length is judged, because the two kinds have
+    // different ceilings: a control frame carrying a megabyte is a bug or an
+    // attack, and a binary frame carrying eight is a screenshot somebody
+    // pasted. Judging both by the control limit refused the screenshot.
     let kind =
         FrameKind::from_tag(prefix[4]).ok_or(FramingError::UnknownKind { tag: prefix[4] })?;
+    if len > kind.max_payload() {
+        return Err(FramingError::TooLarge {
+            len,
+            max: kind.max_payload(),
+        });
+    }
 
     let mut payload = vec![0u8; len];
     input.read_exact(&mut payload).map_err(|e| match e.kind() {
@@ -176,7 +180,7 @@ mod tests {
     fn an_oversized_length_is_refused_before_allocating() {
         // An unbounded length prefix is a denial of service one allocation
         // deep, so the bound is checked before the Vec is made.
-        let mut buf = (MAX_TEXT_FRAME as u32 + 1).to_be_bytes().to_vec();
+        let mut buf = (omt_proto::MAX_TEXT_FRAME as u32 + 1).to_be_bytes().to_vec();
         buf.push(FrameKind::Text as u8);
         let err = read_frame(&buf[..]).expect_err("must refuse");
         assert!(matches!(err, FramingError::TooLarge { .. }));
@@ -186,7 +190,7 @@ mod tests {
     fn an_oversized_payload_is_refused_by_the_sender() {
         // Named on the sending side, so the failure points at whoever produced
         // it rather than at the peer that received it.
-        let big = vec![0u8; MAX_TEXT_FRAME + 1];
+        let big = vec![0u8; omt_proto::MAX_TEXT_FRAME + 1];
         let err = write_frame(Vec::new(), FrameKind::Text, &big).expect_err("must refuse");
         assert!(matches!(err, FramingError::TooLarge { .. }));
     }
@@ -229,10 +233,58 @@ mod tests {
     #[test]
     fn the_maximum_sized_frame_is_accepted() {
         // Boundary: the limit itself is allowed, only beyond it is refused.
-        let payload = vec![7u8; MAX_TEXT_FRAME];
+        let payload = vec![7u8; omt_proto::MAX_TEXT_FRAME];
         let mut buf = Vec::new();
         write_frame(&mut buf, FrameKind::Binary, &payload).expect("write");
         let (_, back) = read_frame(&buf[..]).expect("read");
-        assert_eq!(back.len(), MAX_TEXT_FRAME);
+        assert_eq!(back.len(), omt_proto::MAX_TEXT_FRAME);
+    }
+
+    #[test]
+    fn a_binary_frame_may_be_larger_than_a_control_frame() {
+        // 07 §2.2: a control frame carrying a megabyte is a bug or an attack,
+        // and a binary frame carrying eight is a screenshot somebody pasted.
+        // Judging both by the control limit refused the screenshot.
+        let big = vec![0u8; omt_proto::MAX_TEXT_FRAME + 1];
+        let mut buf = Vec::new();
+        write_frame(&mut buf, FrameKind::Binary, &big).expect("a screenshot fits");
+        let (kind, payload) = read_frame(buf.as_slice()).expect("and reads back");
+        assert_eq!(kind, FrameKind::Binary);
+        assert_eq!(payload.len(), big.len());
+    }
+
+    #[test]
+    fn a_control_frame_is_still_held_to_its_own_limit() {
+        let big = vec![0u8; omt_proto::MAX_TEXT_FRAME + 1];
+        let mut buf = Vec::new();
+        assert!(matches!(
+            write_frame(&mut buf, FrameKind::Text, &big),
+            Err(FramingError::TooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn a_binary_frame_past_its_own_limit_is_refused_too() {
+        // Bigger uploads are chunked, so this is a real ceiling rather than a
+        // number to raise when somebody hits it.
+        let huge = vec![0u8; omt_proto::MAX_BINARY_FRAME + 1];
+        let mut buf = Vec::new();
+        assert!(matches!(
+            write_frame(&mut buf, FrameKind::Binary, &huge),
+            Err(FramingError::TooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn a_declared_length_past_the_limit_is_refused_before_it_is_allocated() {
+        // An unbounded length prefix is a denial of service one allocation
+        // deep, and the kind decides which bound applies.
+        let mut framed = Vec::new();
+        framed.extend_from_slice(&u32::MAX.to_be_bytes());
+        framed.push(FrameKind::Binary as u8);
+        assert!(matches!(
+            read_frame(framed.as_slice()),
+            Err(FramingError::TooLarge { .. })
+        ));
     }
 }

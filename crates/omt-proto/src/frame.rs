@@ -8,6 +8,17 @@ use serde::{Deserialize, Serialize};
 /// allocation deep.
 pub const MAX_TEXT_FRAME: usize = 1 << 20; // 1 MiB
 
+/// The largest binary frame accepted.
+///
+/// One image or screenshot. 07 §2.2: bigger uploads are chunked rather than
+/// sent whole, so this is a real ceiling rather than a number to raise when
+/// somebody hits it.
+///
+/// Larger than the control limit on purpose. A control frame carrying a
+/// megabyte is a bug or an attack -- the schemas are small -- while a binary
+/// frame carrying eight is a screenshot somebody pasted.
+pub const MAX_BINARY_FRAME: usize = 8 << 20; // 8 MiB
+
 /// A frame's kind tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[repr(u8)]
@@ -16,6 +27,17 @@ pub enum FrameKind {
     Text = 0,
     /// Terminal bytes, or a blob chunk.
     Binary = 1,
+}
+
+impl FrameKind {
+    /// The largest payload this kind may carry.
+    #[must_use]
+    pub const fn max_payload(self) -> usize {
+        match self {
+            Self::Text => MAX_TEXT_FRAME,
+            Self::Binary => MAX_BINARY_FRAME,
+        }
+    }
 }
 
 impl FrameKind {

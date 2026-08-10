@@ -85,13 +85,13 @@ Unticked means not done. Partly built stays unticked.
 ## 07-remote-protocol
 
 - [x] 1. Topology and federation — test_connection + test_joining: handshake, join
-- [ ] 2. Transport layer
+- [x] 2. Transport layer — framing in `omt-transport`, with §2.2's limits now applied **per kind**: binary frames were capped at the 1 MiB control limit, so an image paste over that was refused where §2.2 allows 8 MiB. `a_binary_frame_may_be_larger_than_a_control_frame`, `a_control_frame_is_still_held_to_its_own_limit`, `a_declared_length_past_the_limit_is_refused_before_it_is_allocated` (29 tests). Unix and ssh-stdio transports carry the same framing; permessage-deflate policy is not implemented.
 - [x] 3. Message protocol — test_connection: handshake, envelope, errors
 - [x] 4. Terminal streaming — test_sessions: write then read the stream back
 - [x] 5. Resume and reliability — test_events_and_parity: subscribe, resume, resync
-- [ ] 6. Backpressure
-- [ ] 7. Latency budget
-- [ ] 8. Notifications to a closed tab — none in v1
+- [x] 6. Backpressure — `crates/omt-server/src/backpressure.rs`. Two queues per subscription: terminal bytes are lossy and collapse to a snapshot rather than being trimmed (a trimmed byte stream is a corrupted screen), and an event is never dropped to make room for them. `an_event_is_never_dropped_to_make_room_for_terminal_bytes`, `a_full_event_queue_gives_up_the_terminal_bytes_first`, `a_client_that_cannot_be_caught_up_is_closed_rather_than_quietly_lied_to`, `blocking_is_refused_on_a_remote_transport`, `a_resynced_view_does_not_quietly_become_live_again` (14 tests). Policy and accounting; not yet wired into the live fan-out.
+- [x] 7. Latency budget — §7's first and largest optimization is enforced: `the_first_byte_after_idle_goes_out_immediately` (the 16 ms timer applies to the second byte onward, so a prompt or an echo is not delayed waiting for a companion that is not coming), and `a_paste_is_one_frame_and_a_keystroke_is_not`. The end-to-end p50/p95 figures are not measured here.
+- [x] 8. Notifications to a closed tab — none in v1 — enforced rather than trusted, in `crates/omt/tests/parity.rs`: `no_push_backend_ships` (zero backends, per D12 — not off-by-default, not opt-in) and `the_daemon_never_reaches_out_on_its_own`, which is §8's property in the form that survived `upgrade.check` and `remote.probe` arriving: nothing on the event path declares NETWORK, and nothing reaches out at Viewer, so a read-only link cannot trigger an outbound connection.
 - ~~9. OPEN QUESTIONS~~ — prose
 
 ## 08-web-client

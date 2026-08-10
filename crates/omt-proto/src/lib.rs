@@ -9,7 +9,7 @@ mod frame;
 mod hook;
 mod message;
 
-pub use frame::{BinaryHeader, FrameError, FrameKind, MAX_TEXT_FRAME};
+pub use frame::{BinaryHeader, FrameError, FrameKind, MAX_BINARY_FRAME, MAX_TEXT_FRAME};
 pub use hook::{
     HookAck, HookCorrelation, HookDirective, HookEvent, MAX_VERBATIM_PAYLOAD, Truncation,
 };

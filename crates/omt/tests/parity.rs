@@ -543,3 +543,53 @@ fn a_renamed_capability_keeps_answering_to_its_old_name() {
         "and the alias is not a second entry in the catalog"
     );
 }
+
+
+// ---------------------------------------------------------------------------
+// No push in v1 — 07 §8, D12
+// ---------------------------------------------------------------------------
+
+#[test]
+fn no_push_backend_ships() {
+    // D12 removes push outright -- not "off by default", not "opt-in": zero
+    // backends. Reaching a closed tab means the daemon opening an outbound
+    // connection to a browser vendor's relay, which leaks "this machine needs
+    // its owner, now" even though the payload is encrypted end to end.
+    //
+    // The property this buys is checkable, which is why it is checked here
+    // rather than trusted: nothing in the catalog pushes.
+    let r = registry();
+    let pushes: Vec<&str> = r
+        .decls()
+        .filter(|d| {
+            d.group == "notification"
+                || d.name.contains("push")
+                || d.name.contains("fcm")
+                || d.name.contains("apns")
+                || d.name.contains("webpush")
+        })
+        .map(|d| d.name)
+        .collect();
+    assert!(pushes.is_empty(), "a push backend appeared: {pushes:?}");
+}
+
+#[test]
+fn the_daemon_never_reaches_out_on_its_own() {
+    // 07 §8's property, in the form that survived `upgrade.check` and
+    // `remote.probe` arriving: nothing reaches the network except where a user
+    // asked for it by name, and both of those are Operator commands somebody
+    // typed. Nothing on the *event* path -- nothing a background timer, an
+    // agent state change, or an incoming connection could trigger -- declares
+    // NETWORK.
+    let r = registry();
+    let background: Vec<&str> = r
+        .decls()
+        .filter(|d| d.effects.contains(Effects::NETWORK))
+        .filter(|d| d.role == omt_types::Role::Viewer)
+        .map(|d| d.name)
+        .collect();
+    assert!(
+        background.is_empty(),
+        "these reach the network at Viewer, so a read-only link could trigger them: {background:?}"
+    );
+}
