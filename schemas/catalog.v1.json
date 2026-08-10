@@ -852,6 +852,24 @@
     },
     {
       "aliases": [],
+      "doc": "A tier is never claimed without a positive handshake. `Probably` means a paste that silently does nothing, and no way for the user to tell whether they mis-copied or omt mis-guessed.",
+      "effects": [],
+      "group": "media",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "media.paste_tier",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/media/paste_tier",
+      "since": "0.1.0",
+      "title": "How paste reaches this machine",
+      "verb": "paste_tier"
+    },
+    {
+      "aliases": [],
       "doc": "The type is sniffed here and never taken from the sender. A sender that names its own content type decides how the receiver treats it.",
       "effects": [
         "writes_fs"

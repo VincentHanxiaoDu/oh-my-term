@@ -8,6 +8,7 @@
 pub mod clipboard;
 pub mod normalize;
 pub mod store;
+pub mod tier;
 pub mod transfer;
 
 pub use transfer::{CHUNK_BYTES, Progress, Receiver, TransferError, TransferPlan};

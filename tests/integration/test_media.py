@@ -183,3 +183,47 @@ class TestMetadataDoesNotSurvive:
         put = client.call("media.put", content=b64(PNG), origin="web_upload")
         got = client.call("media.get", digest=put["digest"])
         assert len(base64.b64decode(got["content"])) == put["size"]
+
+
+class TestHowPasteReachesThisMachine:
+    """§5.1. A tier is never claimed without a positive handshake."""
+
+    def test_nothing_confirmed_falls_to_out_of_band(self, client: Client) -> None:
+        # Never "probably kitty, so assume its protocol". Probably means a
+        # paste that silently does nothing.
+        out = client.call("media.paste_tier")
+        assert out["tier"] == "outofband"
+
+    def test_there_is_no_state_in_which_paste_is_impossible(
+        self, client: Client
+    ) -> None:
+        # A phone can always send an image. Out-of-band is the floor.
+        out = client.call("media.paste_tier")
+        assert out["explanation"]
+
+    def test_the_best_confirmed_mechanism_wins(self, client: Client) -> None:
+        # A machine that could do the good thing must not settle for the QR
+        # code because a cheaper probe answered first.
+        out = client.call(
+            "media.paste_tier",
+            omt_on_both_ends=True,
+            terminal_upload_confirmed=True,
+        )
+        assert out["tier"] == "native"
+
+    def test_each_tier_explains_itself(self, client: Client) -> None:
+        # So every surface can say exactly why paste behaves the way it does.
+        for probe, expected in [
+            ({"reverse_socket_answered": True}, "reversesocket"),
+            ({"osc_companion_answered": True}, "oscbridge"),
+            ({"terminal_upload_confirmed": True}, "terminalnative"),
+        ]:
+            out = client.call("media.paste_tier", **probe)
+            assert out["tier"] == expected
+            assert out["explanation"].endswith(".")
+
+    def test_a_socket_that_answers_nothing_is_not_a_tier(self, client: Client) -> None:
+        # The shape of a stale forward from a previous session. Treating its
+        # presence as success gives a paste that vanishes.
+        out = client.call("media.paste_tier", reverse_socket_answered=False)
+        assert out["tier"] == "outofband"

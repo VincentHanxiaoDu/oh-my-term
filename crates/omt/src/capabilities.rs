@@ -5952,7 +5952,8 @@ pub fn registry_full(
     r.register::<crate::media::MediaGet, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::MediaList, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::MediaClipboard, _>(crate::media::MediaHandler(blobs.clone()))?;
-    r.register::<crate::media::MediaAttach, _>(crate::media::MediaHandler(blobs))?;
+    r.register::<crate::media::MediaAttach, _>(crate::media::MediaHandler(blobs.clone()))?;
+    r.register::<crate::media::PasteTier, _>(crate::media::MediaHandler(blobs))?;
     r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(

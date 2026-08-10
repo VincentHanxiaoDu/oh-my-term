@@ -434,6 +434,16 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'media.paste_tier': (
+    request: RequestId,
+    probe: {
+      omt_on_both_ends?: boolean
+      reverse_socket_answered?: boolean
+      osc_companion_answered?: boolean
+      terminal_upload_confirmed?: boolean
+    } = {},
+  ) => call(request, 'media.paste_tier', probe),
+
   'media.attach': (request: RequestId, agent: string, path: string) =>
     call(request, 'media.attach', { agent, path }),
 

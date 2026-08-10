@@ -452,6 +452,75 @@ impl CapabilityHandler<MediaAttach> for MediaHandler {
     }
 }
 
+/// Input to `media.paste_tier`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TierIn {
+    /// omt answered on the far side of the connection.
+    #[serde(default)]
+    pub omt_on_both_ends: bool,
+    /// A forwarded socket exists *and* an omt instance answered on it.
+    #[serde(default)]
+    pub reverse_socket_answered: bool,
+    /// A companion on the near side acknowledged the OSC handshake.
+    #[serde(default)]
+    pub osc_companion_answered: bool,
+    /// The terminal replied about its own upload protocol.
+    #[serde(default)]
+    pub terminal_upload_confirmed: bool,
+}
+
+/// What `media.paste_tier` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TierOut {
+    /// Which mechanism is actually available.
+    pub tier: String,
+    /// Why paste behaves the way it does, in words for a person.
+    pub explanation: String,
+}
+
+omt_catalog::capability! {
+    /// Which paste mechanism this connection actually achieved.
+    pub struct PasteTier;
+    input  = TierIn,
+    output = TierOut,
+    decl = omt_catalog::Decl {
+        name: "media.paste_tier",
+        group: "media",
+        verb: "paste_tier",
+        title: "How paste reaches this machine",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A tier is never claimed without a positive handshake. `Probably` means a paste that silently does nothing, and no way for the user to tell whether they mis-copied or omt mis-guessed.",
+    },
+}
+
+impl CapabilityHandler<PasteTier> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: TierIn,
+    ) -> Result<TierOut, CapabilityError> {
+        let probe = omt_media::tier::Probe {
+            omt_on_both_ends: input.omt_on_both_ends,
+            reverse_socket_answered: input.reverse_socket_answered,
+            osc_companion_answered: input.osc_companion_answered,
+            terminal_upload_confirmed: input.terminal_upload_confirmed,
+        };
+        let tier = omt_media::tier::achieved(&probe);
+        Ok(TierOut {
+            tier: format!("{tier:?}").to_lowercase(),
+            explanation: tier.explain().to_owned(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
