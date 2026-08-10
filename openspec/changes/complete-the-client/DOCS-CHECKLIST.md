@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**137 of 212 features ticked.** (34 further sections are prose.)
+**138 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -279,7 +279,7 @@ Unticked means not done. Partly built stays unticked.
 
 ## 21-data-lifecycle
 
-- [ ] 1. The inventory
+- [x] 1. The inventory — omt-store inventory: nothing is readable by anybody else, everything is on a retention ladder, the largest and most sensitive is on the shortest one
 - [x] 2. Redaction before write — omt-store log: terminal text reaches disk only through a redactor, asserted on the file's actual bytes; omt-recall redact: no path from raw bytes to an indexed document
 - [x] 3. Retention and compaction — test_workspace_surfaces: the fact outlives the output, failed and agent-touched blocks keep theirs, a small output is not worth compacting, every kind is deleted eventually
 - [x] 4. Export and purge — test_extensibility: save and restore

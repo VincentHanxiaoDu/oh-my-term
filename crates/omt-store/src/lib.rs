@@ -10,6 +10,7 @@
 pub mod retention;
 pub mod version;
 pub mod log;
+pub mod inventory;
 pub mod record;
 pub mod snapshot;
 
