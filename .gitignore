@@ -30,3 +30,4 @@ mobile/ios/.build/
 # diagnostics, not source.
 web/test-results/
 web/playwright-report/
+.vite/
