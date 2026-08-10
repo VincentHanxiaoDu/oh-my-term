@@ -241,8 +241,24 @@ function measureCell() {
     probe.style.whiteSpace = 'pre';
     // The terminal's font, taken from the terminal itself when one is on screen
     // so this cannot drift from what is actually being rendered.
+    //
+    // Longhands, not the `font` shorthand: its computed value is an empty string
+    // unless every longhand came from a shorthand, and an empty string leaves the
+    // probe in the page's proportional UI font. A capital M in that is 13.7px
+    // against 8.4px for the monospace actually on screen, so the grid was asked
+    // for 29 columns where 47 fit — every long line wrapped for no reason.
     const drawn = document.querySelector('.terminal');
-    probe.style.font = drawn ? getComputedStyle(drawn).font : 'var(--text-sm) ui-monospace, monospace';
+    if (drawn) {
+        const style = getComputedStyle(drawn);
+        probe.style.fontFamily = style.fontFamily;
+        probe.style.fontSize = style.fontSize;
+        probe.style.fontWeight = style.fontWeight;
+        probe.style.letterSpacing = style.letterSpacing;
+    }
+    else {
+        probe.style.fontFamily = 'ui-monospace, monospace';
+        probe.style.fontSize = '14px';
+    }
     probe.textContent = SAMPLE;
     document.body.append(probe);
     const box = probe.getBoundingClientRect();

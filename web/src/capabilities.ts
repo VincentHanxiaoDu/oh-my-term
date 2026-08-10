@@ -26,6 +26,13 @@ export interface SessionSummary {
   title: string
   state: string
   cwd?: string
+  /** How many agent threads are in it, and how many need a human.
+   *
+   * Carried on the roster itself rather than fetched per session: it decides
+   * which screen a tap opens and whether the conversation is offered, and a
+   * client that has to ask separately gets both wrong until it has asked. */
+  threads?: number
+  blocked?: number
 }
 
 /** One entry in a file listing. */

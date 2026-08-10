@@ -500,15 +500,23 @@ html, body {
   padding: var(--space-2);
   padding-bottom: 0;
 }
-/* Wraps rather than scrolls. Eleven keys in one scrolling row hides the last
-   four, and a key nobody can see is a key nobody knows exists. */
+/* One row that scrolls. Wrapped, eleven keys become three rows on a phone with
+   a large font scale — half the screen given to punctuation. The order is what
+   makes that safe: the keys nobody can live without come first, and the ones
+   that scroll off are the ones a keyboard buries rather than omits. */
 .keybar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-1);
   flex: 1 1 auto;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* A fade at the right edge, so it is visible that there is more. A row that
+     simply ends looks like a row that has ended. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
+.keybar::-webkit-scrollbar { display: none; }
 .keybar-controls {
   display: flex;
   gap: var(--space-1);

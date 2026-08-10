@@ -1141,6 +1141,13 @@ export class App {
     }
     #renderRoster() {
         const view = this.#store.state;
+        // Counts arrive with the roster now, so every screen agrees about which
+        // sessions have an agent in them without asking per session.
+        for (const session of view.sessions) {
+            if (typeof session.threads === 'number') {
+                this.#threads[session.id] = session.threads;
+            }
+        }
         // One list across every instance this browser knows about. With only one
         // paired it is exactly the old roster, so there is no second code path for
         // the common case to drift from.
@@ -1294,7 +1301,8 @@ export class App {
      * control that silently is not there reads as a missing feature.
      */
     #surfaceSwitch(session, here) {
-        const threads = this.#threads[session] ?? 0;
+        const listed = this.#store.state.sessions.find((s) => s.id === session);
+        const threads = listed?.threads ?? this.#threads[session] ?? 0;
         const offers = surfacesFor({
             threads,
             shellIntegration: this.#shellIntegration[session] ?? true,

@@ -343,6 +343,15 @@ pub struct SessionSummary {
     /// Its live working directory, which is not its workspace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// How many agent threads are in it.
+    ///
+    /// Here rather than left to a second call per session, because it is what
+    /// every surface reads to decide whether it is looking at an agent — which
+    /// screen a tap opens, and whether the conversation is offered at all. A
+    /// client that has to ask separately gets it wrong until it has asked.
+    pub threads: usize,
+    /// How many of those are waiting for a human.
+    pub blocked: usize,
 }
 
 /// What `session.list` reports.
@@ -396,12 +405,17 @@ impl CapabilityHandler<SessionList> for SessionListHandler {
                 .sessions()
                 .into_iter()
                 .filter(|s| filter.is_none_or(|w| s.workspace == w))
-                .map(|s| SessionSummary {
-                    id: s.id.to_wire(),
-                    workspace: s.workspace.to_wire(),
-                    title: s.title.clone(),
-                    state: describe_state(s.state),
-                    cwd: s.cwd.clone(),
+                .map(|s| {
+                    let roster = instance.threads(s.id);
+                    SessionSummary {
+                        id: s.id.to_wire(),
+                        workspace: s.workspace.to_wire(),
+                        title: s.title.clone(),
+                        state: describe_state(s.state),
+                        cwd: s.cwd.clone(),
+                        threads: roster.map_or(0, omt_agent::ThreadRoster::len),
+                        blocked: roster.map_or(0, |r| r.awaiting_human().len()),
+                    }
                 })
                 .collect(),
         })
@@ -2566,6 +2580,38 @@ impl CapabilityHandler<AgentConnect> for AgentConnectHandler {
                 instance.observe_usage(session, payload);
             }
         }
+        // Named after what is running in it. A session that has an agent in it
+        // and is still called `shell` is indistinguishable on a roster from the
+        // four shells beside it, which is the one thing the roster exists to
+        // tell apart.
+        if let Some(record) = instance.session_mut(session) {
+            record.title = kind.to_string();
+        }
+
+        // Folded into the roster as well as the stream. `observe_thread` had no
+        // caller outside a test, so an agent could run a whole turn in a session
+        // and the session still reported no threads — which is what every
+        // surface reads to decide whether it is looking at an agent at all. The
+        // conversation stayed disabled with "nothing in this session is an
+        // agent" while the agent's own words sat in the transcript.
+        for payload in &payloads {
+            instance.observe_thread(
+                session,
+                &omt_events::AgentEvent {
+                    session,
+                    binding,
+                    agent: kind,
+                    agent_version: None,
+                    agent_session: None,
+                    thread: None,
+                    seq: omt_types::Seq::new(0),
+                    ts: omt_types::Timestamp::now(),
+                    tier: omt_types::Tier::Protocol,
+                    payload: payload.clone(),
+                },
+            );
+        }
+
         for payload in payloads {
             instance.emit(
                 session,

@@ -26,7 +26,10 @@ const TOKEN = process.env['OMT_CREDENTIAL'] ?? process.env['OMT_TOKEN'] ?? ''
  * on instead of the one it meant to open.
  */
 async function openASession(page: import('@playwright/test').Page): Promise<void> {
-  const rows = page.locator('.body button.tap')
+  // A shell, never an agent session: one test attaches an agent, and a session
+  // with an agent in it opens on its conversation rather than its terminal —
+  // correctly, and not what a test about the terminal wants.
+  const rows = page.locator('.body button.tap').filter({ hasNotText: 'codex' })
   if ((await rows.count()) === 0) {
     // Creating one goes straight to its terminal, which is the point of the
     // button — so there is nothing left to tap.
@@ -183,18 +186,10 @@ test('every key a phone keyboard lacks is reachable', async ({ page }) => {
   for (const label of ['Esc', 'Tab', 'Ctrl', '↑', '↓', '←', '→', '/', '-', '|', '~']) {
     expect(labels, `${label} is missing from the key bar`).toContain(label)
   }
-  // And every one is on screen rather than scrolled out of sight: the bar
-  // wraps, so nothing is hidden behind a horizontal scroll nobody attempts.
-  const width = page.viewportSize()?.width ?? 0
-  const boxes = await page.locator('.keybar > button').evaluateAll((nodes) =>
-    nodes.map((n) => {
-      const r = n.getBoundingClientRect()
-      return { label: n.textContent ?? '', right: Math.round(r.right) }
-    }),
-  )
-  for (const box of boxes) {
-    expect(box.right, `${box.label} is off the right of the screen`).toBeLessThanOrEqual(width)
-  }
+  // Reachable, not necessarily all on screen at once: the bar is one scrolling
+  // row, because wrapped it becomes three rows on a phone with a large font
+  // scale. What matters is that scrolling reaches the end — asserted by the
+  // test that owns that behaviour.
 })
 
 test('the agent keys are reachable, and the bar can be folded away', async ({ page }) => {
@@ -344,4 +339,30 @@ test('a word typed through an input method survives to the field', async ({ page
   await page.locator('.composer-send').tap()
   await expect(page.locator('.terminal-body')).toContainText('你好', { timeout: 5000 })
   await expect(input).toHaveValue('')
+})
+
+test('the key bar is one row, and every key can be reached by scrolling', async ({
+  page,
+}) => {
+  // Wrapped, eleven keys become three rows on a phone with a large font scale —
+  // half the screen given over to punctuation. One row that scrolls keeps the
+  // grid; the order is what makes that safe.
+  await openASession(page)
+  const bar = page.locator('.keybar')
+  const height = await bar.evaluate((node) => node.getBoundingClientRect().height)
+  const key = await page
+    .locator('.keybar > button')
+    .first()
+    .evaluate((node) => node.getBoundingClientRect().height)
+  expect(height, 'the key bar is more than one row tall').toBeLessThan(key * 1.6)
+
+  // And it really does scroll rather than clipping what does not fit.
+  const scrolls = await bar.evaluate((node) => node.scrollWidth > node.clientWidth)
+  const labels = await page.locator('.keybar > button').allTextContents()
+  expect(labels).toContain('~')
+  if (scrolls) {
+    await bar.evaluate((node) => node.scrollTo({ left: node.scrollWidth }))
+    const last = await page.locator('.keybar > button').last().boundingBox()
+    expect(last?.x ?? 0).toBeLessThan(page.viewportSize()?.width ?? 0)
+  }
 })

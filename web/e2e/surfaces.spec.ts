@@ -8,6 +8,7 @@
  * last round proved a resized desktop window cannot see what a phone does.
  */
 import { devices, expect, test } from '@playwright/test'
+import { attachAgent, listSessions } from './agent.js'
 import type { Page } from '@playwright/test'
 
 // The credential the global setup joined with, not the invite: an invite is
@@ -20,7 +21,10 @@ test.beforeEach(async ({ page }) => {
 
 /** Open a session, creating one if the roster is empty. */
 async function openASession(page: Page): Promise<void> {
-  const rows = page.locator('.body button.tap')
+  // A shell, never an agent session: one test attaches an agent, and a session
+  // with an agent in it opens on its conversation rather than its terminal —
+  // correctly, and not what a test about the terminal wants.
+  const rows = page.locator('.body button.tap').filter({ hasNotText: 'codex' })
   if ((await rows.count()) === 0) {
     await page.getByRole('button', { name: 'New session' }).tap()
     await expect(page.locator('.terminal-body')).toBeVisible()
@@ -273,4 +277,47 @@ test('adding an instance offers the camera and says when it cannot', async ({ pa
     await expect(scan).toBeDisabled()
     await expect(scan).toContainText('not on this browser')
   }
+})
+
+test('an agent session is read through its conversation, not its grid', async ({ page }) => {
+  // The agent-native path, through the UI. Everything before this fed the
+  // transcript events omt made up, which checks the renderer against omt's own
+  // idea of what an agent says — the thing that can be wrong.
+  const url = process.env['OMT_URL'] ?? 'http://127.0.0.1:7788'
+  const token = TOKEN
+
+  await page.getByRole('button', { name: 'New session' }).tap()
+  await expect(page.locator('.terminal-body')).toBeVisible()
+
+  // Which session the client is on, so the agent is attached to that one.
+  const session = await page.evaluate(() => location.hash || document.title)
+  const listed = await listSessions(url, token)
+  const target = listed[listed.length - 1]
+  test.skip(target === undefined, 'no session to attach to')
+  expect(session).toBeDefined()
+
+  await attachAgent(url, token, target as string, [
+    process.env['PYTHON'] ?? 'python3',
+    new URL('../../tests/integration/fake_agent.py', import.meta.url).pathname,
+  ])
+
+  await page.reload()
+  await page.waitForTimeout(1500)
+  // By name, because a session with an agent in it is named after the agent —
+  // five rows all called `shell` is the one thing a roster exists to tell
+  // apart, and tapping the first of them picks at random.
+  await page.locator('.body button.tap').filter({ hasText: 'codex' }).first().tap()
+  await page.waitForTimeout(1500)
+
+  // The conversation is offered, and it is what the session opened on.
+  const conversation = page.locator('.surface').filter({ hasText: 'Conversation' })
+  await expect(conversation).toBeEnabled()
+  if ((await conversation.getAttribute('aria-selected')) !== 'true') {
+    await conversation.tap()
+  }
+
+  // What the agent said, and what it ran, rendered as themselves rather than as
+  // terminal output.
+  await expect(page.locator('.entry-assistant').first()).toContainText('Reading the file.')
+  await expect(page.locator('.entry-tool').first()).toContainText('cat README.md')
 })
