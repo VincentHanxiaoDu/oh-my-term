@@ -252,6 +252,126 @@ fn place(
     }
 }
 
+/// A named arrangement.
+///
+/// `docs/architecture/17-panes-and-layout.md` §4. Presets exist because the
+/// arrangement somebody wants is almost never worth building split by split,
+/// and because a layout that can be named can be restored — which is what makes
+/// §10's persistence possible at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preset {
+    /// Every pane the same width, side by side.
+    EvenVertical,
+    /// Every pane the same height, stacked.
+    EvenHorizontal,
+    /// One large pane on the left, the rest stacked on the right.
+    MainVertical,
+    /// One large pane on top, the rest side by side below.
+    MainHorizontal,
+}
+
+/// Build a tree of `panes` in a preset arrangement.
+///
+/// Returns `None` for no panes: an empty layout is not a layout, and returning
+/// an empty tree would push the question onto every caller.
+#[must_use]
+pub fn preset(kind: Preset, panes: &[String]) -> Option<Node> {
+    let (first, rest) = panes.split_first()?;
+    if rest.is_empty() {
+        return Some(Node::Leaf { id: first.clone() });
+    }
+    Some(match kind {
+        Preset::EvenVertical => even(Split::Vertical, panes),
+        Preset::EvenHorizontal => even(Split::Horizontal, panes),
+        // The main pane keeps half regardless of how many others there are.
+        // Proportional would shrink it as panes are added, which is backwards:
+        // the main pane is the one being worked in, and adding a log tail
+        // should not make the thing you are reading narrower.
+        Preset::MainVertical => Node::Split {
+            direction: Split::Vertical,
+            ratio: 0.5,
+            first: Box::new(Node::Leaf { id: first.clone() }),
+            second: Box::new(even(Split::Horizontal, rest)),
+        },
+        Preset::MainHorizontal => Node::Split {
+            direction: Split::Horizontal,
+            ratio: 0.5,
+            first: Box::new(Node::Leaf { id: first.clone() }),
+            second: Box::new(even(Split::Vertical, rest)),
+        },
+    })
+}
+
+/// Split `panes` evenly along one axis.
+///
+/// Built as a right-leaning chain with a decreasing ratio rather than by
+/// halving, so five panes are five equal fifths and not 1/2, 1/4, 1/8, 1/16,
+/// 1/16 — which is what naive recursive halving gives and looks nothing like
+/// "even".
+fn even(direction: Split, panes: &[String]) -> Node {
+    match panes.split_first() {
+        None | Some((_, [])) => Node::Leaf {
+            id: panes.first().cloned().unwrap_or_default(),
+        },
+        Some((first, rest)) => {
+            #[allow(clippy::cast_precision_loss, reason = "pane counts are small")]
+            let ratio = 1.0 / panes.len() as f32;
+            Node::Split {
+                direction,
+                ratio,
+                first: Box::new(Node::Leaf { id: first.clone() }),
+                second: Box::new(even(direction, rest)),
+            }
+        }
+    }
+}
+
+/// Lay out with one pane zoomed to fill the area.
+///
+/// §5. Zoom is a *view* state, not a tree edit: the tree is untouched and
+/// unzooming is not an undo. Editing the tree would mean a zoom that survives
+/// into a saved layout, and somebody restoring it would find their other panes
+/// gone with no way to tell that zoom was why.
+///
+/// Every other pane is reported as hidden, which is true — they are not drawn —
+/// and means a client showing "n hidden" needs no special case for zoom.
+#[must_use]
+pub fn compute_zoomed(tree: &Node, area: Rect, zoomed: &str) -> Geometry {
+    let full = compute(tree, area);
+    let known = full.panes.iter().any(|p| p.pane == zoomed) || full.hidden.iter().any(|h| h == zoomed);
+    if !known {
+        return full;
+    }
+    let index = full
+        .panes
+        .iter()
+        .find(|p| p.pane == zoomed)
+        .map_or(0, |p| p.index);
+    let hidden: Vec<String> = full
+        .panes
+        .iter()
+        .map(|p| p.pane.clone())
+        .chain(full.hidden.iter().cloned())
+        .filter(|id| id != zoomed)
+        .collect();
+    Geometry {
+        panes: vec![Placement {
+            pane: zoomed.to_owned(),
+            outer: area,
+            index,
+        }],
+        degraded: if hidden.is_empty() {
+            None
+        } else {
+            Some(Degradation {
+                dropped: hidden.len(),
+                reason: format!("`{zoomed}` is zoomed; {} pane(s) hidden", hidden.len()),
+            })
+        },
+        hidden,
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -260,6 +380,106 @@ fn place(
 )]
 mod tests {
     use super::*;
+    fn ids(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn an_even_preset_gives_every_pane_the_same_share() {
+        // Naive recursive halving gives 1/2, 1/4, 1/8, 1/16, 1/16, which looks
+        // nothing like "even" and is what this is built to avoid.
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c", "d"])).expect("a tree");
+        let g = compute(&tree, Rect { left: 0, top: 0, width: 80, height: 24 });
+        assert_eq!(g.panes.len(), 4);
+        let widths: Vec<u16> = g.panes.iter().map(|p| p.outer.width).collect();
+        let smallest = widths.iter().min().copied().expect("some");
+        let largest = widths.iter().max().copied().expect("some");
+        assert!(largest - smallest <= 1, "{widths:?}");
+    }
+
+    #[test]
+    fn the_main_pane_keeps_its_share_as_others_are_added() {
+        // Proportional would shrink it as panes arrive, which is backwards:
+        // the main pane is the one being worked in, and adding a log tail
+        // should not narrow the thing you are reading.
+        let area = Rect { left: 0, top: 0, width: 120, height: 24 };
+        let two = compute(&preset(Preset::MainVertical, &ids(&["a", "b"])).expect("t"), area);
+        let four = compute(
+            &preset(Preset::MainVertical, &ids(&["a", "b", "c", "d"])).expect("t"),
+            area,
+        );
+        let main_of = |g: &Geometry| {
+            g.panes.iter().find(|p| p.pane == "a").expect("main").outer.width
+        };
+        assert_eq!(main_of(&two), main_of(&four));
+    }
+
+    #[test]
+    fn a_single_pane_preset_is_just_that_pane() {
+        let tree = preset(Preset::MainVertical, &ids(&["only"])).expect("a tree");
+        assert_eq!(tree, leaf("only"));
+    }
+
+    #[test]
+    fn no_panes_is_not_a_layout() {
+        // Returning an empty tree would push the question onto every caller.
+        assert!(preset(Preset::EvenVertical, &[]).is_none());
+    }
+
+    #[test]
+    fn every_preset_places_every_pane_it_was_given() {
+        let names = ids(&["a", "b", "c"]);
+        for kind in [
+            Preset::EvenVertical,
+            Preset::EvenHorizontal,
+            Preset::MainVertical,
+            Preset::MainHorizontal,
+        ] {
+            let tree = preset(kind, &names).expect("a tree");
+            let g = compute(&tree, Rect { left: 0, top: 0, width: 120, height: 40 });
+            assert_eq!(g.panes.len() + g.hidden.len(), 3, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_zoomed_pane_fills_the_area() {
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
+        let g = compute_zoomed(&tree, area, "b");
+        assert_eq!(g.panes.len(), 1);
+        assert_eq!(g.panes[0].outer, area);
+    }
+
+    #[test]
+    fn zoom_does_not_edit_the_tree() {
+        // A zoom that survived into a saved layout would have somebody restore
+        // it and find their other panes gone, with no way to tell zoom was why.
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
+        let before = tree.clone();
+        let _ = compute_zoomed(&tree, area, "b");
+        assert_eq!(tree, before);
+        assert_eq!(compute(&tree, area).panes.len(), 3, "unzoom restores");
+    }
+
+    #[test]
+    fn the_panes_a_zoom_hides_are_reported_as_hidden() {
+        // True — they are not drawn — and it means a client showing "n hidden"
+        // needs no special case for zoom.
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
+        let g = compute_zoomed(&tree, area, "b");
+        assert_eq!(g.hidden.len(), 2);
+        assert!(g.degraded.is_some());
+    }
+
+    #[test]
+    fn zooming_a_pane_that_is_not_there_changes_nothing() {
+        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
+        assert_eq!(compute_zoomed(&tree, area, "nope"), compute(&tree, area));
+    }
+
 
     fn leaf(id: &str) -> Node {
         Node::Leaf { id: id.to_owned() }
