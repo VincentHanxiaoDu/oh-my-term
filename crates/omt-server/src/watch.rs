@@ -142,3 +142,58 @@ impl Watch {
         self.started
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod tests {
+    use super::*;
+
+    fn record() -> Audited {
+        Audited {
+            at: "2026-01-01T00:00:00Z".to_owned(),
+            capability: "session.write_bytes".to_owned(),
+            client: "device-1".to_owned(),
+            intent: Some("intent-1".to_owned()),
+            ok: true,
+        }
+    }
+
+    #[test]
+    fn an_audit_record_carries_no_free_text_to_leak() {
+        // 13 §8's guarantee is that no path emits an unredacted value. The
+        // audit log is the easiest one to get wrong, because "also log the
+        // arguments" is the obvious next feature request and the arguments are
+        // where the secrets are.
+        //
+        // The defence is shape rather than filtering: the record has no field
+        // that can hold caller-supplied text at all. The capability name comes
+        // from the catalog, the ids are generated, `ok` is a bool. A field that
+        // could hold a password fails this test before it can fail somebody's
+        // threat model.
+        let json = serde_json::to_value(record()).expect("json");
+        let object = json.as_object().expect("an object");
+        assert_eq!(
+            object.len(),
+            5,
+            "a field was added to the audit record: {object:?}"
+        );
+        for key in ["at", "capability", "client", "intent", "ok"] {
+            assert!(object.contains_key(key), "`{key}` went missing");
+        }
+    }
+
+    #[test]
+    fn the_audit_log_records_the_capability_not_its_input() {
+        // The whole distinction. "`session.write_bytes` was called" is an
+        // audit record; "`session.write_bytes` was called with these bytes" is
+        // a keylogger.
+        let json = serde_json::to_string(&record()).expect("json");
+        assert!(json.contains("session.write_bytes"));
+        assert!(!json.contains("input"), "{json}");
+        assert!(!json.contains("payload"), "{json}");
+    }
+}

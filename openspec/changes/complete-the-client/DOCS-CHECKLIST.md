@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**116 of 212 features ticked.** (34 further sections are prose.)
+**117 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -168,7 +168,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 5. Credential storage, rotation and TLS — omt-auth at_rest + omt-config merge: an inline secret is an error with somewhere to put it and is kept out of the resolved values; permissions corrected, foreign ownership fatal
 - [x] 6. Browser-side controls — omt-server origin: a hostile page is refused before the credential, prefixes and paths do not pass, a non-browser client still connects; CSP names no host omt does not serve
 - [x] 7. The two high-consequence capabilities — parity.rs + test_security: no PTY write is Viewer, no second permission model exists by name, an agent that offered nothing gets an empty list rather than an invented one
-- [ ] 8. Secret redaction
+- [x] 8. Secret redaction — omt-recall redact: no constructor takes a string, so there is no path from raw bytes to a document; omt-server watch: the audit record has no field that can hold caller text (the tracing-Layer integration 21 §2 specifies is not built)
 - [x] 9. Network egress and supply chain — parity.rs: zero capabilities declare NETWORK today and the count is asserted, nothing is named like telemetry, the reachable-but-uncalled STT path is written down (supply chain: xtask licensing over 311 deps)
 - [x] 10. Checklist — publishing an instance over Tailscale Funnel — test_security: tailnet identity alone refused, wildcard origin refused, short password refused unless device-bound, default role must be Viewer, all problems at once
 - ~~11. OPEN QUESTIONS~~ — prose
