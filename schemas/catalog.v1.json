@@ -776,6 +776,66 @@
     },
     {
       "aliases": [],
+      "doc": "By digest, which is the only name a blob has. There is no path to traverse because there is no path.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "media",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "media.get",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/media/get",
+      "since": "0.1.0",
+      "title": "Fetch a blob",
+      "verb": "get"
+    },
+    {
+      "aliases": [],
+      "doc": "A landing zone nobody can see the contents of is one that has quietly become the place things live.",
+      "effects": [],
+      "group": "media",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "media.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/media/list",
+      "since": "0.1.0",
+      "title": "List blobs",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "The type is sniffed here and never taken from the sender. A sender that names its own content type decides how the receiver treats it.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "media",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "media.put",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/media/put",
+      "since": "0.1.0",
+      "title": "Upload a blob",
+      "verb": "put"
+    },
+    {
+      "aliases": [],
       "doc": "Every directive comes back classified, including the ones omt cannot map. A migration that silently drops a third of somebody's bindings fails without ever reporting an error.",
       "effects": [
         "reads_fs"

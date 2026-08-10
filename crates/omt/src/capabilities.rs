@@ -5945,6 +5945,12 @@ pub fn registry_full(
     let hints = std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Hints::default()));
     r.register::<crate::onboarding::HintState, _>(crate::onboarding::HintsHandler(hints.clone()))?;
     r.register::<crate::onboarding::DismissHints, _>(crate::onboarding::HintsHandler(hints))?;
+    let blobs: crate::media::Shared = std::sync::Arc::new(std::sync::Mutex::new(
+        omt_media::store::BlobStore::new(omt_media::store::Quota::default()),
+    ));
+    r.register::<crate::media::MediaPut, _>(crate::media::MediaHandler(blobs.clone()))?;
+    r.register::<crate::media::MediaGet, _>(crate::media::MediaHandler(blobs.clone()))?;
+    r.register::<crate::media::MediaList, _>(crate::media::MediaHandler(blobs))?;
     r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(

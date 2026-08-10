@@ -428,6 +428,14 @@ export const HANDLERS = {
   'onboarding.dismiss_hints': (request: RequestId, hint?: string) =>
     call(request, 'onboarding.dismiss_hints', hint === undefined ? {} : { hint }),
 
+  'media.put': (request: RequestId, content: string, origin: string) =>
+    call(request, 'media.put', { content, origin }),
+
+  'media.get': (request: RequestId, digest: string) =>
+    call(request, 'media.get', { digest }),
+
+  'media.list': (request: RequestId) => call(request, 'media.list', {}),
+
   'onboarding.disclosures': (request: RequestId, trigger?: string) =>
     call(request, 'onboarding.disclosures', trigger === undefined ? {} : { trigger }),
 
