@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**134 of 212 features ticked.** (34 further sections are prose.)
+**135 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -285,7 +285,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 4. Export and purge — test_extensibility: save and restore
 - [ ] 5. Encryption at rest
 - [ ] 6. Crash consistency
-- [ ] 7. Migration of on-disk formats
+- [x] 7. Migration of on-disk formats — omt-store version: a store from the future is refused rather than partly read, the two directions are different refusals with opposite remedies, no best-effort parse
 - [ ] 8. Capabilities
 - ~~9. OPEN QUESTIONS~~ — prose
 

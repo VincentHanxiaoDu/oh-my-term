@@ -8,6 +8,7 @@
 //! apart, and a restore never silently drops either.
 
 pub mod retention;
+pub mod version;
 pub mod log;
 pub mod record;
 pub mod snapshot;
