@@ -150,7 +150,7 @@ impl Queue {
     /// indexed is the part worth having.
     pub fn drain(&mut self) -> Vec<Unit> {
         let mut out = std::mem::take(&mut self.units);
-        out.sort_by(|a, b| b.value.cmp(&a.value));
+        out.sort_by_key(|u| std::cmp::Reverse(u.value));
         out
     }
 }
