@@ -770,6 +770,24 @@
     },
     {
       "aliases": [],
+      "doc": "A modal keymap governs omt's own surfaces only. It never governs a pane whose keys are passing through, which is what stops omt and an inner vim from contending over hjkl.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.flavour",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/flavour",
+      "since": "0.1.0",
+      "title": "vim or emacs bindings",
+      "verb": "flavour"
+    },
+    {
+      "aliases": [],
       "doc": "Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed.",
       "effects": [
         "spawns_process"

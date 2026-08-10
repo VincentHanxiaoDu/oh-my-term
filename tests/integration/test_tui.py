@@ -341,3 +341,38 @@ class TestOmtsOwnDefaultsAreAudited:
         sheet = client.call("keys.cheatsheet")
         text = str(sheet).lower()
         assert "ctrl" in text, sheet
+
+
+class TestModalKeymaps:
+    """16-input-and-keymap §6. The hardest conflict case in the document."""
+
+    def test_vim_mode_gives_copy_mode_what_it_is_missed_for(self, client) -> None:
+        out = client.call("keys.flavour", flavour="vim")
+        chords = {b["chord"] for b in out["bindings"] if b["mode"] == "copy"}
+        assert {"h", "j", "k", "l", "y"} <= chords, chords
+
+    def test_a_modal_keymap_only_governs_omts_own_surfaces(self, client) -> None:
+        # The scope rule that makes the feature safe. Somebody running vim in
+        # a pane, with omt in vim mode, must not have `j` taken from them.
+        out = client.call("keys.flavour", flavour="vim")
+        assert "global" not in out["governs"], out["governs"]
+        assert all(b["mode"] in out["governs"] for b in out["bindings"])
+
+    def test_emacs_mode_binds_its_own_motions(self, client) -> None:
+        out = client.call("keys.flavour", flavour="emacs")
+        chords = {b["chord"] for b in out["bindings"]}
+        assert "ctrl-n" in chords
+        assert "j" not in chords, "the two flavours are alternatives, not layers"
+
+    def test_the_plain_flavour_adds_nothing(self, client) -> None:
+        assert client.call("keys.flavour", flavour="plain")["bindings"] == []
+
+    def test_an_unknown_flavour_is_refused_and_says_what_exists(
+        self, client
+    ) -> None:
+        import pytest
+
+        with pytest.raises(Exception) as caught:
+            client.call("keys.flavour", flavour="kakoune")
+        message = str(caught.value).lower()
+        assert "vim" in message and "emacs" in message

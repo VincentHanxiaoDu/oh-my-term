@@ -1211,6 +1211,92 @@ impl CapabilityHandler<KeysAudit> for KeysHandler {
     }
 }
 
+/// Input to `keys.flavour`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FlavourIn {
+    /// `plain`, `vim` or `emacs`.
+    pub flavour: String,
+}
+
+/// One binding a flavour adds.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct FlavourBinding {
+    /// Which of omt's own surfaces.
+    pub mode: String,
+    /// The chord.
+    pub chord: String,
+    /// What it invokes.
+    pub capability: String,
+}
+
+/// What `keys.flavour` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct FlavourOut {
+    /// Everything it binds.
+    pub bindings: Vec<FlavourBinding>,
+    /// Which modes a modal keymap is allowed to touch at all.
+    ///
+    /// Reported because it is the rule that makes the feature safe, and a rule
+    /// nobody can read is one nobody can check.
+    pub governs: Vec<String>,
+}
+
+omt_catalog::capability! {
+    /// What a modal keymap flavour binds, and where it is allowed to.
+    pub struct KeysFlavour;
+    input  = FlavourIn,
+    output = FlavourOut,
+    decl = omt_catalog::Decl {
+        name: "keys.flavour",
+        group: "keys",
+        verb: "flavour",
+        title: "vim or emacs bindings",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A modal keymap governs omt's own surfaces only. It never governs a pane whose keys are passing through, which is what stops omt and an inner vim from contending over hjkl.",
+    },
+}
+
+impl CapabilityHandler<KeysFlavour> for KeysHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: FlavourIn,
+    ) -> Result<FlavourOut, CapabilityError> {
+        let flavour = match input.flavour.to_lowercase().as_str() {
+            "vim" => omt_input::modal::Flavour::Vim,
+            "emacs" => omt_input::modal::Flavour::Emacs,
+            "plain" => omt_input::modal::Flavour::Plain,
+            other => {
+                return Err(CapabilityError::invalid_input(format!(
+                    "no keymap flavour `{other}`; omt has plain, vim and emacs"
+                )));
+            }
+        };
+        Ok(FlavourOut {
+            governs: omt_input::modal::OMT_OWNED
+                .iter()
+                .map(|m| format!("{m:?}").to_lowercase())
+                .collect(),
+            bindings: omt_input::modal::bindings(flavour)
+                .into_iter()
+                .map(|(mode, chord, capability)| FlavourBinding {
+                    mode: format!("{mode:?}").to_lowercase(),
+                    chord: chord.to_owned(),
+                    capability: capability.to_owned(),
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
