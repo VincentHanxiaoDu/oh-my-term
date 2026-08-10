@@ -521,6 +521,77 @@ impl CapabilityHandler<PasteTier> for MediaHandler {
     }
 }
 
+/// Input to `ssh.plan`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SshPlanIn {
+    /// The ssh target.
+    pub target: String,
+    /// Whether a probe found omt on the far side.
+    #[serde(default)]
+    pub remote_has_omt: bool,
+    /// What to do if it did not.
+    #[serde(default)]
+    pub bootstrap: Option<String>,
+}
+
+/// What `ssh.plan` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct SshPlanOut {
+    /// How the session would be run.
+    pub mode: String,
+    /// The argument vector, with no shell involved.
+    pub argv: Vec<String>,
+    /// Why, in words somebody can act on.
+    pub reason: String,
+    /// Whether paste crosses directly, or goes through the escape bridge.
+    pub direct_media: bool,
+}
+
+omt_catalog::capability! {
+    /// What `omt ssh <target>` would run, and why.
+    pub struct SshPlan;
+    input  = SshPlanIn,
+    output = SshPlanOut,
+    decl = omt_catalog::Decl {
+        name: "ssh.plan",
+        group: "ssh",
+        verb: "plan",
+        title: "Preview an omt ssh session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "An argument vector, never a shell string: a hostname from a config file with a quote in it would otherwise become remote execution.",
+    },
+}
+
+impl CapabilityHandler<SshPlan> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: SshPlanIn,
+    ) -> Result<SshPlanOut, CapabilityError> {
+        let bootstrap = match input.bootstrap.as_deref() {
+            Some("never") => crate::thin::Bootstrap::Never,
+            Some("assume_installed") => crate::thin::Bootstrap::AssumeInstalled,
+            _ => crate::thin::Bootstrap::Ask,
+        };
+        let plan = crate::thin::plan(&input.target, input.remote_has_omt, bootstrap)
+            .map_err(|e| CapabilityError::invalid_input(e.to_string()))?;
+        Ok(SshPlanOut {
+            mode: format!("{:?}", plan.mode).to_lowercase(),
+            direct_media: plan.direct_media(),
+            argv: plan.argv,
+            reason: plan.reason,
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**69 of 212 features ticked.** (33 further sections are prose.)
+**70 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -115,7 +115,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 3. Clipboard text — test_media: bare OSC 52, tmux passthrough keyed off TERM, refused over the cap, never claims success
 - [x] 4. Getting images in: the easy cases — test_media: GPS does not survive a paste, the picture does, the digest names what was stored
 - [x] 5. Case (b): image paste over SSH — the core mechanism — test_media: the tier ladder, never claimed without a handshake (§5.1; the socket forward itself needs a live ssh and is not covered)
-- [ ] 6. `omt ssh <target>` — the thin client
+- [x] 6. `omt ssh <target>` — the thin client — test_media: argv not a shell string, option-shaped and metacharacter targets refused, bootstrap policies
 - [x] 7. Image display and file transfer — test_media: per-agent reference syntax, quoted paths, English fallback, relative refused
 - [x] 8. Security — omt-media: traversal reduced to one component, both separators, reserved names, hash-prefixed, truncated
 - ~~9. OPEN QUESTIONS~~ — prose

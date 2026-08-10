@@ -1574,6 +1574,24 @@
     },
     {
       "aliases": [],
+      "doc": "An argument vector, never a shell string: a hostname from a config file with a quote in it would otherwise become remote execution.",
+      "effects": [],
+      "group": "ssh",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "ssh.plan",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/ssh/plan",
+      "since": "0.1.0",
+      "title": "Preview an omt ssh session",
+      "verb": "plan"
+    },
+    {
+      "aliases": [],
       "doc": "Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently.",
       "effects": [],
       "group": "state",

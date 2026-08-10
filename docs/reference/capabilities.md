@@ -88,6 +88,7 @@ vanishing.
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `setup.detect_agents` | query | viewer | Every agent omt can drive, found or not. Listing only what is present hides the difference between an agent omt did not find and one it has never heard of. |
 | `shell.integration` | query | viewer | Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself. |
+| `ssh.plan` | query | operator | An argument vector, never a shell string: a hostname from a config file with a quote in it would otherwise become remote execution. |
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
 | `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |
 | `term.profile` | query | viewer | A wrong TERM does not fail; it draws a subtly wrong screen that people blame on omt for weeks. This says what is advertised, what was observed, and where they disagree. |
@@ -104,4 +105,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-94 capabilities.
+95 capabilities.

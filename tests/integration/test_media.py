@@ -227,3 +227,66 @@ class TestHowPasteReachesThisMachine:
         # presence as success gives a paste that vanishes.
         out = client.call("media.paste_tier", reverse_socket_answered=False)
         assert out["tier"] == "outofband"
+
+
+class TestTheThinClient:
+    """§6. `omt ssh <target>`, and what it would actually run."""
+
+    def test_omt_on_both_ends_speaks_the_wire_protocol_over_stdio(
+        self, client: Client
+    ) -> None:
+        out = client.call("ssh.plan", target="box", remote_has_omt=True)
+        assert out["argv"] == ["ssh", "box", "omt", "serve", "--stdio"]
+        assert out["mode"] == "native"
+        assert out["direct_media"] is True
+
+    def test_the_command_is_a_vector_with_no_shell_string_in_it(
+        self, client: Client
+    ) -> None:
+        # `ssh box "omt serve --stdio"` puts the remote command through the
+        # remote login shell.
+        out = client.call("ssh.plan", target="box", remote_has_omt=True)
+        assert all(" " not in arg for arg in out["argv"])
+
+    def test_a_target_that_would_be_read_as_an_option_is_refused(
+        self, client: Client
+    ) -> None:
+        # `-oProxyCommand=...` is the well-known way a hostname becomes local
+        # execution.
+        for target in ["-oProxyCommand=touch /tmp/pwned", "-J evil"]:
+            with pytest.raises(Exception):
+                client.call("ssh.plan", target=target, remote_has_omt=True)
+
+    def test_a_target_carrying_shell_metacharacters_is_refused(
+        self, client: Client
+    ) -> None:
+        for target in ["box; rm -rf /", "box$(whoami)", "box`id`", "a box"]:
+            with pytest.raises(Exception):
+                client.call("ssh.plan", target=target, remote_has_omt=True)
+
+    def test_ordinary_targets_are_accepted(self, client: Client) -> None:
+        for target in ["box", "user@box", "user@box.example.com", "10.0.0.4"]:
+            out = client.call("ssh.plan", target=target, remote_has_omt=True)
+            assert target in out["argv"]
+
+    def test_declining_the_install_falls_back_and_says_what_changed(
+        self, client: Client
+    ) -> None:
+        # The user types one thing. What they get is reported, not chosen by
+        # which command they remembered.
+        out = client.call(
+            "ssh.plan", target="box", remote_has_omt=False, bootstrap="never"
+        )
+        assert out["mode"] == "managedpty"
+        assert out["direct_media"] is False
+        assert "OSC bridge" in out["reason"]
+
+    def test_assuming_it_is_installed_does_not_probe(self, client: Client) -> None:
+        out = client.call(
+            "ssh.plan",
+            target="box",
+            remote_has_omt=False,
+            bootstrap="assume_installed",
+        )
+        assert "--exec" not in out["argv"]
+        assert "fail loudly" in out["reason"]

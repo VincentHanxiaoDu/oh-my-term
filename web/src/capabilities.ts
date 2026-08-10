@@ -434,6 +434,18 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'ssh.plan': (
+    request: RequestId,
+    target: string,
+    remoteHasOmt = false,
+    bootstrap?: string,
+  ) =>
+    call(request, 'ssh.plan', {
+      target,
+      remote_has_omt: remoteHasOmt,
+      ...(bootstrap === undefined ? {} : { bootstrap }),
+    }),
+
   'media.paste_tier': (
     request: RequestId,
     probe: {

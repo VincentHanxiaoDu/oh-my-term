@@ -15,6 +15,7 @@ pub mod media;
 pub mod migrate;
 pub mod onboarding;
 pub mod setup;
+pub mod thin;
 pub mod uninstall;
 pub mod reach;
 pub mod run;
