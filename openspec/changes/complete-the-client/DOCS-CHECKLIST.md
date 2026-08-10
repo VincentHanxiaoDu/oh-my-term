@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**129 of 212 features ticked.** (34 further sections are prose.)
+**130 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -309,7 +309,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 1. The identity model — test_identity: devices belong to somebody
 - [x] 2. WebAuthn and passkeys, honestly — omt-auth methods: an IP is never a relying party, localhost is a suffix of nothing, a tailnet name becomes the tailnet-wide domain, reaching an instance never needs an origin
 - [ ] 3. The `home` instance role
-- [ ] 4. The encrypted identity file
+- [x] 4. The encrypted identity file — omt-auth identity_file: the header is readable without the passphrase, the AAD bytes are the written ones, a lying length is refused, truncation at every offset is survived (the cipher itself is not wired)
 - [x] 5. Pairing flows — test_joining: pairing
 - [x] 6. Revocation and recovery — test_identity: revoke a person
 - [x] 7. Per-action re-authentication — test_identity: off by default, named capabilities and effect bits both challenge, freshness clamped at both ends, failing never narrows authority

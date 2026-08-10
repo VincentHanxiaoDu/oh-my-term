@@ -8,6 +8,7 @@
 //! noise.
 
 pub mod at_rest;
+pub mod identity_file;
 pub mod methods;
 pub mod reauth;
 pub mod bind;
