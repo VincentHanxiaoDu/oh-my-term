@@ -8,6 +8,7 @@
 
 pub mod api;
 pub mod fanout;
+pub mod lifecycle;
 pub mod manifest;
 
 pub use api::{
