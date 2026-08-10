@@ -5,6 +5,7 @@
 //! wants here, and a history that offers it is one they stop reading.
 
 pub mod ranking;
+pub mod redact;
 pub mod schedule;
 
 pub use schedule::{FAILURES_BEFORE_DISABLING, Job, JobState, Schedule, Skipped, Trigger};

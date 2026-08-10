@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**100 of 212 features ticked.** (34 further sections are prose.)
+**101 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -266,7 +266,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 2. What is indexed, and what is not — test_workspace_surfaces: recall and its danger rule
 - [ ] 3. Index design
 - [x] 4. Ranking — test_workspace_surfaces: every factor reasoned, the factors multiply to the score, a huge text match cannot swamp the rest, the order is total
-- [ ] 5. Redaction and the index
+- [x] 5. Redaction and the index — omt-recall redact: D-R2 enforced by the type (no constructor takes a string), the screen keeps the truth, ordinary output untouched
 - [ ] 6. Command history as a first-class case
 - [ ] 7. Cross-instance search
 - [ ] 8. Timeline and digest
