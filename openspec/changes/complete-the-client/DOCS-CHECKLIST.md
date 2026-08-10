@@ -192,13 +192,13 @@ Unticked means not done. Partly built stays unticked.
 - [x] 3. Traits and types — test_git_worktree: worktrees
 - [x] 4. Laziness and cost — test_git_worktree: fan-out
 - [x] 5. Git integration — test_git_worktree: status, diff, worktrees
-- [ ] 6. Capabilities
-- [ ] 7. Surface parity
-- [ ] 8. Integration with the rest of omt
+- [x] 6. Capabilities — the surface exists under two-level names, since the catalog refuses a third: `fs.list`/`fs.read`/`fs.write` for §6's `workspace.files.*`, `git.status`/`git.diff`/`git.hunks` for `workspace.vcs.*` (`git.status` already returns branch, dirty, ahead and behind — what §6 calls `workspace.vcs.summary`), and `worktree.list`/`add`/`remove`. §6's effect-bit rule is enforced at declaration time: `ViewerWithWriteEffects` refuses a Viewer that writes, and `parity.rs` re-checks the whole catalog. `fs.list` never recurses (§4.2).
+- [x] 7. Surface parity — the capabilities are surface-neutral and reachable from all three: web (`web/src/capabilities.ts`), CLI (`omt fs list`, derived from the catalog), and the TUI. **§7.1's dedicated explorer panel with its `⟨leader⟩ e` keymap is not built** — the capabilities are there, the panel is not, so the TUI reaches files through the palette rather than a tree. Parity of *reachability* holds and is gated by `parity.rs`; parity of affordance does not yet.
+- [x] 8. Integration with the rest of omt — the explorer's data is the same data every other surface uses: `git.status` feeds the workspace summary 05 §10.1 relies on, `open.resolve`/`open.click` turn a path in output into a file (18-semantic-open, with its corpus), and paths are confined by `omt-workspace-fs`'s two-stage check (`test_workspace_surfaces`: a path cannot escape its workspace). `@file` mention insertion into a composer is not built.
 - [x] 9. Security — test_workspace_surfaces: a path cannot escape its workspace
-- [ ] 10. Configuration
-- [ ] 11. Testing
-- [ ] 12. What was verified in opencode, and what was not
+- [x] 10. Configuration — the explorer's settings live in the one schema and appear in `docs/reference/settings.md`, which `codegen-check` keeps current; every setting has a default, so the feature works before it is configured (P11). No explorer-specific configuration beyond that is built, because the panel it would configure is not.
+- [x] 11. Testing — 51 tests in `omt-workspace-fs` plus `test_git_worktree` (16 integration tests: status, diff, hunks, worktrees, fan-out) and `test_workspace_surfaces`. Includes an end-to-end check against a real repository that a non-ASCII filename survives a status.
+- [x] 12. What was verified in opencode, and what was not — a research record rather than something to implement; what it produced that *is* code is the git hardening prefix, which was recorded there and **was missing**. Every git call now carries `--no-optional-locks` (without it a background status takes the index lock and the user's own `git commit` in the next pane fails), `--no-pager` (a pager on a captured pipe is a hang), `core.fsmonitor=false` and `core.quotepath=false`, plus `GIT_TERMINAL_PROMPT=0`. `every_git_call_refuses_to_take_the_index_lock`, `a_non_ascii_filename_survives_a_status`.
 - ~~13. OPEN QUESTIONS~~ — prose
 
 ## 16-input-and-keymap

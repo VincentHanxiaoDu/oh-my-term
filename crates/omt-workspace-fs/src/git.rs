@@ -198,10 +198,38 @@ pub fn parse_remote(url: &str) -> Option<Forge> {
     None
 }
 
+/// Flags every git invocation carries, before the subcommand.
+///
+/// 15 §12 recorded these from studying how another tool invokes git, and each
+/// one is load-bearing for a program that runs `git status` on a timer:
+///
+/// - `--no-optional-locks` — without it, a background `git status` takes the
+///   index lock to refresh it, and the user's own `git commit` in the terminal
+///   next to it fails with "index.lock exists". omt polling must be invisible
+///   to the person using the same repository.
+/// - `core.fsmonitor=false` — omt is not the fsmonitor client and must not
+///   start or talk to one on the user's behalf; a daemon spawned by a terminal
+///   emulator is a surprise.
+/// - `core.quotepath=false` — otherwise a path with a non-ASCII character comes
+///   back as octal escapes and the file omt shows is not the file on disk.
+/// - `--no-pager` — a pager on a captured pipe is a hang, not a diff.
+pub const HARDENING: &[&str] = &[
+    "--no-optional-locks",
+    "--no-pager",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.quotepath=false",
+];
+
 fn run(dir: &Path, args: &[&str]) -> Result<String, GitError> {
     let out = Command::new("git")
+        .args(HARDENING)
         .args(args)
         .current_dir(dir)
+        // A git that prompts for credentials on a background status blocks for
+        // ever on a pipe nobody is reading.
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .map_err(|e| GitError::Unavailable(e.to_string()))?;
     if !out.status.success() {
@@ -378,5 +406,49 @@ mod tests {
         let _ = forge(d.path());
         let _ = status(d.path());
         assert_eq!(status(d.path()).expect("status"), before);
+    }
+
+    #[test]
+    fn every_git_call_refuses_to_take_the_index_lock() {
+        // The one that matters most for a program polling status: without it a
+        // background `git status` refreshes the index, and the user's own
+        // `git commit` in the next pane fails with "index.lock exists".
+        assert!(HARDENING.contains(&"--no-optional-locks"));
+    }
+
+    #[test]
+    fn every_git_call_disables_the_pager_and_the_fsmonitor() {
+        // A pager on a captured pipe is a hang. An fsmonitor daemon started by
+        // a terminal emulator on the user's behalf is a surprise.
+        assert!(HARDENING.contains(&"--no-pager"));
+        assert!(HARDENING.contains(&"core.fsmonitor=false"));
+    }
+
+    #[test]
+    fn paths_come_back_as_they_are_on_disk() {
+        // With quotepath on, a path with a non-ASCII character comes back as
+        // octal escapes and the file omt shows is not the file on disk.
+        assert!(HARDENING.contains(&"core.quotepath=false"));
+    }
+
+    #[test]
+    fn a_non_ascii_filename_survives_a_status() {
+        // The end-to-end form of the rule above, against a real repository.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path();
+        for args in [
+            vec!["init", "-q"],
+            vec!["config", "user.email", "t@example.com"],
+            vec!["config", "user.name", "t"],
+        ] {
+            std::process::Command::new("git")
+                .args(&args)
+                .current_dir(repo)
+                .output()
+                .expect("git");
+        }
+        std::fs::write(repo.join("café.txt"), b"x").expect("write");
+        let status = status(repo).expect("status");
+        assert_eq!(status.untracked, 1, "the file was seen");
     }
 }
