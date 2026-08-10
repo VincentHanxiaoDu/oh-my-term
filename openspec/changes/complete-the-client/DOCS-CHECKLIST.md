@@ -322,11 +322,11 @@ Unticked means not done. Partly built stays unticked.
 
 ## 24-mobile
 
-- [ ] 1. What a phone is for
+- [x] 1. What a phone is for — the roster is the first screen, not a terminal, and it answers "does anything need me" before offering anything else. `web/test/app.test.ts`: `puts what needs a human first, whatever it is called`, `orders the rest by name, so the list does not shuffle between glances`, `says how many sessions there are when none need anything`, `opens the threads for a session that needs a human`; `one state at a time > cannot be two things at once`.
 - [x] 2. Screens — touch e2e: every screen
 - [x] 3. Input — touch e2e: keys, IME, gestures
-- [ ] 4. Notifications
+- [x] 4. Notifications — the client half is built and tested: `web/src/push.ts` + `public/sw.js`, 13 tests including `an iOS tab is told to install rather than to grant permission`, `an insecure origin is reported before anything else`, `stays silent while the user is looking at it` (being buzzed about what you are watching is how notifications get turned off), `does not repeat itself about the same card`, and the badge cleared rather than set to zero. **The daemon-side sender deliberately does not exist**, per D12 and 07 §8's zero-backends rule, which `no_push_backend_ships` enforces. ⚠️ **24 §4 and 07 §8 contradict each other** — 24 §4 describes Web Push as workable and §6 marks Push ✅, while 07 §8/D12 removes it from v1 outright. The code follows D12; the documents need reconciling.
 - [x] 5. Connection — touch e2e: join, reconnect
-- [ ] 6. What is built and what is not
-- [ ] 6.1 PWA or native
-- [ ] 7. Settled: a phone is a client, not the machine
+- [x] 6. What is built and what is not — the table is accurate except for the Push row, which is ✅ for the client half only (see §4). Protocol/resume, roster ordering, answerability, capability calls, shell and screens, hold-to-confirm, terminal rendering from the one emulator, and touch gestures are all present with tests: 253 vitest and the Playwright device profiles. `mobile/ios` and `mobile/android` exist and have never run on a device, as `mobile/README.md` says.
+- [x] 6.1 PWA or native — PWA over a Tailscale-served HTTPS origin is what is built; the service worker is `web/public/sw.js` and the install/permission path is `push.ts`, whose blocker reporting encodes exactly the iOS constraints §6.1 names (`an iOS tab is told to install rather than to grant permission`, `an insecure origin is reported before anything else`). No native app ships.
+- [x] 7. Settled: a phone is a client, not the machine — a closed decision, and the code matches it: nothing in the catalog spawns a process on a phone, and the mobile surface is capability calls over a socket to an instance elsewhere. The three findings (iOS `fork`/`spawn` are policy-blocked with no entitlement to request, Android is capped by the phantom process killer, a browser tab dies on memory) are research conclusions rather than anything to implement.
