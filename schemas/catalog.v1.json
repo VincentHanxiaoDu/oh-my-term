@@ -713,6 +713,24 @@
       "verb": "list"
     },
     {
+      "aliases": [],
+      "doc": "A registry nobody runs the defaults against documents a problem instead of preventing one.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.audit",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/audit",
+      "since": "0.1.0",
+      "title": "Audit omt's own bindings",
+      "verb": "audit"
+    },
+    {
       "aliases": [
         "keys"
       ],

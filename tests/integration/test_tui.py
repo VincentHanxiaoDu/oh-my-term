@@ -315,3 +315,29 @@ class TestKeymapConflicts:
         with pytest.raises(Exception) as caught:
             client.call("keys.conflicts", chord="not a chord at all")
         assert "chord" in str(caught.value).lower()
+
+
+class TestOmtsOwnDefaultsAreAudited:
+    """16-input-and-keymap §3 and §8. The leader, and what the defaults take."""
+
+    def test_the_defaults_take_nothing_critical_from_anybody(self, client) -> None:
+        # The test that would fail the day somebody adds a convenient default
+        # that breaks vim.
+        out = client.call("keys.audit")
+        critical = [c for c in out["conflicts"] if c["severity"] == "critical"]
+        assert critical == [], critical
+
+    def test_the_audit_says_how_many_programs_it_checked_against(
+        self, client
+    ) -> None:
+        # "No conflicts" from a check that examined nothing looks exactly like
+        # "no conflicts" from one that examined everything.
+        out = client.call("keys.audit")
+        assert out["programs_known"] >= 4
+
+    def test_the_leader_is_reachable_and_documented(self, client) -> None:
+        # §3. A leader nobody can discover is a leader nobody uses, so the
+        # cheatsheet has to name it.
+        sheet = client.call("keys.cheatsheet")
+        text = str(sheet).lower()
+        assert "ctrl" in text, sheet

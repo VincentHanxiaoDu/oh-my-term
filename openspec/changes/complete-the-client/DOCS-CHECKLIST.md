@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**81 of 212 features ticked.** (34 further sections are prose.)
+**83 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -205,12 +205,12 @@ Unticked means not done. Partly built stays unticked.
 
 - [ ] 1. The layer model
 - [x] 2. The dispatch model — omt-input dispatch: original bytes pass through unmodified, undecodable sequences are never claimed, leader-leader sends the leader on
-- [ ] 3. The leader key
+- [x] 3. The leader key — test_tui: the leader opens a pending sequence, pressing it twice sends it on, the cheatsheet names it
 - [ ] 4. Modes and contexts
 - [x] 5. Conflict detection and resolution — test_tui: names the program and what the key does there, only critical refuses, spelling-independent, every entry version-stamped
 - [ ] 6. Modal keymaps: vim mode and emacs mode
 - [x] 7. `omt ssh` — local feels remote-native — test_tui: help, prefix, Ctrl-C reaches the program
-- [ ] 8. Defaults
+- [x] 8. Defaults — test_tui: keys.audit — omt's defaults take nothing critical, and the audit reports how many programs it checked against
 - [ ] 9. Accessibility and internationalization
 - [ ] 10. Testing
 - [ ] 11. Capabilities introduced here

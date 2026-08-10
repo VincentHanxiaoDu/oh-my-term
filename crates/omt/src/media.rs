@@ -1149,6 +1149,68 @@ impl CapabilityHandler<KeysConflicts> for KeysHandler {
     }
 }
 
+/// Input to `keys.audit`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AuditIn {}
+
+/// What `keys.audit` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct AuditOut {
+    /// Everything omt's own defaults would take, worst first.
+    pub conflicts: Vec<ConflictOut>,
+    /// How many programs the registry knows about.
+    ///
+    /// Reported so an empty result can be told apart from a registry that
+    /// knows nothing — "no conflicts" from a check that examined nothing looks
+    /// exactly like "no conflicts" from one that examined everything.
+    pub programs_known: usize,
+}
+
+omt_catalog::capability! {
+    /// What omt's own default bindings would take from programs underneath.
+    pub struct KeysAudit;
+    input  = AuditIn,
+    output = AuditOut,
+    decl = omt_catalog::Decl {
+        name: "keys.audit",
+        group: "keys",
+        verb: "audit",
+        title: "Audit omt's own bindings",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A registry nobody runs the defaults against documents a problem instead of preventing one.",
+    },
+}
+
+impl CapabilityHandler<KeysAudit> for KeysHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        _input: AuditIn,
+    ) -> Result<AuditOut, CapabilityError> {
+        let registry = omt_input::conflicts::builtin();
+        Ok(AuditOut {
+            programs_known: registry.len(),
+            conflicts: omt_input::conflicts::audit(&omt_input::keymap::defaults(), &registry)
+                .into_iter()
+                .map(|c| ConflictOut {
+                    program: c.program,
+                    does: c.does,
+                    severity: format!("{:?}", c.severity).to_lowercase(),
+                    verified_against: c.verified_against,
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

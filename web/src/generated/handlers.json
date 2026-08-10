@@ -35,6 +35,7 @@
   "invite.create",
   "job.create",
   "job.list",
+  "keys.audit",
   "keys.cheatsheet",
   "keys.conflicts",
   "layout.open",

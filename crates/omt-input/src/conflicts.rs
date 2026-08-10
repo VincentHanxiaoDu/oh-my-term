@@ -260,6 +260,35 @@ pub fn builtin() -> Registry {
     ])
 }
 
+/// Which of a keymap's own bindings would break a program underneath.
+///
+/// The cross-check the two halves of §5 exist for: a registry nobody runs the
+/// defaults against is a registry that documents a problem instead of
+/// preventing one.
+///
+/// Global bindings only. Overlay and copy-mode bindings apply when omt owns the
+/// screen and no inner program is reading input, so they cannot take anything
+/// from anybody — treating them as conflicts would produce warnings nobody can
+/// act on and teach people to ignore the real ones.
+#[must_use]
+pub fn audit(keymap: &crate::keymap::Keymap, registry: &Registry) -> Vec<Conflict> {
+    let mut out = Vec::new();
+    for (mode, chord, _) in keymap.bindings() {
+        if mode != crate::keymap::Mode::Global {
+            continue;
+        }
+        out.extend(registry.conflicts(chord));
+    }
+    out.sort_by(|a, b| {
+        a.severity
+            .cmp(&b.severity)
+            .then(a.chord.cmp(&b.chord))
+            .then(a.program.cmp(&b.program))
+    });
+    out.dedup();
+    out
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -428,6 +457,56 @@ mod tests {
                 assert!(!conflict.does.is_empty(), "{chord_spec}");
             }
         }
+    }
+
+    #[test]
+    fn omts_own_defaults_take_nothing_critical_from_anybody() {
+        // The cross-check both halves of §5 exist for. A registry nobody runs
+        // the defaults against documents a problem instead of preventing one,
+        // and this is the test that would fail the day somebody adds a
+        // convenient default that breaks vim.
+        let critical: Vec<Conflict> = audit(&crate::keymap::defaults(), &builtin())
+            .into_iter()
+            .filter(|c| c.severity == Severity::Critical)
+            .collect();
+        assert!(
+            critical.is_empty(),
+            "omt's defaults would break: {critical:?}"
+        );
+    }
+
+    #[test]
+    fn the_audit_looks_at_the_bindings_that_can_actually_take_something() {
+        // Overlay and copy-mode bindings apply when omt owns the screen and no
+        // inner program is reading input. Reporting those would produce
+        // warnings nobody can act on, and teach people to ignore the real ones.
+        let mut km = crate::keymap::Keymap::new();
+        let _ = km.bind(
+            crate::keymap::Mode::Overlay,
+            chord("ctrl-w"),
+            crate::keymap::Action::Capability {
+                name: "ui.close".to_owned(),
+            },
+        );
+        assert!(audit(&km, &builtin()).is_empty());
+    }
+
+    #[test]
+    fn the_audit_does_find_a_conflict_when_there_is_one() {
+        // Otherwise the test above passes because the audit sees nothing at
+        // all, which is the same shape as the parity gate that was checking an
+        // empty list.
+        let mut km = crate::keymap::Keymap::new();
+        let _ = km.bind(
+            crate::keymap::Mode::Global,
+            chord("ctrl-w"),
+            crate::keymap::Action::Capability {
+                name: "pane.close".to_owned(),
+            },
+        );
+        let found = audit(&km, &builtin());
+        assert!(!found.is_empty());
+        assert_eq!(found[0].severity, Severity::Critical);
     }
 
     #[test]

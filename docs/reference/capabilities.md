@@ -45,6 +45,7 @@ vanishing.
 | `invite.create` | command | admin | A fresh invite, so a second device can be paired from a device already paired. Without it the only invite is the one printed at startup, and adding a phone means restarting the instance everybody else is connected to. |
 | `job.create` | command | operator | Create a scheduled job, replacing any job of the same name. A missed window is skipped rather than caught up. |
 | `job.list` | query | viewer | Scheduled jobs with when they fire and how many times each has failed in a row. |
+| `keys.audit` | query | viewer | A registry nobody runs the defaults against documents a problem instead of preventing one. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `keys.conflicts` | query | viewer | `Conflicts with something` is not actionable — every chord collides somewhere. This says which program, what the key does there, and how badly it would be missed. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
@@ -112,4 +113,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-102 capabilities.
+103 capabilities.
