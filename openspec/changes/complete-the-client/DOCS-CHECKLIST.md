@@ -263,7 +263,7 @@ Unticked means not done. Partly built stays unticked.
 ## 20-recall-and-usage
 
 - [ ] 1. The recall problem, stated as questions
-- [x] 2. What is indexed, and what is not — test_workspace_surfaces: recall and its danger rule
+- [x] 2. What is indexed, and what is not — test_workspace_surfaces: every source has a stated treatment, reasoning excluded until opted in, tool fields are an allow list, output windowed not truncated
 - [ ] 3. Index design
 - [x] 4. Ranking — test_workspace_surfaces: every factor reasoned, the factors multiply to the score, a huge text match cannot swamp the rest, the order is total
 - [x] 5. Redaction and the index — omt-recall redact: D-R2 enforced by the type (no constructor takes a string), the screen keeps the truth, ordinary output untouched
