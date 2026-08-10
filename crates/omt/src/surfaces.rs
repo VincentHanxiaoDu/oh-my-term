@@ -914,3 +914,208 @@ impl CapabilityHandler<SessionCapture> for SessionCaptureHandler {
         })
     }
 }
+
+// ---------------------------------------------------------------------------
+// Command history — 20 §12.2
+// ---------------------------------------------------------------------------
+
+/// Input to `history.query`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HistoryQueryIn {
+    /// `global`, `workspace`, `session` or `cwd`.
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// What the scope names, where it names something.
+    #[serde(default)]
+    pub of: Option<String>,
+    /// What to look for.
+    #[serde(default)]
+    pub filter: Option<String>,
+    /// `prefix`, `substring` or `fuzzy`.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Only commands that exited zero.
+    #[serde(default)]
+    pub only_successful: bool,
+    /// Show every run rather than one row per command.
+    #[serde(default)]
+    pub every_run: bool,
+    /// Most rows.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// One command, as reported.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct HistoryRow {
+    /// What was run.
+    pub command: String,
+    /// Which session.
+    pub session: String,
+    /// Which workspace.
+    pub workspace: String,
+    /// How it ended, where that was seen.
+    pub exit_code: Option<i32>,
+    /// How long it took.
+    pub duration_ms: Option<u64>,
+    /// Who ran it.
+    pub attribution: String,
+}
+
+/// What `history.query` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct HistoryQueryOut {
+    /// The commands, newest first.
+    pub entries: Vec<HistoryRow>,
+    /// How many are held in total, so an empty result can be told apart from
+    /// an empty history.
+    pub held: u32,
+}
+
+fn history_query(input: &HistoryQueryIn) -> Result<omt_recall::HistoryQuery, CapabilityError> {
+    let scope = match (input.scope.as_deref(), input.of.as_deref()) {
+        (None | Some("global"), _) => omt_recall::HistoryScope::Global,
+        (Some("workspace"), Some(id)) => omt_recall::HistoryScope::Workspace(
+            omt_types::WorkspaceId::from_wire(id)
+                .ok_or_else(|| CapabilityError::invalid_input("that is not a workspace id"))?,
+        ),
+        (Some("session"), Some(id)) => omt_recall::HistoryScope::Session(session_id(id)?),
+        (Some("cwd"), Some(path)) => omt_recall::HistoryScope::Cwd(path.to_owned()),
+        (Some(other), None) => {
+            return Err(CapabilityError::invalid_input(format!(
+                "scope `{other}` needs `of` to say which one"
+            )));
+        }
+        (Some(other), _) => {
+            return Err(CapabilityError::invalid_input(format!(
+                "`{other}` is not a scope; use global, workspace, session or cwd"
+            )));
+        }
+    };
+    let mode = match input.mode.as_deref() {
+        None | Some("substring") => omt_recall::MatchMode::Substring,
+        Some("prefix") => omt_recall::MatchMode::Prefix,
+        Some("fuzzy") => omt_recall::MatchMode::Fuzzy,
+        Some(other) => {
+            return Err(CapabilityError::invalid_input(format!(
+                "`{other}` is not a match mode; use prefix, substring or fuzzy"
+            )));
+        }
+    };
+    Ok(omt_recall::HistoryQuery {
+        scope,
+        filter: input.filter.clone(),
+        mode,
+        only_successful: input.only_successful,
+        dedup: if input.every_run {
+            omt_recall::Dedup::None
+        } else {
+            omt_recall::Dedup::KeepNewest
+        },
+        limit: input.limit.unwrap_or(0) as usize,
+    })
+}
+
+fn history_row(entry: &omt_recall::HistoryEntry) -> HistoryRow {
+    HistoryRow {
+        command: entry.command.clone(),
+        session: entry.session.to_wire(),
+        workspace: entry.workspace.to_wire(),
+        exit_code: entry.exit_code,
+        duration_ms: entry.duration_ms,
+        attribution: format!("{:?}", entry.attribution).to_lowercase(),
+    }
+}
+
+omt_catalog::capability! {
+    /// The commands that ran, structured and searchable.
+    pub struct HistoryQuery;
+    input  = HistoryQueryIn,
+    output = HistoryQueryOut,
+    decl = omt_catalog::Decl {
+        name: "history.query",
+        group: "history",
+        verb: "query",
+        title: "Search command history",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The instance-scoped query and the only implementation; `scope` narrows it. History exists where blocks exist, so a shell with no integration contributes nothing rather than guesses.",
+    },
+}
+
+/// Serves the history capabilities.
+pub struct HistoryHandler(pub State);
+
+impl CapabilityHandler<HistoryQuery> for HistoryHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: HistoryQueryIn,
+    ) -> Result<HistoryQueryOut, CapabilityError> {
+        let query = history_query(&input)?;
+        let history = self.0.recall()?;
+        Ok(HistoryQueryOut {
+            entries: history.query(&query).into_iter().map(history_row).collect(),
+            held: u32::try_from(history.len()).unwrap_or(u32::MAX),
+        })
+    }
+}
+
+/// What `history.forget` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct HistoryForgetOut {
+    /// How many rows went.
+    pub removed: u32,
+}
+
+omt_catalog::capability! {
+    /// Remove commands from history.
+    pub struct HistoryForget;
+    input  = HistoryQueryIn,
+    output = HistoryForgetOut,
+    decl = omt_catalog::Decl {
+        name: "history.forget",
+        group: "history",
+        verb: "forget",
+        title: "Forget commands",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Command,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::DESTRUCTIVE,
+        intent: Some(omt_catalog::Intent::Cas),
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The targeted counterpart to a store purge: somebody who typed a secret into a shell wants that line gone, not their whole history. Every run of a matching command goes, not only the most recent.",
+    },
+}
+
+impl CapabilityHandler<HistoryForget> for HistoryHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: HistoryQueryIn,
+    ) -> Result<HistoryForgetOut, CapabilityError> {
+        // A forget with nothing to match on would take the lot, and somebody
+        // who wanted that would say so with a purge rather than by leaving a
+        // field out.
+        if input.filter.as_deref().unwrap_or("").trim().is_empty() {
+            return Err(CapabilityError::invalid_input(
+                "say which commands to forget; an empty filter would take all of them",
+            ));
+        }
+        let query = history_query(&input)?;
+        let mut history = self.0.recall()?;
+        Ok(HistoryForgetOut {
+            removed: u32::try_from(history.forget(&query)).unwrap_or(u32::MAX),
+        })
+    }
+}

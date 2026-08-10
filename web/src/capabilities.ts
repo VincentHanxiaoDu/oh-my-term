@@ -449,6 +449,19 @@ export const HANDLERS = {
 
   'remote.probe': (request: RequestId, host: string) => call(request, 'remote.probe', { host }),
 
+  // 20 §12.2's instance-scoped query. `session.history` and
+  // `workspace.history` would be pre-scoped conveniences over this one.
+  'history.query': (
+    request: RequestId,
+    scope?: string,
+    of?: string,
+    filter?: string,
+    mode?: string,
+  ) => call(request, 'history.query', { scope, of, filter, mode }),
+
+  'history.forget': (request: RequestId, filter: string, scope?: string, of?: string) =>
+    call(request, 'history.forget', { filter, scope, of }),
+
   'queue.enqueue': (request: RequestId, binding: string, state: string, text: string) =>
     call(request, 'queue.enqueue', { binding, state, text }),
 

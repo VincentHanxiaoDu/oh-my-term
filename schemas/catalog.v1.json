@@ -635,6 +635,46 @@
     },
     {
       "aliases": [],
+      "doc": "The targeted counterpart to a store purge: somebody who typed a secret into a shell wants that line gone, not their whole history. Every run of a matching command goes, not only the most recent.",
+      "effects": [
+        "destructive"
+      ],
+      "group": "history",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "history.forget",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/history/forget",
+      "since": "0.1.0",
+      "title": "Forget commands",
+      "verb": "forget"
+    },
+    {
+      "aliases": [],
+      "doc": "The instance-scoped query and the only implementation; `scope` narrows it. History exists where blocks exist, so a shell with no integration contributes nothing rather than guesses.",
+      "effects": [],
+      "group": "history",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "history.query",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/history/query",
+      "since": "0.1.0",
+      "title": "Search command history",
+      "verb": "query"
+    },
+    {
+      "aliases": [],
       "doc": "Every person this instance knows and the devices each holds. A credential answers whether a token may do something; this answers whose phone it is, which is what makes revoking somebody's access — rather than one token — expressible.",
       "effects": [],
       "group": "identity",

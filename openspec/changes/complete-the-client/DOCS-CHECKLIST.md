@@ -273,7 +273,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 9. Comparing parallel agent results (G18) — test_agents: nothing ranked or recommended, both directions of file disagreement flagged, different bases called incomparable, unreported usage is not zero
 - [x] 10. Detecting a stuck or looping agent (G19) — test_agents: every reason reported not just the first, baselines per binding so a slow agent is not a permanent alarm, a first turn is not evidence
 - [x] 11. Usage and cost (G15) — test_agents: usage report
-- [ ] 12. Capabilities
+- [x] 12. Capabilities — §12.2's `history.query` and `history.forget` now exist (`crates/omt/src/surfaces.rs`) over `omt_recall::History`, which gained scope/mode/dedup/attribution and a `forget`. `history.query` is the instance-scoped implementation and `scope` narrows it, as the doc requires. `repeats_collapse_to_the_most_recent_by_default`, `a_limit_is_honoured_after_deduplication_rather_than_before`, `a_command_that_has_not_finished_is_not_a_success`, `forgetting_removes_every_run_of_a_matching_command`, plus 5 integration tests in `TestHistory` including a record→query→forget round trip. §12.1's `search.query`/`suggest`/`stats`/`reindex` are not built; `search.explain` and `recall.suggest` are.
 - [x] 13. Performance budgets and backpressure — omt-recall backpressure: offering never blocks, bulk shed before commands, equal value does not churn, every drop counted and reported
 - ~~14. Open questions~~ — prose
 

@@ -3639,6 +3639,10 @@ impl CapabilityHandler<RecallRecord> for RecallRecordHandler {
             at: omt_types::Timestamp::now(),
             exit_code: input.exit_code,
             duration_ms: input.duration_ms,
+            // Unknown unless a caller says otherwise: "I do not know" and "a
+            // person did this" are different claims, and the second is the one
+            // somebody would rely on when auditing what an agent did.
+            attribution: omt_recall::Attribution::Unknown,
         });
         Ok(RecallRecordOut {
             held: history.len() as u32,
@@ -5976,6 +5980,8 @@ pub fn registry_full(
     r.register::<crate::surfaces::SessionCapture, _>(crate::surfaces::SessionCaptureHandler(
         state.clone(),
     ))?;
+    r.register::<crate::surfaces::HistoryQuery, _>(crate::surfaces::HistoryHandler(state.clone()))?;
+    r.register::<crate::surfaces::HistoryForget, _>(crate::surfaces::HistoryHandler(state.clone()))?;
     let tasks: crate::ops::Tasks = std::sync::Arc::new(std::sync::Mutex::new(
         std::collections::BTreeMap::new(),
     ));

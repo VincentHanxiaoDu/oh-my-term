@@ -31,6 +31,8 @@
   "git.status",
   "help.render",
   "help.topics",
+  "history.forget",
+  "history.query",
   "identity.list",
   "identity.reauth_check",
   "identity.revoke",

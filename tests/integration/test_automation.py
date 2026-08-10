@@ -231,3 +231,57 @@ class TestVersioning:
         names = [c["name"] for c in client.call("instance.catalog")["entries"]]
         assert "interaction.resolve" in names
         assert "interaction.respond" not in names
+
+
+class TestHistory:
+    """20-recall-and-usage §12.2, over 05 §9's model."""
+
+    def test_history_is_queryable_and_says_how_much_it_holds(
+        self, client: Client
+    ) -> None:
+        # An empty result and an empty history are different answers, and a
+        # client showing "no matches" for the second is telling the user
+        # something false about their own past.
+        out = client.call("history.query")
+        assert "entries" in out
+        assert "held" in out
+
+    def test_a_scope_that_names_nothing_is_refused(self, client: Client) -> None:
+        _, refusal = client.try_call("history.query", scope="session")
+        assert refusal is not None
+        assert refusal.code == "invalid_input"
+
+    def test_a_match_mode_outside_the_set_is_refused(self, client: Client) -> None:
+        _, refusal = client.try_call("history.query", mode="regexp")
+        assert refusal is not None
+        assert refusal.code == "invalid_input"
+
+    def test_forgetting_everything_by_accident_is_refused(
+        self, client: Client
+    ) -> None:
+        # Somebody who wanted their whole history gone would say so with a
+        # purge, not by leaving a field out.
+        _, refusal = client.try_call("history.forget", filter="")
+        assert refusal is not None
+        assert refusal.code == "invalid_input"
+
+    def test_recorded_commands_come_back_and_can_be_forgotten(
+        self, client: Client, session: str
+    ) -> None:
+        workspace = client.call("workspace.list")["workspaces"][0]["id"]
+        client.call(
+            "recall.record",
+            session=session,
+            workspace=workspace,
+            command="omt-integration-marker --once",
+            exit_code=0,
+        )
+        found = client.call("history.query", filter="omt-integration-marker")
+        assert [e["command"] for e in found["entries"]] == [
+            "omt-integration-marker --once"
+        ]
+
+        removed = client.call("history.forget", filter="omt-integration-marker")
+        assert removed["removed"] == 1
+        after = client.call("history.query", filter="omt-integration-marker")
+        assert after["entries"] == []

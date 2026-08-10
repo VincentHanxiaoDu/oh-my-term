@@ -37,6 +37,87 @@ pub struct HistoryEntry {
     pub exit_code: Option<i32>,
     /// How long it took.
     pub duration_ms: Option<u64>,
+    /// Who ran it.
+    ///
+    /// Defaults to `Unknown` rather than to a person: "I do not know" and "a
+    /// person did this" are different claims, and the second is the one
+    /// somebody would rely on when auditing what an agent did.
+    #[serde(default)]
+    pub attribution: Attribution,
+}
+
+/// Who ran a command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Attribution {
+    /// omt could not tell.
+    #[default]
+    Unknown,
+    /// A person typed it.
+    Human,
+    /// An agent ran it.
+    Agent,
+}
+
+/// How a history filter matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MatchMode {
+    /// From the start.
+    Prefix,
+    /// Anywhere.
+    #[default]
+    Substring,
+    /// In order, with gaps.
+    Fuzzy,
+}
+
+/// Which part of history to look at.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum HistoryScope {
+    /// Everything.
+    #[default]
+    Global,
+    /// One workspace.
+    Workspace(WorkspaceId),
+    /// One session.
+    Session(SessionId),
+    /// One directory.
+    Cwd(String),
+}
+
+/// Whether to collapse repeats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Dedup {
+    /// Show every run.
+    None,
+    /// One row per distinct command, the most recent kept.
+    ///
+    /// The default, because it is what a person means by "my history": twenty
+    /// identical `cargo test` rows are twenty rows of nothing.
+    #[default]
+    KeepNewest,
+}
+
+/// What to look for in history.
+///
+/// 20 §12.2. `history.query` is the instance-scoped query and the only
+/// implementation; `session.history` and `workspace.history` are pre-scoped
+/// conveniences over it, so that a session-scoped client does not have to
+/// build a global query and narrow it. If they ever diverge, this one is right.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HistoryQuery {
+    /// Where to look.
+    pub scope: HistoryScope,
+    /// What to look for.
+    pub filter: Option<String>,
+    /// How to match it.
+    pub mode: MatchMode,
+    /// Only commands that exited zero.
+    pub only_successful: bool,
+    /// Whether to collapse repeats.
+    pub dedup: Dedup,
+    /// Most rows to return. Zero means the default.
+    pub limit: usize,
 }
 
 impl HistoryEntry {
@@ -95,6 +176,14 @@ pub struct History {
     limit: usize,
 }
 
+/// Whether a candidate matches, in order with gaps.
+fn fuzzy(haystack: &str, needle: &str) -> bool {
+    let mut chars = haystack.chars();
+    needle
+        .chars()
+        .all(|wanted| chars.any(|c| c.eq_ignore_ascii_case(&wanted)))
+}
+
 impl History {
     /// A history holding at most `limit` entries.
     #[must_use]
@@ -134,6 +223,91 @@ impl History {
     #[must_use]
     pub fn entries(&self) -> &[HistoryEntry] {
         &self.entries
+    }
+
+    /// Whether a block's command belongs in history at all.
+    ///
+    /// 05 §9: history is populated from block closure, so it exists exactly
+    /// where blocks exist. A block opened from output alone has no reliable
+    /// command text, and the alternative — scraping the line above for
+    /// something that looks like a prompt — puts text nobody typed into a list
+    /// people re-run from. An empty history is an honest degradation; a wrong
+    /// one is a trap.
+    #[must_use]
+    pub fn is_recordable(attributed: bool, command: &str) -> bool {
+        attributed && !command.trim().is_empty()
+    }
+
+    /// Search history.
+    ///
+    /// Newest first, because what somebody wants is almost always something
+    /// they ran recently.
+    #[must_use]
+    pub fn query(&self, query: &HistoryQuery) -> Vec<&HistoryEntry> {
+        let limit = if query.limit == 0 { 200 } else { query.limit };
+        let mut out: Vec<&HistoryEntry> = self
+            .entries
+            .iter()
+            .rev()
+            .filter(|entry| {
+                let in_scope = match &query.scope {
+                    HistoryScope::Global => true,
+                    HistoryScope::Workspace(id) => entry.workspace == *id,
+                    HistoryScope::Session(id) => entry.session == *id,
+                    HistoryScope::Cwd(path) => entry.cwd.as_deref() == Some(path.as_str()),
+                };
+                if !in_scope {
+                    return false;
+                }
+                // A command that has not finished has no exit code. Treating
+                // "not yet" as "failed" would hide a running command from a
+                // filter meant to hide failures.
+                if query.only_successful && entry.exit_code != Some(0) {
+                    return false;
+                }
+                match &query.filter {
+                    None => true,
+                    Some(filter) => {
+                        let command = entry.command.to_lowercase();
+                        let filter = filter.to_lowercase();
+                        match query.mode {
+                            MatchMode::Prefix => command.starts_with(&filter),
+                            MatchMode::Substring => command.contains(&filter),
+                            MatchMode::Fuzzy => fuzzy(&command, &filter),
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        if query.dedup == Dedup::KeepNewest {
+            let mut seen = std::collections::BTreeSet::new();
+            out.retain(|entry| seen.insert(entry.command.clone()));
+        }
+        // Truncated after deduplication rather than before: a limit of three
+        // over twenty identical commands would otherwise return one row and
+        // look like an empty list.
+        out.truncate(limit);
+        out
+    }
+
+    /// Remove every entry matching a query, and say how many went.
+    ///
+    /// The targeted counterpart to a store purge: somebody who typed a secret
+    /// into a shell wants that line gone, not their whole history.
+    pub fn forget(&mut self, query: &HistoryQuery) -> usize {
+        let doomed: std::collections::BTreeSet<String> = self
+            .query(&HistoryQuery {
+                dedup: Dedup::None,
+                limit: usize::MAX,
+                ..query.clone()
+            })
+            .into_iter()
+            .map(|e| e.command.clone())
+            .collect();
+        let before = self.entries.len();
+        self.entries.retain(|e| !doomed.contains(&e.command));
+        before - self.entries.len()
     }
 
     /// Suggest commands for a prefix, best first.
@@ -392,6 +566,7 @@ mod tests {
 
     fn entry(command: &str, workspace: WorkspaceId, secs: i64) -> HistoryEntry {
         HistoryEntry {
+            attribution: Attribution::Unknown,
             command: command.to_owned(),
             workspace,
             session: SessionId::new(),
@@ -539,5 +714,166 @@ mod tests {
         let h = History::new(10);
         assert!(h.is_empty());
         assert!(h.suggest("", workspace("/x"), 5).is_empty());
+    }
+
+    fn queryable(
+        command: &str,
+        session: SessionId,
+        workspace: WorkspaceId,
+        exit: Option<i32>,
+        at: i64,
+    ) -> HistoryEntry {
+        HistoryEntry {
+            command: command.to_owned(),
+            workspace,
+            session,
+            cwd: None,
+            at: Timestamp::from_unix_seconds(at),
+            exit_code: exit,
+            duration_ms: Some(10),
+            attribution: Attribution::Unknown,
+        }
+    }
+
+    fn queried() -> (History, SessionId, WorkspaceId) {
+        let session = SessionId::new();
+        let workspace = WorkspaceId::from_canonical_path("/tmp/p");
+        let mut h = History::new(100);
+        for (i, (command, exit)) in [
+            ("cargo build", Some(0)),
+            ("cargo test", Some(0)),
+            ("ls", Some(1)),
+            ("cargo test", Some(0)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            h.record(queryable(command, session, workspace, exit, i as i64));
+        }
+        (h, session, workspace)
+    }
+
+    #[test]
+    fn a_heuristic_block_is_not_recordable() {
+        // It has no reliable command text, and scraping the line above for
+        // something prompt-shaped puts text nobody typed into a list people
+        // re-run from.
+        assert!(!History::is_recordable(false, "looks like a command"));
+        assert!(!History::is_recordable(true, "   "));
+        assert!(History::is_recordable(true, "cargo test"));
+    }
+
+    #[test]
+    fn history_comes_back_newest_first() {
+        let (h, _, _) = queried();
+        let out = h.query(&HistoryQuery {
+            dedup: Dedup::None,
+            ..HistoryQuery::default()
+        });
+        assert_eq!(out[0].command, "cargo test");
+        assert_eq!(out.last().expect("some").command, "cargo build");
+    }
+
+    #[test]
+    fn repeats_collapse_to_the_most_recent_by_default() {
+        // Twenty identical `cargo test` rows are twenty rows of nothing.
+        let (h, _, _) = queried();
+        let commands: Vec<&str> = h
+            .query(&HistoryQuery::default())
+            .iter()
+            .map(|e| e.command.as_str())
+            .collect();
+        assert_eq!(commands, vec!["cargo test", "ls", "cargo build"]);
+    }
+
+    #[test]
+    fn a_prefix_filter_only_matches_the_start() {
+        let (h, _, _) = queried();
+        assert!(
+            h.query(&HistoryQuery {
+                filter: Some("test".to_owned()),
+                mode: MatchMode::Prefix,
+                ..HistoryQuery::default()
+            })
+            .is_empty(),
+            "`cargo test` does not start with `test`"
+        );
+    }
+
+    #[test]
+    fn a_fuzzy_filter_matches_in_order_with_gaps() {
+        let (h, _, _) = queried();
+        let out = h.query(&HistoryQuery {
+            filter: Some("crgt".to_owned()),
+            mode: MatchMode::Fuzzy,
+            ..HistoryQuery::default()
+        });
+        assert!(out.iter().any(|e| e.command == "cargo test"), "{out:?}");
+    }
+
+    #[test]
+    fn a_command_that_has_not_finished_is_not_a_success() {
+        // Treating "not yet" as "failed" is wrong in the other direction; the
+        // honest answer is that it is neither.
+        let mut h = History::new(10);
+        h.record(queryable("sleep 100", SessionId::new(), WorkspaceId::from_canonical_path("/tmp/p"), None, 0));
+        assert!(
+            h.query(&HistoryQuery {
+                only_successful: true,
+                ..HistoryQuery::default()
+            })
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_session_scope_leaves_out_everything_else() {
+        let (mut h, session, workspace) = queried();
+        h.record(queryable("elsewhere", SessionId::new(), workspace, Some(0), 9));
+        let out = h.query(&HistoryQuery {
+            scope: HistoryScope::Session(session),
+            dedup: Dedup::None,
+            ..HistoryQuery::default()
+        });
+        assert!(out.iter().all(|e| e.session == session));
+        assert_eq!(out.len(), 4);
+    }
+
+    #[test]
+    fn a_limit_is_honoured_after_deduplication_rather_than_before() {
+        // Otherwise a limit of three over twenty identical commands returns one
+        // row and the list looks empty.
+        let workspace = WorkspaceId::from_canonical_path("/tmp/p");
+        let session = SessionId::new();
+        let mut h = History::new(100);
+        for i in 0..20 {
+            h.record(queryable("cargo test", session, workspace, Some(0), i));
+        }
+        h.record(queryable("ls", session, workspace, Some(0), 21));
+        let out = h.query(&HistoryQuery {
+            limit: 3,
+            ..HistoryQuery::default()
+        });
+        assert_eq!(out.len(), 2, "two distinct commands, not one row of twenty");
+    }
+
+    #[test]
+    fn forgetting_removes_every_run_of_a_matching_command() {
+        // Somebody who typed a secret into a shell wants that line gone, not
+        // their whole history — and gone means every time they ran it.
+        let (mut h, _, _) = queried();
+        let removed = h.forget(&HistoryQuery {
+            filter: Some("cargo test".to_owned()),
+            ..HistoryQuery::default()
+        });
+        assert_eq!(removed, 2, "both runs went");
+        assert!(h.query(&HistoryQuery::default()).iter().all(|e| e.command != "cargo test"));
+        assert_eq!(h.len(), 2, "and nothing else did");
+    }
+
+    #[test]
+    fn attribution_defaults_to_unknown_rather_than_to_a_person() {
+        let (h, _, _) = queried();
+        assert_eq!(h.entries()[0].attribution, Attribution::Unknown);
     }
 }

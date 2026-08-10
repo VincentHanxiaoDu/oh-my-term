@@ -41,6 +41,8 @@ vanishing.
 | `git.status` | query | viewer | Branch, divergence and working-tree state. Reads only — nothing here commits, checks out or fetches. |
 | `help.render` | query | viewer | A model rather than formatted text, so a phone and a terminal can render the same help differently without one of them parsing the other's layout. |
 | `help.topics` | query | viewer | Derived from the catalog, not written beside it. Hand-written help is wrong the first time something is renamed and stays wrong, because nothing fails when it drifts. |
+| `history.forget` | command | operator | The targeted counterpart to a store purge: somebody who typed a secret into a shell wants that line gone, not their whole history. Every run of a matching command goes, not only the most recent. |
+| `history.query` | query | viewer | The instance-scoped query and the only implementation; `scope` narrows it. History exists where blocks exist, so a shell with no integration contributes nothing rather than guesses. |
 | `identity.list` | query | admin | Every person this instance knows and the devices each holds. A credential answers whether a token may do something; this answers whose phone it is, which is what makes revoking somebody's access — rather than one token — expressible. |
 | `identity.reauth_check` | query | viewer | A proof-of-presence timer, not an authorisation narrowing. Failing it means the device must show a human is holding it, and then it may do everything again. |
 | `identity.revoke` | command | admin | Revoke every device one person holds, in one action. Doing it device by device means somebody who has left keeps whichever one was missed, and there is no moment at which their access is known to be gone. |
@@ -148,4 +150,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-138 capabilities.
+140 capabilities.
