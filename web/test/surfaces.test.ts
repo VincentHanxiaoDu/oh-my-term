@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEAD_ZONE,
+  MAX_FONT,
+  MIN_FONT,
+  STEP,
   cardTitle,
+  directionOf,
+  fontForPinch,
+  isDoubleTap,
+  repeatsFor,
+  spanOf,
   dictationAvailable,
   chipLabel,
   chipTone,
@@ -390,5 +399,69 @@ describe('the stylesheet itself', () => {
       expect(size?.[1], `${rule} has no explicit font size`).toBeTruthy()
       expect(Number(size?.[1]), `${rule} is under 16px`).toBeGreaterThanOrEqual(16)
     }
+  })
+})
+
+describe('what a finger means', () => {
+  it('ignores a movement too small to have been aimed', () => {
+    // A thumb resting on glass moves. Without a dead zone every touch would
+    // send an arrow key.
+    expect(directionOf(4, 3)).toBeNull()
+  })
+
+  it('picks the dominant axis rather than firing both', () => {
+    // A diagonal drag that sent left *and* up moves the cursor somewhere
+    // nobody aimed at.
+    expect(directionOf(40, 15)).toBe('right')
+    expect(directionOf(-40, 15)).toBe('left')
+    expect(directionOf(10, 40)).toBe('down')
+    expect(directionOf(10, -40)).toBe('up')
+  })
+
+  it('is one-to-one for a small correction', () => {
+    // The first few characters are precise, because that is what a correction
+    // is: moving back two places, not eleven.
+    expect(repeatsFor(DEAD_ZONE + STEP)).toBe(1)
+    expect(repeatsFor(DEAD_ZONE + STEP * 3)).toBe(3)
+  })
+
+  it('accelerates, because crossing a long line should not be a whole swipe', () => {
+    const near = repeatsFor(DEAD_ZONE + STEP * 5)
+    const far = repeatsFor(DEAD_ZONE + STEP * 10)
+    expect(far).toBeGreaterThan(near * 1.5)
+  })
+
+  it('is capped, so a flick does not send two hundred keys', () => {
+    expect(repeatsFor(100_000)).toBeLessThanOrEqual(60)
+  })
+
+  it('counts two quick taps in one place as a double tap', () => {
+    expect(isDoubleTap({ at: 0, x: 10, y: 10 }, { at: 200, x: 14, y: 12 })).toBe(true)
+  })
+
+  it('does not count two taps far apart in time or space', () => {
+    expect(isDoubleTap({ at: 0, x: 10, y: 10 }, { at: 900, x: 10, y: 10 })).toBe(false)
+    expect(isDoubleTap({ at: 0, x: 10, y: 10 }, { at: 100, x: 200, y: 10 })).toBe(false)
+  })
+
+  it('resizes the grid on a pinch rather than magnifying it', () => {
+    // A zoomed terminal is a blurry one you then have to pan around, which is
+    // the thing the block model exists to avoid.
+    expect(fontForPinch(14, 100, 200)).toBeGreaterThan(14)
+    expect(fontForPinch(14, 200, 100)).toBeLessThan(14)
+  })
+
+  it('keeps the font within a range a terminal is readable at', () => {
+    expect(fontForPinch(14, 100, 10_000)).toBeLessThanOrEqual(MAX_FONT)
+    expect(fontForPinch(14, 10_000, 100)).toBeGreaterThanOrEqual(MIN_FONT)
+  })
+
+  it('does not divide by a pinch that never started', () => {
+    expect(fontForPinch(14, 0, 200)).toBe(14)
+  })
+
+  it('measures two fingers and ignores one', () => {
+    expect(spanOf([{ clientX: 0, clientY: 0 }, { clientX: 3, clientY: 4 }])).toBe(5)
+    expect(spanOf([{ clientX: 0, clientY: 0 }])).toBe(0)
   })
 })

@@ -39,6 +39,11 @@ export const STYLES = `
      a terminal client can be a keystroke somebody did not mean. */
   --touch-min: 44px;
 
+  /* The terminal's own font size, which a pinch changes. A variable rather
+     than a stylesheet edit, so one property drives the grid, the measurement
+     and the resize that follows. */
+  --terminal-font: 14px;
+
   /* Colour by role, never by name. A surface is a surface whether the theme is
      light or dark, and a component that asks for "grey" gets the wrong one in
      half the themes.
@@ -430,7 +435,9 @@ html, body {
    Restyling it would be omt deciding what somebody's shell looks like. */
 .terminal {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: var(--text-sm);
+  /* Pinch-driven, so one property decides the glyph size, how many columns fit,
+     and the resize the instance is told about. */
+  font-size: var(--terminal-font);
   line-height: 1.25;
   white-space: pre;
   overflow-x: auto;
@@ -951,6 +958,13 @@ html, body {
 }
 .composer-icon:disabled { opacity: 0.4; cursor: not-allowed; }
 
+
+/* The two ways to add an instance, both visible. */
+.add-instance { margin-bottom: var(--space-4); }
+.tap.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* Devices this instance has let in. */
 .devices { margin-top: var(--space-5); }

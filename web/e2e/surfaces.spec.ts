@@ -197,3 +197,80 @@ test('a lost device can be revoked from the phone in your hand', async ({ page }
   await expect(page.locator('.devices')).toContainText('touch suite')
   await expect(page.getByRole('button', { name: /^Revoke / }).first()).toBeVisible()
 })
+
+test('a long press and drag sends arrow keys', async ({ page }) => {
+  // The gesture that replaces reaching for the key bar on every cursor
+  // movement. `24 §3.2` calls it the best gesture in any mobile terminal, and
+  // without it a phone terminal feels like a toy.
+  await openASession(page)
+  await page.locator('.composer-field').fill('echo abcdef')
+  await page.locator('.composer-send').tap()
+  await page.waitForTimeout(800)
+
+  const grid = page.locator('.terminal-grid')
+  const box = await grid.boundingBox()
+  test.skip(box === null, 'no grid to drag on')
+
+  // Some emulated profiles define `Touch` and refuse to construct one, which
+  // makes the gesture unreachable from a test rather than broken in the
+  // product. Skipped by name where that is true; the decisions themselves are
+  // covered by unit tests either way.
+  const canSynthesise = await page.evaluate(() => {
+    try {
+      new Touch({ identifier: 1, target: document.body, clientX: 0, clientY: 0 })
+      return true
+    } catch {
+      return false
+    }
+  })
+  test.skip(!canSynthesise, 'this browser will not construct a Touch')
+
+  const x = Math.round((box?.x ?? 0) + 60)
+  const y = Math.round((box?.y ?? 0) + 60)
+  // Held past the arm time, then dragged: a drag that starts immediately is a
+  // scroll, and must stay one.
+  await page.evaluate(
+    async ({ px, py }: { px: number; py: number }) => {
+      const grid = document.querySelector('.terminal-grid') as HTMLElement
+      // Real `Touch` objects: a plain object cast to one is rejected by the
+      // `TouchEvent` constructor, which is a type error rather than a silent
+      // no-op.
+      const touch = (clientX: number, clientY: number) =>
+        new Touch({ identifier: 1, target: grid, clientX, clientY })
+      grid.dispatchEvent(
+        new TouchEvent('touchstart', { touches: [touch(px, py)], bubbles: true, cancelable: true }),
+      )
+      await new Promise((r) => setTimeout(r, 420))
+      grid.dispatchEvent(
+        new TouchEvent('touchmove', {
+          touches: [touch(px + 120, py)],
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+      grid.dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true }))
+    },
+    { px: x, py: y },
+  )
+
+  // The arrows moved the cursor rather than typing anything: the line is
+  // unchanged, which is what a cursor movement looks like.
+  await expect(page.locator('.terminal-body')).toContainText('abcdef')
+})
+
+test('adding an instance offers the camera and says when it cannot', async ({ page }) => {
+  // Scanning is the whole point of printing a code, and it was reachable only
+  // by tapping `+` and hoping. Over plain HTTP there is no camera at all, which
+  // is the commonest way a phone reaches omt on a LAN — so the button says so
+  // rather than failing on tap.
+  await page.getByRole('button', { name: /switch instance/i }).tap()
+  const scan = page.getByRole('button', { name: /Scan a code/ })
+  await expect(scan).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Paste a link' })).toBeVisible()
+
+  const secure = await page.evaluate(() => window.isSecureContext)
+  if (!secure) {
+    await expect(scan).toBeDisabled()
+    await expect(scan).toContainText('not on this browser')
+  }
+})

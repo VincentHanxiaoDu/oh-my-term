@@ -17,10 +17,11 @@ import { keyToBytes } from './touch.js';
 import { Navigator, hasBack, titleOf } from './nav.js';
 import { appBar, el, renderState, row, stateOf } from './view.js';
 import { choose, current, forget, list, readInvite, remember } from './instances.js';
-import { scanCode } from './scan.js';
+import { canScan, scanCode } from './scan.js';
 import { markElement, markFor } from './mark.js';
 import { cardTitle, holdToConfirm, planElement, promptElement } from './cards.js';
 import { dictate, dictationAvailable } from './dictate.js';
+import { ARROWS, DOUBLE_TAP_MS, DRAG_ARM_MS, directionOf, fontForPinch, isDoubleTap, repeatsFor, spanOf, } from './gestures.js';
 import { unify, unifiedSubtitle } from './federation.js';
 import { pairCalls, renderEntry, surfacesFor } from './surfaces.js';
 /** How often the terminal screen asks for a new picture. */
@@ -237,6 +238,10 @@ export class App {
     #shellIntegration = {};
     /** What is in the search field, kept so returning to it does not clear it. */
     #query = '';
+    /** The terminal's font size, which a pinch changes. */
+    #fontSize = 14;
+    /** How to tell the instance the grid changed size. */
+    #onResize = null;
     /** A half-typed command per session, so a repaint does not lose it. */
     #draft = {};
     /** Whether the key bar is folded away. It eats viewport, and on a
@@ -302,6 +307,10 @@ export class App {
             })),
         ];
         return unify(rosters);
+    }
+    /** Be told when the grid needs re-measuring. */
+    onResize(fit) {
+        this.#onResize = fit;
     }
     /** Where we are. */
     get route() {
@@ -779,6 +788,24 @@ export class App {
             detail: 'Run `omt web` and scan the code it prints.',
         });
         const body = el('div', 'body');
+        // Two ways in, both visible. The camera was reachable only by tapping `+`
+        // and hoping, which is not an affordance — and scanning is the whole point
+        // of printing a code.
+        const ways = el('div', 'add-instance');
+        const scan = el('button', 'tap primary');
+        scan.append(el('span', 'label', canScan() ? 'Scan a code' : 'Scan a code — not on this browser'));
+        scan.disabled = !canScan();
+        if (!canScan()) {
+            // Said rather than silent: over plain HTTP there is no camera at all, and
+            // that is the commonest way a phone reaches omt on a LAN.
+            scan.title = 'The camera needs a secure page — reach omt over HTTPS';
+        }
+        scan.addEventListener('click', () => void this.addInstance());
+        const paste = el('button', 'tap');
+        paste.append(el('span', 'label', 'Paste a link'));
+        paste.addEventListener('click', () => void this.addInstance(async () => null));
+        ways.append(scan, paste);
+        body.append(ways);
         body.append(renderState(state, (rows) => rows.map((instance) => row({
             title: instance.label,
             meta: instance.url,
@@ -1227,6 +1254,7 @@ export class App {
         body.append(notice, grid);
         this.#paintGrid();
         this.#paintNotice();
+        this.#bindGestures(grid, session);
         const foot = el('div', 'terminal-foot');
         foot.append(this.#keybar(), this.#terminalComposer(session));
         this.#shell(bar, body, foot, this.#surfaceSwitch(session, 'terminal'));
@@ -1291,6 +1319,110 @@ export class App {
             bar.append(tab);
         }
         return bar;
+    }
+    /**
+     * The gestures that replace keys a phone does not have.
+     *
+     * `24 §3.2`. Reaching the key bar for every cursor movement is what makes a
+     * mobile terminal feel like a toy, and long-press-and-drag for arrows is the
+     * gesture that fixes it.
+     *
+     * Nothing destructive is here. A movement somebody makes by accident must not
+     * be able to stop an agent.
+     */
+    #bindGestures(grid, session) {
+        let holdTimer = null;
+        let arrowing = false;
+        let from = { x: 0, y: 0 };
+        let sent = 0;
+        let lastTap = null;
+        let pinch = null;
+        const stop = () => {
+            if (holdTimer !== null) {
+                clearTimeout(holdTimer);
+                holdTimer = null;
+            }
+            arrowing = false;
+            sent = 0;
+            grid.classList.remove('arrowing');
+        };
+        grid.addEventListener('touchstart', (event) => {
+            if (event.touches.length === 2) {
+                // A pinch resizes the grid rather than magnifying it: a zoomed
+                // terminal is a blurry one you then pan around.
+                stop();
+                pinch = { span: spanOf(Array.from(event.touches)), font: this.#fontSize };
+                return;
+            }
+            const touch = event.touches[0];
+            if (touch === undefined) {
+                return;
+            }
+            from = { x: touch.clientX, y: touch.clientY };
+            const now = Date.now();
+            if (lastTap && isDoubleTap(lastTap, { at: now, x: from.x, y: from.y })) {
+                // Completion without reaching for the key bar.
+                lastTap = null;
+                event.preventDefault();
+                void this.type('\t');
+                return;
+            }
+            lastTap = { at: now, x: from.x, y: from.y };
+            holdTimer = setTimeout(() => {
+                arrowing = true;
+                sent = 0;
+                // Said with the cursor, because a mode nobody can see is a mode
+                // somebody is surprised by.
+                grid.classList.add('arrowing');
+            }, DRAG_ARM_MS);
+        }, { passive: false });
+        grid.addEventListener('touchmove', (event) => {
+            if (pinch && event.touches.length === 2) {
+                event.preventDefault();
+                const wanted = fontForPinch(pinch.font, pinch.span, spanOf(Array.from(event.touches)));
+                if (wanted !== this.#fontSize) {
+                    this.#fontSize = wanted;
+                    document.documentElement.style.setProperty('--terminal-font', `${wanted}px`);
+                    // The grid follows the font: fewer columns at a larger size, and a
+                    // SIGWINCH so the program redraws to fit.
+                    this.#onResize?.();
+                }
+                return;
+            }
+            const touch = event.touches[0];
+            if (touch === undefined) {
+                return;
+            }
+            if (!arrowing) {
+                // Moving before the hold completed is a scroll, not an arrow.
+                const moved = Math.hypot(touch.clientX - from.x, touch.clientY - from.y);
+                if (moved > 12 && holdTimer !== null) {
+                    clearTimeout(holdTimer);
+                    holdTimer = null;
+                }
+                return;
+            }
+            event.preventDefault();
+            const dx = touch.clientX - from.x;
+            const dy = touch.clientY - from.y;
+            const direction = directionOf(dx, dy);
+            if (direction === null) {
+                return;
+            }
+            const wanted = repeatsFor(direction === 'left' || direction === 'right' ? dx : dy);
+            // Only the difference: a drag that has already sent four keys and grows
+            // to six sends two more, not six more.
+            for (let i = sent; i < wanted; i += 1) {
+                void this.type(`\x1b${ARROWS[direction]}`);
+            }
+            sent = Math.max(sent, wanted);
+        }, { passive: false });
+        for (const ending of ['touchend', 'touchcancel']) {
+            grid.addEventListener(ending, () => {
+                pinch = null;
+                stop();
+            });
+        }
     }
     /** Redraw whichever list screen is mounted. */
     #paintList() {

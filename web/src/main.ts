@@ -207,6 +207,10 @@ async function main(): Promise<void> {
     last = { session, ...next }
     void store.call('session.resize', session, next.cols, next.rows).catch(() => {})
   }
+  // The grid also changes size when the font does, which a pinch can do at any
+  // moment. Handed to the app rather than watched for, because a font change is
+  // something omt did rather than something that happened to it.
+  app.onResize(resize)
   window.addEventListener('resize', resize)
   window.visualViewport?.addEventListener('resize', resize)
   // Opening a session is the moment that matters, and it fires no resize event.
