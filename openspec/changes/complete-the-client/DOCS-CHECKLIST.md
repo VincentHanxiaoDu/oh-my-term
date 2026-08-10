@@ -30,7 +30,7 @@ Unticked means not done. Partly built stays unticked.
 
 ## 03-capability-catalog
 
-- [ ] 1. The idea
+- [x] 1. The idea — all seven derived artifacts now exist. Dispatch, routes, `schemas/catalog.v1.json`, `web/src/generated/catalog.ts`, `docs/reference/capabilities.md` and the parity matrix were already generated; the `omt <group> <verb>` CLI tree was the missing one and is now `crates/omt/src/cli.rs`, derived rather than written out. `crates/omt/tests/cli_tree.rs` runs the real binary against a real daemon: `a_capability_is_reachable_as_a_subcommand_without_being_written_out`, `stdout_is_data_and_stderr_is_everything_else`, `an_unreachable_instance_exits_five`, `a_command_is_dispatched_as_a_command_and_a_query_as_a_query` (9 tests, plus 16 unit tests). `codegen-check` is the drift gate.
 - [ ] 2. Declaring a capability
 - [ ] 3. The machinery
 - [x] 4. Events are the read-side twin — test_events_and_parity: effects declared

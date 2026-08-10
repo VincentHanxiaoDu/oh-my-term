@@ -78,6 +78,28 @@ impl Attached {
         }
     }
 
+    /// Whether a capability only reads.
+    ///
+    /// Asked rather than guessed. A command needs an intent id and a query must
+    /// not carry one, and a client-side table of which is which would be wrong
+    /// for every capability added after it was written — including every one a
+    /// plugin contributes, which could not be in a table at all.
+    ///
+    /// # Errors
+    /// Fails if the instance cannot be asked.
+    pub fn is_query(&mut self, capability: &str) -> Result<bool> {
+        let catalog = self.call("instance.catalog", serde_json::json!({}), false)?;
+        Ok(catalog
+            .get("entries")
+            .and_then(|e| e.as_array())
+            .is_some_and(|entries| {
+                entries.iter().any(|entry| {
+                    entry.get("name").and_then(|n| n.as_str()) == Some(capability)
+                        && entry.get("kind").and_then(|k| k.as_str()) == Some("query")
+                })
+            }))
+    }
+
     /// Invoke a capability and hand back what it produced.
     ///
     /// # Errors

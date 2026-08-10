@@ -4,7 +4,7 @@
 //! right place to dump the catalog from: the dump is then the list the process
 //! actually registers, not a list re-derived by reading source.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use omt::capabilities;
 
 fn main() -> Result<()> {
@@ -53,6 +53,20 @@ fn main() -> Result<()> {
         ["serve", "--socket", path] => {
             omt::serve::serve(std::path::Path::new(path), omt::state::State::default())
         }
-        other => bail!("unrecognised arguments: {other:?}"),
+        // Everything else is a capability. The subcommand tree is derived
+        // from the catalog rather than written out here (03 §1, artifact 5),
+        // so a capability is reachable from a shell the moment it is declared.
+        other => {
+            let code = omt::cli::run(
+                &other.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
+            );
+            if code == omt::automation::Exit::Ok {
+                Ok(())
+            } else {
+                // The message is already on stderr; the code is what a script
+                // branches on, and anyhow would replace it with 1.
+                std::process::exit(i32::from(code.code()))
+            }
+        }
     }
 }

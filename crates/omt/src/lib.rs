@@ -13,6 +13,7 @@ pub mod pairing;
 pub mod persist;
 pub mod automation;
 pub mod bootstrap;
+pub mod cli;
 pub mod discovery;
 pub mod media;
 pub mod multiuser;
