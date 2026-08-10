@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**74 of 212 features ticked.** (34 further sections are prose.)
+**75 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -242,7 +242,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 6. The `omt ssh` remote flow
 - [ ] 7. Web and mobile parity
 - [x] 8. Security — omt-open: lexical normalisation without touching the filesystem, absolute paths outside every root refused
-- [ ] 9. Capabilities
+- [x] 9. Capabilities — test_workspace_surfaces: open.resolve, open.rules_list, open.rules_test; every listed rule proven to fire (open.remote.* is §6, not covered)
 - [ ] 10. Performance
 - [ ] 11. Testing
 - ~~12. OPEN QUESTIONS~~ — prose

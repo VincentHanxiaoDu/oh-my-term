@@ -434,6 +434,11 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'open.rules_list': (request: RequestId) => call(request, 'open.rules_list', {}),
+
+  'open.rules_test': (request: RequestId, text: string) =>
+    call(request, 'open.rules_test', { text }),
+
   'open.click': (
     request: RequestId,
     modifiers: {

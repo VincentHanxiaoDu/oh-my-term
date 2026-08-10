@@ -171,6 +171,60 @@ const RULES: &[(&str, Rule)] = &[
     ("builtin.node_stack", node_stack),
 ];
 
+/// One rule, as the catalog describes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleInfo {
+    /// Its id.
+    pub id: &'static str,
+    /// Its precedence; higher wins.
+    pub precedence: u16,
+    /// What it recognises, in words.
+    pub about: &'static str,
+}
+
+/// Every rule, in the order they are tried.
+///
+/// Listed so the rule table is inspectable rather than folklore. A recognition
+/// system nobody can enumerate is one where "why did that not become a link"
+/// has no answer short of reading the source.
+#[must_use]
+pub fn catalog() -> Vec<RuleInfo> {
+    vec![
+        RuleInfo {
+            id: "builtin.python_traceback",
+            precedence: 900,
+            about: "Python and Ruby traceback frames. Highest, because the quotes delimit a path that may contain spaces.",
+        },
+        RuleInfo {
+            id: "builtin.rustc_arrow",
+            precedence: 860,
+            about: "rustc, clippy, miri and everything that copied the `-->` diagnostic format.",
+        },
+        RuleInfo {
+            id: "builtin.rust_panic",
+            precedence: 855,
+            about: "`thread '...' panicked at path:line:col`, Rust 1.73 and later.",
+        },
+        RuleInfo {
+            id: "builtin.node_stack",
+            precedence: 880,
+            about: "Node and V8 stack frames, both the named and bare forms; jest, vitest and tsx print through the same formatter.",
+        },
+    ]
+}
+
+/// Which rule matched a line, if any.
+///
+/// Separate from `apply` because a preview needs to say *which* rule fired —
+/// "it matched" is not an answer somebody can use to fix a rule that did not.
+#[must_use]
+pub fn which(line: &str) -> Option<&'static str> {
+    RULES
+        .iter()
+        .find(|(_, rule)| rule(line).is_some())
+        .map(|(id, _)| *id)
+}
+
 /// Apply the rule table to a line.
 ///
 /// Returns at most one match — the first rule to fire owns the line. These are
@@ -208,6 +262,38 @@ mod tests {
         match apply(line).expect("a match").target {
             Target::Path { raw, line, column } => (raw, line, column),
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn every_rule_that_runs_is_in_the_catalog() {
+        // A recognition system nobody can enumerate is one where "why did that
+        // not become a link" has no answer short of reading the source.
+        let listed: std::collections::BTreeSet<&str> =
+            catalog().into_iter().map(|r| r.id).collect();
+        for (id, _) in RULES {
+            assert!(listed.contains(id), "`{id}` runs but is not listed");
+        }
+        assert_eq!(listed.len(), RULES.len());
+    }
+
+    #[test]
+    fn a_preview_can_say_which_rule_fired() {
+        // "It matched" is not an answer somebody can use to fix a rule that
+        // did not.
+        assert_eq!(which("  --> src/x.rs:9:5"), Some("builtin.rustc_arrow"));
+        assert_eq!(
+            which(r#"File "/a.py", line 3"#),
+            Some("builtin.python_traceback")
+        );
+        assert_eq!(which("ordinary prose"), None);
+    }
+
+    #[test]
+    fn every_catalog_entry_explains_itself() {
+        for rule in catalog() {
+            assert!(!rule.about.is_empty(), "{}", rule.id);
+            assert!(rule.precedence > 0, "{}", rule.id);
         }
     }
 

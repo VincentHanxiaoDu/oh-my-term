@@ -398,3 +398,47 @@ class TestWhoOwnsAClick:
         for reporting in (True, False):
             out = client.call("open.click", mouse_reporting=reporting, super_key=True)
             assert out["owner"] == "activate"
+
+
+class TestTheRulesAreInspectable:
+    """18-semantic-open §9. `open.rules_list` and `open.rules_test`."""
+
+    def test_every_rule_is_listed_with_what_it_recognises(
+        self, client: Client
+    ) -> None:
+        # A recognition system nobody can enumerate is one where "why did that
+        # not become a link" has no answer short of reading the source.
+        rules = client.call("open.rules_list")["rules"]
+        assert len(rules) >= 4
+        assert all(r["about"] and r["precedence"] > 0 for r in rules)
+        assert any("python" in r["id"] for r in rules)
+
+    def test_a_preview_names_the_rule_that_fired(self, client: Client) -> None:
+        # "It matched" is not an answer somebody can use to fix a rule that
+        # did not.
+        out = client.call("open.rules_test", text="  --> src/x.rs:9:5")
+        assert out["rule"] == "builtin.rustc_arrow"
+        assert out["matches"][0]["target"] == "src/x.rs"
+
+    def test_a_line_that_matches_nothing_says_so_without_a_rule(
+        self, client: Client
+    ) -> None:
+        out = client.call("open.rules_test", text="ordinary prose here")
+        assert out["rule"] is None
+        assert out["matches"] == []
+
+    def test_every_listed_rule_id_can_actually_fire(self, client: Client) -> None:
+        # A rule listed but unreachable is worse than an unlisted one: it
+        # tells somebody their line should have matched.
+        listed = {r["id"] for r in client.call("open.rules_list")["rules"]}
+        fired = set()
+        for line in [
+            'File "/a.py", line 3',
+            "  --> src/x.rs:9:5",
+            "thread 'main' panicked at src/lib.rs:1:1:",
+            "    at run (/app/x.js:1:1)",
+        ]:
+            rule = client.call("open.rules_test", text=line)["rule"]
+            if rule:
+                fired.add(rule)
+        assert fired == listed, listed - fired

@@ -51,6 +51,8 @@
   "open.click",
   "open.recognize",
   "open.resolve",
+  "open.rules_list",
+  "open.rules_test",
   "pane.close",
   "pane.focus",
   "pane.list",

@@ -762,6 +762,157 @@ impl CapabilityHandler<OpenClick> for MediaHandler {
     }
 }
 
+/// Input to `open.rules_list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RulesListIn {}
+
+/// One recognition rule.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RuleInfo {
+    /// Its id.
+    pub id: String,
+    /// Higher wins.
+    pub precedence: u16,
+    /// What it recognises, in words.
+    pub about: String,
+}
+
+/// What `open.rules_list` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RulesListOut {
+    /// Every rule, in the order they are tried.
+    pub rules: Vec<RuleInfo>,
+}
+
+omt_catalog::capability! {
+    /// Every recognition rule omt runs.
+    pub struct OpenRulesList;
+    input  = RulesListIn,
+    output = RulesListOut,
+    decl = omt_catalog::Decl {
+        name: "open.rules_list",
+        group: "open",
+        verb: "rules_list",
+        title: "List recognition rules",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A recognition system nobody can enumerate is one where `why did that not become a link` has no answer short of reading the source.",
+    },
+}
+
+impl CapabilityHandler<OpenRulesList> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        _input: RulesListIn,
+    ) -> Result<RulesListOut, CapabilityError> {
+        Ok(RulesListOut {
+            rules: omt_open::rules::catalog()
+                .into_iter()
+                .map(|r| RuleInfo {
+                    id: r.id.to_owned(),
+                    precedence: r.precedence,
+                    about: r.about.to_owned(),
+                })
+                .collect(),
+        })
+    }
+}
+
+/// Input to `open.rules_test`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RulesTestIn {
+    /// The line to try.
+    pub text: String,
+}
+
+/// What `open.rules_test` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RulesTestOut {
+    /// Which rule fired, if any.
+    ///
+    /// Named rather than a bare boolean: "it matched" is not an answer
+    /// somebody can use to fix a rule that did not.
+    pub rule: Option<String>,
+    /// What was recognised, if anything.
+    pub matches: Vec<OpenMatchOut>,
+}
+
+/// One match, as the preview shows it.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct OpenMatchOut {
+    /// What kind of thing.
+    pub kind: String,
+    /// The text of it.
+    pub target: String,
+    /// Byte offset of the first character.
+    pub start: usize,
+    /// One past the last.
+    pub end: usize,
+    /// A line number, where the text carried one.
+    pub line_number: Option<u32>,
+}
+
+omt_catalog::capability! {
+    /// Try the recognition rules against a line and say what fired.
+    pub struct OpenRulesTest;
+    input  = RulesTestIn,
+    output = RulesTestOut,
+    decl = omt_catalog::Decl {
+        name: "open.rules_test",
+        group: "open",
+        verb: "rules_test",
+        title: "Test a line against the rules",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Powers the config editor's live preview. Names the rule that fired, because a preview that only says whether something matched cannot help fix one that did not.",
+    },
+}
+
+impl CapabilityHandler<OpenRulesTest> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: RulesTestIn,
+    ) -> Result<RulesTestOut, CapabilityError> {
+        Ok(RulesTestOut {
+            rule: omt_open::rules::which(&input.text).map(str::to_owned),
+            matches: omt_open::recognize(&input.text)
+                .into_iter()
+                .map(|m| {
+                    let (kind, target, line_number) = match &m.target {
+                        omt_open::Target::Path { raw, line, .. } => {
+                            ("path".to_owned(), raw.clone(), *line)
+                        }
+                        omt_open::Target::Url { raw } => ("url".to_owned(), raw.clone(), None),
+                    };
+                    OpenMatchOut {
+                        kind,
+                        target,
+                        start: m.start,
+                        end: m.end,
+                        line_number,
+                    }
+                })
+                .collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

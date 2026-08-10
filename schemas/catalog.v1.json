@@ -1026,6 +1026,42 @@
     },
     {
       "aliases": [],
+      "doc": "A recognition system nobody can enumerate is one where `why did that not become a link` has no answer short of reading the source.",
+      "effects": [],
+      "group": "open",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "open.rules_list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/open/rules_list",
+      "since": "0.1.0",
+      "title": "List recognition rules",
+      "verb": "rules_list"
+    },
+    {
+      "aliases": [],
+      "doc": "Powers the config editor's live preview. Names the rule that fired, because a preview that only says whether something matched cannot help fix one that did not.",
+      "effects": [],
+      "group": "open",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "open.rules_test",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/open/rules_test",
+      "since": "0.1.0",
+      "title": "Test a line against the rules",
+      "verb": "rules_test"
+    },
+    {
+      "aliases": [],
       "doc": "Close a pane. The session it showed keeps running — closing a view of something is not ending it.",
       "effects": [],
       "group": "pane",

@@ -61,6 +61,8 @@ vanishing.
 | `open.click` | query | viewer | When the program in the pane has mouse reporting on, every press is its input. A multiplexer that swallows clicks so its own link handler can run has broken vim, and no link feature is worth that. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
 | `open.resolve` | query | operator | A path resolved against the wrong root opens somebody else's file, so the root that was used is part of the answer and anything escaping every root is refused rather than clamped. |
+| `open.rules_list` | query | viewer | A recognition system nobody can enumerate is one where `why did that not become a link` has no answer short of reading the source. |
+| `open.rules_test` | query | viewer | Powers the config editor's live preview. Names the rule that fired, because a preview that only says whether something matched cannot help fix one that did not. |
 | `pane.close` | command | operator | Close a pane. The session it showed keeps running — closing a view of something is not ending it. |
 | `pane.focus` | command | operator | Move focus to a pane, which is where typing goes. Focusing a pane that is not there is refused rather than silently ignored. |
 | `pane.list` | query | viewer | Panes in a workspace's primary view, which one has focus, and how many fit on a standard terminal. |
@@ -107,4 +109,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-97 capabilities.
+99 capabilities.
