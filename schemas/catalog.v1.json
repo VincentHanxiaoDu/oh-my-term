@@ -776,6 +776,26 @@
     },
     {
       "aliases": [],
+      "doc": "Every directive comes back classified, including the ones omt cannot map. A migration that silently drops a third of somebody's bindings fails without ever reporting an error.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "migrate",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "migrate.tmux_preview",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/migrate/tmux_preview",
+      "since": "0.1.0",
+      "title": "Preview a tmux config",
+      "verb": "tmux_preview"
+    },
+    {
+      "aliases": [],
       "doc": "Permanent. Somebody who turns tips off and is asked again next week has been told their answer did not count.",
       "effects": [
         "writes_fs"

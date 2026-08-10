@@ -437,6 +437,11 @@ export const HANDLERS = {
 
   'term.profile': (request: RequestId) => call(request, 'term.profile', {}),
 
+  // `migrate.tmux_preview`, not `migrate.tmux.preview` as the doc spells it: a
+  // capability name is its group and its verb, two levels and no more.
+  'migrate.tmux_preview': (request: RequestId, config: string) =>
+    call(request, 'migrate.tmux_preview', { config }),
+
   'uninstall.plan': (request: RequestId, keepConfig = false, keepData = false) =>
     call(request, 'uninstall.plan', { keep_config: keepConfig, keep_data: keepData }),
 

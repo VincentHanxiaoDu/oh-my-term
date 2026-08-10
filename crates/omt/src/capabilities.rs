@@ -5945,6 +5945,7 @@ pub fn registry_full(
     let hints = std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Hints::default()));
     r.register::<crate::onboarding::HintState, _>(crate::onboarding::HintsHandler(hints.clone()))?;
     r.register::<crate::onboarding::DismissHints, _>(crate::onboarding::HintsHandler(hints))?;
+    r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(
         roots.clone(),

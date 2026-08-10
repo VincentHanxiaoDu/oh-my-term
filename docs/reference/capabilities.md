@@ -48,6 +48,7 @@ vanishing.
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
 | `media.describe` | query | viewer | What a blob is, from its bytes rather than from a filename somebody supplied. A name is a claim; the bytes are the evidence, and writing an executable as a `.png` is what trusting the claim allows. |
+| `migrate.tmux_preview` | query | operator | Every directive comes back classified, including the ones omt cannot map. A migration that silently drops a third of somebody's bindings fails without ever reporting an error. |
 | `onboarding.dismiss_hints` | command | operator | Permanent. Somebody who turns tips off and is asked again next week has been told their answer did not count. |
 | `onboarding.hint_state` | query | viewer | At most one hint is ever offered. Six tips on a first run teach nobody six things; they teach that omt interrupts. |
 | `open.recognize` | query | viewer | Paths, URLs and file:line references on a line of output, with their offsets — so a client can make them tappable without inventing its own pattern. |
@@ -96,4 +97,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-86 capabilities.
+87 capabilities.

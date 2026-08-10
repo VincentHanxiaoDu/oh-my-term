@@ -237,3 +237,59 @@ class TestUninstall:
     def test_every_step_explains_itself(self, client: Client) -> None:
         for step in client.call("uninstall.plan")["steps"]:
             assert step["reason"], step
+
+
+class TestComingFromTmux:
+    """§5. Sixty seconds, judged with fingers rather than eyes."""
+
+    CONFIG = "\n".join(
+        [
+            "# my tmux.conf",
+            "set -g prefix C-a",
+            "bind | split-window -h",
+            "bind h select-pane -L",
+            "bind x kill-pane",
+            "bind t clock-mode",
+            "bind C-y run-shell 'something custom'",
+        ]
+    )
+
+    def test_a_binding_omt_honours_names_what_it_becomes(self, client: Client) -> None:
+        out = client.call("migrate.tmux_preview", config=self.CONFIG)
+        kill = next(d for d in out["directives"] if "kill-pane" in d["source"])
+        assert kill["mapping"] == "mapped"
+        assert kill["capability"] == "session.close"
+
+    def test_nothing_is_silently_dropped(self, client: Client) -> None:
+        # The failure this whole feature exists to prevent: a third of
+        # somebody's config vanishing without an error.
+        out = client.call("migrate.tmux_preview", config=self.CONFIG)
+        assert out["mapped"] + out["review"] + out["unsupported"] == len(
+            out["directives"]
+        )
+        assert all(d["note"] for d in out["directives"])
+
+    def test_what_omt_cannot_do_says_so_by_name(self, client: Client) -> None:
+        out = client.call("migrate.tmux_preview", config=self.CONFIG)
+        clock = next(d for d in out["directives"] if "clock" in d["source"])
+        assert clock["mapping"] == "unsupported"
+        assert "clock" in clock["note"]
+
+    def test_a_line_omt_cannot_read_asks_rather_than_guessing(
+        self, client: Client
+    ) -> None:
+        out = client.call("migrate.tmux_preview", config=self.CONFIG)
+        custom = next(d for d in out["directives"] if "run-shell" in d["source"])
+        assert custom["mapping"] == "review"
+
+    def test_every_directive_keeps_its_line_number(self, client: Client) -> None:
+        out = client.call("migrate.tmux_preview", config=self.CONFIG)
+        assert all(d["line"] >= 1 for d in out["directives"])
+        assert len({d["line"] for d in out["directives"]}) == len(out["directives"])
+
+    def test_the_preview_writes_nothing(self, client: Client) -> None:
+        # Parsing somebody's config and telling them what would happen is the
+        # whole of the preview.
+        first = client.call("migrate.tmux_preview", config=self.CONFIG)
+        second = client.call("migrate.tmux_preview", config=self.CONFIG)
+        assert first["preview"] == second["preview"]
