@@ -182,6 +182,47 @@ fn clip_end(text: &str, bytes: usize) -> String {
     text[start..].to_owned()
 }
 
+/// The questions §1 says people actually ask, and what answering each needs.
+///
+/// `docs/architecture/20-recall-and-usage.md` §1. Search designs go wrong when
+/// they start from "we have a corpus, let us index it" — the corpus here is
+/// mostly `cargo build` output, and indexing it well would produce a search
+/// that answers nothing anybody asks.
+///
+/// Kept as data so the indexing policy can be checked against it. A question
+/// whose required source is excluded is a question omt cannot answer, and that
+/// is worth finding at build time rather than from somebody who searched and
+/// got nothing.
+pub const QUESTIONS: &[(&str, &[Source])] = &[
+    (
+        "Which session was I doing the auth refactor in?",
+        &[Source::UserMessage, Source::AssistantText],
+    ),
+    ("What was that ffmpeg command?", &[Source::BlockCommand]),
+    (
+        "What did the agent change in payments yesterday?",
+        &[Source::FileChanged],
+    ),
+    ("Where did E0499 come from?", &[Source::BlockOutput]),
+    ("What did it ask me about the migration?", &[Source::Interaction]),
+];
+
+/// Whether a question can be answered under these settings.
+///
+/// A question is answerable when *any* of its sources is indexed as text. Not
+/// all of them: "which session was the auth refactor in" is answerable from the
+/// prompt alone, and requiring every source would report a working feature as
+/// broken.
+#[must_use]
+pub fn answerable(sources: &[Source], settings: &Settings) -> bool {
+    sources.iter().any(|source| {
+        matches!(
+            treatment(*source, settings),
+            Treatment::Full | Treatment::Capped { .. } | Treatment::Windowed { .. }
+        )
+    })
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -190,6 +231,68 @@ fn clip_end(text: &str, bytes: usize) -> String {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn every_question_people_actually_ask_is_answerable_by_default() {
+        // The check that matters: a question whose sources are all excluded is
+        // one omt cannot answer, and finding that out from somebody who
+        // searched and got nothing is the expensive way.
+        for (question, sources) in QUESTIONS {
+            assert!(
+                answerable(sources, &Settings::default()),
+                "nothing indexed can answer: {question}"
+            );
+        }
+    }
+
+    #[test]
+    fn turning_output_indexing_off_costs_a_specific_question() {
+        // And the cost is nameable, which is what makes the setting an
+        // informed choice rather than a dial somebody turns and regrets.
+        let off = Settings {
+            output_window: (0, 0),
+            ..Settings::default()
+        };
+        let lost: Vec<&str> = QUESTIONS
+            .iter()
+            .filter(|(_, sources)| !answerable(sources, &off))
+            .map(|(question, _)| *question)
+            .collect();
+        assert_eq!(lost, ["Where did E0499 come from?"]);
+    }
+
+    #[test]
+    fn the_command_question_needs_nothing_but_the_command() {
+        // "What was that ffmpeg command?" is the one query that must work even
+        // with everything else turned off, because it is the most asked.
+        let minimal = Settings {
+            output_window: (0, 0),
+            index_reasoning: false,
+        };
+        let (_, sources) = QUESTIONS
+            .iter()
+            .find(|(q, _)| q.contains("ffmpeg"))
+            .expect("the command question");
+        assert!(answerable(sources, &minimal));
+    }
+
+    #[test]
+    fn a_question_needing_only_one_of_its_sources_is_answerable() {
+        // Requiring all of them would report a working feature as broken.
+        assert!(answerable(
+            &[Source::Reasoning, Source::BlockCommand],
+            &Settings::default()
+        ));
+    }
+
+    #[test]
+    fn a_question_with_no_indexed_source_is_not_answerable() {
+        // Otherwise the check above passes vacuously.
+        assert!(!answerable(
+            &[Source::Reasoning, Source::ToolResultOutput],
+            &Settings::default()
+        ));
+    }
+
 
     #[test]
     fn the_command_is_indexed_in_full_because_it_is_the_point() {
