@@ -123,6 +123,51 @@ pub fn summary() -> String {
     )
 }
 
+/// What omt does and does not encrypt, and why it says so out loud.
+///
+/// `docs/architecture/21-data-lifecycle.md` §5. omt does not encrypt session
+/// content at rest, and this is the decision reviewers push on, so it is worth
+/// stating where somebody will find it.
+///
+/// The key would have to live next to the data. omt starts at login, restores
+/// sessions without a prompt, and answers a phone at three in the morning —
+/// any key it can use unattended is a key on the same disk, readable by the
+/// same uid. That is obfuscation, and shipping it would let people believe
+/// something false, which is worse than an honest `0600`.
+///
+/// The honesty is the feature here. A tool that says "encrypted at rest" and
+/// means "we XOR'd it with a key sitting beside it" has taken a decision away
+/// from somebody who might otherwise have turned on full-disk encryption.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct AtRest {
+    /// Whether session content is encrypted by omt.
+    pub content_encrypted: bool,
+    /// Whether credentials go to an OS keychain where one exists.
+    pub credentials_in_keychain: bool,
+    /// What omt relies on instead.
+    pub relies_on: &'static str,
+}
+
+/// What omt actually does.
+#[must_use]
+pub const fn at_rest() -> AtRest {
+    AtRest {
+        content_encrypted: false,
+        credentials_in_keychain: true,
+        relies_on: "full-disk encryption and 0600 modes",
+    }
+}
+
+/// What to tell somebody who asks whether omt encrypts their sessions.
+///
+/// Says no first. An answer that opens with what omt *does* do reads as a yes
+/// to somebody skimming, and this is a question people skim.
+#[must_use]
+pub fn at_rest_summary() -> String {
+    "omt does not encrypt session content at rest. It relies on your disk encryption and 0600 file modes, and stores credentials in the OS keychain where there is one. A key omt could use unattended would have to sit on the same disk as the data it protects."
+        .to_owned()
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -131,6 +176,50 @@ pub fn summary() -> String {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn the_answer_about_encryption_is_no_and_says_so_first() {
+        // An answer that opens with what omt does do reads as a yes to
+        // somebody skimming, and this is a question people skim.
+        let said = at_rest_summary();
+        assert!(said.starts_with("omt does not encrypt"), "{said}");
+    }
+
+    #[test]
+    fn the_summary_says_what_is_relied_on_instead() {
+        // "No" on its own is not an answer somebody can act on; "no, rely on
+        // FileVault" is.
+        let said = at_rest_summary();
+        assert!(said.contains("disk encryption"), "{said}");
+        assert!(said.contains("0600"), "{said}");
+    }
+
+    #[test]
+    fn the_reason_is_given_rather_than_the_decision_alone() {
+        // This is the decision reviewers push on, and a decision with no
+        // reasoning attached gets re-litigated every time somebody new reads
+        // it.
+        let said = at_rest_summary();
+        assert!(said.contains("same disk"), "{said}");
+    }
+
+    #[test]
+    fn credentials_are_treated_differently_from_content() {
+        // A credential is small and can go somewhere a user unlocks; a
+        // session's scrollback is neither.
+        let state = at_rest();
+        assert!(!state.content_encrypted);
+        assert!(state.credentials_in_keychain);
+    }
+
+    #[test]
+    fn nothing_claims_encryption_omt_does_not_do() {
+        // A tool that says "encrypted at rest" and means "XOR'd with a key
+        // beside it" has taken a decision away from somebody who might have
+        // turned on full-disk encryption instead.
+        let json = serde_json::to_string(&at_rest()).expect("json");
+        assert!(json.contains("\"content_encrypted\":false"), "{json}");
+    }
+
 
     #[test]
     fn nothing_omt_writes_is_readable_by_anybody_else() {
