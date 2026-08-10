@@ -1633,6 +1633,7 @@ name = "omt-plugin-host"
 version = "0.1.0"
 dependencies = [
  "omt-config",
+ "omt-daemon",
  "omt-types",
  "serde",
  "serde_json",

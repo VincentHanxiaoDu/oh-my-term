@@ -1,0 +1,33 @@
+id = "dev.example.ntfy"
+name = "ntfy notifications"
+version = "1.0.0"
+description = "Sends omt notifications to an ntfy topic."
+license = "Apache-2.0"
+omt_api = ">=1.0, <2.0"
+
+[entrypoint]
+kind = "process"
+command = ["bun", "run", "src/index.ts"]
+restart = "on-crash"
+max_restarts = 5
+
+[build]
+command = ["bun", "install", "--frozen-lockfile"]
+
+[permissions]
+capabilities = ["session.get", "workspace.get"] # to enrich the message
+events = [] # none: it is a sink, not a subscriber
+role = "viewer" # it never mutates anything
+net = { allow = ["ntfy.sh", "$config.server"] }
+fs = { read = ["$PLUGIN_ROOT"], write = [] }
+
+[limits]
+memory = "64MiB"
+timeout = "5s"
+
+[[contributes.notification_sinks]]
+id = "ntfy"
+title = "ntfy"
+
+[config_schema]
+path = "schemas/config.schema.json"
