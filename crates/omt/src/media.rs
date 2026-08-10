@@ -2997,6 +2997,102 @@ impl CapabilityHandler<CheckBindingFile> for BindingFileHandler {
     }
 }
 
+/// Input to `identity.reauth_check`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ReauthIn {
+    /// Which capability is being called.
+    pub capability: String,
+    /// Its effects.
+    #[serde(default)]
+    pub effects: Vec<String>,
+    /// How long since this device verified, in seconds. Absent means never.
+    #[serde(default)]
+    pub verified_secs_ago: Option<u64>,
+    /// Whether step-up is on.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Capability names that always ask.
+    #[serde(default)]
+    pub require: Vec<String>,
+    /// Effects that ask.
+    #[serde(default)]
+    pub require_effects: Vec<String>,
+    /// How long a verification counts for.
+    #[serde(default)]
+    pub freshness_secs: Option<u64>,
+}
+
+/// What `identity.reauth_check` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ReauthOut {
+    /// Whether the call proceeds without a prompt.
+    pub proceeds: bool,
+    /// Why it is asking, when it is.
+    pub because: Option<String>,
+    /// Whether failing narrows what the device may do.
+    ///
+    /// Always false, and reported so a client cannot implement it as if it
+    /// might be true. A failed step-up is "not now", never "not you".
+    pub failing_narrows_authority: bool,
+}
+
+omt_catalog::capability! {
+    /// Whether this call needs a fresh proof that a human is here.
+    pub struct ReauthCheck;
+    input  = ReauthIn,
+    output = ReauthOut,
+    decl = omt_catalog::Decl {
+        name: "identity.reauth_check",
+        group: "identity",
+        verb: "reauth_check",
+        title: "Does this need a fresh check",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "A proof-of-presence timer, not an authorisation narrowing. Failing it means the device must show a human is holding it, and then it may do everything again.",
+    },
+}
+
+impl CapabilityHandler<ReauthCheck> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ReauthIn,
+    ) -> Result<ReauthOut, CapabilityError> {
+        let policy = omt_auth::reauth::Policy {
+            mode: if input.enabled {
+                omt_auth::reauth::Mode::On
+            } else {
+                omt_auth::reauth::Mode::Off
+            },
+            require: input.require.into_iter().collect(),
+            require_effects: input.require_effects,
+            freshness_secs: input.freshness_secs.unwrap_or(300),
+            fallback: omt_auth::reauth::Fallback::Passphrase,
+        };
+        let decision = omt_auth::reauth::decide(
+            &policy,
+            &input.capability,
+            &input.effects,
+            input.verified_secs_ago,
+        );
+        Ok(ReauthOut {
+            proceeds: decision.proceeds(),
+            because: match decision {
+                omt_auth::reauth::Decision::Challenge { because } => Some(because),
+                omt_auth::reauth::Decision::Proceed => None,
+            },
+            failing_narrows_authority: omt_auth::reauth::failing_narrows_authority(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

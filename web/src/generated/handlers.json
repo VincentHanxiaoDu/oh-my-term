@@ -29,6 +29,7 @@
   "help.render",
   "help.topics",
   "identity.list",
+  "identity.reauth_check",
   "identity.revoke",
   "instance.catalog",
   "instance.info",

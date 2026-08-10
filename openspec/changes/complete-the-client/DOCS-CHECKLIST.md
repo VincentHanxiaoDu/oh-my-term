@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**125 of 212 features ticked.** (34 further sections are prose.)
+**126 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -312,7 +312,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 4. The encrypted identity file
 - [x] 5. Pairing flows — test_joining: pairing
 - [x] 6. Revocation and recovery — test_identity: revoke a person
-- [ ] 7. Per-action re-authentication
+- [x] 7. Per-action re-authentication — test_identity: off by default, named capabilities and effect bits both challenge, freshness clamped at both ends, failing never narrows authority
 - [ ] 8. Device identity in the collaboration model
 - [ ] 9. What the browser actually caches
 - [ ] 10. Tailnet identity as an alternative front door

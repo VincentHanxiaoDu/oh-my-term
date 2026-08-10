@@ -434,6 +434,9 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'identity.reauth_check': (request: RequestId, check: Record<string, unknown>) =>
+    call(request, 'identity.reauth_check', check),
+
   'keys.check_file': (
     request: RequestId,
     leader: string,

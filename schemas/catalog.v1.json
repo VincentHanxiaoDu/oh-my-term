@@ -590,6 +590,24 @@
     },
     {
       "aliases": [],
+      "doc": "A proof-of-presence timer, not an authorisation narrowing. Failing it means the device must show a human is holding it, and then it may do everything again.",
+      "effects": [],
+      "group": "identity",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "identity.reauth_check",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/identity/reauth_check",
+      "since": "0.1.0",
+      "title": "Does this need a fresh check",
+      "verb": "reauth_check"
+    },
+    {
+      "aliases": [],
       "doc": "Revoke every device one person holds, in one action. Doing it device by device means somebody who has left keeps whichever one was missed, and there is no moment at which their access is known to be gone.",
       "effects": [
         "destructive"

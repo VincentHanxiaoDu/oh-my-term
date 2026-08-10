@@ -90,3 +90,71 @@ class TestIdentities:
     ) -> None:
         with pytest.raises(CapabilityError):
             client.call("identity.revoke", identity="not-an-id")
+
+
+class TestPerActionReauthentication:
+    """23-identity-and-devices §7. A proof-of-presence timer, not an
+    authorisation narrowing."""
+
+    def test_nothing_is_challenged_when_it_is_off(self, client) -> None:
+        # A prompt on a machine nobody else can reach is a keystroke tax with
+        # nothing on the other side of it.
+        out = client.call("identity.reauth_check", capability="config.set")
+        assert out["proceeds"] is True
+
+    def test_a_named_capability_asks(self, client) -> None:
+        out = client.call(
+            "identity.reauth_check",
+            capability="config.set",
+            enabled=True,
+            require=["config.set"],
+        )
+        assert out["proceeds"] is False
+        assert "config.set" in out["because"]
+
+    def test_an_effect_covers_a_capability_added_later(self, client) -> None:
+        # Covered the day it appears rather than the day somebody remembers to
+        # list it.
+        out = client.call(
+            "identity.reauth_check",
+            capability="something.brand_new",
+            effects=["DESTRUCTIVE"],
+            enabled=True,
+            require_effects=["DESTRUCTIVE"],
+        )
+        assert out["proceeds"] is False
+
+    def test_a_recent_verification_counts_and_a_stale_one_does_not(
+        self, client
+    ) -> None:
+        common = {
+            "capability": "config.set",
+            "enabled": True,
+            "require": ["config.set"],
+            "freshness_secs": 300,
+        }
+        assert client.call("identity.reauth_check", verified_secs_ago=60, **common)[
+            "proceeds"
+        ]
+        assert not client.call(
+            "identity.reauth_check", verified_secs_ago=600, **common
+        )["proceeds"]
+
+    def test_failing_never_narrows_what_the_device_may_do(self, client) -> None:
+        # Treating it as a demotion would make a phone in a pocket permanently
+        # less trusted than the laptop beside it.
+        out = client.call("identity.reauth_check", capability="config.set")
+        assert out["failing_narrows_authority"] is False
+
+    def test_a_challenge_says_why(self, client) -> None:
+        # A prompt saying only "verify" gives no way to tell an expected
+        # challenge from one to be suspicious of.
+        out = client.call(
+            "identity.reauth_check",
+            capability="worktree.remove",
+            effects=["DESTRUCTIVE"],
+            enabled=True,
+            require_effects=["DESTRUCTIVE"],
+        )
+        assert "worktree.remove" in out["because"]
+        assert "DESTRUCTIVE" in out["because"]
