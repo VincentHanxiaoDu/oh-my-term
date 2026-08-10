@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**46 of 212 features ticked.** (33 further sections are prose.)
+**50 of 212 features ticked.** (33 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -42,12 +42,12 @@ Unticked means not done. Partly built stays unticked.
 ## 04-terminal-core
 
 - [ ] 1. Parser architecture
-- [ ] 2. Grid and storage
+- [x] 2. Grid and storage — test_structured_surfaces: styled lines, paged from an absolute row
 - [ ] 3. Reflow on resize
 - [ ] 4. Damage tracking and the render contract
 - [ ] 5. Escape-sequence support matrix
-- [ ] 6. The block model
-- [ ] 7. Shell integration
+- [x] 6. The block model — test_structured_surfaces: block bodies, running blocks, paging
+- [x] 7. Shell integration — test_structured_surfaces: whether the shell marks commands at all
 - [ ] 8. Search, selection, hyperlinks, semantic click targets
 - [ ] 9. Performance
 - [ ] 10. Testing
@@ -195,7 +195,7 @@ Unticked means not done. Partly built stays unticked.
 - [ ] 6. Capabilities
 - [ ] 7. Surface parity
 - [ ] 8. Integration with the rest of omt
-- [ ] 9. Security
+- [x] 9. Security — test_workspace_surfaces: a path cannot escape its workspace
 - [ ] 10. Configuration
 - [ ] 11. Testing
 - [ ] 12. What was verified in opencode, and what was not
