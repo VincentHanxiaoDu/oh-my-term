@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**143 of 212 features ticked.** (34 further sections are prose.)
+**144 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -79,7 +79,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 6. The heuristic floor — omt-agent-adapters detect: a marker beats a name belonging to another agent, an unrecognised process is Unknown rather than a guess, an unreadable environment is not evidence of absence
 - [x] 7. Adapters — omt-agent-adapters registry: the builtin set covers every agent in the matrix, an adapter can be written from outside the crate and can replace a built-in one
 - [ ] 8. Ancillary semantics
-- [ ] 9. Failure modes and their handling
+- [x] 9. Failure modes and their handling — omt-agent ledger: a restart abandons what nobody answered, preserves an answer that was given, never cancels, and settles nothing twice
 - ~~10. Open questions~~ — prose
 
 ## 07-remote-protocol

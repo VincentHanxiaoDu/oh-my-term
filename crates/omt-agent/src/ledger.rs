@@ -321,6 +321,58 @@ impl Ledger {
         changed
     }
 
+    /// Settle every interaction left open by a daemon that stopped.
+    ///
+    /// `docs/architecture/06-agent-layer.md` §9. On restart, an interaction
+    /// with no decision recorded becomes `Abandoned`; one with a decision
+    /// recorded becomes `Undelivered`, preserving the text.
+    ///
+    /// **Never `Cancelled`, and never retried.** `Cancelled` means the agent
+    /// withdrew the question, which is a claim about the agent that omt has no
+    /// basis for — it was not running. And a retry would re-submit an answer
+    /// somebody gave to a question they can no longer see, possibly to an agent
+    /// that has moved on to something else.
+    ///
+    /// Returns what it settled, so a client can say what happened rather than
+    /// quietly showing a different list than the one it had before.
+    pub fn reconcile_after_restart(&mut self, now_ms: u64) -> Vec<InteractionId> {
+        let mut settled = Vec::new();
+        for entry in self.entries.values_mut() {
+            // Seconds, because that is the constructor `Timestamp` offers and
+            // a restart is not an event anybody times to the millisecond.
+            #[allow(
+                clippy::cast_possible_wrap,
+                reason = "a millisecond clock does not reach i64::MAX in any lifetime"
+            )]
+            let at = Timestamp::from_unix_seconds((now_ms / 1000) as i64);
+            let next = match &entry.interaction.state {
+                // Nobody decided anything and the world moved on.
+                InteractionState::Open => Some(InteractionState::Abandoned {
+                    at,
+                    detail: "the omt daemon restarted while this was open".to_owned(),
+                }),
+                // A decision exists. Preserving it is the whole point: somebody
+                // answered, and losing their words is worse than telling them
+                // it did not land.
+                InteractionState::Resolving { by, response, .. }
+                | InteractionState::Submitted { by, response, .. } => {
+                    Some(InteractionState::Undelivered {
+                        by: by.clone(),
+                        at,
+                        response: response.clone(),
+                        reason: UndeliveredReason::NotConfirmed,
+                    })
+                }
+                _ => None,
+            };
+            if let Some(state) = next {
+                entry.interaction.state = state;
+                settled.push(entry.interaction.id);
+            }
+        }
+        settled
+    }
+
     /// Expire anything whose confirmation window has passed.
     ///
     /// Returns what expired. An interaction left open indefinitely invites an
@@ -369,6 +421,62 @@ fn claimant(state: &InteractionState) -> Option<Box<Actor>> {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restart_abandons_what_nobody_had_answered() {
+        // Nobody decided anything and the world moved on.
+        let (mut l, id) = synthetic_ledger();
+        assert_eq!(l.reconcile_after_restart(1_000), [id]);
+        assert!(matches!(
+            l.get(id).expect("present").state,
+            InteractionState::Abandoned { .. }
+        ));
+    }
+
+    #[test]
+    fn a_restart_never_cancels() {
+        // `Cancelled` means the agent withdrew the question, which is a claim
+        // about the agent omt has no basis for — it was not running.
+        let (mut l, id) = synthetic_ledger();
+        l.reconcile_after_restart(1_000);
+        assert!(!matches!(
+            l.get(id).expect("present").state,
+            InteractionState::Cancelled { .. }
+        ));
+    }
+
+    #[test]
+    fn a_restart_preserves_an_answer_that_was_given() {
+        // Somebody answered. Losing their words is worse than telling them it
+        // did not land.
+        let (mut l, id) = synthetic_ledger();
+        l.resolve(id, actor("phone"), Timestamp::now(), allow())
+            .expect("claim");
+        l.reconcile_after_restart(1_000);
+        let InteractionState::Undelivered { response, .. } = &l.get(id).expect("present").state
+        else {
+            panic!("expected undelivered, got {:?}", l.get(id).expect("present").state);
+        };
+        assert_eq!(response, &allow());
+    }
+
+    #[test]
+    fn a_restart_settles_nothing_that_was_already_settled() {
+        // Re-settling would move an interaction back into a state somebody has
+        // to deal with, on every restart, forever.
+        let (mut l, _) = synthetic_ledger();
+        l.reconcile_after_restart(1_000);
+        assert!(l.reconcile_after_restart(2_000).is_empty());
+    }
+
+    #[test]
+    fn a_restart_reports_what_it_settled() {
+        // So a client can say what happened rather than quietly showing a
+        // different list than the one it had before.
+        let (mut l, _) = synthetic_ledger();
+        assert_eq!(l.reconcile_after_restart(1_000).len(), 1);
+    }
+
     use omt_events::{ChoiceAnswer, InteractionKind, NotDeliverableReason};
     use omt_types::{BindingId, DeviceId, IdentityId, SessionId};
 
