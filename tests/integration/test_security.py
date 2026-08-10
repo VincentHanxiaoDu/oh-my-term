@@ -176,3 +176,68 @@ class TestWhatTheHandshakeOffers:
             assert set(connection.auth_methods) <= known
         finally:
             connection.close()
+
+
+class TestPublishingToTheOpenInternet:
+    """13-security §10. Funnel is the public internet, and nothing in the
+    configuration omt reads says so."""
+
+    def good(self, **over):
+        base = {
+            "auth_backend": True,
+            "rate_limited": True,
+            "password_length": 20,
+            "allowed_origins": ["https://box.example.ts.net"],
+            "default_role": "viewer",
+        }
+        base.update(over)
+        return base
+
+    def test_a_properly_configured_instance_may_be_published(
+        self, client: Client
+    ) -> None:
+        assert client.call("security.publish_check", **self.good())["may_start"] is True
+
+    def test_tailnet_identity_alone_is_refused(self, client: Client) -> None:
+        # Funnel requests arrive from Tailscale's own infrastructure, so every
+        # caller looks like the same peer — and then everybody on the internet
+        # is that peer.
+        out = client.call(
+            "security.publish_check", **self.good(tailnet_identity_only=True)
+        )
+        assert out["may_start"] is False
+        assert any("same peer" in r["remedy"] for r in out["refusals"])
+
+    def test_a_wildcard_origin_is_refused_outright(self, client: Client) -> None:
+        out = client.call("security.publish_check", **self.good(allowed_origins=["*"]))
+        assert out["may_start"] is False
+
+    def test_a_short_password_is_refused_unless_the_token_is_device_bound(
+        self, client: Client
+    ) -> None:
+        assert (
+            client.call("security.publish_check", **self.good(password_length=6))[
+                "may_start"
+            ]
+            is False
+        )
+        assert (
+            client.call(
+                "security.publish_check",
+                **self.good(password_length=6, bearer_device_bound=True),
+            )["may_start"]
+            is True
+        )
+
+    def test_the_default_role_must_be_viewer(self, client: Client) -> None:
+        # So an unscoped credential cannot type into a shell by accident.
+        for role in ("operator", "none"):
+            out = client.call("security.publish_check", **self.good(default_role=role))
+            assert out["may_start"] is False, role
+
+    def test_all_the_problems_come_back_at_once(self, client: Client) -> None:
+        # Publishing is done once, under time pressure, usually to show
+        # somebody something. Four sequential refusals is four restarts.
+        out = client.call("security.publish_check")
+        assert len(out["refusals"]) >= 4
+        assert all(r["remedy"] for r in out["refusals"])

@@ -83,6 +83,7 @@
   "search.explain",
   "search.session",
   "security.bind_check",
+  "security.publish_check",
   "session.acquire",
   "session.blocks",
   "session.close",

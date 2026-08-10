@@ -1648,6 +1648,24 @@
     },
     {
       "aliases": [],
+      "doc": "Funnel puts the instance on the open internet, and the difference between that and a tailnet is not visible in any configuration omt reads. Somebody who enabled it for a demo and forgot is who this is for.",
+      "effects": [],
+      "group": "security",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "security.publish_check",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "admin",
+      "route": "/v1/security/publish_check",
+      "since": "0.1.0",
+      "title": "Check before publishing",
+      "verb": "publish_check"
+    },
+    {
+      "aliases": [],
       "doc": "Take the writer token for a session, returning the epoch every write is checked against.",
       "effects": [],
       "group": "session",

@@ -70,9 +70,13 @@ pub struct Transport {
 }
 
 /// What role an unauthenticated caller gets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DefaultRole {
     /// Nothing without a credential.
+    ///
+    /// The default, because a configuration that forgot to say should hand out
+    /// nothing rather than something.
+    #[default]
     None,
     /// Read-only.
     Viewer,
@@ -233,6 +237,115 @@ pub struct PeerRecord {
     pub allowed: bool,
 }
 
+// ---------------------------------------------------------------------------
+// Publishing to the public internet — 13-security §10
+// ---------------------------------------------------------------------------
+
+/// What is true about an instance about to be put on the public internet.
+///
+/// Funnel is the case this exists for: it puts the instance on the open
+/// internet, and the difference between that and a tailnet is not visible in
+/// any configuration omt reads. Somebody who enabled Funnel for a demo and
+/// forgot is the person this gate is for.
+#[derive(Debug, Clone, Default)]
+pub struct Publication {
+    /// A password or bearer backend is configured.
+    pub auth_backend: bool,
+    /// The only identity available is the tailnet's.
+    ///
+    /// Meaningless under Funnel: the requests arrive from Tailscale's own
+    /// infrastructure, so every caller looks like the same tailnet peer. An
+    /// instance relying on it is one where everybody on the internet is that
+    /// peer.
+    pub tailnet_identity_only: bool,
+    /// How long the configured password is, where there is one.
+    pub password_length: Option<usize>,
+    /// Bearer tokens are bound to a device key.
+    pub bearer_device_bound: bool,
+    /// Rate limiting and lockout are on.
+    pub rate_limited: bool,
+    /// The origins configured, verbatim.
+    pub allowed_origins: Vec<String>,
+    /// What an unauthenticated caller gets.
+    pub default_role: DefaultRole,
+}
+
+/// The shortest password omt will publish behind.
+///
+/// Twelve. Not a policy about entropy — a length below which an online guess
+/// against a rate-limited endpoint stops being hopeless, which is the only
+/// threat this number addresses.
+pub const MIN_PUBLISHED_PASSWORD: usize = 12;
+
+/// Check an instance against the publishing gate.
+///
+/// Refuses rather than warns, like §2, and for the same reason: the warning
+/// would be printed once onto a machine that is now on the internet.
+#[must_use]
+pub fn check_publication(publication: &Publication) -> Verdict {
+    let mut refusals = Vec::new();
+
+    if !publication.auth_backend {
+        refusals.push(Refusal {
+            problem: "this instance would be on the public internet with no authentication"
+                .to_owned(),
+            remedy: "Configure auth.password_file or auth.token_file before publishing."
+                .to_owned(),
+        });
+    }
+    if publication.tailnet_identity_only {
+        refusals.push(Refusal {
+            problem: "tailnet identity is the only authentication, and it means nothing here"
+                .to_owned(),
+            remedy: "Funnel requests arrive from Tailscale's infrastructure, so every caller looks like the same peer. Configure a password or bearer backend.".to_owned(),
+        });
+    }
+    if let Some(length) = publication.password_length
+        && length < MIN_PUBLISHED_PASSWORD
+        && !publication.bearer_device_bound
+    {
+        refusals.push(Refusal {
+            problem: format!(
+                "the configured password is {length} characters, below the {MIN_PUBLISHED_PASSWORD} required to publish"
+            ),
+            remedy: "Use a longer password, or a device-bound bearer token instead.".to_owned(),
+        });
+    }
+    if !publication.rate_limited {
+        refusals.push(Refusal {
+            problem: "rate limiting is off on an instance about to be published".to_owned(),
+            remedy: "Leave auth.rate_limit at its default, which is on.".to_owned(),
+        });
+    }
+    if publication.allowed_origins.iter().any(|o| o.trim() == "*") {
+        refusals.push(Refusal {
+            problem: "`allowed_origins` contains `*`, which allows every page on the internet"
+                .to_owned(),
+            remedy: "Set it to the Funnel hostname exactly.".to_owned(),
+        });
+    }
+    if publication.allowed_origins.is_empty() {
+        refusals.push(Refusal {
+            problem: "`allowed_origins` is empty, so the web client cannot connect".to_owned(),
+            remedy: "Set it to the Funnel hostname exactly.".to_owned(),
+        });
+    }
+    if publication.default_role != DefaultRole::Viewer {
+        refusals.push(Refusal {
+            problem: format!(
+                "the default role is {:?}; publishing requires Viewer",
+                publication.default_role
+            ),
+            remedy: "Set the default role to viewer. Raising it is per-credential and deliberate, so an unscoped one cannot type into a shell by accident.".to_owned(),
+        });
+    }
+
+    Verdict {
+        refusals,
+        warnings: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -241,6 +354,115 @@ pub struct PeerRecord {
 )]
 mod tests {
     use super::*;
+    fn publishable() -> Publication {
+        Publication {
+            auth_backend: true,
+            tailnet_identity_only: false,
+            password_length: Some(20),
+            bearer_device_bound: false,
+            rate_limited: true,
+            allowed_origins: vec!["https://box.example.ts.net".to_owned()],
+            default_role: DefaultRole::Viewer,
+        }
+    }
+
+    #[test]
+    fn a_properly_configured_instance_may_be_published() {
+        assert!(check_publication(&publishable()).may_start());
+    }
+
+    #[test]
+    fn publishing_without_authentication_is_refused() {
+        let mut p = publishable();
+        p.auth_backend = false;
+        assert!(!check_publication(&p).may_start());
+    }
+
+    #[test]
+    fn tailnet_identity_alone_is_refused_because_it_means_nothing_here() {
+        // Funnel requests arrive from Tailscale's own infrastructure, so every
+        // caller looks like the same peer — and an instance relying on that is
+        // one where everybody on the internet is that peer.
+        let mut p = publishable();
+        p.tailnet_identity_only = true;
+        let v = check_publication(&p);
+        assert!(!v.may_start());
+        assert!(
+            v.refusals.iter().any(|r| r.remedy.contains("same peer")),
+            "{:?}",
+            v.refusals
+        );
+    }
+
+    #[test]
+    fn a_short_password_is_refused_unless_the_token_is_device_bound() {
+        let mut p = publishable();
+        p.password_length = Some(6);
+        assert!(!check_publication(&p).may_start());
+
+        p.bearer_device_bound = true;
+        assert!(check_publication(&p).may_start());
+    }
+
+    #[test]
+    fn a_wildcard_origin_is_refused_outright() {
+        // It allows every page on the internet, which is the one thing the
+        // origin check exists to prevent.
+        let mut p = publishable();
+        p.allowed_origins = vec!["*".to_owned()];
+        let v = check_publication(&p);
+        assert!(!v.may_start());
+        assert!(v.refusals.iter().any(|r| r.problem.contains("every page")));
+    }
+
+    #[test]
+    fn an_empty_origin_list_is_refused_too() {
+        // Not for safety — it is already safe — but because it does not work,
+        // and finding that out from a phone that will not connect is worse
+        // than being told now.
+        let mut p = publishable();
+        p.allowed_origins.clear();
+        assert!(!check_publication(&p).may_start());
+    }
+
+    #[test]
+    fn rate_limiting_must_be_on() {
+        let mut p = publishable();
+        p.rate_limited = false;
+        assert!(!check_publication(&p).may_start());
+    }
+
+    #[test]
+    fn the_default_role_must_be_viewer() {
+        // So an unscoped credential cannot type into a shell by accident.
+        // Raising it is per-credential and deliberate.
+        for role in [DefaultRole::None, DefaultRole::Operator] {
+            let mut p = publishable();
+            p.default_role = role;
+            assert!(!check_publication(&p).may_start(), "{role:?}");
+        }
+    }
+
+    #[test]
+    fn every_publishing_refusal_says_what_to_do() {
+        let mut p = Publication::default();
+        p.default_role = DefaultRole::Operator;
+        let v = check_publication(&p);
+        assert!(v.refusals.len() >= 4);
+        for refusal in v.refusals {
+            assert!(!refusal.remedy.is_empty(), "{}", refusal.problem);
+        }
+    }
+
+    #[test]
+    fn all_the_problems_are_listed_at_once() {
+        // Publishing is a thing somebody does once, under time pressure,
+        // usually to show somebody something. Four sequential refusals is four
+        // restarts.
+        let v = check_publication(&Publication::default());
+        assert!(v.refusals.len() >= 4, "{:?}", v.refusals);
+    }
+
 
     fn listen(binds: Vec<Bind>) -> Listen {
         Listen {

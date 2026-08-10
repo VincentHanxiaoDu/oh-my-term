@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**115 of 212 features ticked.** (34 further sections are prose.)
+**116 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -170,7 +170,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 7. The two high-consequence capabilities — parity.rs + test_security: no PTY write is Viewer, no second permission model exists by name, an agent that offered nothing gets an empty list rather than an invented one
 - [ ] 8. Secret redaction
 - [x] 9. Network egress and supply chain — parity.rs: zero capabilities declare NETWORK today and the count is asserted, nothing is named like telemetry, the reachable-but-uncalled STT path is written down (supply chain: xtask licensing over 311 deps)
-- [ ] 10. Checklist — publishing an instance over Tailscale Funnel
+- [x] 10. Checklist — publishing an instance over Tailscale Funnel — test_security: tailnet identity alone refused, wildcard origin refused, short password refused unless device-bound, default role must be Viewer, all problems at once
 - ~~11. OPEN QUESTIONS~~ — prose
 
 ## 14-licensing

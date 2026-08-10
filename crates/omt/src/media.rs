@@ -2637,6 +2637,90 @@ impl CapabilityHandler<BindCheck> for SecurityHandler {
     }
 }
 
+/// Input to `security.publish_check`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PublishCheckIn {
+    /// A password or bearer backend is configured.
+    #[serde(default)]
+    pub auth_backend: bool,
+    /// The only identity available is the tailnet's.
+    #[serde(default)]
+    pub tailnet_identity_only: bool,
+    /// How long the configured password is.
+    #[serde(default)]
+    pub password_length: Option<usize>,
+    /// Bearer tokens are bound to a device key.
+    #[serde(default)]
+    pub bearer_device_bound: bool,
+    /// Rate limiting and lockout are on.
+    #[serde(default)]
+    pub rate_limited: bool,
+    /// The origins configured, verbatim.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+    /// What an unauthenticated caller gets.
+    #[serde(default)]
+    pub default_role: Option<String>,
+}
+
+omt_catalog::capability! {
+    /// Whether this instance may be put on the public internet.
+    pub struct PublishCheck;
+    input  = PublishCheckIn,
+    output = BindCheckOut,
+    decl = omt_catalog::Decl {
+        name: "security.publish_check",
+        group: "security",
+        verb: "publish_check",
+        title: "Check before publishing",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Admin,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Funnel puts the instance on the open internet, and the difference between that and a tailnet is not visible in any configuration omt reads. Somebody who enabled it for a demo and forgot is who this is for.",
+    },
+}
+
+impl CapabilityHandler<PublishCheck> for SecurityHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: PublishCheckIn,
+    ) -> Result<BindCheckOut, CapabilityError> {
+        use omt_auth::bind::{DefaultRole, Publication, check_publication};
+        let verdict = check_publication(&Publication {
+            auth_backend: input.auth_backend,
+            tailnet_identity_only: input.tailnet_identity_only,
+            password_length: input.password_length,
+            bearer_device_bound: input.bearer_device_bound,
+            rate_limited: input.rate_limited,
+            allowed_origins: input.allowed_origins,
+            default_role: match input.default_role.as_deref() {
+                Some("viewer") => DefaultRole::Viewer,
+                Some("operator") => DefaultRole::Operator,
+                _ => DefaultRole::None,
+            },
+        });
+        Ok(BindCheckOut {
+            may_start: verdict.may_start(),
+            refusals: verdict
+                .refusals
+                .into_iter()
+                .map(|r| RefusalOut {
+                    problem: r.problem,
+                    remedy: r.remedy,
+                })
+                .collect(),
+            warnings: verdict.warnings.into_iter().map(|w| w.note).collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
