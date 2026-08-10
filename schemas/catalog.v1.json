@@ -770,6 +770,24 @@
     },
     {
       "aliases": [],
+      "doc": "`Not bound` and `bound, but the pane underneath owns it` look identical from the user's chair and have different fixes, so this says which.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.explain",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/explain",
+      "since": "0.1.0",
+      "title": "Explain a key",
+      "verb": "explain"
+    },
+    {
+      "aliases": [],
       "doc": "A modal keymap governs omt's own surfaces only. It never governs a pane whose keys are passing through, which is what stops omt and an inner vim from contending over hjkl.",
       "effects": [],
       "group": "keys",
@@ -785,6 +803,42 @@
       "since": "0.1.0",
       "title": "vim or emacs bindings",
       "verb": "flavour"
+    },
+    {
+      "aliases": [],
+      "doc": "In a stable order, so two calls can be compared. An unordered list makes a diff between two configurations unreadable.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.list",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/list",
+      "since": "0.1.0",
+      "title": "List every binding",
+      "verb": "list"
+    },
+    {
+      "aliases": [],
+      "doc": "The registry is data, so a new agent CLI is a file rather than a release. This says how much of it is loaded.",
+      "effects": [],
+      "group": "keys",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "keys.registry",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/keys/registry",
+      "since": "0.1.0",
+      "title": "Known inner keymaps",
+      "verb": "registry"
     },
     {
       "aliases": [],

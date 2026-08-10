@@ -376,3 +376,52 @@ class TestModalKeymaps:
             client.call("keys.flavour", flavour="kakoune")
         message = str(caught.value).lower()
         assert "vim" in message and "emacs" in message
+
+
+class TestKeysAreExplicable:
+    """16-input-and-keymap §11. The keys.* capabilities this document introduces."""
+
+    def test_every_binding_is_listed_in_a_stable_order(self, client) -> None:
+        # An unordered list makes a diff between two configurations unreadable.
+        first = client.call("keys.list")["bindings"]
+        second = client.call("keys.list")["bindings"]
+        assert first == second
+        assert first, "the defaults bind something"
+
+    def test_explaining_a_key_says_what_happens_in_a_pane(self, client) -> None:
+        # "Not bound" and "bound, but the pane underneath owns it" look
+        # identical from the user's chair and have different fixes.
+        out = client.call("keys.explain", chord="ctrl-b")
+        assert out["in_a_pane"]
+        assert out["chord"]
+
+    def test_explaining_a_key_gathers_what_it_would_break(self, client) -> None:
+        out = client.call("keys.explain", chord="ctrl-w")
+        assert out["conflicts"], out
+        assert out["conflicts"][0]["severity"] == "critical"
+
+    def test_explaining_says_whether_a_key_is_awkward_on_a_non_us_layout(
+        self, client
+    ) -> None:
+        awkward = client.call("keys.explain", chord="|")
+        assert awkward["awkward"] is True
+        assert awkward["alias"] == "v"
+        plain = client.call("keys.explain", chord="ctrl-b")
+        assert plain["awkward"] is False
+
+    def test_the_minus_key_can_be_explained_at_all(self, client) -> None:
+        # It could not be parsed at all until this change, which meant the
+        # documented split-down binding was silently absent.
+        out = client.call("keys.explain", chord="-")
+        assert out["chord"]
+
+    def test_the_registry_says_how_much_it_knows(self, client) -> None:
+        out = client.call("keys.registry")
+        assert out["programs"] >= 4
+        assert set(out["flavours"]) == {"plain", "vim", "emacs"}
+
+    def test_something_that_is_not_a_chord_is_refused(self, client) -> None:
+        import pytest
+
+        with pytest.raises(Exception):
+            client.call("keys.explain", chord="not a chord")

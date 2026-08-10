@@ -48,7 +48,10 @@ vanishing.
 | `keys.audit` | query | viewer | A registry nobody runs the defaults against documents a problem instead of preventing one. |
 | `keys.cheatsheet` | query | viewer | Every binding and every reserved key, generated from the keymap in force so it cannot go stale. |
 | `keys.conflicts` | query | viewer | `Conflicts with something` is not actionable — every chord collides somewhere. This says which program, what the key does there, and how badly it would be missed. |
+| `keys.explain` | query | viewer | `Not bound` and `bound, but the pane underneath owns it` look identical from the user's chair and have different fixes, so this says which. |
 | `keys.flavour` | query | viewer | A modal keymap governs omt's own surfaces only. It never governs a pane whose keys are passing through, which is what stops omt and an inner vim from contending over hjkl. |
+| `keys.list` | query | viewer | In a stable order, so two calls can be compared. An unordered list makes a diff between two configurations unreadable. |
+| `keys.registry` | query | viewer | The registry is data, so a new agent CLI is a file rather than a release. This says how much of it is loaded. |
 | `layout.open` | command | operator | Start several sessions as a layout, reporting the outcome of every pane rather than only that something failed. |
 | `media.attach` | query | viewer | Per-adapter, because one format applied to all of them is silently ignored by most — which looks exactly like an agent choosing not to read the file. |
 | `media.clipboard` | command | operator | OSC 52, wrapped for tmux when TERM says so. omt does not claim the copy succeeded: there is no acknowledgement to base that on. |
@@ -114,4 +117,4 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-104 capabilities.
+107 capabilities.

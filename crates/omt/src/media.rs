@@ -1297,6 +1297,227 @@ impl CapabilityHandler<KeysFlavour> for KeysHandler {
     }
 }
 
+/// Input to `keys.list`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct KeysListIn {}
+
+/// One binding.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct BindingOut {
+    /// Which surface it applies on.
+    pub mode: String,
+    /// The chord.
+    pub chord: String,
+    /// What it does.
+    pub action: String,
+}
+
+/// What `keys.list` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct KeysListOut {
+    /// Every binding, in a stable order.
+    pub bindings: Vec<BindingOut>,
+}
+
+omt_catalog::capability! {
+    /// Every binding omt currently has.
+    pub struct KeysList;
+    input  = KeysListIn,
+    output = KeysListOut,
+    decl = omt_catalog::Decl {
+        name: "keys.list",
+        group: "keys",
+        verb: "list",
+        title: "List every binding",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "In a stable order, so two calls can be compared. An unordered list makes a diff between two configurations unreadable.",
+    },
+}
+
+impl CapabilityHandler<KeysList> for KeysHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        _input: KeysListIn,
+    ) -> Result<KeysListOut, CapabilityError> {
+        let keymap = omt_input::keymap::defaults();
+        let mut bindings: Vec<BindingOut> = keymap
+            .bindings()
+            .into_iter()
+            .map(|(mode, chord, action)| BindingOut {
+                mode: format!("{mode:?}").to_lowercase(),
+                chord: chord.canonical(),
+                action: match action {
+                    omt_input::keymap::Action::Capability { name } => name.clone(),
+                    omt_input::keymap::Action::Passthrough => "passthrough".to_owned(),
+                    omt_input::keymap::Action::Unbound => "unbound".to_owned(),
+                },
+            })
+            .collect();
+        bindings.sort_by(|a, b| a.mode.cmp(&b.mode).then(a.chord.cmp(&b.chord)));
+        Ok(KeysListOut { bindings })
+    }
+}
+
+/// Input to `keys.explain`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ExplainIn {
+    /// The chord to explain.
+    pub chord: String,
+}
+
+/// What `keys.explain` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ExplainOut {
+    /// Its canonical form.
+    pub chord: String,
+    /// What omt does with it, if anything.
+    pub action: Option<String>,
+    /// On which surface.
+    pub mode: Option<String>,
+    /// What it would take from the program underneath.
+    pub conflicts: Vec<ConflictOut>,
+    /// Whether it needs an AltGr on a common non-US layout.
+    pub awkward: bool,
+    /// The alias installed beside it, where there is one.
+    pub alias: Option<String>,
+    /// What happens in a pane that is passing through.
+    ///
+    /// Said plainly, because "not bound" and "bound but the pane owns it" look
+    /// identical from a user's chair and have different fixes.
+    pub in_a_pane: String,
+}
+
+omt_catalog::capability! {
+    /// Everything omt knows about one chord.
+    pub struct KeysExplain;
+    input  = ExplainIn,
+    output = ExplainOut,
+    decl = omt_catalog::Decl {
+        name: "keys.explain",
+        group: "keys",
+        verb: "explain",
+        title: "Explain a key",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "`Not bound` and `bound, but the pane underneath owns it` look identical from the user's chair and have different fixes, so this says which.",
+    },
+}
+
+impl CapabilityHandler<KeysExplain> for KeysHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: ExplainIn,
+    ) -> Result<ExplainOut, CapabilityError> {
+        let chord = omt_input::key::Chord::parse(&input.chord).map_err(|e| {
+            CapabilityError::invalid_input(format!("`{}` is not a chord: {e}", input.chord))
+        })?;
+        let keymap = omt_input::keymap::defaults();
+        let found = keymap
+            .bindings()
+            .into_iter()
+            .find(|(_, c, _)| c.canonical() == chord.canonical())
+            .map(|(mode, _, action)| {
+                (
+                    format!("{mode:?}").to_lowercase(),
+                    match action {
+                        omt_input::keymap::Action::Capability { name } => name.clone(),
+                        omt_input::keymap::Action::Passthrough => "passthrough".to_owned(),
+                        omt_input::keymap::Action::Unbound => "unbound".to_owned(),
+                    },
+                )
+            });
+        let global = found.as_ref().is_some_and(|(mode, _)| mode == "global");
+        Ok(ExplainOut {
+            in_a_pane: if global {
+                "omt handles this before the pane sees it.".to_owned()
+            } else {
+                "The program in the pane receives this untouched.".to_owned()
+            },
+            mode: found.as_ref().map(|(mode, _)| mode.clone()),
+            action: found.map(|(_, action)| action),
+            conflicts: omt_input::conflicts::builtin()
+                .conflicts(&chord)
+                .into_iter()
+                .map(|c| ConflictOut {
+                    program: c.program,
+                    does: c.does,
+                    severity: format!("{:?}", c.severity).to_lowercase(),
+                    verified_against: c.verified_against,
+                })
+                .collect(),
+            awkward: omt_input::layout::is_awkward(&chord),
+            alias: omt_input::layout::alias_for(&chord).map(str::to_owned),
+            chord: chord.canonical(),
+        })
+    }
+}
+
+/// Input to `keys.registry`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RegistryIn {}
+
+/// What `keys.registry` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RegistryOut {
+    /// How many programs omt knows the keymap of.
+    pub programs: usize,
+    /// Which keymap flavours exist.
+    pub flavours: Vec<String>,
+}
+
+omt_catalog::capability! {
+    /// What omt knows about other programs' keys.
+    pub struct KeysRegistry;
+    input  = RegistryIn,
+    output = RegistryOut,
+    decl = omt_catalog::Decl {
+        name: "keys.registry",
+        group: "keys",
+        verb: "registry",
+        title: "Known inner keymaps",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Query,
+        role: omt_types::Role::Viewer,
+        effects: omt_catalog::Effects::empty(),
+        intent: None,
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "The registry is data, so a new agent CLI is a file rather than a release. This says how much of it is loaded.",
+    },
+}
+
+impl CapabilityHandler<KeysRegistry> for KeysHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        _input: RegistryIn,
+    ) -> Result<RegistryOut, CapabilityError> {
+        Ok(RegistryOut {
+            programs: omt_input::conflicts::builtin().len(),
+            flavours: vec!["plain".to_owned(), "vim".to_owned(), "emacs".to_owned()],
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

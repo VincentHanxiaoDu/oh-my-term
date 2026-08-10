@@ -434,6 +434,13 @@ export const HANDLERS = {
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),
 
+  'keys.list': (request: RequestId) => call(request, 'keys.list', {}),
+
+  'keys.explain': (request: RequestId, chord: string) =>
+    call(request, 'keys.explain', { chord }),
+
+  'keys.registry': (request: RequestId) => call(request, 'keys.registry', {}),
+
   'keys.flavour': (request: RequestId, flavour: string) =>
     call(request, 'keys.flavour', { flavour }),
 

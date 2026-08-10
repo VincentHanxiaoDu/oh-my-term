@@ -5967,6 +5967,9 @@ pub fn registry_full(
     r.register::<crate::media::KeysConflicts, _>(crate::media::KeysHandler)?;
     r.register::<crate::media::KeysAudit, _>(crate::media::KeysHandler)?;
     r.register::<crate::media::KeysFlavour, _>(crate::media::KeysHandler)?;
+    r.register::<crate::media::KeysList, _>(crate::media::KeysHandler)?;
+    r.register::<crate::media::KeysExplain, _>(crate::media::KeysHandler)?;
+    r.register::<crate::media::KeysRegistry, _>(crate::media::KeysHandler)?;
     r.register::<crate::migrate::TmuxPreview, _>(crate::migrate::MigrateHandler)?;
     let roots = std::sync::Arc::new(crate::uninstall::Roots::from_environment());
     r.register::<crate::uninstall::UninstallPlan, _>(crate::uninstall::UninstallHandler(
