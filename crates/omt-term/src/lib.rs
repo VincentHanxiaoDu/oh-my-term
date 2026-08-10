@@ -5,6 +5,8 @@
 //! bytes and what lets several terminals live in one process without
 //! coordinating.
 
+pub mod damage;
+pub mod search;
 pub mod action;
 pub mod block;
 pub mod cell;

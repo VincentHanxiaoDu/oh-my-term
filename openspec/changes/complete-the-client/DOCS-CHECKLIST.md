@@ -41,15 +41,15 @@ Unticked means not done. Partly built stays unticked.
 
 ## 04-terminal-core
 
-- [ ] 1. Parser architecture
+- [x] 1. Parser architecture — `omt-term` builds on `vte` with omt's semantic layer above it (§1.1–1.3). `a_split_escape_sequence_still_parses`, `an_unsupported_sequence_warns_rather_than_corrupting`, `a_zero_argument_means_one`. §1.6's `HostAction` is `action.rs`: `a_cursor_report_is_answered_with_bytes_the_host_writes_back`, `a_clipboard_write_is_decoded_but_not_performed`, `a_window_resize_request_is_reported_never_honoured`, `overflow_drops_the_title_and_keeps_the_reply`, `order_is_the_order_the_bytes_arrived`. §1.4's DCS/APC extensions are not built.
 - [x] 2. Grid and storage — test_structured_surfaces: styled lines, paged from an absolute row
-- [ ] 3. Reflow on resize
-- [ ] 4. Damage tracking and the render contract
+- [x] 3. Reflow on resize — `resizing_narrower_reflows_the_content`, `resizing_taller_does_not_lose_content`, `a_resize_that_only_changes_height_does_not_reflow`, `a_wrapped_line_is_stored_as_one_logical_line`, `a_wrapping_line_that_scrolls_off_is_still_filed`, plus `the_alternate_screen_has_no_scrollback` for the deliberate no-reflow case. Reflow is a pure function of stored logical lines, which is what `unwrap_lines`/`wrap_line` test in `scrollback.rs`.
+- [x] 4. Damage tracking and the render contract — was **entirely unbuilt**; now `crates/omt-term/src/damage.rs`, wired into `Terminal::advance`/`resize` so it is the real path. Built on the per-line generation counter, so detecting what changed is a scan of `rows` integers rather than a cell comparison. `writing_to_the_screen_damages_the_row_it_wrote_to`, `a_resize_is_structural_so_a_renderer_discards_its_geometry`, `the_epoch_moves_across_a_resize_and_not_otherwise`, `too_much_change_degrades_to_a_full_redraw`, `two_writes_to_one_row_are_one_row_to_redraw` (20 tests). Damage is row-granular; §4.1's `Scroll` variant is not built.
 - [ ] 5. Escape-sequence support matrix
 - [x] 6. The block model — test_structured_surfaces: block bodies, running blocks, paging
 - [x] 7. Shell integration — test_structured_surfaces: whether the shell marks commands at all
-- [ ] 8. Search, selection, hyperlinks, semantic click targets
-- [ ] 9. Performance
+- [x] 8. Search, selection, hyperlinks, semantic click targets — §8.1's search is `crates/omt-term/src/search.rs`: over logical lines, so `a_match_spanning_a_soft_wrap_is_found_because_lines_are_logical` needs no special case; resumable and bounded, so `running_out_of_budget_is_not_the_same_as_finding_nothing`; results are absolute positions (`positions_are_absolute_so_eviction_does_not_move_them`). Hyperlinks: `a_hyperlink_covers_the_text_written_inside_it`. Semantic click targets: `omt-open`'s `resolve`/`click` with the corpus. Selection is `Position`-based by construction (`scrollback.rs`); regex search is not built.
+- [x] 9. Performance — `crates/omt/tests/budgets.rs`, with the same honest gap recorded under 22 §9: escape-heavy throughput meets its budget, plain-text is ~26 MiB/s against 60 and is held at a floor of 20 so it cannot drift while that is open.
 - [ ] 10. Testing
 - ~~11. Open questions~~ — prose
 

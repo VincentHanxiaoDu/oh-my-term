@@ -50,6 +50,13 @@ pub struct Terminal {
     /// Here rather than in `State` because a block's position depends on how
     /// much has scrolled off, and the parser has no idea.
     blocks: crate::block::BlockTracker,
+    /// What changed since a renderer last looked.
+    ///
+    /// Here rather than in `State` for the same reason: it is derived from the
+    /// screen after the parser has finished with it, by comparing line
+    /// generations, which is a scan of `rows` integers rather than a
+    /// comparison of cells.
+    damage: crate::damage::Tracker,
 }
 
 /// Everything the parser mutates.
@@ -117,6 +124,7 @@ impl Terminal {
                 wrote_output: false,
             },
             blocks: crate::block::BlockTracker::new(),
+            damage: crate::damage::Tracker::new(size.rows),
         }
     }
 
@@ -137,7 +145,28 @@ impl Terminal {
             // receives every action it would have.
             self.track_blocks();
         }
+        self.note_damage();
         bytes.len()
+    }
+
+    /// What changed since the last time this was asked.
+    ///
+    /// Taking it clears it: two renderers sharing one terminal each need their
+    /// own record, and handing the same one out twice would have the second
+    /// redraw nothing.
+    pub fn take_damage(&mut self) -> crate::damage::Damage {
+        self.damage.take()
+    }
+
+    /// Fold the current screen's line generations into the damage record.
+    fn note_damage(&mut self) {
+        let generations: Vec<crate::line::Generation> = self
+            .grid()
+            .rows()
+            .iter()
+            .map(crate::line::Line::generation)
+            .collect();
+        self.damage.observe(&generations);
     }
 
     /// The command blocks this session has produced.
@@ -295,6 +324,11 @@ impl Terminal {
     /// happened to have drawn produces garbage. Every serious terminal does
     /// this, and it is not a shortcut.
     pub fn resize(&mut self, size: GridSize) -> ResizeReport {
+        // The shape changed, so a renderer's cached geometry is about a screen
+        // that no longer exists. Reported as structural rather than as "every
+        // row changed", which would have it draw new content into the old
+        // geometry.
+        self.damage.structural(size.rows);
         let st = &mut self.state;
         let old = st.primary.size();
 
@@ -1583,6 +1617,75 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, HostAction::NotifyResize { cols: 132, .. })),
             "{actions:?}"
+        );
+    }
+
+    #[test]
+    fn writing_to_the_screen_damages_the_row_it_wrote_to() {
+        // The whole point: a renderer redraws that row and not the screen.
+        let mut t = term(80, 24);
+        t.advance(b"hello");
+        let damage = t.take_damage();
+        let crate::damage::DamageKind::Rows(rows) = damage.kind else {
+            panic!("rows, got {damage:?}");
+        };
+        assert_eq!(rows.iter().map(|d| d.row).collect::<Vec<_>>(), vec![0]);
+    }
+
+    #[test]
+    fn an_untouched_screen_reports_nothing_to_draw() {
+        let mut t = term(80, 24);
+        t.advance(b"hello");
+        t.take_damage();
+        assert!(t.take_damage().is_empty(), "and it is not reported twice");
+    }
+
+    #[test]
+    fn writing_on_two_rows_damages_both_and_no_others() {
+        let mut t = term(80, 24);
+        t.advance(b"one\r\ntwo");
+        let crate::damage::DamageKind::Rows(rows) = t.take_damage().kind else {
+            panic!("rows");
+        };
+        assert_eq!(rows.iter().map(|d| d.row).collect::<Vec<_>>(), vec![0, 1]);
+    }
+
+    #[test]
+    fn a_resize_is_structural_so_a_renderer_discards_its_geometry() {
+        // Told "every row changed" instead, it would draw the new content into
+        // the old geometry.
+        let mut t = term(80, 24);
+        t.advance(b"hello");
+        t.take_damage();
+        t.resize(GridSize { cols: 40, rows: 12 });
+        let damage = t.take_damage();
+        assert!(damage.is_structural(), "{damage:?}");
+    }
+
+    #[test]
+    fn the_epoch_moves_across_a_resize_and_not_otherwise() {
+        // A renderer holding damage from a previous epoch cannot apply it: the
+        // rows it names are not the rows that exist now.
+        let mut t = term(80, 24);
+        t.advance(b"hello");
+        let before = t.take_damage().epoch;
+        t.advance(b" again");
+        assert_eq!(t.take_damage().epoch, before);
+        t.resize(GridSize { cols: 40, rows: 12 });
+        assert!(t.take_damage().epoch > before);
+    }
+
+    #[test]
+    fn a_screenful_of_output_degrades_to_a_redraw_rather_than_a_list() {
+        // A record larger than the screen it describes is not worth sending.
+        let mut t = term(80, 24);
+        for i in 0..200 {
+            t.advance(format!("line {i}\r\n").as_bytes());
+        }
+        let kind = t.take_damage().kind;
+        assert!(
+            matches!(kind, crate::damage::DamageKind::Full | crate::damage::DamageKind::Rows(_)),
+            "{kind:?}"
         );
     }
 }
