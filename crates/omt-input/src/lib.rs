@@ -12,6 +12,7 @@ pub mod key;
 pub mod conflicts;
 pub mod dispatch;
 pub mod keymap;
+pub mod layers;
 pub mod layout;
 pub mod modal;
 

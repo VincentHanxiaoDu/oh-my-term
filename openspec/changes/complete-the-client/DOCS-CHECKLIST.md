@@ -2,7 +2,7 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**87 of 212 features ticked.** (34 further sections are prose.)
+**89 of 212 features ticked.** (34 further sections are prose.)
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
@@ -203,7 +203,7 @@ Unticked means not done. Partly built stays unticked.
 
 ## 16-input-and-keymap
 
-- [ ] 1. The layer model
+- [x] 1. The layer model — omt-input layers: reserved OS and terminal chords audited against omt's defaults in every mode, and the audit proven to fire
 - [x] 2. The dispatch model — omt-input dispatch: original bytes pass through unmodified, undecodable sequences are never claimed, leader-leader sends the leader on
 - [x] 3. The leader key — test_tui: the leader opens a pending sequence, pressing it twice sends it on, the cheatsheet names it
 - [x] 4. Modes and contexts — omt-input modal: the governed modes are named, not implied; a binding outside them is refused
@@ -212,7 +212,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 7. `omt ssh` — local feels remote-native — test_tui: help, prefix, Ctrl-C reaches the program
 - [x] 8. Defaults — test_tui: keys.audit — omt's defaults take nothing critical, and the audit reports how many programs it checked against
 - [x] 9. Accessibility and internationalization — omt-input layout: matches on base-layout key or produced character, says which; defaults avoid AltGr or carry an alias
-- [ ] 10. Testing
+- [x] 10. Testing — omt-input: 99 tests across key, keymap, dispatch, modal, layout, layers and conflicts; every audit paired with a test that it fires
 - [x] 11. Capabilities introduced here — test_tui: keys.list, keys.explain, keys.registry, keys.conflicts, keys.audit, keys.flavour, keys.cheatsheet (keys.capture and keys.probe need a live terminal and are not built)
 - ~~12. What this document deliberately does not do~~ — prose
 - ~~13. OPEN QUESTIONS~~ — prose
