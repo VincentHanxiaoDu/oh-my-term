@@ -80,6 +80,18 @@ pub struct Welcome {
     /// Sent up front so a client presents the intersection rather than
     /// discovering a gap by calling into it and failing.
     pub capabilities: Vec<String>,
+    /// How this connection may authenticate.
+    ///
+    /// 13 §3. Advertised rather than guessed: a client that tried a bearer
+    /// token against an instance with no bearer backend would get a refusal
+    /// indistinguishable from a wrong token, and the person holding it would
+    /// retype a password that was never going to work.
+    ///
+    /// Depends on the transport, so two connections to the same instance may
+    /// be offered different sets — tailnet identity means nothing on a
+    /// loopback socket.
+    #[serde(default)]
+    pub auth_methods: Vec<String>,
 }
 
 impl Welcome {

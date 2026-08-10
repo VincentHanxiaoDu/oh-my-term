@@ -222,6 +222,8 @@ class Client:
     role: str
     capabilities: list[str]
     catalog_hash: str
+    #: How this connection may authenticate, as the welcome advertised it.
+    auth_methods: list[str]
     #: This client's device. Every request id carries it, so an instance can
     #: tell one client's numbering from another's.
     device: str = ""
@@ -451,6 +453,7 @@ def connect(instance: Instance, token: str | None = None) -> Client:
         role=message["role"],
         capabilities=message["capabilities"],
         catalog_hash=message["catalog_hash"],
+        auth_methods=message.get("auth_methods", []),
     )
 
 

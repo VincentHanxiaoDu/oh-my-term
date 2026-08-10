@@ -29,18 +29,38 @@ pub struct Peer {
     /// and this is what makes every other message refused rather than run at
     /// whatever role the connection happens to hold.
     pub anonymous: bool,
+    /// How this connection may authenticate, in the order they are advertised.
+    ///
+    /// Carried on the peer rather than derived in `greet`, because it depends
+    /// on where the connection came from and `greet` cannot see that. A
+    /// transport that forgets to set it advertises nothing, which is the safe
+    /// direction: a client offered nothing asks, and a client offered
+    /// something that is not there retries into a wall.
+    pub auth_methods: Vec<String>,
 }
 
 impl Peer {
     /// A peer that has connected but not yet said anything.
     #[must_use]
-    pub const fn new(actor: omt_types::Actor, role: Role) -> Self {
+    pub fn new(actor: omt_types::Actor, role: Role) -> Self {
         Self {
             actor,
             role,
             greeted: false,
             anonymous: false,
+            auth_methods: Vec::new(),
         }
+    }
+
+    /// Say how this connection may authenticate.
+    ///
+    /// Set by whatever accepted the connection, because only it knows where
+    /// the connection came from — and tailnet identity offered on a loopback
+    /// socket would be authentication bypassed by asserting it.
+    #[must_use]
+    pub fn offering(mut self, methods: Vec<String>) -> Self {
+        self.auth_methods = methods;
+        self
     }
 
     /// Mark this peer as having presented no credential.
@@ -103,6 +123,7 @@ fn greet(registry: &CapabilityRegistry, peer: &mut Peer, hello: &Hello) -> Proto
                 // Sent up front so a client renders the intersection rather
                 // than discovering a gap by calling into it and failing.
                 capabilities: registry.decls().map(|d| d.name.to_owned()).collect(),
+                auth_methods: peer.auth_methods.clone(),
             })
         }
     }

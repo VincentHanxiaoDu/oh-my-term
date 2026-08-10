@@ -8,6 +8,7 @@
 //! noise.
 
 pub mod at_rest;
+pub mod methods;
 pub mod bind;
 pub mod token;
 

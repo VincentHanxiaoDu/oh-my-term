@@ -401,7 +401,20 @@ async fn serve_socket(mut socket: WebSocket, state: HttpState, role: Option<Role
     // is handled here, before dispatch, and is the only thing such a connection
     // can accomplish.
     let joined = role.is_some();
-    let mut peer = Peer::new(Actor::Local, role.unwrap_or(Role::Viewer));
+    // What this connection may authenticate with, advertised in the welcome.
+    // Derived here because only the accept path knows where the connection
+    // came from, and tailnet identity offered on a loopback socket would be
+    // authentication bypassed by asserting it.
+    let backends = omt_auth::methods::Backends {
+        bearer: true,
+        invite: true,
+        ..omt_auth::methods::Backends::default()
+    };
+    let offered: Vec<String> = omt_auth::methods::offered_for(backends, omt_auth::methods::Peer::Loopback)
+        .into_iter()
+        .map(|m| m.id().to_owned())
+        .collect();
+    let mut peer = Peer::new(Actor::Local, role.unwrap_or(Role::Viewer)).offering(offered);
     // Its own identity for as long as it is connected, so presence can name a
     // client and the audit log can say which one did something.
     let connection = format!("conn_{}", omt_types::ClientId::new().to_wire());

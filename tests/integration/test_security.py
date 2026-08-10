@@ -135,3 +135,44 @@ class TestTheTwoHighConsequenceCapabilities:
         assert out["commands"] == []
         assert out["tools"] == []
         assert out["models"] == []
+
+
+class TestWhatTheHandshakeOffers:
+    """13-security §3. The methods are advertised, not guessed."""
+
+    def test_the_welcome_says_how_to_authenticate(self, instance) -> None:
+        # A client that tried a bearer token against an instance with no bearer
+        # backend would get a refusal indistinguishable from a wrong token, and
+        # the person holding it would retype a password that never worked.
+        import omt_client
+
+        connection = omt_client.connect(instance)
+        try:
+            assert connection.auth_methods, connection.auth_methods
+        finally:
+            connection.close()
+
+    def test_tailnet_identity_is_not_offered_on_a_loopback_socket(
+        self, instance
+    ) -> None:
+        # Offering it there would let anything local claim to be a tailnet
+        # peer, which is the whole authentication bypassed by asserting it.
+        import omt_client
+
+        connection = omt_client.connect(instance)
+        try:
+            assert "tailnet" not in connection.auth_methods
+        finally:
+            connection.close()
+
+    def test_every_advertised_method_is_one_omt_knows(self, instance) -> None:
+        # A closed set. A server accepting an unknown method name would be
+        # accepting whatever the client decided that name meant.
+        import omt_client
+
+        connection = omt_client.connect(instance)
+        try:
+            known = {"bearer", "password", "invite", "tailnet", "device_grant"}
+            assert set(connection.auth_methods) <= known
+        finally:
+            connection.close()
