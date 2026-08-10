@@ -304,6 +304,91 @@ pub const fn home_changes_session_behaviour() -> bool {
     false
 }
 
+/// What kind of thing a device is, which drives the icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Form {
+    /// A laptop or desktop.
+    Computer,
+    /// A phone.
+    Phone,
+    /// A tablet.
+    Tablet,
+    /// Something omt has no icon for.
+    ///
+    /// Present so an unknown device renders as a device rather than as
+    /// nothing. A missing icon on an attribution reads as a bug in the
+    /// attribution, which is the one thing it must not.
+    Unknown,
+}
+
+/// A device, as every surface renders it.
+///
+/// `docs/architecture/23-identity-and-devices.md` §8.1. Denormalised onto every
+/// presence, actor and resolution, so no surface has to look anything up to
+/// draw an attribution.
+///
+/// Denormalised on purpose. A client that had to resolve an id would show
+/// "dev_5TR9K2QF answered this" until the lookup came back — and on the surface
+/// that matters most, a phone that has just woken up, the lookup is exactly what
+/// has not happened yet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeviceRef {
+    /// Its id.
+    pub id: DeviceId,
+    /// What its owner calls it.
+    pub label: String,
+    /// What kind of thing it is.
+    pub form: Form,
+    /// A short platform line, for a subtitle.
+    pub platform_short: String,
+    /// Whether this is the device being rendered on.
+    ///
+    /// Computed per recipient, because it is the one field whose answer
+    /// differs for every reader — and a client that worked it out itself would
+    /// need its own device id in a place it does not otherwise need it.
+    pub is_this_device: bool,
+}
+
+/// Build the reference a particular recipient should see.
+#[must_use]
+pub fn device_ref(device: &Device, form: Form, platform: &str, recipient: DeviceId) -> DeviceRef {
+    DeviceRef {
+        id: device.id,
+        // Never empty. An attribution reading "answered by" with nothing after
+        // it is worse than no attribution: it looks like the answer came from
+        // somewhere omt could not name.
+        label: if device.name.trim().is_empty() {
+            "an unnamed device".to_owned()
+        } else {
+            device.name.clone()
+        },
+        form,
+        platform_short: platform.to_owned(),
+        is_this_device: device.id == recipient,
+    }
+}
+
+/// How an attribution reads.
+///
+/// "You" for the reader's own device, so somebody who answered on their phone
+/// and is now looking at their laptop sees that they did it — the common case
+/// for this feature is one person with several devices, not several people.
+#[must_use]
+pub fn attribution(reference: &DeviceRef) -> String {
+    if reference.is_this_device {
+        "you, on this device".to_owned()
+    } else {
+        format!("you, on {}", reference.label)
+    }
+}
+
+/// How an attribution reads when the actor is somebody else.
+#[must_use]
+pub fn attribution_for_other(who: &str, reference: &DeviceRef) -> String {
+    format!("{who}, on {}", reference.label)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -312,6 +397,90 @@ pub const fn home_changes_session_behaviour() -> bool {
 )]
 mod tests {
     use super::*;
+    fn a_device(name: &str) -> Device {
+        let mut d = Directory::new();
+        let me = d.add_identity("me");
+        let id = d.register_device(me, name, "k-1").expect("register");
+        d.device(id).expect("present").clone()
+    }
+
+    #[test]
+    fn a_reference_carries_everything_needed_to_draw_it() {
+        // A client that had to resolve an id would show "dev_5TR9K2QF answered
+        // this" until the lookup came back — and on a phone that has just woken
+        // up, the lookup is exactly what has not happened yet.
+        let device = a_device("iPhone");
+        let reference = device_ref(&device, Form::Phone, "iOS · Safari", DeviceId::new());
+        assert_eq!(reference.label, "iPhone");
+        assert_eq!(reference.form, Form::Phone);
+        assert_eq!(reference.platform_short, "iOS · Safari");
+    }
+
+    #[test]
+    fn whether_it_is_this_device_is_computed_per_recipient() {
+        // The one field whose answer differs for every reader.
+        let device = a_device("iPhone");
+        let here = device_ref(&device, Form::Phone, "iOS", device.id);
+        let there = device_ref(&device, Form::Phone, "iOS", DeviceId::new());
+        assert!(here.is_this_device);
+        assert!(!there.is_this_device);
+    }
+
+    #[test]
+    fn an_unnamed_device_still_reads_as_a_device() {
+        // An attribution reading "answered by" with nothing after it looks
+        // like the answer came from somewhere omt could not name.
+        let mut device = a_device("x");
+        device.name = "   ".to_owned();
+        let reference = device_ref(&device, Form::Unknown, "", DeviceId::new());
+        assert_eq!(reference.label, "an unnamed device");
+    }
+
+    #[test]
+    fn an_unknown_form_is_a_form_rather_than_an_absence() {
+        // A missing icon on an attribution reads as a bug in the attribution,
+        // which is the one thing it must not.
+        let device = a_device("something");
+        let reference = device_ref(&device, Form::Unknown, "", DeviceId::new());
+        assert_eq!(reference.form, Form::Unknown);
+    }
+
+    #[test]
+    fn your_own_answer_from_another_device_says_it_was_you() {
+        // The common case for this feature is one person with several devices,
+        // not several people.
+        let device = a_device("iPhone");
+        let reference = device_ref(&device, Form::Phone, "iOS", DeviceId::new());
+        assert_eq!(attribution(&reference), "you, on iPhone");
+    }
+
+    #[test]
+    fn your_answer_on_the_device_you_are_reading_says_so() {
+        let device = a_device("MacBook");
+        let reference = device_ref(&device, Form::Computer, "macOS", device.id);
+        assert_eq!(attribution(&reference), "you, on this device");
+    }
+
+    #[test]
+    fn somebody_elses_answer_names_them_and_their_device() {
+        let device = a_device("their laptop");
+        let reference = device_ref(&device, Form::Computer, "Linux", DeviceId::new());
+        assert_eq!(
+            attribution_for_other("Kenji", &reference),
+            "Kenji, on their laptop"
+        );
+    }
+
+    #[test]
+    fn a_reference_serialises_with_every_field_a_client_renders() {
+        let device = a_device("iPhone");
+        let reference = device_ref(&device, Form::Phone, "iOS · Safari", DeviceId::new());
+        let json = serde_json::to_value(&reference).expect("json");
+        for field in ["id", "label", "form", "platform_short", "is_this_device"] {
+            assert!(json.get(field).is_some(), "`{field}` is missing");
+        }
+    }
+
     fn enrolment(identity: IdentityId) -> Enrolment {
         Enrolment {
             instance: "mini".to_owned(),
