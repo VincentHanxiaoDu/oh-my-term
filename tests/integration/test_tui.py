@@ -251,6 +251,30 @@ class TestTheKeymapIsDiscoverable:
         painted = strip(tui.read(2.0))
         assert "detach" in painted.lower() or "^B" in painted, painted[-600:]
 
+    def test_holding_the_leader_lists_what_it_can_do(self, tui: Tui) -> None:
+        # `16 §3.3`. Pressing the prefix and stopping is what somebody does
+        # when they have forgotten the key, and it is the moment the menu is
+        # worth a row. Generated from the binding table, so this checks the
+        # keys that used to be reachable and unadvertised.
+        tui.send(PREFIX)
+        painted = strip(tui.read(2.0))
+        for label in ("detach", "sessions", "agents", "palette", "close"):
+            assert label in painted, f"`{label}` missing:\n{painted[-500:]}"
+        # And it does not leak into the pane: no bytes are written while
+        # pending, so the shell never sees the prefix.
+        tui.send("d")
+        tui.read(0.5)
+
+    def test_the_leader_strip_waits_rather_than_flashing(self, tui: Tui) -> None:
+        # `16 §3.3` asks for 250 ms. A user executing the chord from muscle
+        # memory must never see the strip appear and vanish.
+        tui.send(PREFIX + "w")
+        painted = strip(tui.read(2.0))
+        # The chord completed, so what is on screen is its result and not the
+        # menu that would have flashed on the way.
+        assert "Sessions" in painted, painted[-400:]
+        assert "palette" not in painted, painted[-500:]
+
     def test_the_prefix_is_reserved_and_reaches_omt_not_the_shell(
         self, tui: Tui
     ) -> None:

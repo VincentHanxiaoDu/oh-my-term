@@ -127,29 +127,64 @@ pub fn translate(event: &Event, armed: bool, mode: EncodeMode) -> (Input, bool) 
     }
 }
 
+/// Every key the leader namespace binds, and how it reads to a person.
+///
+/// One table rather than a `match` plus a hand-written hint string. The strip
+/// shown after the leader is generated from this, so a binding that exists and
+/// is not advertised — or advertised and does not exist — is not expressible.
+/// The order is the order the strip lists them in: leaving, then making, then
+/// moving, then finding.
+pub const LEADER_KEYS: &[(char, &str)] = &[
+    ('d', "detach"),
+    ('c', "new"),
+    ('s', "split"),
+    ('o', "next"),
+    ('x', "close"),
+    ('w', "sessions"),
+    ('a', "agents"),
+    ('p', "palette"),
+    ('?', "all keys"),
+];
+
+/// What one leader key does.
+///
+/// Kept beside [`LEADER_KEYS`] and checked against it by a test, because the
+/// failure mode being designed out is a key that works and is never shown.
+#[must_use]
+pub fn leader_action(key: char) -> Option<Input> {
+    Some(match key {
+        'd' => Input::Detach,
+        // The four tmux users already have in their fingers, spelled the same
+        // way: making, splitting, cycling and closing.
+        'c' | 's' => Input::Split,
+        'o' | 'n' => Input::NextPane,
+        'x' => Input::ClosePane,
+        '?' => Input::Help,
+        'p' => Input::Palette,
+        'a' => Input::Agents,
+        'w' => Input::Sessions,
+        _ => return None,
+    })
+}
+
 fn translate_key(key: &KeyEvent, armed: bool, mode: EncodeMode) -> (Input, bool) {
     if armed {
         // The prefix consumed the last key, so this one is a command.
         return match key.code {
-            KeyCode::Char('d') => (Input::Detach, false),
-            // The three tmux users already have in their fingers, spelled the
-            // same way: splitting, cycling and closing.
-            KeyCode::Char('s' | 'c') => (Input::Split, false),
-            KeyCode::Char('o' | 'n') => (Input::NextPane, false),
-            KeyCode::Char('x') => (Input::ClosePane, false),
-            KeyCode::Char('?') => (Input::Help, false),
-            KeyCode::Char('p') => (Input::Palette, false),
-            KeyCode::Char('a') if !key.modifiers.contains(PREFIX) => (Input::Agents, false),
-            KeyCode::Char('w') => (Input::Sessions, false),
             // The prefix twice sends a literal prefix, which is how a user
-            // types the chord the multiplexer took.
+            // types the chord the multiplexer took. Checked before the table,
+            // because `Ctrl-A` must not be read as the bare `a`.
             KeyCode::Char(c) if c == PREFIX_KEY && key.modifiers.contains(PREFIX) => (
                 Input::Bytes(omt_input::encode(&Chord::ctrl(PREFIX_KEY), mode)),
                 false,
             ),
-            // An unrecognized command does nothing rather than reaching the
-            // program: a mistyped chord that silently ran something would be
-            // worse than one that did not.
+            KeyCode::Char(c) if !key.modifiers.contains(PREFIX) => (
+                // An unrecognized command does nothing rather than reaching the
+                // program: a mistyped chord that silently ran something would
+                // be worse than one that did not.
+                leader_action(c).unwrap_or(Input::Ignore),
+                false,
+            ),
             _ => (Input::Ignore, false),
         };
     }

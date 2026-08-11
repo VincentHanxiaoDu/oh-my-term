@@ -43,7 +43,7 @@ pub fn hint_for(s: &Situation) -> Option<String> {
     // Ordered by urgency, and the order is the design: whatever is most likely
     // to be the reason you are looking at the screen wins the single slot.
     if s.prefix_armed {
-        return Some("d detach · c new · n next · ? all keys".to_owned());
+        return Some(pending_strip());
     }
     if s.blocked > 1 {
         return Some(format!("agents are waiting on you — {p} a to answer"));
@@ -63,6 +63,29 @@ pub fn hint_for(s: &Situation) -> Option<String> {
     }
     None
 }
+
+/// The which-key strip: every leader key, generated from the binding table.
+///
+/// Generated rather than written out, so a binding that exists and is never
+/// advertised is not expressible. It listed four of the nine keys for as long
+/// as it was a hand-typed string — `sessions`, `agents`, `close` and the
+/// palette were all reachable and none of them were on screen.
+///
+/// [16 §3.3](../../../docs/architecture/16-input-and-keymap.md) asks for it
+/// **after 250 ms, not instantly**: somebody executing `⟨leader⟩ s` from
+/// muscle memory never sees a flash, and somebody who forgot gets the menu.
+/// The delay is the caller's — this only says what the strip reads.
+#[must_use]
+pub fn pending_strip() -> String {
+    let mut out = format!("{} ▸ ", leader());
+    for (key, label) in crate::app::LEADER_KEYS {
+        out.push_str(&format!("  {key} {label}"));
+    }
+    out
+}
+
+/// How long the leader is held before the strip appears.
+pub const PENDING_STRIP_DELAY_MS: u64 = 250;
 
 /// The prefix as a person reads it, e.g. `^B`.
 #[must_use]
@@ -194,6 +217,51 @@ mod tests {
             ..situation()
         };
         assert_eq!(hint_for(&s), None);
+    }
+
+    #[test]
+    fn the_strip_advertises_every_key_the_leader_binds() {
+        // The bug this exists to prevent: the strip was a hand-typed string
+        // listing four of nine bindings, so `sessions`, `agents`, `close` and
+        // the palette were reachable and invisible.
+        let strip = pending_strip();
+        for (key, label) in crate::app::LEADER_KEYS {
+            assert!(strip.contains(*label), "`{label}` is missing from {strip}");
+            assert!(
+                crate::app::leader_action(*key).is_some(),
+                "`{key}` is advertised and does nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn no_leader_key_works_without_being_advertised() {
+        // The other direction, which is the half that catches drift: a binding
+        // added to the match and forgotten in the table would otherwise ship
+        // as a key nobody is ever told about.
+        for byte in b'!'..=b'~' {
+            let key = byte as char;
+            if crate::app::leader_action(key).is_none() {
+                continue;
+            }
+            assert!(
+                crate::app::LEADER_KEYS.iter().any(|(k, _)| *k == key)
+                    // The aliases tmux users arrive with. They do the same
+                    // thing as a listed key and listing both would double the
+                    // strip's width to say one thing twice.
+                    || matches!(key, 'n' | 's' | 'c'),
+                "`{key}` is bound and never advertised"
+            );
+        }
+    }
+
+    #[test]
+    fn an_armed_prefix_shows_that_strip_and_not_some_other_text() {
+        let s = Situation {
+            prefix_armed: true,
+            ..situation()
+        };
+        assert_eq!(hint_for(&s), Some(pending_strip()));
     }
 
     #[test]

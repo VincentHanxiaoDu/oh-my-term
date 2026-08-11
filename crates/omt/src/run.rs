@@ -91,6 +91,10 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let _guard = RawGuard::enter().context("entering raw mode")?;
     let mut out = io::stdout();
     let mut armed = false;
+    // When the leader was pressed, so the which-key strip can wait 250 ms
+    // before appearing (16 §3.3). Somebody executing `⟨leader⟩ s` from muscle
+    // memory never sees a flash; somebody who forgot gets the menu.
+    let mut armed_at: Option<std::time::Instant> = None;
     let started = std::time::Instant::now();
     let mut has_used_prefix = false;
     let mut shown_hint: Option<Option<&'static str>> = None;
@@ -188,7 +192,10 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
         let focused_session = panes[focus].session;
         let situation = omt_tui::Situation {
-            prefix_armed: armed,
+            prefix_armed: armed
+                && armed_at.is_some_and(|at| {
+                    at.elapsed().as_millis() as u64 >= omt_tui::PENDING_STRIP_DELAY_MS
+                }),
             blocked: instance
                 .threads(focused_session)
                 .map_or(0, |roster| roster.summary().blocked),
@@ -305,6 +312,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // Recorded the moment it is first armed: somebody who has pressed
             // it knows it exists, and the introduction stops being useful.
             has_used_prefix = has_used_prefix || next;
+            if next {
+                // Only the first arming starts the clock. Re-arming on a key
+                // that was already pending would restart the delay and the
+                // strip would never appear.
+                armed_at = armed_at.or_else(|| Some(std::time::Instant::now()));
+            } else {
+                armed_at = None;
+            }
             armed = next;
             match input {
                 Input::Bytes(bytes) => {
