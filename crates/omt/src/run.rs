@@ -23,6 +23,23 @@ use omt_tui::{Input, RawGuard, Screen};
 /// which needs an event source this does not have yet.
 const TICK: Duration = Duration::from_millis(8);
 
+/// Rows of chrome above the panes. The tab bar owns the first row.
+const CHROME_ROWS: u16 = 1;
+
+/// Where a pane's cursor lands on the real screen, one-based.
+///
+/// A function rather than an expression inlined at the one place it is used,
+/// because it was wrong there: the pane is drawn at `rect.row + CHROME_ROWS`
+/// and the cursor was placed at `rect.row`, so it sat one row above the
+/// character it belonged after. A multi-line shell prompt shows that
+/// immediately — the cursor appears on the line above the one being typed on.
+const fn cursor_on_screen(rect: &omt_tui::Rect, cursor_row: u16, cursor_col: u16) -> (u16, u16) {
+    (
+        rect.row + CHROME_ROWS + cursor_row + 1,
+        rect.col + cursor_col + 1,
+    )
+}
+
 /// Run one shell in this terminal until it exits or the user detaches.
 ///
 /// # Errors
@@ -148,7 +165,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             }
             pane.screen
                 // Offset by the tab bar, which owns the first row.
-                .draw_at(&mut out, runtime.terminal().grid(), rect.col, rect.row + 1)
+                .draw_at(
+                    &mut out,
+                    runtime.terminal().grid(),
+                    rect.col,
+                    rect.row + CHROME_ROWS,
+                )
                 .context("drawing")?;
         }
 
@@ -159,12 +181,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             && let Some(runtime) = instance.runtime(pane.session)
         {
             let cursor = runtime.terminal().grid().cursor;
-            write!(
-                out,
-                "\x1b[{};{}H",
-                rect.row + cursor.row + 1,
-                rect.col + cursor.col + 1
-            )
+            let (row, col) = cursor_on_screen(rect, cursor.row, cursor.col);
+            write!(out, "\x1b[{row};{col}H")
             .context("placing the cursor")?;
         }
 
@@ -339,22 +357,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     layout_dirty = true;
                 }
                 Input::Sessions => {
-                    overlay = Some(omt_tui::Overlay::new(
-                        "Sessions",
-                        panes
-                            .iter()
-                            .map(|pane| omt_tui::Choice {
-                                label: instance
-                                    .session(pane.session)
-                                    .map_or_else(|| "shell".to_owned(), |s| s.title.clone()),
-                                detail: instance
-                                    .session(pane.session)
-                                    .and_then(|s| s.cwd.clone())
-                                    .unwrap_or_default(),
-                                chord: None,
-                            })
-                            .collect(),
-                    ));
+                    // Every session this instance holds, not only the ones with
+                    // a pane on screen. A session that is running somewhere
+                    // else is exactly the one somebody opens this list to find,
+                    // and a list that showed only what was already visible
+                    // answered a question nobody had.
+                    overlay = Some(omt_tui::Overlay::new("Sessions", session_rows(&instance, &panes)));
                     layout_dirty = true;
                 }
                 Input::Resize { cols, rows } => {
@@ -484,6 +492,45 @@ impl LocalPane {
 ///
 /// A vertical rule rather than a blank column: two shells side by side with
 /// nothing between them read as one shell with very strange output.
+/// The rows behind the sessions list.
+///
+/// Built from the instance rather than from the panes, so a session running in
+/// another workspace — or one whose pane was closed while it kept running — is
+/// still findable. Whether a row is on screen is said in the row instead of
+/// deciding whether the row exists at all: "it is running, you just cannot see
+/// it" is the answer somebody is looking for, and omitting it looks like the
+/// session is gone.
+fn session_rows(instance: &Instance, panes: &[LocalPane]) -> Vec<omt_tui::Choice> {
+    let mut rows: Vec<omt_tui::Choice> = Vec::new();
+    for session in instance.sessions() {
+        let workspace = instance
+            .workspaces()
+            .into_iter()
+            .find(|w| w.id == session.workspace)
+            .map_or_else(|| "?".to_owned(), |w| w.name.clone());
+        let mut parts = vec![workspace, format!("{:?}", session.state).to_lowercase()];
+        if let Some(roster) = instance.threads(session.id) {
+            let blocked = roster.awaiting_human().len();
+            if blocked > 0 {
+                parts.push(format!("{blocked} waiting on you"));
+            } else if !roster.is_empty() {
+                parts.push(format!("{} running", roster.threads().len()));
+            }
+        }
+        if !panes.iter().any(|p| p.session == session.id) {
+            parts.push("not on screen".to_owned());
+        }
+        rows.push(omt_tui::Choice {
+            label: session.title.clone(),
+            detail: parts.join(" · "),
+            chord: None,
+        });
+    }
+    // Anything waiting on a human first — that is why this list gets opened.
+    rows.sort_by_key(|c| usize::from(!c.detail.contains("waiting on you")));
+    rows
+}
+
 fn draw_separators(out: &mut impl Write, rects: &[omt_tui::Rect]) -> io::Result<()> {
     for pair in rects.windows(2) {
         let col = pair[0].col + pair[0].cols + 1;
@@ -579,4 +626,37 @@ fn monotonic_ms() -> u64 {
     static START: OnceLock<std::time::Instant> = OnceLock::new();
     let start = START.get_or_init(std::time::Instant::now);
     start.elapsed().as_millis() as u64
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cursor_lands_on_the_row_the_pane_was_drawn_at() {
+        // The bug this pins: the pane is drawn `CHROME_ROWS` below its rect and
+        // the cursor was not, so on a two-line shell prompt the cursor appeared
+        // on the line above the one being typed on.
+        let rect = omt_tui::Rect {
+            row: 0,
+            col: 0,
+            rows: 10,
+            cols: 80,
+        };
+        // Grid row 1 — the second line of the prompt — with a one-row tab bar
+        // above it is screen row 3, one-based.
+        assert_eq!(cursor_on_screen(&rect, 1, 2), (3, 3));
+    }
+
+    #[test]
+    fn a_second_panes_cursor_carries_that_panes_offset() {
+        let rect = omt_tui::Rect {
+            row: 5,
+            col: 40,
+            rows: 5,
+            cols: 40,
+        };
+        assert_eq!(cursor_on_screen(&rect, 0, 0), (7, 41));
+    }
 }

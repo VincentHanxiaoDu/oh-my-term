@@ -33,6 +33,8 @@ pub use install::{
     plan_uninstall,
 };
 pub mod appserver;
+pub mod opencode_http;
 pub mod sse;
 pub use appserver::{AppServer, ServerLine, decode_line};
+pub use opencode_http::{Decoded, EventStream};
 pub use registry::{AdapterSet, builtin};

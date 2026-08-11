@@ -28,6 +28,13 @@ pub struct Decoder {
     /// once and expects a client to remember it — losing it means a reconnect
     /// replays from the beginning.
     last_id: Option<String>,
+    /// The tail of the last chunk, when it stopped mid-line.
+    ///
+    /// A network splits wherever it likes, including in the middle of a field
+    /// name. Without this, `feed("data: {\"a\":")` then `feed("1}\n\n")` parses
+    /// the second chunk's `1}` as its own line — and where the split lands
+    /// inside a JSON payload, the two halves are each nonsense.
+    partial: String,
 }
 
 impl Decoder {
@@ -90,10 +97,20 @@ impl Decoder {
     /// case that matters: a network hands over arbitrary slices, and an event
     /// split across two of them must not become two half events.
     pub fn feed(&mut self, chunk: &str) -> Vec<Event> {
-        chunk
-            .split('\n')
+        self.partial.push_str(chunk);
+        let buffered = std::mem::take(&mut self.partial);
+        let mut lines: Vec<&str> = buffered.split('\n').collect();
+        // The last piece is only a line if the chunk ended with a newline;
+        // otherwise it is the start of one and belongs to the next chunk.
+        // `split` always yields a final element — empty when the chunk ended on
+        // a newline — so this holds back exactly the incomplete tail.
+        let tail = lines.pop().unwrap_or_default();
+        let events = lines
+            .into_iter()
             .filter_map(|l| self.line(l.trim_end_matches('\r')))
-            .collect()
+            .collect();
+        self.partial.push_str(tail);
+        events
     }
 }
 
@@ -125,6 +142,17 @@ mod tests {
     }
 
     #[test]
+    fn a_chunk_that_ends_mid_json_is_not_parsed_as_two_lines() {
+        // The case that matters for a real stream: the split lands inside the
+        // payload, and each half on its own is nonsense.
+        let mut d = Decoder::new();
+        assert!(d.feed("data: {\"delta\":").is_empty());
+        let events = d.feed("\"hi\"}\n\n");
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0].data, "{\"delta\":\"hi\"}");
+    }
+
+    #[test]
     fn a_comment_is_not_an_event() {
         // Its whole purpose is keeping a connection open through a proxy.
         let mut d = Decoder::new();
@@ -150,6 +178,10 @@ mod tests {
         let events = d.feed("\n\n");
         assert_eq!(events.len(), 1, "{events:?}");
         assert_eq!(events[0].data, "hi");
+        // The name too: the split landed mid-field, and a decoder that did not
+        // buffer the tail would have parsed `sage` as a field of its own and
+        // silently dropped the event's type.
+        assert_eq!(events[0].name.as_deref(), Some("message"));
     }
 
     #[test]
