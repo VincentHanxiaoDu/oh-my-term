@@ -250,7 +250,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         let hint = omt_tui::hint_for(&situation);
         let bottom = hint.map_or_else(
             || omt_tui::status_line(&chrome, term_cols),
-            |text| omt_tui::render_hint(Some(text), term_cols),
+            |text| omt_tui::render_hint(Some(&text), term_cols),
         );
         if shown_bottom.as_deref() != Some(bottom.as_str()) {
             // Saved and restored around the write, or the cursor ends parked on
@@ -578,7 +578,8 @@ fn first_run_summary() {
     } else {
         println!("  agents: {}", agents.join(", "));
     }
-    println!("  Ctrl-A ? for every key · Ctrl-A d to detach · `omt web` for a phone");
+    let leader = omt_tui::leader();
+    println!("  {leader} ? for every key · {leader} d to detach · `omt web` for a phone");
     println!();
 }
 

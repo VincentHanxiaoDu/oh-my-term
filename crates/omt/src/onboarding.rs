@@ -29,7 +29,11 @@ use serde::{Deserialize, Serialize};
 pub struct Hint {
     /// How it is referred to when dismissed.
     pub id: &'static str,
-    /// What it says.
+    /// What it says, with `{leader}` standing in for the prefix.
+    ///
+    /// A placeholder rather than a literal `^B`, because the leader is a
+    /// setting: a hint that named the compiled-in default would tell somebody
+    /// who rebound it to press a key they have not got.
     pub text: &'static str,
     /// How many runs must have happened before it is worth saying.
     ///
@@ -37,6 +41,14 @@ pub struct Hint {
     /// the one thing needed to not be stuck, and the tenth should be silent
     /// unless it has something the first run had no room for.
     pub after_runs: u32,
+}
+
+impl Hint {
+    /// The text with the resolved leader substituted in.
+    #[must_use]
+    pub fn resolved(&self) -> String {
+        self.text.replace("{leader}", &omt_tui::leader())
+    }
 }
 
 /// Every hint omt knows, in the order they become useful.
@@ -47,17 +59,17 @@ pub struct Hint {
 pub const HINTS: &[Hint] = &[
     Hint {
         id: "prefix",
-        text: "Ctrl-A is omt's prefix. Ctrl-A ? lists every key.",
+        text: "{leader} is omt's prefix. {leader} ? lists every key.",
         after_runs: 0,
     },
     Hint {
         id: "sessions",
-        text: "Ctrl-A w shows every session, here and on your other machines.",
+        text: "{leader} w shows every session, here and on your other machines.",
         after_runs: 1,
     },
     Hint {
         id: "agents",
-        text: "Ctrl-A a jumps to whichever agent is waiting on you.",
+        text: "{leader} a jumps to whichever agent is waiting on you.",
         after_runs: 2,
     },
     Hint {
@@ -192,7 +204,7 @@ impl CapabilityHandler<HintState> for HintsHandler {
             .map_err(|_| CapabilityError::internal("the hint lock was poisoned"))?;
         let next = hints.next().map(|h| HintOut {
             id: h.id.to_owned(),
-            text: h.text.to_owned(),
+            text: h.resolved(),
         });
         // Asking for it is showing it. Otherwise the same hint comes back on
         // every poll and the one-at-a-time rule buys nothing.
@@ -679,7 +691,12 @@ mod tests {
         // Not the most impressive feature — the prefix key. Somebody who cannot
         // reach omt at all has no use for what omt can do.
         assert_eq!(HINTS.first().map(|h| h.id), Some("prefix"));
-        assert!(HINTS[0].text.contains("Ctrl-A"));
+        assert!(HINTS[0].text.contains("{leader}"), "the prefix hint must name the prefix");
+        // And it must come out as the key that is actually bound, not as the
+        // placeholder and not as a hardcoded one.
+        let shown = HINTS[0].resolved();
+        assert!(shown.contains(&omt_tui::leader()), "{shown}");
+        assert!(!shown.contains("{leader}"), "{shown}");
     }
 
     #[test]

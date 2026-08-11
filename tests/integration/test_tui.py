@@ -11,6 +11,11 @@ These run the real binary on a real pty and read what it paints.
 
 from __future__ import annotations
 
+# omt's prefix, as a byte. Named rather than written as `\x01` at thirty call
+# sites, because the default leader moved from `Ctrl-A` to `Ctrl-B` and the
+# literals were the reason changing it looked like eight unrelated failures.
+PREFIX = "\x02"  # Ctrl-B
+
 import os
 import pty
 import re
@@ -139,13 +144,13 @@ class TestTheLists:
         # `ACTIONS` was a table with no code that drew it, and the parity gate
         # passed on the table — which is how a capability can be "reachable from
         # the palette" when there is no palette.
-        tui.send("\x01p")
+        tui.send(PREFIX + "p")
         painted = strip(tui.read(2.0))
         assert "Commands" in painted, painted[-700:]
         assert "session" in painted, painted[-700:]
 
     def test_typing_narrows_the_palette(self, tui: Tui) -> None:
-        tui.send("\x01p")
+        tui.send(PREFIX + "p")
         tui.read(1.0)
         tui.send("worktree")
         painted = strip(tui.read(2.0))
@@ -154,7 +159,7 @@ class TestTheLists:
     def test_a_filter_that_matches_nothing_says_so(self, tui: Tui) -> None:
         # An empty box looks like a broken one; the useful information is that
         # the filter matched nothing.
-        tui.send("\x01p")
+        tui.send(PREFIX + "p")
         tui.read(1.0)
         tui.send("zzzzzz")
         painted = strip(tui.read(2.0))
@@ -163,7 +168,7 @@ class TestTheLists:
     def test_escape_closes_it_and_the_shell_takes_keys_again(self, tui: Tui) -> None:
         # A list that keeps the keyboard after it is dismissed is a terminal
         # that has stopped responding.
-        tui.send("\x01p")
+        tui.send(PREFIX + "p")
         tui.read(1.0)
         tui.send("\x1b")
         tui.read(0.5)
@@ -174,12 +179,12 @@ class TestTheLists:
     def test_the_sessions_list_opens(self, tui: Tui) -> None:
         # Moving between sessions by name rather than counting how many times
         # to press next.
-        tui.send("\x01w")
+        tui.send(PREFIX + "w")
         painted = strip(tui.read(2.0))
         assert "Sessions" in painted, painted[-700:]
 
     def test_the_agents_list_opens(self, tui: Tui) -> None:
-        tui.send("\x01a")
+        tui.send(PREFIX + "a")
         painted = strip(tui.read(2.0))
         assert "Agents" in painted, painted[-700:]
 
@@ -188,7 +193,7 @@ class TestTheLists:
     ) -> None:
         # Letting a keystroke through would type into a program nobody is
         # looking at.
-        tui.send("\x01p")
+        tui.send(PREFIX + "p")
         tui.read(1.0)
         tui.send("rm -rf")
         tui.send("\x1b")
@@ -200,25 +205,25 @@ class TestPanes:
     def test_splitting_puts_a_second_session_beside_the_first(self, tui: Tui) -> None:
         # `17 §1`. A split that starts no process is a divider; a split that
         # starts one is a pane.
-        tui.send("\x01s")
+        tui.send(PREFIX + "s")
         painted = strip(tui.read(3.0))
         assert re.search(r"\b2 sessions\b", painted), painted[-500:]
 
     def test_focus_moves_between_them(self, tui: Tui) -> None:
         # Which pane typing goes to is the question the bar exists to answer, so
         # the mark has to move with the focus.
-        tui.send("\x01s")
+        tui.send(PREFIX + "s")
         tui.read(2.0)
         before = strip(tui.read(1.0))
-        tui.send("\x01o")
+        tui.send(PREFIX + "o")
         after = strip(tui.read(2.0))
         assert before != after, "focus moved and nothing on screen changed"
 
     def test_closing_a_pane_leaves_the_other_running(self, tui: Tui) -> None:
         # Closing a view of something is not ending it.
-        tui.send("\x01s")
+        tui.send(PREFIX + "s")
         tui.read(2.0)
-        tui.send("\x01x")
+        tui.send(PREFIX + "x")
         painted = strip(tui.read(3.0))
         assert re.search(r"\b1 session\b", painted), painted[-500:]
         tui.send("echo still-here\r")
@@ -228,7 +233,7 @@ class TestPanes:
         # Two unusable panes are worse than one usable one, and somebody cannot
         # see why nothing is legible.
         for _ in range(12):
-            tui.send("\x01s")
+            tui.send(PREFIX + "s")
             tui.read(0.4)
         painted = strip(tui.read(2.0))
         # However many fit, the bar still agrees with itself about how many
@@ -242,16 +247,16 @@ class TestTheKeymapIsDiscoverable:
     def test_the_help_shows_every_binding(self, tui: Tui) -> None:
         # `16 §7`. A binding nobody can find is a binding nobody uses, and the
         # hint row says this exists precisely so it can be found.
-        tui.send("\x01?")
+        tui.send(PREFIX + "?")
         painted = strip(tui.read(2.0))
-        assert "detach" in painted.lower() or "^A" in painted, painted[-600:]
+        assert "detach" in painted.lower() or "^B" in painted, painted[-600:]
 
     def test_the_prefix_is_reserved_and_reaches_omt_not_the_shell(
         self, tui: Tui
     ) -> None:
         # Every bare key belongs to the program underneath, which is why omt
         # takes a prefix rather than a key.
-        tui.send("\x01w")
+        tui.send(PREFIX + "w")
         painted = strip(tui.read(2.0))
         assert "Sessions" in painted, painted[-400:]
 

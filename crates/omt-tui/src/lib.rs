@@ -18,7 +18,7 @@ pub mod layout;
 pub mod render;
 
 pub use app::{Input, RawGuard, translate};
-pub use hint::{Situation, hint_for, render_hint};
+pub use hint::{Situation, hint_for, leader, render_hint};
 pub use layout::{MIN_PANE_COLS, MIN_PANE_ROWS, Rect, Split, how_many_fit, pane_at, tile};
 pub use render::Screen;
 

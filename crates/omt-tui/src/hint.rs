@@ -35,29 +35,39 @@ pub struct Situation {
 /// `None` is a real answer and the common one. A status line that always has
 /// something in it is a status line that is never read.
 #[must_use]
-pub fn hint_for(s: &Situation) -> Option<&'static str> {
+pub fn hint_for(s: &Situation) -> Option<String> {
+    // The *resolved* leader, never the literal `^A` these strings used to
+    // carry. A hint naming a key the user has not got is worse than no hint:
+    // they press it, something else happens, and they stop trusting the row.
+    let p = leader();
     // Ordered by urgency, and the order is the design: whatever is most likely
     // to be the reason you are looking at the screen wins the single slot.
     if s.prefix_armed {
-        return Some("d detach · c new · n next · ? all keys");
+        return Some("d detach · c new · n next · ? all keys".to_owned());
     }
     if s.blocked > 1 {
-        return Some("agents are waiting on you — ^A a to answer");
+        return Some(format!("agents are waiting on you — {p} a to answer"));
     }
     if s.blocked == 1 {
-        return Some("an agent is waiting on you — ^A a to answer");
+        return Some(format!("an agent is waiting on you — {p} a to answer"));
     }
     // Only while it is still plausibly someone's first minute. After that the
     // absence of the hint is itself information: nothing needs you.
     if !s.has_used_prefix && s.age_secs < FIRST_MINUTE_SECS {
-        return Some("^A d detaches · ^A ? shows every key");
+        return Some(format!("{p} d detaches · {p} ? shows every key"));
     }
     if s.remote_clients > 0 && !s.agent_running {
         // Worth saying unprompted: somebody typing on a screen they think is
         // private should be told it is not.
-        return Some("someone else is attached to this session");
+        return Some("someone else is attached to this session".to_owned());
     }
     None
+}
+
+/// The prefix as a person reads it, e.g. `^B`.
+#[must_use]
+pub fn leader() -> String {
+    format!("^{}", crate::app::PREFIX_KEY.to_ascii_uppercase())
 }
 
 /// How long "just started" lasts.
@@ -184,6 +194,16 @@ mod tests {
             ..situation()
         };
         assert_eq!(hint_for(&s), None);
+    }
+
+    #[test]
+    fn a_hint_names_the_leader_that_is_actually_bound() {
+        // It said `^A` while the binding was `^B` for exactly as long as
+        // nothing checked. A hint naming a key the user has not got is worse
+        // than no hint at all.
+        let hint = hint_for(&situation()).expect("a hint");
+        assert!(hint.contains(&leader()), "{hint}");
+        assert_eq!(leader(), format!("^{}", crate::app::PREFIX_KEY.to_ascii_uppercase()));
     }
 
     #[test]

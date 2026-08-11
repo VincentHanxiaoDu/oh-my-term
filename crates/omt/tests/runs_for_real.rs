@@ -106,9 +106,11 @@ fn runs_a_shell_and_types_into_it() {
         "the keystroke never reached a shell, or its output never came back:\n{seen}"
     );
 
-    // Ctrl-A d detaches. The prefix exists because every bare key belongs to
-    // the program underneath.
-    pty.writer().write_all(b"\x01d").expect("detach");
+    // Ctrl-B d detaches. The prefix exists because every bare key belongs to
+    // the program underneath, and `Ctrl-B` is tmux's — the byte is written
+    // here rather than derived, so changing the default leader fails this
+    // test instead of silently shipping a key nobody is told about.
+    pty.writer().write_all(b"\x02d").expect("detach");
 
     // Keep draining while waiting. Leaving raw mode writes escape sequences,
     // and a reader that stopped reading would fill the pty's buffer and block

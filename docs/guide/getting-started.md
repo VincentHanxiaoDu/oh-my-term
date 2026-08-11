@@ -12,13 +12,13 @@ chord.
 
 ## The one key omt takes
 
-`Ctrl-A` is the prefix. On its own it does nothing visible; it waits for the
+`Ctrl-B` is the prefix. On its own it does nothing visible; it waits for the
 next key.
 
-| After `Ctrl-A` | Does |
+| After `Ctrl-B` | Does |
 |---|---|
 | `d` | Detach — leave the session running and exit |
-| `Ctrl-A` | Send a literal `Ctrl-A` to the program |
+| `Ctrl-B` | Send a literal `Ctrl-B` to the program |
 
 A prefix rather than a bare key, because every bare key belongs to whatever you
 are running. If you have ever lost `Ctrl-B` to tmux inside emacs, you know why

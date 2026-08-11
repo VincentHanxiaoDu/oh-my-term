@@ -50,7 +50,7 @@ class TestTheOneHintRule:
         # use for what omt can do. On a fresh instance, because the shared one
         # has already been shown this by another test.
         state = fresh.call("onboarding.hint_state")
-        assert "Ctrl-A" in state["next"]["text"]
+        assert "^B" in state["next"]["text"]
 
     def test_a_hint_does_not_come_back_on_the_next_ask(self, client: Client) -> None:
         # Asking for it is showing it. Otherwise every poll re-offers the same

@@ -89,11 +89,22 @@ pub enum Input {
 /// The chord that leaves without killing anything.
 ///
 /// A prefix rather than a bare key, because every bare key belongs to the
-/// program underneath. `Ctrl-A` then `d` is what every multiplexer user already
-/// has in their fingers.
+/// program underneath.
 pub const PREFIX: KeyModifiers = KeyModifiers::CONTROL;
-/// The prefix key.
-pub const PREFIX_KEY: char = 'a';
+
+/// The default prefix key.
+///
+/// `Ctrl-B`, per [16 §3.2](../../../docs/architecture/16-input-and-keymap.md).
+/// It is tmux's default and has been for two decades, which is the whole
+/// argument: the largest group of incoming users relearns nothing.
+///
+/// This was `Ctrl-A` — screen's default — and that is the one alternative the
+/// document explicitly considers and rejects, because in readline `Ctrl-A` is
+/// `beginning-of-line`, a key people press constantly in a shell, and a shell
+/// is what half of omt's panes contain. `omt-input`'s own keymap already
+/// defaulted to `ctrl-b`; only the TUI disagreed, so the two halves of the
+/// product shipped different leaders.
+pub const PREFIX_KEY: char = 'b';
 
 /// Translate one terminal event, given whether the prefix was just pressed.
 ///
@@ -264,7 +275,7 @@ mod tests {
     #[test]
     fn the_prefix_arms_rather_than_being_sent() {
         let (input, armed) = translate(
-            &key(KeyCode::Char('a'), KeyModifiers::CONTROL),
+            &key(KeyCode::Char(PREFIX_KEY), KeyModifiers::CONTROL),
             false,
             EncodeMode::default(),
         );
@@ -283,11 +294,18 @@ mod tests {
     fn the_prefix_twice_sends_a_literal_one() {
         // How a user types the chord the multiplexer took from them.
         let (input, _) = translate(
-            &key(KeyCode::Char('a'), KeyModifiers::CONTROL),
+            &key(KeyCode::Char(PREFIX_KEY), KeyModifiers::CONTROL),
             true,
             EncodeMode::default(),
         );
-        assert_eq!(input, Input::Bytes(vec![0x01]));
+        // Derived from the prefix rather than written as a literal, so
+        // changing the default leader cannot leave this test asserting the
+        // old key's byte.
+        assert_eq!(
+            input,
+            Input::Bytes(vec![(PREFIX_KEY as u8) & 0x1f]),
+            "the literal prefix must be the prefix that is bound"
+        );
     }
 
     #[test]
