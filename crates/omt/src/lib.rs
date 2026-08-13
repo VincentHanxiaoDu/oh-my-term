@@ -27,6 +27,7 @@ pub mod setup;
 pub mod thin;
 pub mod uninstall;
 pub mod reach;
+pub mod probe;
 pub mod run;
 pub mod scheduler;
 

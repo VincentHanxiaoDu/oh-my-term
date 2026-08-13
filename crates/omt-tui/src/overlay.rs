@@ -44,6 +44,22 @@ impl Overlay {
         }
     }
 
+    /// Replace the rows, keeping the filter somebody typed and their place in
+    /// the list.
+    ///
+    /// A list of what agents are doing is worthless as a snapshot: it is
+    /// opened *because* something is expected to change, and an agent that
+    /// starts needing a human while the list is on screen is exactly the event
+    /// it exists to show. Rebuilding a whole `Overlay` each frame would throw
+    /// away the filter mid-word.
+    pub fn set_choices(&mut self, choices: Vec<Choice>) {
+        self.choices = choices;
+        // The cursor is clamped rather than reset: a list that jumped back to
+        // the top whenever a row appeared could not be navigated at all.
+        let len = self.visible().len();
+        self.cursor = self.cursor.min(len.saturating_sub(1));
+    }
+
     /// What is showing, given what has been typed.
     ///
     /// Matched against the label *and* the detail: somebody looking for the

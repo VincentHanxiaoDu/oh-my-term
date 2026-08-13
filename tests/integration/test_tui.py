@@ -20,6 +20,7 @@ import os
 import pty
 import re
 import selectors
+import shutil
 import signal
 import subprocess
 import time
@@ -41,6 +42,7 @@ class Tui:
     """A running `omt` with a terminal on the other end of a pty."""
 
     def __init__(self, cwd: Path) -> None:
+        self.cwd = str(cwd)
         self.parent, child = pty.openpty()
         # A size a real terminal has. Too small and every layout decision is
         # the degenerate one.
@@ -241,6 +243,94 @@ class TestPanes:
         # bug this project keeps finding.
         found = re.findall(r"\b(\d+) sessions?\b", painted)
         assert found, painted[-400:]
+
+
+class TestWhatIsRunningIsNoticed:
+    """The agent layer, fed from the local terminal.
+
+    Everything below existed and nothing called it: adapters could identify
+    eleven agents, the merge machine could rank six tiers, and `omt` ran a
+    shell without ever asking. Starting an agent in a pane and opening the
+    list showed "nothing matches", because nothing had ever looked.
+    """
+
+    def test_a_pane_running_no_agent_says_so_rather_than_showing_nothing(
+        self, tui: Tui
+    ) -> None:
+        # An empty list and "omt found nothing" are different answers, and the
+        # second is the one that says whether to go looking for a bug.
+        tui.send(PREFIX + "a")
+        painted = strip(tui.read(2.0))
+        assert "no agent in any pane" in painted, painted[-600:]
+
+    def test_an_agent_in_a_pane_is_found_and_named(self, tui: Tui) -> None:
+        # A binary *named* `claude`, which is the exe-name half of the
+        # fingerprint and works on every platform. Deliberately a copy rather
+        # than `/bin/sleep` renamed in argv: on macOS the environment of an
+        # Apple-signed platform binary is not readable, so a stand-in that
+        # relied on an env marker would test the kernel's mood rather than
+        # omt. The env-marker path has its own test in `omt-pty`, against a
+        # process whose environment can actually be read.
+        # A copy of omt's own binary, named `claude`. Not a copy of
+        # `/bin/sleep`: a copy of an Apple-signed platform binary loses its
+        # signature and is killed on sight, and not `sleep` renamed in argv
+        # either, because on macOS a platform binary's environment cannot be
+        # read at all — a stand-in resting on that would be testing the
+        # kernel's mood rather than omt. `serve` on a throwaway socket is
+        # simply something that does not exit.
+        fake = os.path.join(tui.cwd, "claude")
+        shutil.copy(str(omt_client.omt_binary()), fake)
+        os.chmod(fake, 0o755)
+        tui.send(f"{fake} serve --socket {tui.cwd}/probe.sock\r")
+        # Longer than the probe interval, which is what makes this a test of
+        # the loop and not only of `identify`.
+        tui.read(2.0)
+        tui.send(PREFIX + "a")
+        painted = strip(tui.read(2.0))
+        assert "Claude Code" in painted, painted[-800:]
+        # The evidence travels with the verdict: somebody looking at a wrong
+        # detection needs to see what matched, not be told a name again.
+        assert "CLAUDECODE" in painted, painted[-800:]
+        # Against the *last* frame, not the accumulated history: the list is
+        # rebuilt every frame, so the earlier "nothing here yet" frames are
+        # legitimately in the buffer. That the newest frame no longer says it
+        # is what proves the list is live rather than a snapshot.
+        last_frame = painted[painted.rfind("Agents") :]
+        assert "no agent in any pane" not in last_frame, last_frame[:600]
+
+
+class TestTheScreenIsNotCorrupted:
+    def test_an_open_overlay_is_not_painted_over_by_the_panes(
+        self, tui: Tui
+    ) -> None:
+        # The panes repaint every frame from their own damage. An overlay
+        # drawn once is painted over within milliseconds, and what is left is
+        # half a list interleaved with a shell.
+        tui.send(PREFIX + "p")
+        tui.read(0.5)
+        # Keep the pane busy underneath, which is what forces the repaints.
+        painted = strip(tui.read(2.0))
+        assert "Commands" in painted, painted[-600:]
+        # The last thing painted must still contain the overlay, not only the
+        # first.
+        tail = painted[-2000:]
+        assert "Commands" in tail or "type to filter" in tail, tail
+
+    def test_the_cursor_ends_in_the_pane_and_not_on_the_status_row(
+        self, tui: Tui
+    ) -> None:
+        # Every write moves the cursor, so placing it before the chrome leaves
+        # it wherever the last row finished. `\x1b[H` sequences are the record
+        # of where it went: the final one in a frame must not be the bottom
+        # row.
+        tui.send("echo where-is-the-cursor\r")
+        raw = tui.read(3.0)
+        positions = re.findall(r"\x1b\[(\d+);(\d+)H", raw)
+        assert positions, raw[-400:]
+        last_row = int(positions[-1][0])
+        # The bottom row is omt's status row and nothing should ever leave the
+        # cursor parked there.
+        assert last_row != 24, f"cursor left on the status row: {positions[-6:]}"
 
 
 class TestTheKeymapIsDiscoverable:

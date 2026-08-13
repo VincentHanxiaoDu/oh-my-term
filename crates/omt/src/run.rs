@@ -102,17 +102,53 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let mut shown_bottom: Option<String> = None;
     // The list on screen, if any: the palette, the agents, or the sessions.
     let mut overlay: Option<omt_tui::Overlay> = None;
-    let mut shown_overlay: Option<Vec<String>> = None;
     let mut chosen: Option<String> = None;
     let mut term_rows = rows;
     let mut term_cols = cols;
     let mut layout_dirty = true;
+    // Built once. Rebuilding it twice a second per pane would be the most
+    // expensive thing in this loop by an order of magnitude.
+    let adapter_set = omt_agent_adapters::builtin();
 
     loop {
-        for pane in &panes {
-            instance
+        for pane in &mut panes {
+            // Whether anything came off the pty is the floor's only signal, so
+            // it is recorded here rather than asked for later: by the time the
+            // probe runs, the pump that saw the bytes has returned.
+            let produced = instance
                 .pump_session(pane.session)
                 .context("pumping the session")?;
+            if !produced.is_empty() {
+                pane.last_output_ms = monotonic_ms();
+            }
+        }
+
+        // What is running in each pane. The agent layer existed and nothing
+        // fed it from here, so `⟨leader⟩ a` was structurally always empty:
+        // starting Claude Code in a pane and asking omt about it showed
+        // "nothing matches", because nothing had ever looked.
+        let now = monotonic_ms();
+        for pane in &mut panes {
+            if now.saturating_sub(pane.probed_at) < crate::probe::PROBE_EVERY_MS {
+                continue;
+            }
+            pane.probed_at = now;
+            let Some(runtime) = instance.runtime(pane.session) else {
+                continue;
+            };
+            let fd = runtime.pty().as_raw_fd();
+            let quiet_ms = now.saturating_sub(pane.last_output_ms);
+            let refs: Vec<&dyn omt_agent_adapters::AgentAdapter> = adapter_set.all();
+            let detection = crate::probe::identify(fd, &refs);
+            pane.agent = detection.map(|detection| crate::probe::Probed {
+                activity: crate::probe::activity(quiet_ms < 1_000, false, quiet_ms / 1_000),
+                detection,
+            });
+            if let Some(probed) = pane.agent.clone() {
+                for reading in crate::probe::readings(&probed, now) {
+                    instance.observe_agent(pane.binding, reading);
+                }
+            }
         }
 
         // Panes whose process ended stop being drawn. The session stays in the
@@ -178,18 +214,6 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 .context("drawing")?;
         }
 
-        // Drawn last so the cursor ends inside the pane that has focus —
-        // otherwise it sits wherever the final pane left it and typing looks
-        // like it is going somewhere else.
-        if let (Some(pane), Some(rect)) = (panes.get(focus), rects.get(focus))
-            && let Some(runtime) = instance.runtime(pane.session)
-        {
-            let cursor = runtime.terminal().grid().cursor;
-            let (row, col) = cursor_on_screen(rect, cursor.row, cursor.col);
-            write!(out, "\x1b[{row};{col}H")
-            .context("placing the cursor")?;
-        }
-
         let focused_session = panes[focus].session;
         let situation = omt_tui::Situation {
             prefix_armed: armed
@@ -232,14 +256,30 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 })
                 .collect(),
         };
-        if let Some(open) = &overlay {
+        if let Some(open) = &mut overlay {
+            // Rebuilt each frame, not only when it was opened. These lists
+            // are opened *because* something is expected to change: an agent
+            // that starts needing a human while the list is on screen is the
+            // event it exists to show, and a snapshot cannot show it. The
+            // filter and the selected row survive, so this is invisible to
+            // somebody typing.
+            match open.title.as_str() {
+                "Agents" => open.set_choices(agent_rows(&mut instance, &panes, monotonic_ms())),
+                "Sessions" => open.set_choices(session_rows(&instance, &panes)),
+                // The palette is the catalog, which does not change while a
+                // process is running.
+                _ => {}
+            }
+
+            // Unconditionally, not only when its text changed. The panes
+            // underneath repaint every frame from their own damage, so an
+            // overlay drawn once is painted over within milliseconds and what
+            // is left is half a list interleaved with a shell — which is
+            // exactly what it looked like.
             let lines = omt_tui::render_overlay(open, term_cols, term_rows.saturating_sub(2));
-            if shown_overlay.as_ref() != Some(&lines) {
-                for (i, line) in lines.iter().enumerate() {
-                    write!(out, "\x1b[{};1H\x1b[7m{line}\x1b[0m", i as u16 + 2)
-                        .context("drawing the overlay")?;
-                }
-                shown_overlay = Some(lines);
+            for (i, line) in lines.iter().enumerate() {
+                write!(out, "\x1b[{};1H\x1b[7m{line}\x1b[0m", i as u16 + 2)
+                    .context("drawing the overlay")?;
             }
         }
 
@@ -260,13 +300,28 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             |text| omt_tui::render_hint(Some(&text), term_cols),
         );
         if shown_bottom.as_deref() != Some(bottom.as_str()) {
-            // Saved and restored around the write, or the cursor ends parked on
-            // the bottom row and the program's own cursor appears to vanish.
-            write!(out, "\x1b7\x1b[{};1H{bottom}\x1b8", term_rows)
+            // No save/restore: the cursor is placed once, after all of this,
+            // which is the only ordering that can be right when three
+            // different pieces of chrome each move it.
+            write!(out, "\x1b[{};1H{bottom}", term_rows)
                 .context("drawing the status row")?;
             shown_bottom = Some(bottom);
         }
         let _ = &mut shown_hint;
+
+        // **Last.** Every write above moves the cursor, so placing it earlier
+        // leaves it wherever the final piece of chrome finished — which is the
+        // bottom row, and which is what "the cursor is dragged to the bottom
+        // and does not line up" was. The save/restore on the status row was an
+        // attempt at the same thing and could not work: it saved a position
+        // the tab bar had already moved.
+        if let (Some(pane), Some(rect)) = (panes.get(focus), rects.get(focus))
+            && let Some(runtime) = instance.runtime(pane.session)
+        {
+            let cursor = runtime.terminal().grid().cursor;
+            let (row, col) = cursor_on_screen(rect, cursor.row, cursor.col);
+            write!(out, "\x1b[{row};{col}H").context("placing the cursor")?;
+        }
         out.flush().context("flushing")?;
 
         if crossterm::event::poll(TICK).context("polling for input")? {
@@ -293,7 +348,6 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     }
                 }
                 layout_dirty = true;
-                shown_overlay = None;
                 if let Some(label) = chosen.take() {
                     // A workspace row is a session to focus; anything else is a
                     // capability name, which the palette shows and the CLI runs.
@@ -349,29 +403,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     layout_dirty = true;
                 }
                 Input::Agents => {
-                    // Every thread, with what it is doing. Waiting first,
-                    // because that is the reason anybody opens this list.
-                    let mut rows: Vec<omt_tui::Choice> = Vec::new();
-                    for pane in &panes {
-                        let Some(roster) = instance.threads(pane.session) else {
-                            continue;
-                        };
-                        let title = instance
-                            .session(pane.session)
-                            .map_or_else(|| "shell".to_owned(), |s| s.title.clone());
-                        for thread in roster.threads() {
-                            rows.push(omt_tui::Choice {
-                                label: title.clone(),
-                                detail: format!("{:?}", thread.state).to_lowercase(),
-                                chord: None,
-                            });
-                        }
-                    }
-                    rows.sort_by_key(|c| usize::from(!c.detail.starts_with("blocked")));
-                    overlay = Some(omt_tui::Overlay::new("Agents", rows));
-                    layout_dirty = true;
-                }
-                Input::Sessions => {
+                overlay = Some(omt_tui::Overlay::new(
+                    "Agents",
+                    agent_rows(&mut instance, &panes, monotonic_ms()),
+                ));
+                layout_dirty = true;
+            }
+            Input::Sessions => {
                     // Every session this instance holds, not only the ones with
                     // a pane on screen. A session that is running somewhere
                     // else is exactly the one somebody opens this list to find,
@@ -455,6 +493,17 @@ struct LocalPane {
     screen: Screen,
     writer: WriterState,
     epoch: omt_session::Epoch,
+    /// This pane's agent binding. Minted per pane rather than per detection:
+    /// a binding is "the agent occupying this pane", and re-minting it when
+    /// the detection changed would throw away the history the merge machine
+    /// decides from.
+    binding: omt_types::BindingId,
+    /// What was last seen running here, and when it was last looked for.
+    agent: Option<crate::probe::Probed>,
+    probed_at: u64,
+    /// When this pane last produced anything, which is the entirety of what
+    /// the heuristic floor has to go on.
+    last_output_ms: u64,
 }
 
 impl LocalPane {
@@ -499,6 +548,10 @@ impl LocalPane {
             screen: Screen::new(),
             writer,
             epoch,
+            binding: omt_types::BindingId::new(),
+            agent: None,
+            probed_at: 0,
+            last_output_ms: 0,
         })
     }
 }
@@ -507,6 +560,93 @@ impl LocalPane {
 ///
 /// A vertical rule rather than a blank column: two shells side by side with
 /// nothing between them read as one shell with very strange output.
+/// The rows behind the agents list.
+///
+/// Built from what the probe saw in each pane, not only from thread rosters.
+/// A roster is filled by hooks and protocols; a pty-only session has neither,
+/// which is why this said "nothing matches" with an agent plainly running in
+/// the pane.
+fn agent_rows(
+    instance: &mut Instance,
+    panes: &[LocalPane],
+    now: u64,
+) -> Vec<omt_tui::Choice> {
+    let mut rows: Vec<omt_tui::Choice> = Vec::new();
+    for pane in panes {
+        let title = instance
+            .session(pane.session)
+            .map_or_else(|| "shell".to_owned(), |s| s.title.clone());
+        if let Some(probed) = &pane.agent {
+            let state = instance
+                .agent_state(pane.binding, now)
+                .unwrap_or(omt_types::AgentState::Unknown);
+            rows.push(omt_tui::Choice {
+                // The evidence, not only the verdict: somebody looking at a
+                // wrong detection needs to see what was matched, not be told
+                // a name again.
+                detail: format!(
+                    "{} · {} · {}",
+                    agent_name(probed.detection.agent),
+                    state_word(&state),
+                    probed.detection.evidence
+                ),
+                label: title.clone(),
+                chord: None,
+            });
+        }
+        let Some(roster) = instance.threads(pane.session) else {
+            continue;
+        };
+        for thread in roster.threads() {
+            rows.push(omt_tui::Choice {
+                label: title.clone(),
+                detail: format!("{:?}", thread.state).to_lowercase(),
+                chord: None,
+            });
+        }
+    }
+    if rows.is_empty() {
+        // An empty list and "omt found nothing" are different answers, and the
+        // second is the one that says whether to go looking for a bug.
+        rows.push(omt_tui::Choice {
+            label: "no agent in any pane".to_owned(),
+            detail: "omt looks every half second at what each pane is running".to_owned(),
+            chord: None,
+        });
+    }
+    // Waiting first, because that is the reason anybody opens it.
+    rows.sort_by_key(|c| usize::from(!c.detail.contains("waiting")));
+    rows
+}
+
+/// An agent's name, as a person reads it.
+fn agent_name(kind: omt_types::AgentKind) -> String {
+    // The debug spelling with the camel humps split, rather than a table that
+    // has to be extended every time an agent is added and silently prints
+    // `QwenCode` when it is not.
+    let raw = format!("{kind:?}");
+    let mut out = String::new();
+    for (i, ch) in raw.char_indices() {
+        if i > 0 && ch.is_uppercase() {
+            out.push(' ');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// What an agent state reads as in one word.
+fn state_word(state: &omt_types::AgentState) -> &'static str {
+    match state {
+        omt_types::AgentState::Starting => "starting",
+        omt_types::AgentState::Idle => "idle",
+        omt_types::AgentState::Working { .. } => "working",
+        omt_types::AgentState::Blocked { .. } => "waiting on you",
+        omt_types::AgentState::Exited { .. } => "exited",
+        omt_types::AgentState::Unknown => "unknown",
+    }
+}
+
 /// The rows behind the sessions list.
 ///
 /// Built from the instance rather than from the panes, so a session running in

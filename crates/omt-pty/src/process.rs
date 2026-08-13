@@ -111,13 +111,20 @@ pub fn read_environ(pid: i32) -> io::Result<Vec<(String, String)>> {
         let raw = std::fs::read(format!("/proc/{pid}/environ"))?;
         Ok(split_environ(&raw))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        // Through `KERN_PROCARGS2`, which is readable for a process of the
+        // same uid — and every process omt cares about is one it spawned.
+        // This returned "not available" for as long as it existed, and the
+        // cost was not small: env markers and argv patterns are what every
+        // agent fingerprint is built on, so detection on macOS was reduced to
+        // the executable's base name. Four of the agents ship as Node bundles
+        // whose executable is `node`, which matches nothing at all.
+        darwin::proc_args(pid).map(|args| args.env)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = pid;
-        // macOS exposes this only through sysctl KERN_PROCARGS2, which is
-        // restricted and reports argv and environ interleaved in a format with
-        // no length prefixes. Returning an honest "cannot" beats a parser that
-        // is wrong in ways nobody can see.
         Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "reading another process's environment is not available on this platform",
@@ -196,13 +203,133 @@ mod darwin {
         let exe = PathBuf::from(String::from_utf8_lossy(&buf).into_owned());
 
         let ppid = parent_of(pid);
+        // argv, where it can be had. Absent rather than fatal: a process whose
+        // arguments cannot be read is still a process whose executable can.
+        let argv = proc_args(pid).map(|a| a.argv).unwrap_or_default();
         Ok(ProcessInfo {
             pid,
             ppid,
-            argv: Vec::new(),
+            argv,
             exe: Some(exe),
             cwd: None,
         })
+    }
+
+    /// What `KERN_PROCARGS2` reports about a process.
+    pub struct ProcArgs {
+        /// Its arguments, `argv[0]` first.
+        pub argv: Vec<String>,
+        /// Its environment.
+        pub env: Vec<(String, String)>,
+    }
+
+    /// Read a process's arguments and environment.
+    ///
+    /// The layout, which is documented nowhere except the kernel source:
+    ///
+    /// ```text
+    /// [ i32 argc ][ exec_path\0 ][ \0 padding ][ argv[0]\0 … argv[argc-1]\0 ][ env\0 … ]
+    /// ```
+    ///
+    /// The padding after `exec_path` is the part that catches people: the
+    /// kernel aligns the following strings, so a parser that reads one NUL and
+    /// starts on argv lands in the middle of the padding and produces a list
+    /// of empty strings. Every empty run is skipped before argv starts, and
+    /// exactly `argc` strings are taken — the first thing after them is the
+    /// environment, and taking one too many silently turns `PATH=…` into an
+    /// argument.
+    pub fn proc_args(pid: i32) -> io::Result<ProcArgs> {
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+        let mut len: libc::size_t = 0;
+        // SAFETY: a null `oldp` asks sysctl for the size it would write, which
+        // is the documented way to size the buffer.
+        #[allow(unsafe_code, reason = "no safe wrapper for sysctl")]
+        let rc = unsafe {
+            libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                std::ptr::null_mut(),
+                &raw mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 || len == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut buf = vec![0u8; len];
+        // SAFETY: `buf` is `len` bytes and sysctl writes at most that many.
+        #[allow(unsafe_code, reason = "no safe wrapper for sysctl")]
+        let rc = unsafe {
+            libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                buf.as_mut_ptr().cast(),
+                &raw mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        buf.truncate(len);
+        Ok(parse_procargs2(&buf))
+    }
+
+    /// Split a `KERN_PROCARGS2` buffer.
+    ///
+    /// Separated from the syscall so the format — which is the half that goes
+    /// wrong — is testable without a process to point it at.
+    pub fn parse_procargs2(buf: &[u8]) -> ProcArgs {
+        let empty = ProcArgs {
+            argv: Vec::new(),
+            env: Vec::new(),
+        };
+        if buf.len() < 4 {
+            return empty;
+        }
+        let argc = i32::from_ne_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        let Ok(argc) = usize::try_from(argc) else {
+            return empty;
+        };
+
+        let mut rest = &buf[4..];
+        // `exec_path`, then the alignment padding after it. Both are skipped:
+        // the path is already known from `proc_pidpath`, and the padding is
+        // what a naive parser reads as a run of empty arguments.
+        let cut = |slice: &mut &[u8]| -> Option<Vec<u8>> {
+            let end = slice.iter().position(|b| *b == 0)?;
+            let out = slice[..end].to_vec();
+            *slice = &slice[end + 1..];
+            Some(out)
+        };
+        cut(&mut rest);
+        while rest.first() == Some(&0) {
+            rest = &rest[1..];
+        }
+
+        let mut argv = Vec::with_capacity(argc);
+        for _ in 0..argc {
+            match cut(&mut rest) {
+                Some(arg) => argv.push(String::from_utf8_lossy(&arg).into_owned()),
+                None => break,
+            }
+        }
+
+        // Everything after argv is the environment. A trailing entry with no
+        // `=` is not one, and neither is an empty string.
+        let mut env = Vec::new();
+        while let Some(entry) = cut(&mut rest) {
+            if entry.is_empty() {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&entry);
+            if let Some((k, v)) = text.split_once('=') {
+                env.push((k.to_owned(), v.to_owned()));
+            }
+        }
+        ProcArgs { argv, env }
     }
 
     fn parent_of(pid: i32) -> Option<i32> {
@@ -257,6 +384,75 @@ mod tests {
         let me = std::process::id() as i32;
         let info = process_info(me).expect("inspect self");
         assert!(info.ppid.is_some_and(|p| p > 0), "{info:?}");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn this_process_can_read_its_own_arguments_and_environment() {
+        // The path that was returning "not available" for as long as it
+        // existed, which reduced macOS detection to the executable's base
+        // name — and four of the agents ship as Node bundles called `node`.
+        let me = std::process::id() as i32;
+        let info = process_info(me).expect("inspect self");
+        assert!(!info.argv.is_empty(), "no argv: {info:?}");
+
+        // `PATH`, which every process is started with. Deliberately not a
+        // variable set by this test: `KERN_PROCARGS2` reports the environment
+        // **as of `exec`**, not as it stands now, so a later `set_var` is
+        // invisible here. That is the right semantics for what this is used
+        // for — an agent's launcher sets its markers before exec, and reading
+        // them at exec time means a later `unset` cannot hide one.
+        let env = read_environ(me).expect("read own environment");
+        assert!(
+            env.iter().any(|(k, _)| k == "PATH"),
+            "no PATH among {} entries",
+            env.len()
+        );
+        assert!(
+            env.iter().all(|(k, _)| !k.is_empty()),
+            "an empty key means the padding was read as an entry"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_padding_after_exec_path_is_not_read_as_arguments() {
+        // The half of `KERN_PROCARGS2` that goes wrong. The kernel aligns the
+        // strings after `exec_path`, and a parser that reads one NUL and
+        // starts on argv lands inside the padding and produces empty
+        // arguments — which then match no fingerprint at all.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&2i32.to_ne_bytes());
+        buf.extend_from_slice(b"/usr/local/bin/claude\0");
+        buf.extend_from_slice(b"\0\0\0\0"); // alignment padding
+        buf.extend_from_slice(b"claude\0");
+        buf.extend_from_slice(b"--resume\0");
+        buf.extend_from_slice(b"PATH=/usr/bin\0");
+        buf.extend_from_slice(b"CLAUDECODE=1\0");
+
+        let parsed = darwin::parse_procargs2(&buf);
+        assert_eq!(parsed.argv, vec!["claude", "--resume"], "{:?}", parsed.argv);
+        // And exactly `argc` strings were taken: one too many turns `PATH=…`
+        // into an argument and loses it from the environment.
+        assert_eq!(
+            parsed.env,
+            vec![
+                ("PATH".to_owned(), "/usr/bin".to_owned()),
+                ("CLAUDECODE".to_owned(), "1".to_owned()),
+            ]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_truncated_procargs_buffer_yields_nothing_rather_than_garbage() {
+        // Absence of evidence must read as absence of evidence: a detector
+        // handed half a string would match a fingerprint on a fragment.
+        for buf in [&b""[..], &b"\x02"[..], &2i32.to_ne_bytes()[..]] {
+            let parsed = darwin::parse_procargs2(buf);
+            assert!(parsed.argv.is_empty(), "{:?}", parsed.argv);
+            assert!(parsed.env.is_empty(), "{:?}", parsed.env);
+        }
     }
 
     #[test]
