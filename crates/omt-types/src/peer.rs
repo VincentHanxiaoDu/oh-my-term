@@ -74,6 +74,32 @@ macro_rules! opaque_id {
 }
 
 opaque_id! {
+    /// One connection's identity, for the lifetime of that connection.
+    ///
+    /// [12 §1](../../../docs/architecture/12-collaboration.md). Deliberately
+    /// **not** stable across a reconnect: a client that dropped and came back
+    /// is a different actor, because the human at the other end may have
+    /// changed and because the old connection's claims are no longer true.
+    ///
+    /// The consequence is the reason it is its own type: nothing that must
+    /// survive a reconnect may be keyed on it. Idempotency keys use the
+    /// identity or the device instead ([12 §4.1](../../../docs/architecture/12-collaboration.md)),
+    /// and `Interaction.viewers` — which is advisory presence and *should*
+    /// vanish on a reconnect — uses this.
+    ActorId
+}
+
+opaque_id! {
+    /// A component's version, as that component states it.
+    ///
+    /// Carried rather than parsed. omt compares versions for equality — has
+    /// this plugin changed, does this peer match — and never for ordering, so
+    /// imposing semver on a string a plugin author wrote would refuse a
+    /// perfectly good `2024.1-rc` for no benefit.
+    Version
+}
+
+opaque_id! {
     /// Which [`crate::Tier`]-bearing observer produced an event.
     ///
     /// `omt-agent` registers sources under it, `agent.explain` reports it back
@@ -253,6 +279,26 @@ impl ResponderRef {
 #[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_actor_id_is_a_connection_and_not_a_person() {
+        // 12 §1: a reconnect is a new actor. The type exists so that nothing
+        // which must survive a reconnect can be keyed on it by accident —
+        // idempotency uses the identity or the device instead.
+        let first = ActorId::new("conn-1");
+        let after_reconnect = ActorId::new("conn-2");
+        assert_ne!(first, after_reconnect);
+    }
+
+    #[test]
+    fn a_version_is_carried_and_never_parsed() {
+        // Compared for equality — has this plugin changed — and never for
+        // ordering. Imposing semver would refuse a perfectly good `2024.1-rc`
+        // for no benefit omt could use.
+        for raw in ["0.1.0", "2024.1-rc", "v3", "unreleased"] {
+            assert_eq!(Version::new(raw).as_str(), raw);
+        }
+    }
 
     #[test]
     fn the_ids_are_not_interchangeable() {

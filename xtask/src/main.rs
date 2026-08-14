@@ -853,5 +853,81 @@ fn reference(entries: &[serde_json::Value]) -> String {
         ));
     }
     out.push_str(&format!("\n{} capabilities.\n", entries.len()));
+
+    // The exemptions, listed rather than buried. `Parity::Exempt`'s own doc
+    // says its reason is "printed in the generated reference, so it is argued
+    // in public" — and it was not, which made an exemption a thing you could
+    // add and nobody would ever read. A gate whose escape hatch is invisible
+    // is a gate that erodes.
+    let exempt: Vec<&serde_json::Value> = entries
+        .iter()
+        .filter(|e| e.get("parity").and_then(|p| p.get("surfaces")).is_some())
+        .collect();
+    out.push_str("\n## Parity exemptions\n\n");
+    if exempt.is_empty() {
+        out.push_str("None. Every capability is reachable from every surface.\n");
+        return out;
+    }
+    out.push_str("| Capability | Surfaces excused | Why |\n|---|---|---|\n");
+    for e in exempt {
+        let parity = e.get("parity").expect("filtered above");
+        let surfaces = parity
+            .get("surfaces")
+            .and_then(|s| s.as_array())
+            .map(|a| {
+                a.iter()
+                    .map(render_tag)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "| `{}` | {surfaces} | {} |\n",
+            field(e, "name"),
+            parity
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("(no reason given)")
+                .replace('|', "\\|"),
+        ));
+    }
     out
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
+mod reference_tests {
+    use super::*;
+
+    fn entry(name: &str, parity: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "kind": "query",
+            "role": "viewer",
+            "doc": "does a thing",
+            "parity": parity,
+        })
+    }
+
+    #[test]
+    fn an_exemption_is_printed_with_its_reason() {
+        // `Parity::Exempt`'s own doc promises this — "printed in the generated
+        // reference, so it is argued in public" — and it was not. An escape
+        // hatch nobody can see is a gate that erodes.
+        let out = reference(&[entry(
+            "thing.do",
+            serde_json::json!({ "surfaces": ["web"], "reason": "no phone can do it" }),
+        )]);
+        assert!(out.contains("## Parity exemptions"), "{out}");
+        assert!(out.contains("`thing.do`"), "{out}");
+        assert!(out.contains("no phone can do it"), "{out}");
+    }
+
+    #[test]
+    fn a_catalog_with_no_exemptions_says_so_rather_than_omitting_the_section() {
+        // A missing section reads as "not checked". "None" reads as "checked,
+        // and there are none" — which is the claim actually being made.
+        let out = reference(&[entry("thing.do", serde_json::json!("full"))]);
+        assert!(out.contains("None. Every capability is reachable"), "{out}");
+    }
 }

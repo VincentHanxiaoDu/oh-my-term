@@ -44,6 +44,20 @@ pub enum ConflictState {
     Cancelled,
     /// Nobody answered in time.
     Abandoned,
+    /// This request id has already been dispatched, and its intent class
+    /// forbids repeating it.
+    ///
+    /// A distinct state rather than reusing `AlreadyResolved`, which says
+    /// *somebody else* got there first. This says the caller itself did, and
+    /// the two lead a surface to different words: one is "Mara answered this",
+    /// the other is "your retry did not happen, and must not".
+    AlreadyRequested {
+        /// Why repeating is refused, so a surface can explain rather than
+        /// just fail. A machine may not retry an injection; a human looking
+        /// at the screen may act again, and only the reason distinguishes
+        /// those.
+        reason: String,
+    },
     /// The target's version moved under the caller.
     VersionMismatch {
         /// What the caller expected.

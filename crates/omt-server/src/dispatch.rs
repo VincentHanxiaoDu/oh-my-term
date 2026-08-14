@@ -21,6 +21,14 @@ pub struct Peer {
     pub role: Role,
     /// Whether the handshake has happened.
     pub greeted: bool,
+    /// What this connection's recent requests produced.
+    ///
+    /// Per connection rather than per registry: the registry is shared by
+    /// every client, and one client's request ids must not be able to replay
+    /// another's results. A reconnect gets an empty one, which is right — a
+    /// new connection has nothing to replay, and D15's classes are refused on
+    /// a repeat rather than served from a cache anyway.
+    pub recent: omt_catalog::Recent,
     /// Whether this connection presented a credential at all.
     ///
     /// A connection without one is allowed, because an invite is the right to
@@ -49,6 +57,7 @@ impl Peer {
             greeted: false,
             anonymous: false,
             auth_methods: Vec::new(),
+            recent: omt_catalog::Recent::new(),
         }
     }
 
@@ -129,7 +138,7 @@ fn greet(registry: &CapabilityRegistry, peer: &mut Peer, hello: &Hello) -> Proto
     }
 }
 
-fn dispatch(registry: &CapabilityRegistry, peer: &Peer, call: Call) -> CallResult {
+fn dispatch(registry: &CapabilityRegistry, peer: &mut Peer, call: Call) -> CallResult {
     let request = call.request;
 
     let Some(decl) = registry.decl(&call.capability) else {
@@ -158,7 +167,7 @@ fn dispatch(registry: &CapabilityRegistry, peer: &Peer, call: Call) -> CallResul
         intent: call.intent,
     };
 
-    match registry.dispatch(&call.capability, &ctx, call.input) {
+    match registry.dispatch_with(&call.capability, &ctx, call.input, &mut peer.recent) {
         // The effects the handler actually reported are dropped here rather
         // than sent: they are for the audit log, and a client that could see
         // them would start deciding things from them.

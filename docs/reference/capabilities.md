@@ -151,3 +151,7 @@ vanishing.
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
 140 capabilities.
+
+## Parity exemptions
+
+None. Every capability is reachable from every surface.

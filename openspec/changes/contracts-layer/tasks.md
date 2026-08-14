@@ -29,63 +29,67 @@
 
 ## 2. `omt-types`
 
-- [ ] 2.1 Identifier newtypes with their documented derivations: `InstanceId`,
+- [x] 2.1 Identifier newtypes with their documented derivations: `InstanceId`,
       `WorkspaceId` (content-derived from the canonical root), `SessionId`,
       `PaneId`, `ClientId`, `DeviceId`, `IdentityId`, `CredentialId`,
       `BindingId`, `InteractionId`, `IntentId`
-- [ ] 2.2 `Seq` as `u64` and the reserved instance-scope id — one type across
+- [x] 2.2 `Seq` as `u64` and the reserved instance-scope id — one type across
       all three scopes (D-2). The *generator* is behaviour and lives in
       `omt-util` per [02 §L0](../../../docs/architecture/02-crate-map.md), which
       says `omt-types` carries none
-- [ ] 2.3 Domain enums: `AgentKind` (enumerated, not open-ended), `AgentState`,
+- [x] 2.3 Domain enums: `AgentKind` (enumerated, not open-ended), `AgentState`,
       `SessionMode`, `Role`, `PermissionMode`, `PeerInfo`
-- [ ] 2.4 The shared types more than one crate names, hoisted here per D-7:
+- [x] 2.4 The shared types more than one crate names, hoisted here per D-7:
       `Actor`/`ActorId`, `Timestamp`, `Version`, `Tier`, `SourceId`,
       `AgentSessionId`, `ResponderRef`, and `FileDiff` — the last because
       `06 §5` types a permission's diff as one while L2 owns the crate that
       produces it
-- [ ] 2.5 Serde round-trip tests for every public type, with the wire spelling
+- [x] 2.5 Serde round-trip tests for every public type, with the wire spelling
       asserted (snake_case tags), so a rename is caught as a test failure
 
 ## 3. `omt-catalog` — declaration types
 
-- [ ] 3.1 `Effects` as a bitflags type over the closed six-value set, with the
+- [x] 3.1 `Effects` as a bitflags type over the closed six-value set, with the
       wire form **a sorted array of lower-snake strings, not an integer**
       ([03 §2.3](../../../docs/architecture/03-capability-catalog.md)) — this
       goes into the committed schema and the TypeScript client, so guessing it
       is expensive to undo
-- [ ] 3.2 `Intent` with D15's five classes **including their parameters** —
+- [x] 3.2 `Intent` with D15's five classes **including their parameters** —
       `Append`'s `dedup`/`DedupKey` and `ExternallyConfirmed`'s `confirm_within`,
       which is what D15 consequence 1 hangs the `Undelivered` transition on —
       and the compile-time rule that a `Command` without one fails the build
-- [ ] 3.3 `Parity`, including `Exempt { surfaces, reason }` — an exemption names
+- [x] 3.3 `Parity`, including `Exempt { surfaces, reason }` — an exemption names
       the surfaces it covers rather than waiving the check wholesale (B3) — and
       the allow-list file it is checked against, whose path and format this task
-      fixes
-- [ ] 3.4 `CapabilityError`: closed code set plus a structured `detail` able to
+      fixes — **decided: the declaration is the registry.** An exemption lives
+      on the `Decl` beside the capability it excuses, not in a second file that
+      can drift from it, and `cargo xtask codegen` prints every one into
+      `docs/reference/capabilities.md` with its reason, which is what "argued
+      in public" needs
+- [x] 3.4 `CapabilityError`: closed code set plus a structured `detail` able to
       carry D15's three-way discrimination
-- [ ] 3.5 `RequestId` as `(DeviceId, monotonic u64)` with its wire encoding
-- [ ] 3.6 `Decl`: the all-`const` metadata struct, including `title`, `aliases`,
+- [x] 3.5 `RequestId` as `(DeviceId, monotonic u64)` with its wire encoding
+- [x] 3.6 `Decl`: the all-`const` metadata struct, including `title`, `aliases`,
       `hidden` with its required `hidden_reason`, and `since`
 
 ## 4. `omt-catalog` — machinery
 
-- [ ] 4.1 The `Capability` trait with its associated input/output types, `DECL`,
+- [x] 4.1 The `Capability` trait with its associated input/output types, `DECL`,
       and `refine_effects` with the never-widen rule
-- [ ] 4.2 `CapabilityHandler<C>`, `CallContext`, and the `ErasedHandler` JSON
+- [x] 4.2 `CapabilityHandler<C>`, `CallContext`, and the `ErasedHandler` JSON
       boundary with its single adapter
-- [ ] 4.3 `CapabilityRegistry`: construction, registration, name-sorted
+- [x] 4.3 `CapabilityRegistry`: construction, registration, name-sorted
       determinism, duplicate rejection at startup, and a **strict** `seal()`
       that fails naming any declared capability with no handler (D-8)
-- [ ] 4.4 The `capability!` macro, expanding to the type, the `Decl` and the
+- [x] 4.4 The `capability!` macro, expanding to the type, the `Decl` and the
       `DECLS` slice entry
-- [ ] 4.5 The `linkme` distributed slice, plus the startup assertion that the
+- [x] 4.5 The `linkme` distributed slice, plus the startup assertion that the
       slice is non-empty and matches the committed artifact (D-1 risk
       mitigation)
-- [ ] 4.6 Dispatch: role check, intent enforcement, and the recent-results cache
+- [x] 4.6 Dispatch: role check, intent enforcement, and the recent-results cache
       keyed by request identity. There is no unimplemented-capability path —
       `seal()` makes that state unreachable (D-8)
-- [ ] 4.7 `tests/third_party_impl.rs` — implement `Capability` and
+- [x] 4.7 `tests/third_party_impl.rs` — implement `Capability` and
       `CapabilityHandler` from outside the crate using only its public API
 
 ## 5. `omt-events`

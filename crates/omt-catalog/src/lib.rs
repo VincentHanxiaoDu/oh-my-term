@@ -14,11 +14,13 @@
 mod decl;
 mod error;
 mod origin;
+mod recent;
 mod registry;
 
 pub use decl::{Decl, DeclError, DedupKey, Effects, Intent, Kind, Parity, Surface};
 pub use error::{CapabilityError, ConflictState, ErrorCode, ErrorDetail};
 pub use origin::{CatalogHash, Origin};
+pub use recent::{CAPACITY as RECENT_CAPACITY, Recent, Repeat, repeat_for};
 pub use registry::{
     CallContext, Capability, CapabilityHandler, CapabilityRegistry, DispatchOutcome, RegistryError,
     RequestId,

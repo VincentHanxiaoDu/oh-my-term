@@ -305,6 +305,30 @@ impl CapabilityRegistry {
         ctx: &CallContext,
         input: serde_json::Value,
     ) -> Result<DispatchOutcome, CapabilityError> {
+        self.dispatch_with(name, ctx, input, &mut crate::Recent::new())
+    }
+
+    /// Dispatch against a caller-held recent-results cache.
+    ///
+    /// The cache is the caller's because its lifetime is the *connection's*,
+    /// not the registry's: a registry is shared by every client, and one
+    /// client's request ids must not be able to replay another's results.
+    ///
+    /// [`Self::dispatch`] passes a fresh one, which means every request is a
+    /// first one — correct for a caller that has no connection to speak of,
+    /// and the reason the two are separate rather than one function with an
+    /// `Option`.
+    ///
+    /// # Errors
+    /// As [`Self::dispatch`], plus `conflict` when the intent class forbids
+    /// repeating this request.
+    pub fn dispatch_with(
+        &self,
+        name: &str,
+        ctx: &CallContext,
+        input: serde_json::Value,
+        recent: &mut crate::Recent,
+    ) -> Result<DispatchOutcome, CapabilityError> {
         // An old name resolves to the current one, and everything after this
         // -- role, intent, the handler, the audit record -- is about the
         // capability rather than about which name reached it.
@@ -328,6 +352,37 @@ impl CapabilityRegistry {
             )));
         }
 
+        // What a repeat means is decided here, once, rather than in each
+        // transport (03 §3.5). The class that matters is
+        // `ExternallyConfirmed`: D15 says never retry an injection by any
+        // actor except a human who can see the screen, and a retry loop that
+        // means well is exactly the actor that would.
+        let remembered = recent.get(&ctx.request);
+        match crate::repeat_for(decl.intent.as_ref(), remembered.is_some()) {
+            crate::Repeat::Replay => {
+                if let Some(output) = remembered {
+                    return Ok(DispatchOutcome {
+                        output: output.clone(),
+                        // The effects of the call that actually ran. A replay
+                        // did nothing, and recording it as though it had would
+                        // put a second write in the audit log for one write.
+                        effects: Effects::empty(),
+                    });
+                }
+            }
+            crate::Repeat::Refuse { reason } => {
+                if remembered.is_some() {
+                    return Err(CapabilityError::conflict(
+                        format!("`{name}` has already been called with this request id"),
+                        crate::ConflictState::AlreadyRequested {
+                            reason: reason.to_owned(),
+                        },
+                    ));
+                }
+            }
+            crate::Repeat::Execute => {}
+        }
+
         let handler = self.handlers.get(name).ok_or_else(|| {
             CapabilityError::unsupported(format!("`{name}` is declared but not implemented here"))
         })?;
@@ -344,6 +399,20 @@ impl CapabilityRegistry {
         }
 
         let output = handler.call_json(ctx, input)?;
+        // Remembered only for the classes that can be served from it. Keeping
+        // a raw stream's result would make the *second* call refusable and the
+        // third one servable, which is worse than either.
+        if matches!(
+            decl.intent,
+            Some(
+                crate::Intent::Cas
+                    | crate::Intent::Append { .. }
+                    | crate::Intent::RawStream
+                    | crate::Intent::ExternallyConfirmed { .. }
+            )
+        ) {
+            recent.insert(ctx.request, output.clone());
+        }
         Ok(DispatchOutcome { output, effects })
     }
 }
@@ -496,6 +565,113 @@ mod tests {
             .dispatch("test.nope", &ctx(Role::Admin), serde_json::json!({}))
             .expect_err("must be refused");
         assert_eq!(err.code, crate::error::ErrorCode::NotFound);
+    }
+
+    /// A capability in D15's injection class, for the rule that matters most.
+    struct Inject;
+
+    static INJECT_DECL: Decl = Decl {
+        name: "test.inject",
+        group: "test",
+        verb: "inject",
+        title: "Inject",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::WRITES_PTY,
+        intent: Some(Intent::ExternallyConfirmed {
+            confirm_within_ms: 5_000,
+        }),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Deliver input to something omt does not control.",
+    };
+
+    impl Capability for Inject {
+        type Input = EchoIn;
+        type Output = EchoOut;
+        const DECL: &'static Decl = &INJECT_DECL;
+    }
+
+    struct InjectHandler;
+    impl CapabilityHandler<Inject> for InjectHandler {
+        fn call(&self, _ctx: &CallContext, input: EchoIn) -> Result<EchoOut, CapabilityError> {
+            Ok(EchoOut { text: input.text })
+        }
+    }
+
+    fn injecting_registry() -> CapabilityRegistry {
+        let mut r = CapabilityRegistry::new();
+        r.register::<Inject, _>(InjectHandler).expect("register");
+        r
+    }
+
+    #[test]
+    fn a_repeated_injection_is_refused_at_dispatch_rather_than_by_each_transport() {
+        // D15: never retry an injection, by any actor except a human who can
+        // see the screen. Enforced here, once — a duplicate keystroke is not a
+        // duplicate row that dedup can absorb, it is a keystroke landing
+        // wherever the agent happens to be now.
+        let r = injecting_registry();
+        let c = ctx(Role::Operator);
+        let mut recent = crate::Recent::new();
+        r.dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
+            .expect("the first call goes through");
+        let err = r
+            .dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
+            .expect_err("the second call must be refused");
+        assert_eq!(err.code, crate::error::ErrorCode::Conflict);
+        let Some(crate::ConflictState::AlreadyRequested { reason }) = err.conflict_state() else {
+            panic!("expected AlreadyRequested, got {:?}", err.conflict_state());
+        };
+        // It says why: a surface deciding whether to offer a human a retry
+        // button needs "a machine may not repeat this", not "conflict".
+        assert!(!reason.is_empty());
+    }
+
+    #[test]
+    fn a_different_request_id_is_a_different_request() {
+        // Keyed by request identity, not by capability name. A genuinely new
+        // call must not be refused because an earlier one was the same shape.
+        let r = injecting_registry();
+        let mut c = ctx(Role::Operator);
+        let mut recent = crate::Recent::new();
+        r.dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
+            .expect("first");
+        c.request.n += 1;
+        r.dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
+            .expect("a new request id is a new request");
+    }
+
+    #[test]
+    fn a_repeated_cas_replays_rather_than_running_twice() {
+        let r = registry();
+        let c = ctx(Role::Operator);
+        let mut recent = crate::Recent::new();
+        let first = r
+            .dispatch_with("test.echo", &c, serde_json::json!({"text": "hi"}), &mut recent)
+            .expect("first");
+        let second = r
+            .dispatch_with("test.echo", &c, serde_json::json!({"text": "hi"}), &mut recent)
+            .expect("second");
+        assert_eq!(first.output, second.output);
+        // The replay did nothing, so it records nothing. Copying the first
+        // call's effects would put two writes in the audit log for one write.
+        assert_eq!(second.effects, Effects::empty());
+    }
+
+    #[test]
+    fn dispatch_without_a_cache_treats_every_call_as_a_first_one() {
+        // A caller with no connection to speak of has no replay to absorb, and
+        // refusing its second call would make the plain entry point unusable.
+        let r = injecting_registry();
+        let c = ctx(Role::Operator);
+        for _ in 0..3 {
+            r.dispatch("test.inject", &c, serde_json::json!({"text": "y"}))
+                .expect("a cacheless dispatch is always a first call");
+        }
     }
 
     #[test]
