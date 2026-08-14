@@ -26,6 +26,15 @@ const table = {
     'To open a directory omt has not seen, run omt in it. This list only offers what the instance already knows, because a path typed on a phone cannot be checked before it is wrong.',
   'projects.gone': 'this directory is gone',
 
+  'attach.label': 'Attach',
+  'attach.photo': 'Take a photo',
+  'attach.file': 'Choose a file',
+  'attach.paste': 'Paste an image',
+  'attach.cancel': 'Cancel',
+  'attach.noImage': 'The clipboard has no image in it.',
+  'attach.sending': (name: string) => `sending ${name}…`,
+  'attach.failed': (name: string, reason: string) => `${name} did not send: ${reason}`,
+
   'files.title': 'Files',
   'files.empty': 'This directory is empty.',
   'files.tooLarge': (bytes: number) => `Too large to show here (${bytes} bytes).`,
@@ -85,6 +94,15 @@ export const zhHans: Partial<Messages> = {
   'projects.newDirectory':
     '要打开 omt 没见过的目录，请在该目录中运行 omt。这里只列出实例已知的位置——在手机上输入的路径，无法在出错之前被验证。',
   'projects.gone': '该目录已不存在',
+
+  'attach.label': '附件',
+  'attach.photo': '拍照',
+  'attach.file': '选择文件',
+  'attach.paste': '粘贴图片',
+  'attach.cancel': '取消',
+  'attach.noImage': '剪贴板里没有图片。',
+  'attach.sending': (name: string) => `正在发送 ${name}…`,
+  'attach.failed': (name: string, reason: string) => `${name} 发送失败：${reason}`,
 
   'files.title': '文件',
   'files.empty': '这个目录是空的。',

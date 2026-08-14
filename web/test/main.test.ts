@@ -61,12 +61,20 @@ function stubDom(hash: string) {
       href: `http://x/${hash}`,
     },
     localStorage: storage,
+    // The client asks this before it renders anything, to pick a language.
+    // Stubbed here rather than guarded there alone: this stub claims to model
+    // the whole surface the client uses, and a window with no navigator on it
+    // is not a window any browser has ever had.
+    navigator: { userAgent: 'node', languages: ['en-GB'], serviceWorker: { register() {} } },
     addEventListener() {},
     matchMedia: () => ({ matches: false }),
     isSecureContext: false,
     visualViewport: null,
   }
   vi.stubGlobal('document', {
+    // Where the language is recorded, so a screen reader announces the page in
+    // the language it is written in.
+    documentElement: { lang: '' },
     getElementById: (id: string) => (id === 'app' ? app : null),
     createElement: element,
     body: { append() {} },

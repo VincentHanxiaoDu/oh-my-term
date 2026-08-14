@@ -1409,4 +1409,73 @@ html, body {
   line-height: 1.5;
   color: var(--fg-subtle);
 }
+
+/* A sheet, not a menu.
+
+   A phone's reach is the bottom third of the screen, and a menu anchored to
+   the attach button opens *upward* into the middle — which is exactly where a
+   thumb is not. The sheet comes from the bottom, where the hand already is. */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.5);
+  animation: sheet-fade var(--duration) var(--ease);
+}
+
+.sheet {
+  width: 100%;
+  max-width: var(--measure);
+  margin-inline: auto;
+  padding: var(--space-2) var(--space-3)
+    calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 1px 0 0 var(--lit), var(--cast-lift);
+  animation: sheet-rise var(--duration-slow) var(--ease);
+}
+
+.sheet-row {
+  display: block;
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--face-machine);
+  font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+}
+.sheet-row:last-child { border-bottom: 0; }
+.sheet-row:active { background: var(--bg-sunken); }
+.sheet-cancel { color: var(--fg-muted); }
+
+@keyframes sheet-fade { from { opacity: 0; } }
+@keyframes sheet-rise { from { transform: translateY(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-backdrop, .sheet { animation: none; }
+}
+
+/* What is on its way, above the composer.
+
+   The gap between tapping attach and anything appearing is where somebody taps
+   again, and the second tap sends the file twice. A failed one stays until it
+   is dealt with, and names itself — "something failed" is not actionable when
+   three things are in flight. */
+.staged {
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--face-machine);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+.staged.failed {
+  color: var(--danger);
+}
 `;

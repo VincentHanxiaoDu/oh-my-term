@@ -113,12 +113,19 @@ async function main(): Promise<void> {
   // already told their device. Not from the instance — language is a property
   // of the reader, and two people on two phones looking at one instance may
   // legitimately want different ones.
+  //
+  // Defensive about both inputs: this runs before anything else, and an
+  // environment without `navigator.languages` — a test harness, an old
+  // WebView — must not take the whole client down over which language to
+  // render in.
   const chosen = chooseLanguage(
     window.localStorage.getItem('omt.language'),
-    window.navigator.languages,
+    window.navigator?.languages ?? [],
   )
   setLanguage(chosen)
-  document.documentElement.lang = chosen === 'zh-Hans' ? 'zh-Hans' : 'en' 
+  if (document.documentElement) {
+    document.documentElement.lang = chosen === 'zh-Hans' ? 'zh-Hans' : 'en'
+  }
 
   let instance = takeInvite(window.location, window.localStorage)
 

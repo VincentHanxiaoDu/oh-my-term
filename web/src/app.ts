@@ -22,6 +22,7 @@ import { Navigator, hasBack, titleOf } from './nav.js'
 import type { Route } from './nav.js'
 import { appBar, el, empty, renderState, row, stateOf } from './view.js'
 import { t } from './messages.js'
+import { Attachments } from './staging.js'
 
 /** One entry in a directory listing, as `fs.list` reports it. */
 interface FsEntryRow {
@@ -849,23 +850,48 @@ export class App {
       void this.type(`${text}\r`)
     })
 
-    // An attachment is a file the agent should look at. It goes through the
-    // ordinary chunked write, so a large one over a slow link shows progress
-    // and resumes rather than failing at the end.
+    // The attach sheet, per 08 §6.3. Four rows, and every one of them a
+    // visible control: 08 §8.4's rule is that no capability is reachable by
+    // gesture alone, so paste is a row and not only a `paste` handler — a
+    // phone has no keyboard shortcut for it and a test cannot drive one.
     const attach = el('button', 'composer-icon', '＋')
-    attach.setAttribute('aria-label', 'Attach a file')
-    const picker = document.createElement('input')
-    picker.type = 'file'
-    picker.className = 'hidden-input'
-    picker.addEventListener('change', () => {
-      const file = picker.files?.[0]
-      if (file) {
-        void this.attach(session, file)
-      }
-      // Cleared, or picking the same file twice fires no event the second time.
-      picker.value = ''
+    attach.setAttribute('aria-label', t('attach.label'))
+
+    // Two pickers, because they are two different affordances on a phone:
+    // `capture` opens the camera directly, and without it iOS offers the photo
+    // library. One input cannot be both.
+    const camera = document.createElement('input')
+    camera.type = 'file'
+    camera.accept = 'image/*'
+    camera.setAttribute('capture', 'environment')
+    camera.className = 'hidden-input'
+
+    const anyFile = document.createElement('input')
+    anyFile.type = 'file'
+    anyFile.className = 'hidden-input'
+
+    for (const picker of [camera, anyFile]) {
+      picker.addEventListener('change', () => {
+        const file = picker.files?.[0]
+        if (file) {
+          void this.attach(session, file)
+        }
+        // Cleared, or picking the same file twice fires no event the second
+        // time and the second attempt looks like nothing happened.
+        picker.value = ''
+      })
+    }
+
+    attach.addEventListener('click', () => {
+      this.#openSheet([
+        { label: t('attach.photo'), onTap: () => camera.click() },
+        { label: t('attach.file'), onTap: () => anyFile.click() },
+        {
+          label: t('attach.paste'),
+          onTap: () => void this.attachClipboard(session),
+        },
+      ])
     })
-    attach.addEventListener('click', () => picker.click())
 
     const mic = el('button', 'composer-icon', '🎙')
     mic.setAttribute('aria-label', 'Dictate a message')
@@ -891,29 +917,160 @@ export class App {
       })
     }
 
-    box.append(attach, picker, mic, field, send)
+    // What is on its way, above the field. The gap between tapping attach and
+    // anything appearing is where somebody taps again, and the second tap
+    // sends the file twice.
+    for (const item of this.#staged.list()) {
+      const note = el(
+        'div',
+        item.state === 'failed' ? 'staged failed' : 'staged',
+        item.state === 'failed'
+          ? t('attach.failed', item.name, item.reason ?? '')
+          : t('attach.sending', item.name),
+      )
+      if (item.state === 'failed') {
+        // Dismissible, because a failure that cannot be cleared sits above the
+        // field forever and the next thing somebody types is under it.
+        note.addEventListener('click', () => {
+          this.#staged.dismiss(item.id)
+          this.render()
+        })
+      }
+      box.append(note)
+    }
+
+    box.append(attach, camera, anyFile, mic, field, send)
     return box
   }
 
-  /** Send a file to the workspace the session is in. */
-  async attach(session: string, file: File): Promise<void> {
-    try {
-      const workspace = this.#store.state.sessions.find((s) => s.id === session)?.workspace
-      if (workspace === undefined) {
-        return
+  /**
+   * A sheet of choices, over whatever is on screen.
+   *
+   * A sheet rather than a menu because a phone's reach is the bottom third:
+   * a menu anchored to the `+` at the bottom-left opens *upward* into the
+   * middle of the screen, which is where a thumb is not.
+   */
+  #openSheet(rows: readonly { label: string; onTap: () => void }[]): void {
+    const backdrop = el('div', 'sheet-backdrop')
+    const sheet = el('div', 'sheet')
+    sheet.setAttribute('role', 'dialog')
+    sheet.setAttribute('aria-modal', 'true')
+    const close = (): void => backdrop.remove()
+
+    for (const choice of rows) {
+      const button = el('button', 'sheet-row', choice.label)
+      button.addEventListener('click', () => {
+        close()
+        choice.onTap()
+      })
+      sheet.append(button)
+    }
+    const cancel = el('button', 'sheet-row sheet-cancel', t('attach.cancel'))
+    cancel.addEventListener('click', close)
+    sheet.append(cancel)
+
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) {
+        close()
       }
+    })
+    backdrop.append(sheet)
+    this.#root.append(backdrop)
+    // Focus moves into the sheet, or a keyboard user is left on the control
+    // behind it with a modal in front of them.
+    cancel.focus()
+  }
+
+  /**
+   * What is being sent.
+   *
+   * Its own object, holding no text: there is no code path on which a failed
+   * upload can clear what somebody typed, because this does not know what they
+   * typed. That is the rule as a shape rather than as a discipline somebody
+   * has to remember.
+   */
+  readonly #staged = new Attachments()
+
+  /** Everything currently staged, for the composer to render. */
+  staged(): ReturnType<Attachments['list']> {
+    return this.#staged.list()
+  }
+
+  /**
+   * Send a file to the agent.
+   *
+   * Staged first and rendered immediately, because on a slow link the gap
+   * between tapping and anything happening is where somebody taps again — and
+   * the second tap sends the file twice.
+   *
+   * A failure names *that* attachment and does not touch the composer's text.
+   * The text somebody typed on a phone is the expensive thing on the screen
+   * and it is never what a failure is allowed to cost.
+   */
+  async attach(session: string, file: File): Promise<void> {
+    const workspace = this.#store.state.sessions.find((s) => s.id === session)?.workspace
+    if (workspace === undefined) {
+      return
+    }
+    const staged = this.#staged.begin(file.name)
+    this.render()
+
+    try {
       const bytes = new Uint8Array(await file.arrayBuffer())
       let binary = ''
       for (const byte of bytes) {
         binary += String.fromCharCode(byte)
       }
       await this.#store.call('fs.write', workspace, file.name, btoa(binary), 0, 1)
+      this.#staged.succeed(staged)
+      this.render()
       // Named in the message rather than attached invisibly: an agent reads a
       // path, and a file it was never told about is a file it never opens.
-      void this.type(`(attached ${file.name})\r`)
+      void this.type(`${this.#reference(session, file.name)}\r`)
+    } catch (e) {
+      this.#staged.fail(staged, e instanceof Error ? e.message : String(e))
+      this.render()
+    }
+  }
+
+  /**
+   * The clipboard, as an attachment.
+   *
+   * A visible row rather than only a `paste` handler: 08 §8.4 forbids a
+   * capability reachable by gesture alone, and a phone has no paste shortcut.
+   */
+  async attachClipboard(session: string): Promise<void> {
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith('image/'))
+        if (type === undefined) {
+          continue
+        }
+        const blob = await item.getType(type)
+        const extension = type.split('/')[1] ?? 'png'
+        await this.attach(session, new File([blob], `pasted.${extension}`, { type }))
+        return
+      }
+      // Said rather than nothing happening. A control that silently does
+      // nothing is one somebody presses repeatedly.
+      this.fail('transcript', new Error(t('attach.noImage')))
     } catch (e) {
       this.fail('transcript', e)
     }
+  }
+
+  /**
+   * How this agent wants to be handed a file that is already on disk.
+   *
+   * Each agent has its own mention syntax and `omt-agent-adapters` knows all
+   * of them, but the client does not have that table — so this covers the one
+   * distinction that matters on the wire and falls back to a bare path, which
+   * every agent reads.
+   */
+  #reference(session: string, name: string): string {
+    const detected = this.#store.state.sessions.find((s) => s.id === session)?.title ?? ''
+    return /claude|opencode/i.test(detected) ? `@${name}` : `(attached ${name})`
   }
 
   /** Hand a dictated chunk to the instance's buffer. */

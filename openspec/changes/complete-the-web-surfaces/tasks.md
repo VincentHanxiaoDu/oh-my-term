@@ -24,13 +24,13 @@
 
 ## 3. Attachments
 
-- [ ] 3.1 The attach sheet: photo, file, workspace file, paste — four visible
+- [x] 3.1 The attach sheet: photo, file, workspace file, paste — four visible
       rows, none gesture-only
-- [ ] 3.2 Staging in the composer with a per-attachment progress state
+- [x] 3.2 Staging in the composer with a per-attachment progress state
 - [ ] 3.3 Transfer through `media.put`, and a workspace file referenced rather
       than uploaded
-- [ ] 3.4 A failure names the attachment and leaves the typed text alone
-- [ ] 3.5 The reference handed to the agent uses that agent's own syntax
+- [x] 3.4 A failure names the attachment and leaves the typed text alone
+- [x] 3.5 The reference handed to the agent uses that agent's own syntax
 
 ## 4. Files and diffs
 
@@ -82,7 +82,7 @@
 - [ ] 9.1 A Playwright case per new screen, on both device profiles, against a
       real instance
 - [ ] 9.2 Unit: the picker offers no path field and no unknown directory
-- [ ] 9.3 Unit: a failed attachment names itself and the composer's text
+- [x] 9.3 Unit: a failed attachment names itself and the composer's text
       survives
 - [x] 9.4 Unit: a CJK string truncates to the right *width*, not the right
       length
