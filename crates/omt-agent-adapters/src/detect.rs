@@ -310,3 +310,139 @@ mod tests {
         );
     }
 }
+
+/// What an agent's terminal title says about it.
+///
+/// The strongest evidence available without cooperation. A title is set by the
+/// program deliberately, through a channel every terminal has had for decades:
+/// it needs no permission, it survives ssh, and it does not depend on how the
+/// binary was launched, signed, or wrapped — which is the whole list of things
+/// that make reading the process table unreliable.
+///
+/// Returns the agent and, where the title says so, what it is doing. A title
+/// that names nothing yields nothing: guessing from an arbitrary string is how
+/// a shell that puts the last command in its title becomes an agent.
+#[must_use]
+pub fn detect_from_title(adapters: &[&dyn AgentAdapter], title: &str) -> Option<TitleReading> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lowered = trimmed.to_lowercase();
+    for adapter in adapters {
+        let fingerprint = adapter.fingerprint();
+        let Some(marks) = fingerprint.title.as_ref() else {
+            continue;
+        };
+        let Some(name) = marks
+            .names
+            .iter()
+            .find(|name| lowered.contains(&name.to_lowercase()))
+        else {
+            continue;
+        };
+        let first = trimmed.chars().next();
+        let activity = first.and_then(|glyph| {
+            if marks.working_prefix.iter().any(|r| r.contains(&glyph)) {
+                Some(TitleActivity::Working)
+            } else if marks.idle_prefix.contains(&glyph) {
+                Some(TitleActivity::Idle)
+            } else {
+                None
+            }
+        });
+        return Some(TitleReading {
+            agent: adapter.kind(),
+            activity,
+            // The name that matched, never the glyph. A person reading why omt
+            // thinks an agent is working does not want a codepoint.
+            evidence: format!("its terminal title says `{name}`"),
+        });
+    }
+    None
+}
+
+/// What a title told us.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TitleReading {
+    /// Which agent the title names.
+    pub agent: AgentKind,
+    /// What the title's leading glyph says it is doing, where it says anything.
+    pub activity: Option<TitleActivity>,
+    /// Why, in words, for `agent.explain`.
+    pub evidence: String,
+}
+
+/// The state an agent's title glyph reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleActivity {
+    /// A spinner frame: it is doing something.
+    Working,
+    /// Its resting mark: it is waiting for something to do.
+    Idle,
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod title_tests {
+    use super::*;
+
+    fn adapters() -> crate::AdapterSet {
+        crate::builtin()
+    }
+
+    #[test]
+    fn a_resting_agent_names_itself_and_its_state() {
+        // Observed from the shipped binary: `OSC 0 ; ✳ Claude Code`.
+        let set = adapters();
+        let read = detect_from_title(&set.all(), "\u{2733} Claude Code").expect("a reading");
+        assert_eq!(read.agent, AgentKind::ClaudeCode);
+        assert_eq!(read.activity, Some(TitleActivity::Idle));
+    }
+
+    #[test]
+    fn a_working_agent_is_a_spinner_frame_not_a_list_of_them() {
+        // A spinner is an animation, and enumerating its frames is a list that
+        // goes stale on the next frame they add. The whole braille block is
+        // the range.
+        let set = adapters();
+        for frame in ['\u{2801}', '\u{2809}', '\u{28FF}'] {
+            let title = format!("{frame} Claude Code");
+            let read = detect_from_title(&set.all(), &title).expect("a reading");
+            assert_eq!(read.activity, Some(TitleActivity::Working), "{title:?}");
+        }
+    }
+
+    #[test]
+    fn a_title_that_names_nothing_is_not_an_agent() {
+        // A shell that puts the last command in its title would otherwise
+        // become whichever agent that command resembled.
+        let set = adapters();
+        for title in ["~/src/omt", "vim README.md", "", "   ", "zsh"] {
+            assert!(detect_from_title(&set.all(), title).is_none(), "{title:?}");
+        }
+    }
+
+    #[test]
+    fn the_agent_is_named_even_when_the_glyph_is_not_recognised() {
+        // A new state mark is a state omt does not know, not an agent it does
+        // not know. Reporting neither would lose the identity over a glyph.
+        let set = adapters();
+        let read = detect_from_title(&set.all(), "\u{2699} Claude Code").expect("a reading");
+        assert_eq!(read.agent, AgentKind::ClaudeCode);
+        assert_eq!(read.activity, None);
+    }
+
+    #[test]
+    fn the_evidence_is_words_rather_than_a_codepoint() {
+        // `agent.explain` puts this in front of a person.
+        let set = adapters();
+        let read = detect_from_title(&set.all(), "\u{2733} Claude Code").expect("a reading");
+        assert!(read.evidence.contains("title"), "{}", read.evidence);
+        assert!(!read.evidence.contains('\u{2733}'), "{}", read.evidence);
+    }
+}

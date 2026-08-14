@@ -482,3 +482,106 @@ mod tests {
         assert!(armed, "and it does not spend a pending prefix");
     }
 }
+
+/// Wraps one frame so the terminal shows all of it or none of it.
+///
+/// DEC 2026, synchronized output. A frame is dozens of writes — the panes, the
+/// separators, the status bar, an overlay, the cursor — and a terminal is free
+/// to present the screen between any two of them. What that looks like is a
+/// status bar from this frame above a pane from the last one, for one refresh,
+/// every frame: tearing, and the reason a terminal program looks like it is
+/// struggling even when it is fast.
+///
+/// A terminal that does not know the sequence ignores it, which is why this is
+/// unconditional rather than behind a capability query: the query costs a
+/// round trip and the fallback is the behaviour without it.
+///
+/// The frame is drawn into a buffer and written once, which has a second
+/// consequence that matters more than the tearing: **a frame that drew nothing
+/// writes nothing.** Wrapping the writes as they happen would emit the
+/// begin/end pair on every tick of an idle loop — sixteen bytes, sixty times a
+/// second, into a terminal where nothing is happening — which is the defect
+/// this was added next to, not a new one to introduce.
+#[derive(Debug)]
+pub struct Frame<'a, W: io::Write> {
+    out: &'a mut W,
+    body: Vec<u8>,
+}
+
+impl<'a, W: io::Write> Frame<'a, W> {
+    /// Begin a frame.
+    pub fn begin(out: &'a mut W) -> Self {
+        Self {
+            out,
+            // Roughly one screen of cells with escapes, so an ordinary frame
+            // never reallocates.
+            body: Vec::with_capacity(8192),
+        }
+    }
+
+    /// The buffer this frame is drawn into.
+    pub fn writer(&mut self) -> &mut Vec<u8> {
+        &mut self.body
+    }
+
+    /// Present it, if there is anything to present.
+    ///
+    /// # Errors
+    /// Fails if the write or the flush fails.
+    pub fn present(self) -> io::Result<()> {
+        if self.body.is_empty() {
+            return Ok(());
+        }
+        self.out.write_all(b"\x1b[?2026h")?;
+        self.out.write_all(&self.body)?;
+        self.out.write_all(b"\x1b[?2026l")?;
+        self.out.flush()
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod frame_tests {
+    use super::Frame;
+
+    #[test]
+    fn a_frame_is_wrapped_in_the_synchronised_output_pair() {
+        let mut out: Vec<u8> = Vec::new();
+        let mut frame = Frame::begin(&mut out);
+        frame.writer().extend_from_slice(b"drawing");
+        frame.present().expect("present");
+        assert_eq!(out, b"\x1b[?2026hdrawing\x1b[?2026l");
+    }
+
+    #[test]
+    fn a_frame_that_drew_nothing_writes_nothing() {
+        // The idle loop runs this every tick. Emitting the pair anyway would
+        // be sixteen bytes a tick into a terminal where nothing is happening,
+        // which is the defect this sits next to rather than a new one.
+        let mut out: Vec<u8> = Vec::new();
+        let frame = Frame::begin(&mut out);
+        frame.present().expect("present");
+        assert!(out.is_empty(), "an empty frame wrote {out:?}");
+    }
+
+    #[test]
+    fn the_pair_brackets_everything_the_frame_wrote() {
+        // The whole point: a terminal may present the screen between any two
+        // writes, and a frame is dozens of them.
+        let mut out: Vec<u8> = Vec::new();
+        let mut frame = Frame::begin(&mut out);
+        for part in ["pane", "separator", "status", "cursor"] {
+            frame.writer().extend_from_slice(part.as_bytes());
+        }
+        frame.present().expect("present");
+        let text = String::from_utf8(out).expect("utf8");
+        let begin = text.find("\u{1b}[?2026h").expect("begin marker");
+        let end = text.find("\u{1b}[?2026l").expect("end marker");
+        assert!(begin < text.find("pane").expect("pane"));
+        assert!(end > text.find("cursor").expect("cursor"));
+    }
+}

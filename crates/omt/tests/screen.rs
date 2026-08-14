@@ -584,3 +584,58 @@ fn an_idle_omt_writes_nothing_at_all() {
     );
     s.type_in("\x04");
 }
+
+#[test]
+fn the_state_comes_from_what_the_agent_says_about_itself() {
+    // The pane's program sets its own title, and Claude Code puts its state in
+    // the first glyph of it: a braille spinner frame while it works, `✳` at
+    // rest. That is the agent telling its host what it is doing, through a
+    // channel that needs no permission and survives ssh — as against watching
+    // bytes arrive, which cannot tell working from a program that happens to
+    // be printing.
+    //
+    // Driven with `printf` rather than a real agent, because the point under
+    // test is that omt reads the title at all, and a real agent's timing makes
+    // that a coin toss.
+    let mut s = Screen::start();
+    s.settle(2.0);
+
+    // Working: a spinner frame, then quiet. The floor would call this idle
+    // after two seconds; the title says otherwise and outranks it.
+    s.type_in("printf '\\e]0;\u{2801} Claude Code\\a'\r");
+    s.settle(3.0);
+    s.type_in("\x02a");
+    s.settle(1.5);
+    let working = s.screen();
+    s.type_in("\x1b");
+    s.settle(0.5);
+
+    assert!(
+        working.to_lowercase().contains("claude"),
+        "the title did not identify the agent:\n{working}"
+    );
+    assert!(
+        working.contains("working"),
+        "the agent said it was working and omt did not:\n{working}"
+    );
+
+    // At rest: the same agent, a different glyph, a different state.
+    s.type_in("printf '\\e]0;\u{2733} Claude Code\\a'\r");
+    s.settle(2.0);
+    s.type_in("\x02a");
+    s.settle(1.5);
+    let resting = s.screen();
+    s.type_in("\x1b");
+    s.settle(0.3);
+    s.type_in("\x04");
+
+    assert!(
+        resting.contains("idle"),
+        "the agent said it was idle and omt did not:\n{resting}"
+    );
+    // And never the glyph itself, which is a codepoint nobody reads.
+    assert!(
+        !resting.contains('\u{2733}') || !resting.contains("\u{2733} \u{2733}"),
+        "the state glyph reached the screen:\n{resting}"
+    );
+}

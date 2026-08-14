@@ -23,7 +23,8 @@
 
 use omt_agent::SourceReading;
 use omt_agent_adapters::{
-    AgentAdapter, Detection, Observation, ScreenSignals, detect, guess_activity,
+    AgentAdapter, Detection, Observation, ScreenSignals, TitleActivity, detect, detect_from_title,
+    guess_activity,
 };
 use omt_events::ActivityGuess;
 use omt_types::{AgentKind, AgentState, Tier};
@@ -69,6 +70,52 @@ pub fn identify(fd: std::os::fd::RawFd, adapters: &[&dyn AgentAdapter]) -> Optio
     // not an agent, which is what a plain shell is, and reporting it would put
     // a row reading "unknown" in the list for every pane.
     (found.agent != AgentKind::Unknown).then_some(found)
+}
+
+/// What the pane's terminal title says is running in it.
+///
+/// Above the process probe on the ladder and read from a different place, so
+/// the two can disagree and the stronger wins. A title is set by the program
+/// deliberately: it needs no permission, it survives ssh, and it does not
+/// depend on how the binary was launched or signed. The process table is none
+/// of those things — reading a hardened binary's arguments is refused, and a
+/// self-updating agent runs from a versioned path that does not carry its
+/// name.
+#[must_use]
+pub fn identify_from_title(
+    title: Option<&str>,
+    adapters: &[&dyn AgentAdapter],
+) -> Option<(Detection, Option<TitleActivity>)> {
+    let read = detect_from_title(adapters, title?)?;
+    Some((
+        Detection {
+            agent: read.agent,
+            tier: Tier::Marker,
+            evidence: read.evidence,
+            agent_session: None,
+        },
+        read.activity,
+    ))
+}
+
+/// The reading a title's state glyph produces.
+///
+/// Marker tier, and authoritative for what the agent is *doing*: the glyph is
+/// the agent saying so, not omt inferring it from bytes arriving. That is the
+/// difference between "something is on the pty" and "it says it is working",
+/// and it is why this may suspend the floor while the floor may not suspend
+/// it.
+#[must_use]
+pub fn title_reading(activity: TitleActivity, now_ms: u64) -> SourceReading {
+    SourceReading {
+        tier: Tier::Marker,
+        state: match activity {
+            TitleActivity::Working => AgentState::Working { detail: None },
+            TitleActivity::Idle => AgentState::Idle,
+        },
+        at: now_ms,
+        authoritative: true,
+    }
 }
 
 /// The readings a detection and a screen produce, for the merge machine.

@@ -27,7 +27,9 @@ pub use bounded::{
     BoundedError, MAX_FILE_BYTES, MAX_NESTING_DEPTH, MAX_STRUCTURAL_TOKENS, check_structure,
     parse_line, read_bounded, read_json,
 };
-pub use detect::{Observation, detect, may_emit_structured};
+pub use detect::{
+    Observation, TitleActivity, TitleReading, detect, detect_from_title, may_emit_structured,
+};
 pub use install::{
     INSTALL_VERSION, InstallError, Plan, STAMP_KEY, events_for, is_stale, plan_install,
     plan_uninstall,

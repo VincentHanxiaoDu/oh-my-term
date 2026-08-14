@@ -155,9 +155,25 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 continue;
             };
             let fd = runtime.pty().as_raw_fd();
+            // What the program in this pane calls the terminal. omt already
+            // parses the title; nothing had ever read it.
+            let title = runtime.terminal().title().map(str::to_owned);
             let quiet_ms = now.saturating_sub(pane.last_output_ms);
             let refs: Vec<&dyn omt_agent_adapters::AgentAdapter> = adapter_set.all();
-            let detection = crate::probe::identify(fd, &refs);
+
+            // The title first, and the process table only if the title says
+            // nothing. A title is set deliberately by the program: it needs no
+            // permission, survives ssh, and does not depend on how the binary
+            // was launched or signed. Reading the process table is none of
+            // those — a hardened binary refuses its arguments, and a
+            // self-updating agent runs from a versioned path with its name
+            // only in argv[0].
+            let from_title = crate::probe::identify_from_title(title.as_deref(), &refs);
+            let said = from_title.as_ref().and_then(|(_, activity)| *activity);
+            let detection = from_title
+                .map(|(detection, _)| detection)
+                .or_else(|| crate::probe::identify(fd, &refs));
+
             pane.agent = detection.map(|detection| crate::probe::Probed {
                 activity: crate::probe::activity(quiet_ms < 1_000, false, quiet_ms / 1_000),
                 detection,
@@ -165,6 +181,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             if let Some(probed) = pane.agent.clone() {
                 for reading in crate::probe::readings(&probed, now) {
                     instance.observe_agent(pane.binding, reading);
+                }
+                // And what the agent said about itself, which outranks every
+                // guess made from bytes arriving on a pty.
+                if let Some(activity) = said {
+                    instance
+                        .observe_agent(pane.binding, crate::probe::title_reading(activity, now));
                 }
             }
         }
@@ -192,6 +214,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             omt_tui::Split::Vertical,
             panes.len(),
         );
+        // One frame, presented whole. A terminal is free to show the screen
+        // between any two writes, and a frame here is dozens of them — the
+        // panes, the separators, the status bar, an overlay, the cursor. What
+        // that looks like without this is a status bar from this frame above a
+        // pane from the last one, for one refresh, every frame.
+        let mut frame = omt_tui::Frame::begin(&mut out);
+        let mut out = frame.writer();
         if layout_dirty {
             // Everything moved. Diffing against where a pane used to be paints
             // its old contents into its neighbour.
@@ -419,7 +448,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 placed = Some((row, col));
             }
         }
-        out.flush().context("flushing")?;
+        frame.present().context("presenting the frame")?;
 
         // Every event that is already waiting, not one per frame. A paste is
         // delivered as a burst — one event per character on a terminal with no

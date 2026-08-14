@@ -19,7 +19,7 @@ pub use statusbar::{Status, glyph, render as status_bar};
 pub mod layout;
 pub mod render;
 
-pub use app::{Input, RawGuard, translate};
+pub use app::{Frame, Input, RawGuard, translate};
 pub use hint::{PENDING_STRIP_DELAY_MS, Situation, hint_for, leader, pending_strip, render_hint};
 pub use layout::{MIN_PANE_COLS, MIN_PANE_ROWS, Rect, Split, how_many_fit, pane_at, tile};
 pub use render::Screen;

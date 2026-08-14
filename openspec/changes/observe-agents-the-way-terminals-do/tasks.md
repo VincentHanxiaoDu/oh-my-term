@@ -1,20 +1,20 @@
 ## 1. Stop the tests lying
 
 - [x] 1.1 The screen harness strips every inherited agent environment variable
-- [ ] 1.2 A test that a plain shell reports no agent, which the contaminated
+- [x] 1.2 A test that a plain shell reports no agent, which the contaminated
       harness could never have failed
 - [x] 1.3 The three tests that passed on inherited environment are re-run and
       shown to fail before anything else is fixed
 
 ## 2. The OSC marker tier
 
-- [ ] 2.1 `SetTitle` reaches the merge machine as a reading
-- [ ] 2.2 Identity from the title: a per-agent title pattern
-- [ ] 2.3 State from the title's leading glyph, per agent
+- [x] 2.1 `SetTitle` reaches the merge machine as a reading
+- [x] 2.2 Identity from the title: a per-agent title pattern
+- [x] 2.3 State from the title's leading glyph, per agent
 - [ ] 2.4 OSC progress as a second marker reading
-- [ ] 2.5 The tier sits above `Heuristic` and below `Hook`
-- [ ] 2.6 A title that names nothing yields no reading rather than a guess
-- [ ] 2.7 The glyph never reaches a person
+- [x] 2.5 The tier sits above `Heuristic` and below `Hook`
+- [x] 2.6 A title that names nothing yields no reading rather than a guess
+- [x] 2.7 The glyph never reaches a person
 
 ## 3. The process probe, repaired
 
@@ -46,9 +46,9 @@
 
 - [ ] 5.1 Done and unseen is distinct from idle and seen
 - [ ] 5.2 Focusing a pane marks it seen
-- [ ] 5.3 No surface prints "unknown"
-- [ ] 5.4 The agent's name is the first thing on its row
-- [ ] 5.5 The evidence is still available, after the verdict
+- [x] 5.3 No surface prints "unknown"
+- [x] 5.4 The agent's name is the first thing on its row
+- [x] 5.5 The evidence is still available, after the verdict
 
 ## 6. Both surfaces agree
 
