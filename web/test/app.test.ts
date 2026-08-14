@@ -44,11 +44,26 @@ describe('the roster', () => {
       { id: '1', title: 'a', state: 'blocked' },
       { id: '2', title: 'b', state: 'idle' },
     ]
-    expect(rosterSubtitle(rows)).toBe('1 of 2 need you')
+    expect(rosterSubtitle(rows)).toBe('1 waiting on you')
   })
 
-  it('says how many sessions there are when none need anything', () => {
-    expect(rosterSubtitle([{ id: '1', title: 'a', state: 'idle' }])).toBe('1 session')
+  it('answers the question first and counts second when nothing is waiting', () => {
+    // "4 sessions" is the one fact nobody unlocks their phone to learn. The
+    // question is whether anything needs them, so the line answers that and
+    // offers the count as reassurance rather than in place of an answer.
+    expect(rosterSubtitle([{ id: '1', title: 'a', state: 'idle' }])).toBe(
+      'nothing waiting · 1 running',
+    )
+    expect(
+      rosterSubtitle([
+        { id: '1', title: 'a', state: 'idle' },
+        { id: '2', title: 'b', state: 'running' },
+      ]),
+    ).toBe('nothing waiting · 2 running')
+  })
+
+  it('says nothing is running rather than counting to zero', () => {
+    expect(rosterSubtitle([])).toBe('nothing running')
   })
 })
 

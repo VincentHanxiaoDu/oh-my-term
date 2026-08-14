@@ -38,6 +38,24 @@ fn main() -> Result<()> {
         ),
         ["attach"] => omt::attach::run(None, None),
         ["attach", "--socket", path] => omt::attach::run(Some(std::path::Path::new(path)), None),
+        // One process, one instance, both surfaces. Without this the only way
+        // to reach a browser was `omt web`, which starts a *second* instance
+        // with none of the daemon's sessions in it — so the flow the guide
+        // describes ("run omt, then look at your phone") showed an empty
+        // roster and looked like omt had lost the work.
+        ["serve", "--web", addr] => {
+            let path = omt::attach::daemon_socket_path();
+            let state = omt::state::State::default();
+            let served = state.clone();
+            let bind = (*addr).to_owned();
+            std::thread::spawn(move || {
+                if let Err(e) = omt::web::serve_state(&bind, None, served) {
+                    eprintln!("omt: the browser surface stopped: {e}");
+                }
+            });
+            println!("listening on {}", path.display());
+            omt::serve::serve(&path, state)
+        }
         ["serve"] => {
             // The stable per-user path, so a terminal can find this daemon.
             // The old default had the process id in it, which meant nothing

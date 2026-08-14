@@ -24,6 +24,18 @@ pub fn run(bind: &str) -> Result<()> {
 /// # Errors
 /// Fails if the address cannot be bound or the certificate cannot be read.
 pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()> {
+    // A daemon is already holding sessions, and this would serve a *different*
+    // instance with none of them in it. Said out loud rather than discovered:
+    // the flow the whole product is built around is "run omt, then look at your
+    // phone", and a phone showing an empty roster looks like omt losing the
+    // work rather than like two processes that were never introduced.
+    if let Some(running) = crate::discovery::running_instance() {
+        println!(
+            "note: an instance is already running on {}.\n                   This serves a separate one, with none of its sessions. To put that \n                   instance on your phone, restart it as `omt serve --web {bind}`.",
+            running.display()
+        );
+    }
+
     let state = State::default();
     // Started before the server, because a session created by the first request
     // must produce output. Without this, a browser can open a shell, type into
@@ -33,6 +45,21 @@ pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()>
     // Scheduled jobs fire from here too. A job that only runs when a TUI is
     // open is not a scheduled job.
     crate::scheduler::spawn(state.clone());
+    serve_state(bind, tls, state)
+}
+
+/// Serve the browser surface for an instance that already exists.
+///
+/// The half `run_with_tls` could not do: `omt serve` holds the sessions, and
+/// until this existed the only way to reach a browser was to start a second,
+/// empty instance. One process, one instance, both surfaces — which is what
+/// [07](../../../docs/architecture/07-remote-protocol.md) means by a phone and
+/// the TUI reaching the same state by the same path.
+///
+/// # Errors
+/// Fails if the address cannot be bound or the certificate cannot be read.
+pub fn serve_state(bind: &str, tls: Option<omt_server::TlsFiles>, state: State) -> Result<()> {
+    let events_state = state.clone();
     // The directory `omt web` was started in, opened before anything is served.
     // A browser has no filesystem of its own to point at, so an instance with
     // no workspace gives it a session-creation form it cannot fill in — and the
@@ -40,7 +67,6 @@ pub fn run_with_tls(bind: &str, tls: Option<omt_server::TlsFiles>) -> Result<()>
     if let (Ok(cwd), Ok(mut instance)) = (std::env::current_dir(), state.lock()) {
         let _ = instance.open_workspace(&cwd.display().to_string());
     }
-    let events_state = state.clone();
 
     let mut credentials = CredentialStore::new();
     // An invite, not a credential. Printed as a credential — which this did —

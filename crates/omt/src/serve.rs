@@ -111,8 +111,10 @@ pub fn serve(path: &Path, state: State) -> Result<()> {
     // What was open last time, before anything new is served. A restore that
     // ran after the first client connected would show it an empty instance and
     // then change it underneath — worse than being slightly slower to start.
-    crate::persist::restore_on_start(&state);
-    crate::persist::spawn_autosave(state.clone());
+    // Keyed by this daemon's socket. Shared, two instances on one machine
+    // restore each other's sessions and then overwrite each other's snapshot.
+    crate::persist::restore_on_start_for(&state, Some(path));
+    crate::persist::spawn_autosave_for(state.clone(), Some(path));
 
     // A socket left behind by a daemon that died is a file that exists and
     // refuses every connection. Removing it here means a crash does not

@@ -74,11 +74,39 @@ function deviceId(storage: Storage): string {
   return fresh
 }
 
+/**
+ * A screen before there is an instance to draw one from.
+ *
+ * Three of these exist — joining, a spent invite, and no instance at all — and
+ * all three were a bare string assigned to `textContent`. Given the stylesheet
+ * now loads first, they get the same shape as everything else rather than
+ * being the one part of the product that looks like a 1995 error page.
+ */
+function notice(title: string, detail: string): HTMLElement {
+  const box = document.createElement('div')
+  box.className = 'notice'
+  const heading = document.createElement('h1')
+  heading.textContent = title
+  const body = document.createElement('p')
+  body.textContent = detail
+  box.append(heading, body)
+  return box
+}
+
 async function main(): Promise<void> {
   const root = document.getElementById('app')
   if (root === null) {
     return
   }
+
+  // Before anything renders. This ran after the instance resolved, so every
+  // screen up to that point — "Joining…", a refused invite, and the message
+  // somebody sees when they open the page with no token — was unstyled black
+  // serif on white. That is the first screen anybody sees after scanning the
+  // code, on a product whose entire surface is a dark terminal.
+  const style = document.createElement('style')
+  style.textContent = STYLES
+  document.head.append(style)
 
   let instance = takeInvite(window.location, window.localStorage)
 
@@ -86,11 +114,17 @@ async function main(): Promise<void> {
   // here, before anything connects, so what is stored is this device's own —
   // expiring, single-exchange, and individually revocable when a phone is lost.
   if (instance !== null && isInvite(instance.token)) {
-    root.textContent = 'Joining…'
+    root.textContent = ''
+    root.append(notice('Joining…', 'Swapping the invite for this device\u2019s own credential.'))
     const joined = await exchangeInvite(instance.url, instance.token, describeDevice())
     if (joined === null) {
-      root.textContent =
-        'That invite could not be used. It expires after a few minutes and works once — ask for a fresh one.'
+      root.textContent = ''
+      root.append(
+        notice(
+          'That invite is spent',
+          'An invite works once and expires after a few minutes. Ask for a fresh one.',
+        ),
+      )
       // Forgotten, or the next load retries a token that can never work and
       // reports the same failure forever.
       forget(window.localStorage, instance.id)
@@ -103,8 +137,12 @@ async function main(): Promise<void> {
   }
 
   if (instance === null) {
-    root.textContent =
-      'Open the link `omt web` printed, or scan the code beside it. It carries the token, which is shown once.'
+    root.append(
+      notice(
+        'No instance yet',
+        'Open the link omt web printed, or scan the code beside it. It carries the invite, which is shown once.',
+      ),
+    )
     return
   }
   const token = instance.token
@@ -120,11 +158,6 @@ async function main(): Promise<void> {
     },
   )
   store = new Store(deviceId(window.localStorage), transport)
-  // The stylesheet ships with the code rather than living in the HTML, so a
-  // class name has one home and the two cannot drift.
-  const style = document.createElement('style')
-  style.textContent = STYLES
-  document.head.append(style)
 
   const nav = new Navigator()
   const app = new App(store, root, nav)

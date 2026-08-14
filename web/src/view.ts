@@ -113,7 +113,14 @@ export function appBar(options: {
     heading.append(document.createTextNode(options.title))
   }
   if (options.subtitle !== undefined) {
-    heading.append(el('span', 'subtitle', options.subtitle))
+    const line = el('span', 'subtitle', options.subtitle)
+    // The accent, driven from the same string that states the fact. A separate
+    // flag would be a second place for "is anything waiting" to live, and two
+    // places is how a headline and its colour come to disagree.
+    if (/waiting on you/.test(options.subtitle)) {
+      line.dataset['waiting'] = 'yes'
+    }
+    heading.append(line)
   }
   bar.append(heading)
 

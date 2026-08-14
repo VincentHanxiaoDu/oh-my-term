@@ -106,6 +106,31 @@ pub fn ambiguous(sockets: &[PathBuf]) -> String {
     out
 }
 
+/// The socket of a running instance, if there is exactly one.
+///
+/// A convenience over [`discover`] for the callers that only want to know
+/// whether they are about to duplicate something. `Several` answers `None`:
+/// with two instances running there is no "the" one, and picking would attach
+/// somebody to a different set of live terminals.
+#[must_use]
+pub fn running_instance() -> Option<PathBuf> {
+    let dir = std::env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let env_socket = std::env::var("OMT_SOCK").ok().map(PathBuf::from);
+    // Nothing is unlinked here. This asks a question; deleting a stale socket
+    // is a decision for the code that is about to bind one.
+    match discover(
+        env_socket.as_deref(),
+        &dir,
+        &|p| std::os::unix::net::UnixStream::connect(p).is_ok(),
+        &mut |_| {},
+    ) {
+        Found::One(path) => Some(path),
+        Found::Several(_) | Found::None => None,
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

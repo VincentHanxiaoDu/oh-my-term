@@ -13,16 +13,39 @@
 /** The stylesheet, ready to put in a `<style>` element. */
 export const STYLES = `
 :root {
-  /* Type. A fourth-based scale, capped: a phone has one column and more than
-     four sizes on it reads as inconsistency rather than as hierarchy. */
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.75rem;
+  /* ---------------------------------------------------------------------
+     Two voices.
 
-  /* Space. Multiples of 4, because every platform's own grid is, and mixing
-     scales is what makes a layout feel slightly wrong without being nameable. */
+     omt speaks in monospace and the agent speaks in prose, and you can tell
+     at a glance which one is talking. That is not decoration: this client's
+     whole job is to put a machine's output and an agent's question on one
+     small screen, and a reader who has to work out whose words these are has
+     already lost the thread.
+
+     Everything omt says about itself — a session name, a state, a count, a
+     key — is set in the same face as the grid it describes. Everything an
+     agent says is set in prose, because it is prose.
+     --------------------------------------------------------------------- */
+  --face-machine: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+  --face-human: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    system-ui, sans-serif;
+
+  /* One character cell. The chrome measures in the same unit as the terminal
+     underneath it, so a row of chrome and a row of output line up rather than
+     nearly lining up — which is the difference between a layout that reads as
+     one surface and one that reads as a wrapper around a surface. */
+  --cell: 1ch;
+  --gutter: 3ch;
+
+  /* Type. Four sizes, because a phone has one column and a fifth size reads
+     as inconsistency rather than as hierarchy. */
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.5rem;
+
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -31,97 +54,115 @@ export const STYLES = `
   --space-6: 32px;
   --space-8: 48px;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  /* Nearly square. A terminal has no rounded corners and neither does a list
+     of what is running in one; the radius that is left is the smallest that
+     keeps a tap target from looking like a table cell. */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
   --radius-full: 999px;
 
-  /* The smallest a target may be. Anything less is a mis-tap, and a mis-tap in
-     a terminal client can be a keystroke somebody did not mean. */
   --touch-min: 44px;
-
-  /* The terminal's own font size, which a pinch changes. A variable rather
-     than a stylesheet edit, so one property drives the grid, the measurement
-     and the resize that follows. */
   --terminal-font: 14px;
 
-  /* Colour by role, never by name. A surface is a surface whether the theme is
-     light or dark, and a component that asks for "grey" gets the wrong one in
-     half the themes.
+  /* ---------------------------------------------------------------------
+     Colour.
 
-     Dark is the designed one. This is a terminal: the thing it exists to show
-     is a dark grid of monospace, and a light chrome around a dark grid is two
-     designs fighting. Light is supported and is the compromise, not the other
-     way round. */
-  --bg: #0d0e12;
-  --bg-elevated: #14161c;
-  --bg-sunken: #08090c;
-  --fg: #e6e8ee;
-  --fg-muted: #8b90a0;
-  --fg-subtle: #565b6b;
-  --border: #22252e;
-  --border-strong: #333846;
+     The chrome wears the user's own terminal theme. theme.get already
+     ships it and it was used only inside the grid, so the client looked like
+     a generic app that happened to contain a terminal. These fall back to
+     omt's own ink when a theme has not loaded or cannot carry chrome
+     contrast — see applyTheme, which checks rather than hopes.
 
-  /* One warm accent against a cold grey. Warm because everything that matters
-     on this surface — an agent waiting, a command that failed — needs to read
-     as *attention*, and a blue accent competes with the ANSI blue in the grid
-     right underneath it. */
-  --accent: #ffb454;
-  --accent-fg: #0d0e12;
-  --accent-dim: #4a3520;
-  --needs-you: #ffb454;
-  --working: #5ccfe6;
-  --danger: #ff6b60;
-  --ok: #7fd962;
+     Ink rather than black: a terminal is phosphor behind glass, and glass is
+     blue. Pure black is a switched-off screen.
+     --------------------------------------------------------------------- */
+  --ink: #0b0e14;
+  --ink-lift: #11151f;
+  --ink-sunken: #070910;
+  --rule: #1c2130;
+  --rule-strong: #2b3244;
+
+  --say: #ccd1de;
+  --murmur: #7b8397;
+  --whisper: #4d5568;
+
+  /* Three states, three colours, and each means exactly one thing anywhere it
+     appears. --halt is never used for emphasis, a heading, or a brand mark —
+     if it is on screen, something is waiting for a person. That restraint is
+     what lets it be recognised out of the corner of an eye, which is the only
+     way this client is ever actually read. */
+  --halt: #f2a65a;
+  --halt-ink: #0b0e14;
+  --halt-wash: #2a1f12;
+  --run: #57b6c9;
+  --gone: #e05a53;
+  --done: #78c07a;
+
+  --accent: var(--halt);
+  --accent-fg: var(--halt-ink);
+  --accent-dim: var(--halt-wash);
+  --needs-you: var(--halt);
+  --working: var(--run);
+  --danger: var(--gone);
+  --ok: var(--done);
+
+  --bg: var(--ink);
+  --bg-elevated: var(--ink-lift);
+  --bg-sunken: var(--ink-sunken);
+  --fg: var(--say);
+  --fg-muted: var(--murmur);
+  --fg-subtle: var(--whisper);
+  --border: var(--rule);
+  --border-strong: var(--rule-strong);
 
   color-scheme: dark light;
 
-  /* The ANSI palette, and the terminal's own colours.
-   *
-   * These are fallbacks: theme.get overwrites them with the instance's real
-   * theme at startup. They must exist anyway — the renderer emits
-   * var(--omt-ansi-N) for every indexed colour, and a variable with no
-   * definition renders as *nothing*, which is a terminal with no syntax
-   * colouring and no obvious cause. */
-  --omt-bg: var(--bg-sunken);
-  --omt-fg: var(--fg);
-  --omt-cursor: var(--accent);
-  --omt-selection: var(--border-strong);
-  --omt-ansi-0: #16181c; --omt-ansi-1: #e05252; --omt-ansi-2: #6cc070;
-  --omt-ansi-3: #d7ba7d; --omt-ansi-4: #59a5ff; --omt-ansi-5: #c586c0;
-  --omt-ansi-6: #4ec9b0; --omt-ansi-7: #d0d0d0; --omt-ansi-8: #6a6a6a;
-  --omt-ansi-9: #ff7b72; --omt-ansi-10: #8ade94; --omt-ansi-11: #ffd479;
-  --omt-ansi-12: #8ab4ff; --omt-ansi-13: #dda0dd; --omt-ansi-14: #7fdbca;
+  /* The ANSI palette. Fallbacks: theme.get overwrites these with the
+     instance's real theme at startup. They must exist anyway — the renderer
+     emits var(--omt-ansi-N) for every indexed colour, and a variable with no
+     definition renders as *nothing*, which is a terminal with no syntax
+     colouring and no obvious cause. */
+  --omt-bg: var(--ink-sunken);
+  --omt-fg: var(--say);
+  --omt-cursor: var(--halt);
+  --omt-selection: var(--rule-strong);
+  --omt-ansi-0: #12161f; --omt-ansi-1: #e05a53; --omt-ansi-2: #78c07a;
+  --omt-ansi-3: #d8b878; --omt-ansi-4: #6a9ce0; --omt-ansi-5: #b884c4;
+  --omt-ansi-6: #57b6c9; --omt-ansi-7: #ccd1de; --omt-ansi-8: #626b80;
+  --omt-ansi-9: #f2736b; --omt-ansi-10: #92d494; --omt-ansi-11: #f2cf8c;
+  --omt-ansi-12: #8ab4ff; --omt-ansi-13: #d3a0dd; --omt-ansi-14: #7fd6e4;
   --omt-ansi-15: #ffffff;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #ffffff;
-    --bg-elevated: #ffffff;
-    --bg-sunken: #f1f3f4;
-    --fg: #1f1f1f;
-    --fg-muted: #5f6368;
-    --fg-subtle: #80868b;
-    --border: #e0e2e5;
-    --border-strong: #c7c9cc;
-    /* The same warm accent, darkened until it holds contrast on white. A light
-       theme that switches to blue would be a different product wearing the same
-       name. */
-    --accent: #a35a00;
-    --accent-fg: #ffffff;
-    --accent-dim: #ffeacc;
-    --needs-you: #a35a00;
-    --working: #00697d;
-    --danger: #c5221f;
-    --ok: #1e8e3e;
-    --shadow-1: 0 1px 2px rgba(60, 64, 67, 0.2);
-    --shadow-2: 0 4px 16px rgba(60, 64, 67, 0.24);
-  }
-}
+    /* Paper, not white. The same palette read in daylight: warm enough that
+       the amber still reads as attention rather than as a highlighter, and
+       never pure #fff, which on an OLED phone in a dark room is a torch. */
+    --ink: #f7f6f3;
+    --ink-lift: #ffffff;
+    --ink-sunken: #ebe9e4;
+    --rule: #ddd9d1;
+    --rule-strong: #bdb8ad;
 
-@media (prefers-reduced-motion: reduce) {
-  :root { --duration: 0ms; }
+    --say: #1a1d24;
+    --murmur: #5c6270;
+    --whisper: #8c93a1;
+
+    /* Darkened until each holds 4.5:1 on paper. The hues do not change: a
+       light theme that switched to a different accent would be a different
+       product wearing the same name. */
+    --halt: #9a5500;
+    --halt-ink: #ffffff;
+    --halt-wash: #fbeeda;
+    --run: #0b6b7d;
+    --gone: #b3271f;
+    --done: #2c7a35;
+
+    --shadow-1: 0 1px 2px rgba(26, 29, 36, 0.12);
+    --shadow-2: 0 4px 16px rgba(26, 29, 36, 0.16);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -175,14 +216,76 @@ html, body {
   /* Allowed to be narrower than its text, or the title refuses to shrink and
      pushes everything to its right off the bar. */
   min-width: 0;
+  font-family: var(--face-machine);
   font-size: var(--text-lg);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Before there is an instance.
+
+   Joining, a spent invite, nothing paired yet. These are the first screens
+   anybody sees — the one right after scanning the code is one of them — and
+   they were unstyled serif on white because the stylesheet loaded after the
+   instance resolved. Centred and quiet: there is one fact and one instruction,
+   and nothing to do but read them. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-5);
+  max-width: 46ch;
+  margin: 0 auto;
+}
+.notice h1 {
+  margin: 0;
+  font-family: var(--face-machine);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+.notice p {
+  margin: 0;
+  font-family: var(--face-human);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* The standing answer.
+
+   One line, pinned under the bar, that says the only thing this client exists
+   to say. It used to be a count — "4 sessions" — which is the one fact nobody
+   opens their phone to learn. When something is waiting it is the accent and
+   it names how many; when nothing is, it says so plainly, because "nothing is
+   waiting" is a good answer and an empty screen is not. */
+.bar .subtitle {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--face-machine);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Set by the roster when any session is blocked. Not a class on a new element:
+   the line is the same line, and giving it a second home is how a count and a
+   headline come to disagree. */
+.bar .subtitle[data-waiting='yes'] {
+  color: var(--halt);
+}
+
 
 /* The title, when it is also the way to switch instances. Styled as the title
    and not as a button: it is the name of the thing, and a chevron is enough to
@@ -295,71 +398,126 @@ html, body {
 
 /* Every tappable thing. One rule, so a button in a list and a button in a bar
    are the same size and the same shape. */
+/* A row, not a card.
+
+   This was a bordered, rounded, elevated box 120px tall holding two words. Four
+   of them filled a phone and said nothing you could not have fitted on four
+   lines — and a list of what is running in a terminal is a list of lines. The
+   border between rows is the only rule, the gutter is the only colour, and the
+   height is what a thumb needs and nothing more. */
 .tap {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr auto;
   align-items: center;
-  gap: var(--space-3);
+  gap: 0;
   width: 100%;
   min-height: var(--touch-min);
-  padding: var(--space-3);
-  margin: 0 0 var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  padding: var(--space-3) var(--space-3) var(--space-3) 0;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   color: var(--fg);
-  font: inherit;
+  font-family: var(--face-machine);
+  font-size: var(--text-base);
   text-align: left;
   cursor: pointer;
-  transition: background var(--duration) var(--easing),
-              border-color var(--duration) var(--easing);
+  transition: background var(--duration) var(--ease);
 }
+
+.tap:last-child { border-bottom: 0; }
+.tap:active { background: var(--bg-elevated); }
+.tap:disabled { cursor: default; opacity: 0.55; }
 
 .tap:active { background: var(--bg-sunken); }
 .tap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tap[disabled] { opacity: 0.5; cursor: default; }
 
-.tap .label { flex: 1 1 auto; min-width: 0; }
+.tap .label {
+  grid-column: 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
 .tap .title {
   display: block;
   font-size: var(--text-base);
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The state, and it is the machine talking, so it is set in the machine face.
+   Lower-case and unpunctuated: this is a field value, not a sentence. */
 .tap .meta {
   display: block;
+  font-family: var(--face-machine);
   font-size: var(--text-xs);
   color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* The row that is waiting says so in the accent, because this is the one line
+   on the screen the whole client exists to surface. */
+.tap:has(.dot.needs-you) .meta { color: var(--halt); }
 
 /* A dot, plus a word. Colour alone is invisible to a tenth of the people who
    will use this, and a screen reader gets nothing from it at all. */
+/* The attention gutter.
+
+   Two characters wide, down the left of every row, and the only place the
+   accent appears in a list. A glyph rather than a dot because a glyph survives
+   greyscale, a screenshot, and a colour-blind reader — the colour is the
+   second signal, never the only one. */
 .dot {
-  flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-full);
-  background: var(--fg-subtle);
+  grid-column: 1;
+  justify-self: center;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  font-family: var(--face-machine);
+  font-size: var(--text-base);
+  line-height: 1;
+  color: var(--fg-subtle);
 }
-.dot.needs-you { background: var(--needs-you); box-shadow: 0 0 0 4px rgba(255, 180, 84, 0.16); }
-.dot.working { background: var(--working); }
-.dot.ok { background: var(--ok); }
 
-.chevron { flex: 0 0 auto; color: var(--fg-subtle); font-size: var(--text-sm); }
+.dot::before { content: "·"; }
+.dot.working { color: var(--run); }
+.dot.working::before { content: "●"; }
+.dot.ok { color: var(--done); }
+.dot.ok::before { content: "●"; }
+.dot.needs-you { color: var(--halt); }
+/* The one row on the screen that is asking for something. Filled, ringed, and
+   the only glyph that is not a circle or a point. */
+.dot.needs-you::before { content: "◉"; }
 
+.chevron {
+  grid-column: 3;
+  flex: 0 0 auto;
+  color: var(--fg-subtle);
+  font-family: var(--face-machine);
+  font-size: var(--text-sm);
+}
+/* One of two controls on the bar, and neither should outrank the line that
+   says whether anything needs you. Transparent until touched. */
 .icon-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
   width: var(--touch-min);
   height: var(--touch-min);
-  margin-left: calc(var(--space-2) * -1);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--fg);
+  color: var(--fg-muted);
+  font-family: var(--face-machine);
   font-size: var(--text-lg);
+  line-height: 1;
   cursor: pointer;
 }
 .icon-button:active { background: var(--bg-sunken); }

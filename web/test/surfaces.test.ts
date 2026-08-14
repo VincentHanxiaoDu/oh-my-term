@@ -343,7 +343,7 @@ describe('one list across every instance', () => {
     const rows = unify([laptop, desktop])
     // And says how many machines are in the count, so three sessions across
     // two laptops does not read as three on one.
-    expect(unifiedSubtitle(rows, 2)).toBe('1 of 3 need you · 2 instances')
+    expect(unifiedSubtitle(rows, 2)).toBe('1 waiting on you · 2 instances')
   })
 
   it('says when an instance could not be reached', () => {
@@ -353,8 +353,18 @@ describe('one list across every instance', () => {
     expect(unifiedSubtitle(rows, 2)).toContain('unreachable')
   })
 
+  it('answers the question before it counts anything', () => {
+    // The line under the title is read at arm's length, and "does anything
+    // need me" is the only question being asked. A count on its own answers a
+    // different one.
+    const quiet = unify([
+      { ...laptop, sessions: laptop.sessions.map((s) => ({ ...s, state: 'idle' })) },
+    ])
+    expect(unifiedSubtitle(quiet, 1)).toBe('nothing waiting · 2 running')
+  })
+
   it('does not mention instances when there is only one', () => {
-    expect(unifiedSubtitle(unify([laptop]), 1)).toBe('1 of 2 need you')
+    expect(unifiedSubtitle(unify([laptop]), 1)).toBe('1 waiting on you')
   })
 })
 

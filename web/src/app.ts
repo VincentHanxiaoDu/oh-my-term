@@ -36,7 +36,7 @@ import {
   repeatsFor,
   spanOf,
 } from './gestures.js'
-import { unify, unifiedSubtitle } from './federation.js'
+import { unify, unifiedSubtitle, waitingLine } from './federation.js'
 import type { InstanceRoster, UnifiedSession } from './federation.js'
 import { pairCalls, renderEntry, surfacesFor } from './surfaces.js'
 import type { TranscriptEntry } from './surfaces.js'
@@ -154,6 +154,30 @@ export interface SessionRow {
   state: string
 }
 
+/**
+ * The line under a session's name.
+ *
+ * Where it is, then what it is doing. A roster is mostly sessions called
+ * "shell", so the state alone gives four identical rows and no way to pick the
+ * one you meant — and picking the wrong one types into a live terminal.
+ *
+ * The instance comes first when there is more than one, because "which
+ * machine" outranks "which directory" the moment two machines are on screen.
+ */
+export function rowMeta(
+  session: { state: string; workspace?: string; cwd?: string },
+  instanceLabel: string | undefined,
+  workspaces: readonly { id: string; name: string }[],
+): string {
+  const where =
+    workspaces.find((w) => w.id === session.workspace)?.name ??
+    session.cwd?.split('/').filter(Boolean).pop()
+  const parts = [instanceLabel, where, session.state].filter(
+    (p): p is string => p !== undefined && p !== '',
+  )
+  return parts.join(' · ')
+}
+
 /** Whether this row is the reason the phone buzzed. */
 export function needsYou(state: string): boolean {
   return state === 'blocked'
@@ -215,11 +239,7 @@ export function announcement(
 }
 
 export function rosterSubtitle(rows: readonly SessionRow[]): string {
-  const blocked = rows.filter((r) => needsYou(r.state)).length
-  if (blocked > 0) {
-    return `${blocked} of ${rows.length} need you`
-  }
-  return rows.length === 1 ? '1 session' : `${rows.length} sessions`
+  return waitingLine(rows.length, rows.filter((r) => needsYou(r.state)).length)
 }
 
 /**
@@ -420,14 +440,14 @@ export class App {
         instance: here?.id ?? 'local',
         label: here?.label ?? 'this instance',
         reachable: this.#store.state.connection === 'connected',
-        sessions: this.#store.state.sessions as { id: string; title: string; state: string }[],
+        sessions: this.#store.state.sessions,
         threads: this.#threads,
       },
       ...this.#peers.map((peer) => ({
         instance: peer.id,
         label: peer.label,
         reachable: peer.store.state.connection === 'connected',
-        sessions: peer.store.state.sessions as { id: string; title: string; state: string }[],
+        sessions: peer.store.state.sessions,
       })),
     ]
     return unify(rosters)
@@ -1451,10 +1471,18 @@ export class App {
         sessions.map((session) =>
           row({
             title: session.title,
-            meta:
+            // Which one this is, and then what it is doing. Four sessions
+            // called "shell" is what a roster looks like most of the time, so
+            // a row that carries only the title and the state is four
+            // identical rows — and the thing that tells them apart is where
+            // they are.
+            meta: rowMeta(
+              session,
               this.#peers.length > 0
-                ? `${(session as unknown as UnifiedSession).instanceLabel} · ${session.state}`
-                : session.state,
+                ? (session as unknown as UnifiedSession).instanceLabel
+                : undefined,
+              this.#store.state.workspaces,
+            ),
             ...(needsYou(session.state)
               ? { tone: 'needs-you' as const }
               : session.state === 'running'

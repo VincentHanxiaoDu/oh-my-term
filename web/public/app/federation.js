@@ -14,6 +14,28 @@ function needsSomebody(state) {
     return state === 'blocked';
 }
 /**
+ * The line under the title: the answer, then the count.
+ *
+ * Here rather than beside either caller because there were two of them saying
+ * different things. The roster used one phrasing for a single instance and
+ * this file used another for several, so the headline changed wording the
+ * moment somebody paired a second machine — and the one people actually read
+ * was whichever this file happened to say.
+ *
+ * The question is "does anything need me", so the line answers that. A count
+ * on its own — "4 sessions" — is the single fact nobody unlocks their phone
+ * to learn.
+ */
+export function waitingLine(total, blocked) {
+    if (blocked > 0) {
+        return blocked === 1 ? '1 waiting on you' : `${blocked} waiting on you`;
+    }
+    if (total === 0) {
+        return 'nothing running';
+    }
+    return `nothing waiting · ${total === 1 ? '1 running' : `${total} running`}`;
+}
+/**
  * Merge every instance's sessions into one ordered list.
  *
  * The order is the whole point: what needs a human, then what is working, then
@@ -31,6 +53,8 @@ export function unify(rosters) {
                 id: session.id,
                 title: session.title,
                 state: session.state,
+                ...(session.workspace === undefined ? {} : { workspace: session.workspace }),
+                ...(session.cwd === undefined ? {} : { cwd: session.cwd }),
                 threads: roster.threads?.[session.id] ?? 0,
                 reachable: roster.reachable,
             });
@@ -51,11 +75,7 @@ export function unify(rosters) {
 export function unifiedSubtitle(rows, instances) {
     const blocked = rows.filter((r) => needsSomebody(r.state)).length;
     const unreachable = new Set(rows.filter((r) => !r.reachable).map((r) => r.instance)).size;
-    const head = blocked > 0
-        ? `${blocked} of ${rows.length} need you`
-        : rows.length === 1
-            ? '1 session'
-            : `${rows.length} sessions`;
+    const head = waitingLine(rows.length, blocked);
     if (unreachable > 0) {
         // Said, because a roster missing a machine's sessions looks exactly like a
         // machine with nothing running on it.

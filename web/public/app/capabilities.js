@@ -135,8 +135,117 @@ export const HANDLERS = {
     'media.describe': (request, data) => call(request, 'media.describe', { data }),
     'config.import': (request, source, settings) => call(request, 'config.import', { source, settings }),
     'block.rerun': (request, session, block, epoch) => call(request, 'block.rerun', { session, block, epoch }),
-    'queue.enqueue': (request, session, text) => call(request, 'queue.enqueue', { session, text }),
-    'queue.remove': (request, session, index) => call(request, 'queue.remove', { session, index }),
+    // A binding, never a session. A replayed enqueue against a session whose
+    // agent has since exited types the text into a shell prompt, where it runs
+    // as a command.
+    // The primitive that stops every script being a sleep loop. `blocked` is a
+    // state and matches at once; `interaction` is an edge and matches only a card
+    // that opens after the wait began.
+    'agent.wait': (request, session, until, timeoutMs, immediate) => call(request, 'agent.wait', { session, until, timeout_ms: timeoutMs, immediate }),
+    'session.capture': (request, session, format, lines) => call(request, 'session.capture', { session, format, lines }),
+    // 22 §10.1's job registry. Named `task` because `job` already means a
+    // scheduled job in the catalog, and one name for two things would resolve by
+    // load order.
+    'task.list': (request, includeFinished) => call(request, 'task.list', { include_finished: includeFinished }),
+    'task.get': (request, task) => call(request, 'task.get', { task }),
+    // Cooperative: it reports `cancelling`, not `cancelled`.
+    'task.cancel': (request, task) => call(request, 'task.cancel', { task }),
+    'upgrade.check': (request, channel) => call(request, 'upgrade.check', { channel }),
+    'instance.shutdown': (request, force) => call(request, 'instance.shutdown', { force }),
+    'remote.probe': (request, host) => call(request, 'remote.probe', { host }),
+    // 20 §12.2's instance-scoped query. `session.history` and
+    // `workspace.history` would be pre-scoped conveniences over this one.
+    'history.query': (request, scope, of, filter, mode) => call(request, 'history.query', { scope, of, filter, mode }),
+    'history.forget': (request, filter, scope, of) => call(request, 'history.forget', { filter, scope, of }),
+    'queue.enqueue': (request, binding, state, text) => call(request, 'queue.enqueue', { binding, state, text }),
+    'queue.list': (request, binding) => call(request, 'queue.list', { binding }),
+    // Named by text as well as by id: an id alone is a position, and a position
+    // in a draining queue is not a stable target.
+    'queue.remove': (request, binding, state, entry, expectedText) => call(request, 'queue.remove', { binding, state, entry, expected_text: expectedText }),
+    // Both are unsupported on an agent's own queue, and the client hides the
+    // controls rather than disabling them.
+    'queue.edit': (request, binding, state, entry, expectedVersion, text) => call(request, 'queue.edit', {
+        binding,
+        state,
+        entry,
+        expected_version: expectedVersion,
+        text,
+    }),
+    'queue.reorder': (request, binding, state, order, expectedVersion) => call(request, 'queue.reorder', { binding, state, order, expected_version: expectedVersion }),
+    'onboarding.hint_state': (request) => call(request, 'onboarding.hint_state', {}),
+    // `hint` omitted turns the lot off. Deliberately one call rather than two:
+    // dismissing one and dismissing all are the same decision at two scopes, and
+    // splitting them invites a client that offers only the nuclear option.
+    'onboarding.dismiss_hints': (request, hint) => call(request, 'onboarding.dismiss_hints', hint === undefined ? {} : { hint }),
+    'media.put': (request, content, origin) => call(request, 'media.put', { content, origin }),
+    'media.get': (request, digest) => call(request, 'media.get', { digest }),
+    'device.rename': (request, device, label) => call(request, 'device.rename', { device, label }),
+    'device.revoke_all': (request, keep) => call(request, 'device.revoke_all', { keep }),
+    'store.paths': (request) => call(request, 'store.paths', {}),
+    'store.migrate_status': (request, marker) => call(request, 'store.migrate_status', { marker }),
+    'store.redaction_test': (request, text) => call(request, 'store.redaction_test', { text }),
+    'store.retention': (request, query) => call(request, 'store.retention', query),
+    'identity.reauth_check': (request, check) => call(request, 'identity.reauth_check', check),
+    'keys.check_file': (request, leader, bindings, keymap) => call(request, 'keys.check_file', {
+        leader,
+        bindings,
+        ...(keymap === undefined ? {} : { keymap }),
+    }),
+    'launch.preview': (request, launch) => call(request, 'launch.preview', { launch }),
+    'config.reload_class': (request, keys) => call(request, 'config.reload_class', { keys }),
+    'security.publish_check': (request, config = {}) => call(request, 'security.publish_check', config),
+    'security.bind_check': (request, binds, options = {}) => call(request, 'security.bind_check', { binds, ...options }),
+    'recall.policy': (request, indexReasoning = false) => call(request, 'recall.policy', { index_reasoning: indexReasoning }),
+    'session.timeline': (request, events) => call(request, 'session.timeline', { events }),
+    'agent.compare': (request, runs) => call(request, 'agent.compare', { runs }),
+    'agent.attention': (request, observation = {}) => call(request, 'agent.attention', observation),
+    'search.explain': (request, candidates) => call(request, 'search.explain', { candidates }),
+    'layout.save': (request, name, panes, preset) => call(request, 'layout.save', { name, panes, preset }),
+    'layout.restore': (request, name, alive, width, height) => call(request, 'layout.restore', { name, alive, width, height }),
+    'pane.navigate': (request, panes, from, direction, wrap = false) => call(request, 'pane.navigate', { panes, from, direction, wrap }),
+    'keys.list': (request) => call(request, 'keys.list', {}),
+    'keys.explain': (request, chord) => call(request, 'keys.explain', { chord }),
+    'keys.registry': (request) => call(request, 'keys.registry', {}),
+    'keys.flavour': (request, flavour) => call(request, 'keys.flavour', { flavour }),
+    'keys.audit': (request) => call(request, 'keys.audit', {}),
+    'keys.conflicts': (request, chord) => call(request, 'keys.conflicts', { chord }),
+    'open.remote_list': (request) => call(request, 'open.remote_list', {}),
+    'open.remote_discard': (request, path) => call(request, 'open.remote_discard', { path }),
+    'open.rules_list': (request) => call(request, 'open.rules_list', {}),
+    'open.rules_test': (request, text) => call(request, 'open.rules_test', { text }),
+    'open.click': (request, modifiers = {}) => call(request, 'open.click', modifiers),
+    'open.resolve': (request, path, roots, line) => call(request, 'open.resolve', {
+        path,
+        roots,
+        ...(line === undefined ? {} : { line }),
+    }),
+    'ssh.plan': (request, target, remoteHasOmt = false, bootstrap) => call(request, 'ssh.plan', {
+        target,
+        remote_has_omt: remoteHasOmt,
+        ...(bootstrap === undefined ? {} : { bootstrap }),
+    }),
+    'media.paste_tier': (request, probe = {}) => call(request, 'media.paste_tier', probe),
+    'media.attach': (request, agent, path) => call(request, 'media.attach', { agent, path }),
+    'media.clipboard': (request, text, term) => call(request, 'media.clipboard', term === undefined ? { text } : { text, term }),
+    'media.list': (request) => call(request, 'media.list', {}),
+    'onboarding.disclosures': (request, trigger) => call(request, 'onboarding.disclosures', trigger === undefined ? {} : { trigger }),
+    'help.topics': (request) => call(request, 'help.topics', {}),
+    'help.render': (request, topic) => call(request, 'help.render', { topic }),
+    'setup.detect_agents': (request) => call(request, 'setup.detect_agents', {}),
+    'term.profile': (request) => call(request, 'term.profile', {}),
+    // `migrate.tmux_preview`, not `migrate.tmux.preview` as the doc spells it: a
+    // capability name is its group and its verb, two levels and no more.
+    'migrate.tmux_preview': (request, config) => call(request, 'migrate.tmux_preview', { config }),
+    'uninstall.plan': (request, keepConfig = false, keepData = false) => call(request, 'uninstall.plan', { keep_config: keepConfig, keep_data: keepData }),
+    // `plan` is the hash the preview returned, and apply re-checks it against the
+    // disk. A confirm button that could not name which plan it confirmed would be
+    // confirming whatever the machine looks like at the moment it is pressed.
+    'uninstall.apply': (request, plan, accept, keepConfig = false, keepData = false) => call(request, 'uninstall.apply', {
+        plan,
+        accept,
+        keep_config: keepConfig,
+        keep_data: keepData,
+    }),
 };
 /** Whether this client can invoke a capability. */
 export function handles(capability) {
