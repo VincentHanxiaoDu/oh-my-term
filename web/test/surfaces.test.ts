@@ -524,3 +524,21 @@ describe('a file listing you can read without tapping', () => {
     expect(bytes(10 ** 18)).toMatch(/[A-Za-z]B$/)
   })
 })
+
+describe('attaching a file the instance already has', () => {
+  it('offers the row 08 §6.3 specifies, in both languages', () => {
+    // The row was missing and the code behind it was reachable from nothing.
+    // A feature is not done because a method with the right name exists —
+    // which is the whole reason the docs checklist refuses keyword matching.
+    expect(en['attach.workspaceFile']).toBeTruthy()
+    expect(zhHans['attach.workspaceFile']).toBeTruthy()
+    expect(zhHans['attach.workspaceFile']).not.toBe(en['attach.workspaceFile'])
+  })
+
+  it('says what a tap will do while it is picking', () => {
+    // The same list with the same rows means two different things depending on
+    // how somebody got to it, and a title is the only thing that can say which.
+    expect(en['attach.pick']).toBeTruthy()
+    expect(en['attach.pick']).not.toBe(en['files.title'])
+  })
+})

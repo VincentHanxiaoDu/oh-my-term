@@ -20,6 +20,7 @@
  */
 import { expect, test } from '@playwright/test'
 import { createASession } from './new-session.js'
+import { attachAgent } from './agent.js'
 
 const TOKEN = process.env['OMT_CREDENTIAL'] ?? process.env['OMT_TOKEN'] ?? ''
 const URL = process.env['OMT_URL'] ?? 'http://127.0.0.1:7788'
@@ -133,5 +134,72 @@ test.describe('a session whose process is gone', () => {
     for (const id of live) {
       expect(after.has(id), `a live session was closed: ${id}`).toBe(true)
     }
+  })
+})
+
+test.describe('attaching a file the instance already has', () => {
+  /**
+   * Land on an agent's conversation, which is where the attach sheet lives.
+   *
+   * 08 §6.3 puts it on the agent composer and not on the terminal's, and that
+   * is right: a plain shell has nothing to hand a file to. The first version
+   * of these tests opened a shell, found no attach button, and would have been
+   * read as a missing feature.
+   */
+  async function anAgentConversation(page: import('@playwright/test').Page): Promise<boolean> {
+    await page.goto(`/#token=${TOKEN}`)
+    await createASession(page)
+    const listed = await sessions()
+    const target = listed[listed.length - 1]
+    if (target === undefined) {
+      return false
+    }
+    await attachAgent(URL, TOKEN, target.id, [
+      process.env['PYTHON'] ?? 'python3',
+      new global.URL('../../tests/integration/fake_agent.py', import.meta.url).pathname,
+    ])
+    await page.waitForTimeout(1500)
+    await page.evaluate((id) => {
+      history.pushState({ route: { screen: 'transcript', session: id } }, '')
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+    }, target.id)
+    await page.waitForTimeout(1200)
+    return true
+  }
+
+  test('the sheet offers it, and choosing one returns to the session', async ({ page }) => {
+    test.skip(!(await anAgentConversation(page)), 'no session to attach an agent to')
+
+    await page.getByRole('button', { name: /Attach|附件/ }).tap()
+    const row = page.getByRole('button', { name: /A file in this project|项目中的文件/ })
+    await expect(row).toBeVisible()
+    await row.tap()
+
+    // The screen says what a tap will do, rather than looking like browsing.
+    await expect(page.locator('.bar h1')).toContainText(/Choose a file|选择要附加的文件/)
+
+    // A file, not a directory: a directory still opens, because that is how
+    // you get to the file.
+    const file = page.locator('.body button.tap').filter({ hasNotText: '/' }).first()
+    test.skip((await file.count()) === 0, 'no plain file at the workspace root')
+    await file.tap()
+
+    // Off the picker and back to the session. Nothing was uploaded: the
+    // instance already had the file.
+    await page.waitForTimeout(1500)
+    await expect(page.locator('.bar h1')).not.toContainText(/Choose a file|选择要附加的文件/)
+  })
+
+  test('leaving the picker cancels the pick', async ({ page }) => {
+    // Otherwise it stays armed, and the next file somebody opens to *read* is
+    // sent to an agent.
+    test.skip(!(await anAgentConversation(page)), 'no session to attach an agent to')
+
+    await page.getByRole('button', { name: /Attach|附件/ }).tap()
+    await page.getByRole('button', { name: /A file in this project|项目中的文件/ }).tap()
+    await expect(page.locator('.bar h1')).toContainText(/Choose a file|选择要附加的文件/)
+    await page.getByRole('button', { name: 'Back' }).tap()
+    await page.waitForTimeout(600)
+    await expect(page.locator('.bar h1')).not.toContainText(/Choose a file|选择要附加的文件/)
   })
 })

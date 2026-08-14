@@ -710,9 +710,30 @@ export class App {
             });
         }
         attach.addEventListener('click', () => {
+            const workspace = this.#store.state.sessions.find((s) => s.id === session)?.workspace;
             this.#openSheet([
                 { label: t('attach.photo'), onTap: () => camera.click() },
                 { label: t('attach.file'), onTap: () => anyFile.click() },
+                // A file the instance already has. It is referenced rather than
+                // transferred: uploading it would be a round trip to fetch bytes the
+                // instance is sitting on, a second copy under the managed root, and a
+                // path the agent has not seen before for a file it could already open.
+                //
+                // This row is 08 §6.3's "Workspace file" and it was missing. The code
+                // behind it was written and reachable from nothing, which is the exact
+                // failure the docs checklist exists to catch — a feature is not done
+                // because a method with the right name exists.
+                ...(workspace === undefined
+                    ? []
+                    : [
+                        {
+                            label: t('attach.workspaceFile'),
+                            onTap: () => {
+                                this.#pickingFor = session;
+                                this.go({ screen: 'files', workspace, path: '' });
+                            },
+                        },
+                    ]),
                 {
                     label: t('attach.paste'),
                     onTap: () => void this.attachClipboard(session),
@@ -1256,8 +1277,20 @@ export class App {
      */
     #renderFiles(workspace, path) {
         const bar = appBar({
-            title: path === '' ? t('files.title') : (path.split('/').filter(Boolean).pop() ?? path),
-            onBack: () => this.#nav.back(),
+            // While picking, the screen says what a tap will do. The same list with
+            // the same rows means two different things depending on how somebody got
+            // here, and a title is the only thing that can say which.
+            title: this.#pickingFor !== null
+                ? t('attach.pick')
+                : path === ''
+                    ? t('files.title')
+                    : (path.split('/').filter(Boolean).pop() ?? path),
+            onBack: () => {
+                // Leaving the picker cancels the pick. Otherwise it stays armed and
+                // the next file somebody opens to *read* is sent to an agent.
+                this.#pickingFor = null;
+                this.#nav.back();
+            },
         });
         const body = el('div', 'body');
         // A file rather than a directory: the listing came back empty and the
@@ -1281,15 +1314,24 @@ export class App {
                 ...(entry.is_dir || entry.size === undefined ? {} : { meta: bytes(entry.size) }),
                 label: entry.name,
                 leadsSomewhere: true,
-                onTap: () => this.go({
+                onTap: () => {
+                    const full = path === '' ? entry.name : `${path}/${entry.name}`;
+                    // Picking an attachment: a directory still opens, because that
+                    // is how you get to the file, and a file is handed to the agent
+                    // rather than read on screen.
+                    const picking = this.#pickingFor;
+                    if (picking !== null && !entry.is_dir) {
+                        this.#pickingFor = null;
+                        void this.attachWorkspaceFile(picking, full);
+                        this.go({ screen: 'terminal', session: picking });
+                        return;
+                    }
                     // A directory opens as a listing and a file opens as itself;
-                    // both are the same route, because "what is at this path" is
-                    // one question and answering it twice would be two screens
-                    // that have to agree about where they are.
-                    screen: 'files',
-                    workspace,
-                    path: path === '' ? entry.name : `${path}/${entry.name}`,
-                }),
+                    // both are the same route, because "what is at this path" is one
+                    // question and answering it twice would be two screens that have
+                    // to agree about where they are.
+                    this.go({ screen: 'files', workspace, path: full });
+                },
             }));
         }));
         this.#root.append(bar, body);
@@ -1331,6 +1373,15 @@ export class App {
         this.#asked.add(key);
         return true;
     }
+    /**
+     * Which session the files screen is picking an attachment for.
+     *
+     * Deliberately not in the route. A pick is a thing somebody is in the middle
+     * of, and restoring it after a reload would mean a tap that browsed
+     * yesterday silently attaches a file today. Losing it on reload costs one
+     * re-tap and cannot do the wrong thing.
+     */
+    #pickingFor = null;
     #listings = {};
     #files = {};
     async #loadListing(workspace, path) {
