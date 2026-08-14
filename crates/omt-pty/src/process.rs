@@ -37,11 +37,47 @@ impl ProcessInfo {
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .or_else(|| {
-                self.argv
-                    .first()
-                    .map(|a| a.rsplit('/').next().unwrap_or(a.as_str()))
-            })
+            .or_else(|| self.argv0_name())
+    }
+
+    /// The base name of `argv[0]`, which is often the only place the *name* is.
+    ///
+    /// A self-updating agent installs itself as a versioned file and puts a
+    /// launcher on `PATH`. Claude Code's executable is
+    /// `.../claude/versions/2.1.233` and its `argv[0]` is `.../bin/claude`, so
+    /// the executable's base name is a version number and the name is only in
+    /// `argv[0]`. omt matched on the executable alone and reported no agent
+    /// for the commonest agent there is.
+    ///
+    /// Both are facts about the same process and neither is authoritative:
+    /// anyone may name a script `claude`, and anyone may exec one under
+    /// another name. A fingerprint gets to look at both.
+    #[must_use]
+    pub fn argv0_name(&self) -> Option<&str> {
+        self.argv
+            .first()
+            .map(|a| a.rsplit('/').next().unwrap_or(a.as_str()))
+            .filter(|name| !name.is_empty())
+    }
+
+    /// Every name this process goes by, most specific first.
+    #[must_use]
+    pub fn names(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        if let Some(name) = self
+            .exe
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+        {
+            out.push(name);
+        }
+        if let Some(name) = self.argv0_name()
+            && !out.contains(&name)
+        {
+            out.push(name);
+        }
+        out
     }
 }
 

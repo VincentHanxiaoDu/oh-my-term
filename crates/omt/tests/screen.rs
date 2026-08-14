@@ -29,6 +29,38 @@ use omt_term::{GridSize, ScrollbackLimits, TermConfig, Terminal};
 const COLS: u16 = 100;
 const ROWS: u16 = 30;
 
+/// Everything in this process's environment that would make omt believe an
+/// agent is running when none is.
+///
+/// This suite runs inside an agent session. `CLAUDECODE`,
+/// `CLAUDE_CODE_ENTRYPOINT` and a dozen others are set in it, a pty child
+/// inherits them, and omt's process probe matches on exactly those markers —
+/// so it reported "Claude Code" for a plain shell, for the harness itself, for
+/// anything at all. Three tests passed on that, one of them driving the real
+/// binary, while the feature did not work: on a machine outside an agent
+/// session omt reported no agent for an agent that was plainly running.
+///
+/// A test that can pass because of the environment it runs in is not a test.
+/// Stripped by prefix rather than by a list, because the next variable an
+/// agent adds is not going to be in a list written today.
+fn inherited_agent_environment() -> Vec<String> {
+    const PREFIXES: [&str; 6] = [
+        "CLAUDE",
+        "ANTHROPIC",
+        "AI_AGENT",
+        "CODEX",
+        "OPENCODE",
+        "GEMINI",
+    ];
+    std::env::vars()
+        .map(|(name, _)| name)
+        .filter(|name| {
+            let upper = name.to_uppercase();
+            PREFIXES.iter().any(|p| upper.starts_with(p))
+        })
+        .collect()
+}
+
 /// A running `omt`, with a terminal emulator watching its output.
 struct Screen {
     pty: Pty,
@@ -65,7 +97,7 @@ impl Screen {
                 ("PS1".to_owned(), "$ ".to_owned()),
                 ("SHELL".to_owned(), shell.to_owned()),
             ],
-            ..PtyConfig::default()
+            env_remove: inherited_agent_environment(),
         })
         .expect("spawn omt");
         pty.set_nonblocking(true).expect("nonblocking");

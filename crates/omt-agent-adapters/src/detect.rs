@@ -27,6 +27,19 @@ pub struct Observation {
 }
 
 impl Observation {
+    /// The base name of `argv[0]`, where there is one.
+    ///
+    /// Separate from `exe_name` because they disagree, and the disagreement is
+    /// the point: an agent that updates itself runs from a versioned path and
+    /// is started under a stable name.
+    #[must_use]
+    pub fn argv0_name(&self) -> Option<&str> {
+        self.argv
+            .first()
+            .map(|a| a.rsplit('/').next().unwrap_or(a.as_str()))
+            .filter(|name| !name.is_empty())
+    }
+
     /// The value of an environment variable, if it was observed.
     #[must_use]
     pub fn env_var(&self, key: &str) -> Option<&str> {
@@ -90,6 +103,23 @@ fn match_one(agent: AgentKind, fp: &Fingerprint, obs: &Observation) -> Option<De
             agent,
             tier: Tier::Process,
             evidence: format!("the running executable is named `{exe}`"),
+            agent_session,
+        });
+    }
+
+    // And the name it was *started* under, which for a self-updating agent is
+    // the only place the name appears at all. Claude Code installs itself as
+    // `.../claude/versions/2.1.233` behind a launcher on `PATH`, so the
+    // executable's base name is a version number and `argv[0]` is the name.
+    // Matching only the executable reported no agent for the commonest agent
+    // there is, on every machine outside an agent session.
+    if let Some(argv0) = obs.argv0_name()
+        && fp.exe_names.contains(&argv0)
+    {
+        return Some(Detection {
+            agent,
+            tier: Tier::Process,
+            evidence: format!("it was started as `{argv0}`"),
             agent_session,
         });
     }
