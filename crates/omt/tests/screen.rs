@@ -33,6 +33,9 @@ const ROWS: u16 = 30;
 struct Screen {
     pty: Pty,
     term: Terminal,
+    /// Where this screen's session was started, for a test that needs to put
+    /// a file where the shell can reach it.
+    dir: std::path::PathBuf,
 }
 
 impl Screen {
@@ -44,7 +47,7 @@ impl Screen {
         let pty = Pty::spawn(&PtyConfig {
             program: binary.into(),
             args: Vec::new(),
-            cwd: Some(dir),
+            cwd: Some(dir.clone()),
             size: PtySize::new(COLS, ROWS),
             env: vec![
                 ("TERM".to_owned(), "xterm-256color".to_owned()),
@@ -59,6 +62,7 @@ impl Screen {
         pty.set_nonblocking(true).expect("nonblocking");
         Self {
             pty,
+            dir,
             term: Terminal::new(TermConfig {
                 size: GridSize::new(COLS, ROWS),
                 scrollback: ScrollbackLimits::default(),
@@ -206,6 +210,40 @@ fn omt_takes_exactly_one_row_and_it_is_the_bottom_one() {
         "row 0 looks like chrome rather than the program's own output:\n{}",
         s.screen()
     );
+}
+
+#[test]
+fn the_bar_says_which_agent_is_in_the_pane() {
+    // Reported from real use: start omt, start Claude Code in it, and the bar
+    // went on saying "shell". The probe found the agent — `⟨leader⟩ a` listed
+    // it — but cell B was built from the thread roster, which is filled by
+    // hooks and protocols and is empty for an agent on a plain pty. So the one
+    // cell whose whole job is "what is running and does it need me" was the
+    // last place in the product to find out.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    // A binary *named* `claude`, which is the exe-name half of the
+    // fingerprint. Not `/bin/sleep` under an env marker: on macOS an
+    // Apple-signed platform binary's environment cannot be read at all, so
+    // that stand-in tests the kernel's mood rather than omt. A copy of omt's
+    // own binary is not Apple-signed and does not exit.
+    let fake = s.dir.join("claude");
+    std::fs::copy(env!("CARGO_BIN_EXE_omt"), &fake).expect("copy");
+    s.type_in(&format!(
+        "{} serve --socket {}/probe.sock\r",
+        fake.display(),
+        s.dir.display()
+    ));
+    // Longer than the probe interval.
+    s.settle(2.5);
+
+    let bar = s.row(ROWS - 1);
+    assert!(
+        bar.contains("claude"),
+        "the bar does not name the agent in the pane: {bar:?}\n{}",
+        s.screen()
+    );
+    s.type_in("\x03");
 }
 
 #[test]

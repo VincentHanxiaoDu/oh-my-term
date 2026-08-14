@@ -244,6 +244,19 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // The tab bar. Everything omt knows that the shell does not — which
         // workspace this is, what else is open, what is waiting on somebody —
         // and until now it appeared nowhere at all.
+        // Read before the roster is borrowed: `agent_state` needs the instance
+        // mutably and `threads` needs it shared, and one pass cannot hold both.
+        let pane_states: Vec<(&LocalPane, Option<omt_types::AgentState>)> = {
+            let mut out = Vec::with_capacity(panes.len());
+            for pane in &panes {
+                let state = pane
+                    .agent
+                    .as_ref()
+                    .and(instance.agent_state(pane.binding, now));
+                out.push((pane, state));
+            }
+            out
+        };
         let chrome = omt_tui::Chrome {
             workspace: std::path::Path::new(&cwd)
                 .file_name()
@@ -255,18 +268,35 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // checkout, which nobody can perceive; two process spawns per
             // keystroke is what everybody perceives.
             branch: branch.get(&cwd, monotonic_ms()),
-            tabs: panes
+            tabs: pane_states
                 .iter()
                 .enumerate()
-                .map(|(i, pane)| {
+                .map(|(i, (pane, state))| {
                     let roster = instance.threads(pane.session);
+                    // The probe first, the roster second. A roster is filled
+                    // by hooks and protocols, so a pane running an agent on a
+                    // plain pty had an empty one — and the bar went on saying
+                    // "shell" with a live agent in it, which is the one thing
+                    // this cell exists to make impossible.
+                    let detected = pane.agent.as_ref();
+                    let state = state.as_ref();
                     omt_tui::Tab {
-                        title: instance
-                            .session(pane.session)
-                            .map_or_else(|| "shell".to_owned(), |s| s.title.clone()),
+                        title: detected.map_or_else(
+                            || {
+                                instance
+                                    .session(pane.session)
+                                    .map_or_else(|| "shell".to_owned(), |s| s.title.clone())
+                            },
+                            |probed| agent_short_name(probed.detection.agent),
+                        ),
                         focused: i == focus,
-                        blocked: roster.map_or(0, |r| r.awaiting_human().len()),
-                        working: roster.is_some_and(|r| !r.is_empty()),
+                        blocked: roster.map_or(0, |r| r.awaiting_human().len())
+                            + usize::from(matches!(
+                                state,
+                                Some(omt_types::AgentState::Blocked { .. })
+                            )),
+                        working: roster.is_some_and(|r| !r.is_empty())
+                            || matches!(state, Some(omt_types::AgentState::Working { .. })),
                     }
                 })
                 .collect(),
@@ -726,6 +756,32 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
     // Waiting first, because that is the reason anybody opens it.
     rows.sort_by_key(|c| usize::from(!c.detail.contains("waiting")));
     rows
+}
+
+/// An agent's name in as few columns as it can be told apart in.
+///
+/// Cell B of the status bar is measured in characters and drops from the left
+/// when it runs out, so "Claude Code" there costs a session name somebody else
+/// needed. The short form is what the agent's own CLI is called, which is also
+/// what somebody typed to start it.
+fn agent_short_name(kind: omt_types::AgentKind) -> String {
+    match kind {
+        omt_types::AgentKind::ClaudeCode => "claude",
+        omt_types::AgentKind::Codex => "codex",
+        omt_types::AgentKind::Copilot => "copilot",
+        omt_types::AgentKind::Cursor => "cursor",
+        omt_types::AgentKind::Opencode => "opencode",
+        omt_types::AgentKind::GeminiCli => "gemini",
+        omt_types::AgentKind::QwenCode => "qwen",
+        omt_types::AgentKind::Goose => "goose",
+        omt_types::AgentKind::Aider => "aider",
+        omt_types::AgentKind::Amp => "amp",
+        omt_types::AgentKind::Crush => "crush",
+        // A third party's adapter can register an agent this build has never
+        // heard of. It gets a name rather than a panic.
+        _ => "agent",
+    }
+    .to_owned()
 }
 
 /// An agent's name, as a person reads it.
