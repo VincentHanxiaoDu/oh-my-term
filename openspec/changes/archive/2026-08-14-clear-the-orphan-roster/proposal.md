@@ -44,8 +44,11 @@ change is about their being reachable.
 
 ### Modified Capabilities
 
-- `web-client`: the roster's requirements gain the orphan grouping, the count,
-  and the per-session restart and close.
+- `web-client`: three requirements are **added** to it — the per-session
+  restart and close, the roster not burying a live session under dead ones,
+  and clearing every orphan as one action that names its cost. Added rather
+  than modified: none of the existing requirements changes, because the client
+  had nothing to say about an orphan at all.
 
 ## Impact
 
