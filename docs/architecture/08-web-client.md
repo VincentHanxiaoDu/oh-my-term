@@ -2058,6 +2058,96 @@ interface Theme {
 
 ---
 
+## 9.5 Starting work from a client with no filesystem
+
+Every screen in this document assumes a session already exists. On a laptop
+that is fair: `omt` is started in a directory and the directory is the answer.
+A phone has no directory to point at, and until it can start one it is a
+viewer — which is half a product, because the moment somebody wants to *use*
+what they came to check they have to go and find a laptop.
+
+**The client offers the workspaces the instance already knows, and nothing
+else.** `workspace.list` is the source; there is no path field. A text field
+for a filesystem path on a phone is a keyboard, a guess and a refusal — the
+user cannot browse to check, cannot tab-complete, and the failure arrives after
+the typing rather than during it.
+
+Three rows, in this order, because it is the order of decreasing certainty:
+
+| Row | Source | When it is offered |
+|---|---|---|
+| The workspaces already open | `workspace.list` | Always. These are directories omt is already in, so a session there cannot fail for a path reason. |
+| The worktrees of those workspaces | `worktree.list` | When a workspace has any. A worktree is a directory the user deliberately made, which makes it a better guess than anything typed. |
+| Recently closed workspaces | the snapshot ([05 §8](05-session-model.md)) | When one exists and its root still does. Checked, not assumed: a workspace whose directory is gone is offered greyed out with the reason, never silently omitted. |
+
+Creating a workspace at an arbitrary path stays a **laptop** operation. That is
+not a limitation to apologise for: `omt` in a terminal *is* the way to say
+"this directory", and a phone that could create a workspace anywhere would need
+a file browser rooted at `/`, which is a security surface
+([13 §6](13-security.md)) bought for a case the laptop already handles in one
+word.
+
+**A new session in a chosen workspace is one tap and no form.** Kind and mode
+are not asked: the default is a shell in `pty` mode, which is what the local
+`omt` does with no arguments, and a client that asked two questions the
+terminal never asks would be teaching a vocabulary that exists only on the
+phone. The agent-shaped alternatives reach the same place through
+`agent.offers`, which already lists what this instance can start.
+
+## 9.6 Where cost and context appear
+
+`usage.report` ([20 §6](20-recall-and-usage.md)) is the only place omt states
+what an agent has spent, and this document never put it on a screen — so it was
+answerable and unanswered.
+
+**On the roster: nothing.** The roster answers "does anything need me", and a
+number that changes every few seconds next to a row somebody is scanning is a
+number that competes with the one signal that matters. Cost is not urgent by
+construction: nobody has ever needed to know it *before* they could act.
+
+**On a session's own screen: a single line, under the title.** Tokens in and
+out, and cost **only where the agent itself stated one**. omt never computes a
+price — plans differ, prices change, and a wrong number is worse than none
+([20 §6](20-recall-and-usage.md)) — so a session whose agent reported no cost
+shows tokens and no currency, which is the honest shape rather than a zero.
+
+Context usage is the same line and the more useful half: a session at 90% of
+its window is about to compact, and compaction is where a transcript
+legitimately loses history ([06 §8](06-agent-layer.md)). Somebody who can see
+it coming can finish their thought first.
+
+## 9.7 Language
+
+**English and Simplified Chinese, chosen from the browser and overridable in
+one setting.** Not because two is a target, but because every string in this
+client is either omt's own voice or an agent's, and only the first kind can be
+translated at all — an agent's question arrives in whatever language the agent
+wrote it, and a client that translated *that* would be putting words in the
+agent's mouth on the one screen where exactness is the product.
+
+So the rule is the same one §9's two typefaces encode: **omt's words are
+localizable and the agent's words are never touched.** A card's options are the
+agent's; the button that submits them is omt's.
+
+Three constraints, each of which has killed an i18n effort elsewhere:
+
+- **No string concatenation.** `${n} waiting on you` is a sentence in English
+  and is not one in Chinese; every phrase with a number in it is a whole
+  template with its own plural rule, not a fragment plus a variable.
+- **The layout is measured in characters, not in English.** Cell widths, the
+  status line's drop order and the roster's truncation all count graphemes, and
+  a CJK glyph is two columns wide. A layout tested only in English is a layout
+  that breaks in the first translation.
+- **A missing translation falls back to English and says so in development.**
+  Silently rendering a key is how a half-translated screen ships; silently
+  rendering English is how it ships *usable*, which is the right failure.
+
+The instance is not involved. Language is a property of the person reading, not
+of the machine, and two people on two phones looking at one instance may
+legitimately want different ones — so it lives in the client's own storage
+beside the theme, and no capability carries it.
+
+
 ## 10. Testing
 
 ### 10.1 Component tests
