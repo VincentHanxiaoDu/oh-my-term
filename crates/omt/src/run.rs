@@ -23,8 +23,17 @@ use omt_tui::{Input, RawGuard, Screen};
 /// which needs an event source this does not have yet.
 const TICK: Duration = Duration::from_millis(8);
 
-/// Rows of chrome above the panes. The tab bar owns the first row.
-const CHROME_ROWS: u16 = 1;
+/// Rows of chrome above the panes.
+///
+/// None. 19 §2.1 gives omt **one** row and puts it at the bottom: "One row.
+/// Always present. Never more than one row, in any configuration." What
+/// shipped was two — a tab bar across the top and a hint along the bottom —
+/// which on a 24-row terminal is 8% of the screen given to chrome that the
+/// document does not describe.
+const CHROME_ROWS: u16 = 0;
+
+/// Rows of chrome below the panes: the status bar, and only that.
+const STATUS_ROWS: u16 = 1;
 
 /// Where a pane's cursor lands on the real screen, one-based.
 ///
@@ -76,7 +85,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // draw there — and the screen was omt's *only* contribution to the display
     // before this, which made a multiplexer indistinguishable from the shell it
     // wraps.
-    let usable_rows = rows.saturating_sub(2).max(1);
+    let usable_rows = rows.saturating_sub(STATUS_ROWS).max(1);
     let mut panes = vec![LocalPane::open(
         &mut instance,
         workspace,
@@ -174,7 +183,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
         let rects = omt_tui::tile(
             term_cols,
-            term_rows.saturating_sub(2).max(1),
+            term_rows.saturating_sub(STATUS_ROWS).max(1),
             omt_tui::Split::Vertical,
             panes.len(),
         );
@@ -282,35 +291,65 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // overlay drawn once is painted over within milliseconds and what
             // is left is half a list interleaved with a shell — which is
             // exactly what it looked like.
-            let lines = omt_tui::render_overlay(open, term_cols, term_rows.saturating_sub(2));
+            let lines =
+                omt_tui::render_overlay(open, term_cols, term_rows.saturating_sub(STATUS_ROWS));
             for (i, line) in lines.iter().enumerate() {
                 write!(out, "\x1b[{};1H\x1b[7m{line}\x1b[0m", i as u16 + 2)
                     .context("drawing the overlay")?;
             }
         }
 
-        let bar = omt_tui::tab_bar(&chrome, term_cols);
+        // One row, at the bottom, per 19 §2.1. The tab bar that used to sit
+        // across the top is gone: the document gives omt one row of chrome and
+        // says so twice, and cell B of this bar is the session list that bar
+        // was trying to be.
+        let status = omt_tui::Status {
+            instance: "omt".to_owned(),
+            remote_host: None,
+            sessions: chrome.tabs.clone(),
+            native: instance
+                .session(focused_session)
+                .is_some_and(|s| s.mode == SessionMode::Native),
+            cwd: instance
+                .session(focused_session)
+                .and_then(|s| s.cwd.clone()),
+            branch: chrome.branch.clone(),
+            dirty: false,
+            leader: omt_tui::leader(),
+        };
+        let bar = omt_tui::status_bar(&status, term_cols);
         if shown_bar.as_deref() != Some(bar.as_str()) {
-            write!(out, "\x1b[1;1H\x1b[7m{bar}\x1b[0m").context("drawing the tab bar")?;
+            write!(out, "\x1b[{};1H\x1b[7m{bar}\x1b[0m", term_rows)
+                .context("drawing the status bar")?;
             shown_bar = Some(bar);
         }
 
-        // The bottom row carries a hint when there is one to give, and says
-        // where you are the rest of the time. A row reserved for a hint that
-        // usually has none is a row spent on nothing — and the status it shows
-        // instead is counted from the same tabs the bar above renders, so the
-        // two cannot disagree.
+        // The which-key strip, and only when there is one. 16 §3.3 draws it
+        // *over the pane's last row* and restores the row afterwards, rather
+        // than reserving one: a row kept for a hint that is absent almost
+        // always is a row spent on nothing.
         let hint = omt_tui::hint_for(&situation);
-        let bottom = hint.map_or_else(
-            || omt_tui::status_line(&chrome, term_cols),
-            |text| omt_tui::render_hint(Some(&text), term_cols),
-        );
-        if shown_bottom.as_deref() != Some(bottom.as_str()) {
-            // No save/restore: the cursor is placed once, after all of this,
-            // which is the only ordering that can be right when three
-            // different pieces of chrome each move it.
-            write!(out, "\x1b[{};1H{bottom}", term_rows).context("drawing the status row")?;
-            shown_bottom = Some(bottom);
+        let over = hint.map(|text| omt_tui::render_hint(Some(&text), term_cols));
+        if shown_bottom != over {
+            match &over {
+                Some(line) => {
+                    write!(
+                        out,
+                        "\x1b[{};1H{line}",
+                        term_rows.saturating_sub(STATUS_ROWS)
+                    )
+                    .context("drawing the leader strip")?;
+                }
+                None => {
+                    // Gone: the pane owns that row again, so it is repainted
+                    // rather than blanked. Blanking it would leave a hole in
+                    // whatever the program had drawn there.
+                    for pane in &mut panes {
+                        pane.screen.invalidate();
+                    }
+                }
+            }
+            shown_bottom = over;
         }
         let _ = &mut shown_hint;
 
@@ -909,9 +948,11 @@ mod tests {
             rows: 10,
             cols: 80,
         };
-        // Grid row 1 — the second line of the prompt — with a one-row tab bar
-        // above it is screen row 3, one-based.
-        assert_eq!(cursor_on_screen(&rect, 1, 2), (3, 3));
+        // Grid row 1 — the second line of the prompt — with no chrome above it
+        // is screen row 2, one-based. It was row 3 when a tab bar owned the
+        // top row; 19 §2.1 gives omt one row and puts it at the bottom, so the
+        // program starts at the top and this is the arithmetic that follows.
+        assert_eq!(cursor_on_screen(&rect, 1, 2), (2, 3));
     }
 
     #[test]
@@ -922,6 +963,6 @@ mod tests {
             rows: 5,
             cols: 40,
         };
-        assert_eq!(cursor_on_screen(&rect, 0, 0), (7, 41));
+        assert_eq!(cursor_on_screen(&rect, 0, 0), (6, 41));
     }
 }

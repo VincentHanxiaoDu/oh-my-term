@@ -170,21 +170,54 @@ fn the_cursor_is_never_left_on_omts_own_status_row() {
 }
 
 #[test]
-fn the_tab_bar_and_the_status_row_are_both_on_screen() {
-    // omt's only contribution to the display. A multiplexer whose screen is
-    // indistinguishable from the shell it wraps is one nobody can tell they
-    // are running.
+fn omt_takes_exactly_one_row_and_it_is_the_bottom_one() {
+    // 19 §2.1: "One row. Always present. Never more than one row, in any
+    // configuration." What shipped was two — a tab bar across the top and a
+    // hint along the bottom — which on a 24-row terminal is 8% of the screen
+    // given to chrome the document does not describe.
+    //
+    // The top row belongs to the program now. A shell's first prompt is on it,
+    // which is the check: if omt were still drawing a bar there, the prompt
+    // would be one row lower.
     let mut s = Screen::start();
     s.settle(2.5);
+
     let rows = s.rows();
+    let bar = &rows[(ROWS - 1) as usize];
+    assert!(
+        !bar.trim().is_empty(),
+        "no status bar on the bottom row:\n{}",
+        s.screen()
+    );
+    // Cell E, which 19 §2.1 says survives every width and every configuration.
+    assert!(
+        bar.contains('?'),
+        "the status bar has no escape hatch: {bar:?}"
+    );
+
+    // And the program starts at the top.
     assert!(
         !rows[0].trim().is_empty(),
-        "the tab bar row is blank:\n{}",
+        "row 0 is blank, so something is still reserving it:\n{}",
         s.screen()
     );
     assert!(
-        !rows[(ROWS - 1) as usize].trim().is_empty(),
-        "the status row is blank:\n{}",
+        !rows[0].contains('?') || rows[0] == *bar,
+        "row 0 looks like chrome rather than the program's own output:\n{}",
+        s.screen()
+    );
+}
+
+#[test]
+fn the_status_bar_names_the_sessions_rather_than_counting_them() {
+    // Cell B is "the fastest possible answer to which agent needs me — one
+    // glance, no navigation". A count is not that.
+    let mut s = Screen::start();
+    s.settle(2.5);
+    let bar = s.row(ROWS - 1);
+    assert!(
+        bar.contains("1:"),
+        "the bar has no session list: {bar:?}\n{}",
         s.screen()
     );
 }

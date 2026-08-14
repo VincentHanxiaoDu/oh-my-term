@@ -11,9 +11,11 @@ pub mod geometry;
 pub mod hint;
 pub mod navigate;
 pub mod overlay;
+pub mod statusbar;
 
-pub use chrome::{Chrome, Tab, status_line, tab_bar};
+pub use chrome::{Chrome, Tab};
 pub use overlay::{Choice, Overlay, render as render_overlay};
+pub use statusbar::{Status, glyph, render as status_bar};
 pub mod layout;
 pub mod render;
 
