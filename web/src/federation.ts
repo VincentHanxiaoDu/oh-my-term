@@ -47,6 +47,18 @@ function isRunning(state: string): boolean {
   return state === 'running' || state === 'working' || state === 'starting'
 }
 
+/**
+ * Whether a session's process is gone.
+ *
+ * An orphan is a session omt restored from a snapshot: the scrollback, the
+ * cwd and the argv came back, and the pty did not. It is readable and
+ * searchable and refuses writes. It is not idle, not running, and not an
+ * error, so it is counted as itself.
+ */
+export function isOrphaned(state: string): boolean {
+  return state === 'orphaned'
+}
+
 /** Whether a state means somebody has to do something. */
 function needsSomebody(state: string): boolean {
   return state === 'blocked'
@@ -65,19 +77,39 @@ function needsSomebody(state: string): boolean {
  * on its own — "4 sessions" — is the single fact nobody unlocks their phone
  * to learn.
  */
-export function waitingLine(total: number, blocked: number, running = 0): string {
+export function waitingLine(
+  total: number,
+  blocked: number,
+  running = 0,
+  orphaned = 0,
+): string {
   if (blocked > 0) {
     return blocked === 1 ? '1 waiting on you' : `${blocked} waiting on you`
   }
   if (total === 0) {
     return 'nothing running'
   }
+  // Every session is a corpse. Saying "16 open" over sixteen rows that all
+  // read "orphaned" is the same failure as saying "7 running" over them: a
+  // headline the rows underneath contradict. This is what somebody comes back
+  // to after a reboot, and it is worth one plain sentence.
+  if (running === 0 && orphaned === total) {
+    // Short, because this is an app bar on a phone: the long version of this
+    // sentence — "3 sessions ended with omt" — was truncated to "3 sessions
+    // end\u2026", a headline that stops mid-word. The rows underneath say
+    // "orphaned"; this line only has to account for the count.
+    return `nothing running \u00b7 ${orphaned} ended`
+  }
   // "Running" has to mean running. Counting every session as running said
   // "7 running" over a list where all seven read "orphaned" — a headline
   // contradicted by the rows underneath it, which is the exact failure this
   // line was rewritten to fix.
   if (running > 0) {
-    return `nothing waiting \u00b7 ${running === 1 ? '1 running' : `${running} running`}`
+    const live = `nothing waiting \u00b7 ${running === 1 ? '1 running' : `${running} running`}`
+    // Two numbers, not one. Folding orphans into the running count is the bug
+    // this line already had once; folding them into nothing at all leaves a
+    // roster whose length nobody can account for.
+    return orphaned > 0 ? `${live} \u00b7 ${orphaned} ended` : live
   }
   // Open rather than idle: an orphaned session is not idle, it is a session
   // whose process is gone and whose output is still there. One word that is
@@ -137,6 +169,7 @@ export function unifiedSubtitle(rows: readonly UnifiedSession[], instances: numb
     rows.length,
     blocked,
     rows.filter((r) => isRunning(r.state)).length,
+    rows.filter((r) => isOrphaned(r.state)).length,
   )
 
   if (unreachable > 0) {

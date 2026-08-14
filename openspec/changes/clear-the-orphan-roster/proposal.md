@@ -26,8 +26,11 @@ happened to be alive.
 - Closing all of them is offered **once, as one action**, and states the count
   it will close. Sixteen confirmations for sixteen corpses is a control nobody
   uses; one unlabelled "clear" is one somebody presses by accident.
-- The TUI's status bar already counts sessions; it counts orphans separately,
-  for the same reason.
+- The TUI needs nothing. Its status bar lists this process's panes rather than
+  the instance's sessions, so an orphan cannot appear there; the session
+  chooser already prints each session's state, and `omt session close` and
+  `omt session restart` work from the CLI. This was wrong in the first draft
+  of this proposal and is left here rather than quietly deleted.
 - **Not** automatic pruning on restore. What survives a restart is scrollback
   somebody may want, and deciding on their behalf that yesterday's output is
   worthless is the one thing this must not do.
@@ -49,7 +52,6 @@ change is about their being reachable.
 - `web/src/app.ts` — the roster's rows and the session screen's controls
 - `web/src/federation.ts` — the roster subtitle, which already counts what is
   running and now separates what is not
-- `crates/omt-tui/src/statusbar.rs` — the orphan count
 - `web/e2e/surfaces.spec.ts` — the helper that opens "a session" must open a
   live one, which is the defect that exposed all of this
 - No capability declarations change, so the parity gate and the schema snapshot

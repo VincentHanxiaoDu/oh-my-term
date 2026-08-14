@@ -531,6 +531,27 @@ html, body {
 }
 .tap { background: var(--bg-elevated); }
 
+/* An action about the list, rather than an item in it.
+
+   Set apart and set quieter: in the panel and in the row shape it read as one
+   more session, and this one deletes things. A destructive control that looks
+   like a navigation row is a control somebody taps on the way to somewhere
+   else. */
+.tap.sweep {
+  margin-top: var(--space-4);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-muted);
+}
+.tap.sweep .title {
+  font-size: var(--text-sm);
+}
+.tap.sweep:active {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 /* A row that belongs to the one above it.
 
    An indent, not two leading spaces in the title: HTML collapses those, so a

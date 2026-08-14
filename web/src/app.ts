@@ -125,6 +125,7 @@ import {
 } from './gestures.js'
 import { unify, unifiedSubtitle, waitingLine } from './federation.js'
 import type { InstanceRoster, UnifiedSession } from './federation.js'
+import { isOrphaned } from './federation.js'
 import { pairCalls, renderEntry, surfacesFor } from './surfaces.js'
 import type { TranscriptEntry } from './surfaces.js'
 import type { ScreenState } from './view.js'
@@ -2426,6 +2427,25 @@ export class App {
       ),
     )
 
+    // Below the list, not above it: it acts on what has just been read, and a
+    // destructive control at the top of a roster is one a thumb reaches on the
+    // way to something else. Absent at zero rather than present and inert.
+    const dead = this.#store.state.sessions.filter((session) => isOrphaned(session.state)).length
+    if (dead > 0) {
+      const sweep = row({
+        title: t('orphan.clear', dead),
+        label: t('orphan.clear', dead),
+        leadsSomewhere: false,
+        onTap: () => void this.clearOrphans(),
+      })
+      // Not a session. In the same panel and the same row shape it read as a
+      // fourth session called "Close 3 ended sessions" — a destructive control
+      // disguised as a thing to open, which is one a thumb reaches on the way
+      // somewhere else.
+      sweep.classList.add('sweep')
+      body.append(sweep)
+    }
+
     this.#shell(bar, body)
   }
 
@@ -2471,7 +2491,11 @@ export class App {
     this.#notice = notice
     const grid = el('div', 'terminal-grid')
     this.#grid = grid
-    body.append(notice, grid)
+    // Above the output, because it is the answer to the question somebody is
+    // about to ask by typing into it and watching nothing happen. 05's session
+    // model says an orphan's surface offers to restart it; until this, none
+    // did, and the only way to be rid of one was to delete the snapshot.
+    body.append(notice, this.#orphanPanel(session), grid)
     this.#paintGrid()
     this.#paintNotice()
 
@@ -2499,6 +2523,100 @@ export class App {
    * reason is that another client holds the writer token, which is a fact about
    * the session and not a fault.
    */
+  /**
+   * What to do with a session whose process is gone.
+   *
+   * Two controls and one sentence, or nothing at all. A running session gets
+   * an empty element rather than a disabled panel: a control that is present
+   * and inert teaches people that controls do nothing.
+   */
+  #orphanPanel(session: string): HTMLElement {
+    const listed = this.#store.state.sessions.find((s) => s.id === session)
+    const panel = el('div', 'body')
+    if (listed === undefined || !isOrphaned(listed.state)) {
+      panel.hidden = true
+      return panel
+    }
+    const said = el('p', 'note', t('orphan.explain'))
+    panel.append(
+      said,
+      row({
+        title: t('orphan.restart'),
+        label: t('orphan.restart'),
+        leadsSomewhere: false,
+        onTap: () => void this.restartSession(session),
+      }),
+      row({
+        title: t('orphan.close'),
+        label: t('orphan.close'),
+        leadsSomewhere: false,
+        onTap: () => void this.closeSession(session),
+      }),
+    )
+    return panel
+  }
+
+  /**
+   * Run a session's command again.
+   *
+   * The old output stays above a separator, which is `session.restart`'s own
+   * behaviour: what somebody kept the session for is what was on the screen.
+   */
+  async restartSession(session: string): Promise<void> {
+    try {
+      await this.#store.call('session.restart', session)
+      const claim = (await this.#store.call('session.acquire', session)) as { epoch: number }
+      this.#epoch = claim.epoch
+      await this.#store.refresh()
+      // A rebuild rather than a repaint: the screen's shape changed, because
+      // the panel that was above the grid is gone.
+      this.#mountedSession = null
+      this.render()
+    } catch (e) {
+      this.fail('terminal', e)
+    }
+  }
+
+  /** Close a session, and leave the screen that was showing it. */
+  async closeSession(session: string): Promise<void> {
+    try {
+      await this.#store.call('session.close', session)
+      await this.#store.refresh()
+      this.#mountedSession = null
+      this.go({ screen: 'roster' })
+    } catch (e) {
+      this.fail('terminal', e)
+    }
+  }
+
+  /**
+   * Close every session whose process is gone.
+   *
+   * One action for all of them, because sixteen confirmations for sixteen
+   * corpses is a control nobody uses. It names the count on the control
+   * itself rather than in a dialog afterwards: the number *is* the
+   * confirmation, and a dialog that says "are you sure" says nothing and is
+   * answered yes.
+   *
+   * The set is recomputed here rather than passed in. A roster rendered a
+   * moment ago is a roster that may have gained a running session since, and
+   * this is the one code path in the client that closes several things at
+   * once.
+   */
+  async clearOrphans(): Promise<void> {
+    const dead = this.#store.state.sessions.filter((s) => isOrphaned(s.state))
+    for (const session of dead) {
+      try {
+        await this.#store.call('session.close', session.id)
+      } catch {
+        // One that refuses does not stop the rest. It is still on the roster
+        // afterwards, which is the honest report.
+      }
+    }
+    await this.#store.refresh()
+    this.render()
+  }
+
   #paintNotice(): void {
     const notice = this.#notice
     if (notice === null) {

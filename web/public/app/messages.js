@@ -50,6 +50,11 @@ const table = {
     'usage.tokens': (input, output) => `${input} in · ${output} out`,
     'usage.context': (percent) => `${percent}% of context`,
     'usage.noCost': 'no cost reported',
+    'orphan.explain': 'This session ended when omt did. Its output is here to read; nothing is listening for what you type.',
+    'orphan.restart': 'Run it again',
+    'orphan.close': 'Close this session',
+    'orphan.clear': (n) => n === 1 ? 'Close 1 ended session' : `Close ${n} ended sessions`,
+    'orphan.cleared': (n) => n === 1 ? '1 session closed' : `${n} sessions closed`,
     'language.name': 'Language',
     'language.system': 'Follow the browser',
 };
@@ -96,6 +101,11 @@ export const zhHans = {
     'usage.tokens': (input, output) => `输入 ${input} · 输出 ${output}`,
     'usage.context': (percent) => `已用上下文 ${percent}%`,
     'usage.noCost': '智能体未报告费用',
+    'orphan.explain': '这个会话随 omt 一起结束了。输出还在，可以查看；但没有进程在接收你的输入。',
+    'orphan.restart': '重新运行',
+    'orphan.close': '关闭此会话',
+    'orphan.clear': (n) => `关闭 ${n} 个已结束的会话`,
+    'orphan.cleared': (n) => `已关闭 ${n} 个会话`,
     'language.name': '语言',
     'language.system': '跟随浏览器',
 };
