@@ -30,7 +30,8 @@ pub use bounded::{
     parse_line, read_bounded, read_json,
 };
 pub use detect::{
-    Observation, TitleActivity, TitleReading, detect, detect_from_title, may_emit_structured,
+    Observation, TitleActivity, TitleReading, activity_from_title, detect, detect_from_title,
+    may_emit_structured,
 };
 pub use install::{
     INSTALL_VERSION, InstallError, Plan, STAMP_KEY, events_for, is_stale, plan_install,

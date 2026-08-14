@@ -123,7 +123,7 @@ import {
   repeatsFor,
   spanOf,
 } from './gestures.js'
-import { unify, unifiedSubtitle, waitingLine } from './federation.js'
+import { stateWord, unify, unifiedSubtitle, waitingLine } from './federation.js'
 import type { InstanceRoster, UnifiedSession } from './federation.js'
 import { isOrphaned } from './federation.js'
 import { pairCalls, renderEntry, surfacesFor } from './surfaces.js'
@@ -264,13 +264,14 @@ export interface SessionRow {
  */
 export function rowMeta(
   session: { state: string; workspace?: string; cwd?: string },
+  seen: boolean,
   instanceLabel: string | undefined,
   workspaces: readonly { id: string; name: string }[],
 ): string {
   const where =
     workspaces.find((w) => w.id === session.workspace)?.name ??
     session.cwd?.split('/').filter(Boolean).pop()
-  const parts = [instanceLabel, where, session.state].filter(
+  const parts = [instanceLabel, where, stateWord(session.state, seen)].filter(
     (p): p is string => p !== undefined && p !== '',
   )
   return parts.join(' · ')
@@ -2455,6 +2456,7 @@ export class App {
             // they are.
             meta: rowMeta(
               session,
+              this.#seen.has(session.id),
               this.#peers.length > 0
                 ? (session as unknown as UnifiedSession).instanceLabel
                 : undefined,
@@ -2465,7 +2467,7 @@ export class App {
               : session.state === 'running'
                 ? { tone: 'working' as const }
                 : {}),
-            label: `${session.title} — ${needsYou(session.state) ? 'needs you' : session.state}`,
+            label: `${session.title} — ${stateWord(session.state)}`,
             onTap: () => {
               const row = session as unknown as UnifiedSession
               const here = current(this.#storage)
@@ -2517,7 +2519,19 @@ export class App {
    * stopped mid-sentence. None of it is visible on a desktop, where the
    * keyboard is not attached to the element at all.
    */
+  /**
+   * Sessions this client has had open since their agent last worked.
+   *
+   * Not on the wire, and not the agent's business: an agent is idle either
+   * way, and whether *you* have looked at it is a fact about you — and about
+   * *this* device. A session you read on your laptop is not one you have seen
+   * on your phone, which is the case a shared flag would get wrong.
+   */
+  readonly #seen = new Set<string>()
+
   #renderTerminal(session: string): void {
+    // Opening it is looking at it.
+    this.#seen.add(session)
     // Mounted per session, and the mount is keyed on what the bottom of the
     // screen is: a full-screen program takes keys directly and an ordinary
     // shell is typed into through a field, and switching between them is a

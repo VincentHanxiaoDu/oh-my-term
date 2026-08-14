@@ -185,6 +185,14 @@ pub struct SessionSummary {
     pub threads: usize,
     /// How many of those are waiting for a human.
     pub blocked: usize,
+    /// What that agent is doing, where omt can tell.
+    ///
+    /// Separate from `state`, which is the *session's* lifecycle — running,
+    /// orphaned, exited. A session can be running while the agent in it is
+    /// waiting for a person, and those are the two facts a roster has to keep
+    /// apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_state: Option<String>,
     /// Which agent is running in it, where one is.
     ///
     /// The instance has always known this — a session's kind is fixed at
@@ -242,7 +250,24 @@ impl CapabilityHandler<SessionList> for SessionListHandler {
             })?),
             None => None,
         };
-        let instance = self.0.lock()?;
+        let mut instance = self.0.lock()?;
+        // Read before the sessions are walked: asking what an agent is doing
+        // needs the instance mutably (the merge machine decides as of *now*)
+        // and listing sessions needs it shared. One pass cannot hold both.
+        let now = crate::run::monotonic_ms();
+        let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
+        let mut agent_states = std::collections::HashMap::new();
+        let mut observed = std::collections::HashMap::new();
+        for id in ids {
+            let binding = instance.binding_for(id);
+            if let Some(state) = instance.agent_state(binding, now) {
+                agent_states.insert(id, describe_agent_state(&state));
+            }
+            if let Some(found) = instance.observed_agent(id) {
+                observed.insert(id, found.clone());
+            }
+        }
+        let instance = instance;
         Ok(SessionListOut {
             sessions: instance
                 .sessions()
@@ -258,12 +283,20 @@ impl CapabilityHandler<SessionList> for SessionListHandler {
                         cwd: s.cwd.clone(),
                         threads: roster.map_or(0, omt_agent::ThreadRoster::len),
                         blocked: roster.map_or(0, |r| r.awaiting_human().len()),
-                        agent: match &s.kind {
-                            omt_session::SessionKind::Agent { kind } => {
-                                Some(format!("{kind:?}").to_lowercase())
-                            }
-                            _ => None,
-                        },
+                        // What omt *observed*, and only then what the session
+                        // was created as. A shell somebody started an agent in
+                        // is the commonest case there is, and its kind says
+                        // "shell" forever.
+                        agent: observed
+                            .get(&s.id)
+                            .map(|found| format!("{:?}", found.agent).to_lowercase())
+                            .or_else(|| match &s.kind {
+                                omt_session::SessionKind::Agent { kind } => {
+                                    Some(format!("{kind:?}").to_lowercase())
+                                }
+                                _ => None,
+                            }),
+                        agent_state: agent_states.get(&s.id).cloned(),
                     }
                 })
                 .collect(),

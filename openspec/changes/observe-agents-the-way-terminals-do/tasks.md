@@ -11,7 +11,7 @@
 - [x] 2.1 `SetTitle` reaches the merge machine as a reading
 - [x] 2.2 Identity from the title: a per-agent title pattern
 - [x] 2.3 State from the title's leading glyph, per agent
-- [ ] 2.4 OSC progress as a second marker reading
+- [x] 2.4 OSC progress as a second marker reading
 - [x] 2.5 The tier sits above `Heuristic` and below `Hook`
 - [x] 2.6 A title that names nothing yields no reading rather than a guess
 - [x] 2.7 The glyph never reaches a person
@@ -42,22 +42,40 @@
       a parser. Making them a file the instance loads is a second step and is
       only worth it once a rule needs changing faster than a release.
 - [x] 4.6 Claude Code's rule set, from its observed interface
-- [ ] 4.7 A rule set for each other adapter omt already declares
+- [x] 4.7 A rule set for each other adapter omt already declares — **only for
+      what could be watched.** Gemini is installed here, so its trust dialog
+      and its title glyphs were captured from the shipped binary and have
+      rules. Codex, Copilot and Cursor are installed and drew nothing in the
+      window they were given; aider, amp and crush are not installed at all.
+      Rules written from memory for those would be the "a wrong rule is
+      confident" failure this change is built to avoid, so they have none.
 - [x] 4.8 The floor still applies when no rule matches
 
 ## 5. What a person is told
 
-- [ ] 5.1 Done and unseen is distinct from idle and seen
-- [ ] 5.2 Focusing a pane marks it seen
+- [x] 5.1 Done and unseen is distinct from idle and seen
+- [x] 5.2 Focusing a pane marks it seen
 - [x] 5.3 No surface prints "unknown"
 - [x] 5.4 The agent's name is the first thing on its row
 - [x] 5.5 The evidence is still available, after the verdict
 
 ## 6. Both surfaces agree
 
-- [ ] 6.1 The web client shows the same state, from the same readings
-- [ ] 6.2 Done-and-unseen reaches the phone
+- [x] 6.1 The web client shows the same state, from the same readings
+- [x] 6.2 Done-and-unseen reaches the phone
 - [ ] 6.3 A test that drives both against one instance and compares
+
+## 6b. Where observation lives
+
+- [x] 6b.1 Agent observation moved from the TUI's loop into the daemon, so a
+      session opened from a phone is looked at by the same code as one opened
+      in a terminal. It had never been looked at by anything.
+- [x] 6b.2 One binding per session, held by the instance, so the capability
+      answering "what is running here" reads the machine the observer fed
+- [x] 6b.3 `session.list` reports the observed agent and its state, separately
+      from the session's own lifecycle
+- [x] 6b.4 A daemon-level test that a session announcing an agent is seen as
+      that agent, at the layer the claim is made
 
 ## 7. Close-out
 

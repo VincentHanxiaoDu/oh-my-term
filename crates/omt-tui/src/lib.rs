@@ -15,7 +15,7 @@ pub mod statusbar;
 
 pub use chrome::{Chrome, Tab};
 pub use overlay::{Choice, Overlay, render as render_overlay};
-pub use statusbar::{Status, glyph, render as status_bar};
+pub use statusbar::{Status, glyph, render as status_bar, state_mark, state_word};
 pub mod layout;
 pub mod render;
 

@@ -672,3 +672,35 @@ fn a_question_on_the_agents_own_screen_is_somebody_being_waited_for() {
         "an agent asking a question is not reported as waiting:\n{listed}"
     );
 }
+
+#[test]
+fn a_found_agent_is_never_described_as_unknown() {
+    // The word describes omt's knowledge rather than the agent, and beside an
+    // agent omt has just found it reads as "omt has no idea what this is" —
+    // which is how it was read, twice, by the person it was shown to.
+    //
+    // Whether "done" or "idle" is the right word for a finished agent is
+    // decided by `omt_tui::state_word`, which is a pure function of the state
+    // and whether the pane has been seen, and is tested there. Driving that
+    // timing through a shell would test the shell.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("printf '\\e]0;\u{2801} Claude Code\\a'\r");
+    s.settle(2.0);
+    s.type_in("\x02a");
+    s.settle(1.2);
+
+    let listed = s.screen();
+    s.type_in("\x1b");
+    s.settle(0.3);
+    s.type_in("\x04");
+
+    assert!(
+        listed.to_lowercase().contains("claude"),
+        "the agent was not found at all:\n{listed}"
+    );
+    assert!(
+        !listed.contains("unknown"),
+        "a found agent is described as unknown:\n{listed}"
+    );
+}

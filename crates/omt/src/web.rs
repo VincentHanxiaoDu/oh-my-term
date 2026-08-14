@@ -213,6 +213,13 @@ fn served_origins(bind: &str) -> Vec<String> {
 /// A compromise, and an honest one: shorter burns a core on an idle instance,
 /// longer is visible as lag between a keystroke and its echo. This is under the
 /// threshold where typing feels delayed and far above a busy loop.
+/// How often to look at what each session is running.
+///
+/// Half a second, the same as the TUI's: fast enough that starting an agent
+/// and reaching for the list finds it, slow enough that it is not a syscall
+/// per frame. A process cannot change faster than a person can start one.
+const OBSERVE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
 const PUMP_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
 
 /// Read every session's pty, forever.
@@ -226,17 +233,43 @@ const PUMP_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
 /// not enough: somebody has to move the bytes.
 pub fn spawn_pump(state: State) {
     std::thread::spawn(move || {
+        // Built once. Rebuilding the adapter set on every tick would be the
+        // most expensive thing in this loop by an order of magnitude.
+        let adapters = omt_agent_adapters::builtin();
+        let mut last_observed = std::time::Instant::now();
         loop {
             // The lock is taken and dropped inside each tick, never held across
             // the sleep: holding it would block every capability call for the
             // entire interval and make the API stutter in time with the pump.
             if let Ok(mut instance) = state.lock() {
                 let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
-                for id in ids {
+                for id in &ids {
                     // A session whose process died fails here, which is not
                     // worth stopping the pump for — the others are still live,
                     // and the close arrives through its own path.
-                    let _ = instance.pump_session(id);
+                    let _ = instance.pump_session(*id);
+                }
+
+                // And what is running in each of them. On its own timer,
+                // because pumping happens far more often than a process can
+                // change and a probe per pump would be a syscall storm.
+                //
+                // This did not happen at all before: agent observation lived
+                // in the TUI's loop, so a session opened from a phone was
+                // never looked at by anything, and the web client could report
+                // that a session existed while being structurally unable to
+                // say what was running in it.
+                if last_observed.elapsed() >= OBSERVE_INTERVAL {
+                    last_observed = std::time::Instant::now();
+                    let refs: Vec<&dyn omt_agent_adapters::AgentAdapter> = adapters.all();
+                    let now = crate::run::monotonic_ms();
+                    for id in &ids {
+                        // The instance's binding, not one this thread invented:
+                        // a capability answering "what is running in this
+                        // session" has to read the machine this fed.
+                        let binding = instance.binding_for(*id);
+                        let _ = instance.observe_session(*id, binding, &refs, now);
+                    }
                 }
             }
             std::thread::sleep(PUMP_INTERVAL);

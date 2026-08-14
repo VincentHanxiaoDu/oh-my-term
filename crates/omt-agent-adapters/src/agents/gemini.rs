@@ -26,6 +26,30 @@ use crate::adapter::{
 pub struct Gemini;
 
 impl AgentAdapter for Gemini {
+    fn screen_rules(&self) -> Vec<crate::rules::Rule> {
+        use crate::regions::Region;
+        use crate::rules::{Rule, ScreenState, Test};
+        vec![
+            // Its first-run trust dialog, drawn as a numbered list inside a
+            // box. Captured from the shipped binary rather than written from
+            // memory — the wording is theirs and this is the screen somebody
+            // meets before any other.
+            Rule {
+                id: "the trust dialog",
+                region: Region::BottomNonEmpty(12),
+                test: Test::All(vec![
+                    Test::Contains(vec!["trust folder"]),
+                    Test::Any(vec![
+                        Test::Contains(vec!["don't trust"]),
+                        Test::Contains(vec!["trust parent folder"]),
+                    ]),
+                ]),
+                state: ScreenState::Blocked,
+                priority: 900,
+            },
+        ]
+    }
+
     fn kind(&self) -> AgentKind {
         AgentKind::GeminiCli
     }
@@ -36,7 +60,16 @@ impl AgentAdapter for Gemini {
             exe_names: vec!["gemini"],
             argv_patterns: vec!["@google/gemini-cli", "gemini-cli/index.js"],
             session_id_var: Some("GEMINI_SESSION_ID"),
-            title: None,
+            title: Some(crate::adapter::TitleMarks {
+                // Its title carries a state and not a name: `◇ Ready (dir)`
+                // says how it is and which directory, and nothing about which
+                // agent. Identity comes from the process; this is only asked
+                // once omt knows the answer, which is why this list is empty.
+                names: vec![],
+                // Observed from the shipped binary.
+                working_prefix: vec!['\u{2801}'..='\u{28FF}'],
+                idle_prefix: vec!['\u{25c7}'],
+            }),
         }
     }
 
@@ -293,6 +326,63 @@ mod tests {
             Gemini
                 .normalize("nonsense", &serde_json::json!({}))
                 .is_err()
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod screen_rule_tests {
+    use super::*;
+    use crate::adapter::AgentAdapter;
+    use crate::rules::{ScreenState, read};
+
+    /// Its first-run trust dialog, captured from the shipped binary.
+    ///
+    /// Written from what it actually drew rather than from memory: the rule
+    /// for Claude Code's equivalent screen was wrong on exactly this, and a
+    /// captured screen is what found it.
+    const TRUST: &str = "\
+ \u{256d}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256e}
+ \u{2502} Do you trust this folder?                \u{2502}
+ \u{2502}                                          \u{2502}
+ \u{2502} \u{25cf} 1. Trust folder (tmp)                  \u{2502}
+ \u{2502}   2. Trust parent folder (private)        \u{2502}
+ \u{2502}   3. Don't trust                          \u{2502}
+ \u{2502}                                          \u{2502}
+ \u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}
+";
+
+    #[test]
+    fn its_trust_dialog_is_somebody_being_waited_for() {
+        let verdict = read(&Gemini.screen_rules(), TRUST).expect("a verdict");
+        assert_eq!(
+            verdict.state,
+            ScreenState::Blocked,
+            "rule: {}",
+            verdict.rule
+        );
+    }
+
+    #[test]
+    fn ordinary_output_says_nothing() {
+        assert!(read(&Gemini.screen_rules(), "reading files\ndone\n").is_none());
+    }
+
+    #[test]
+    fn its_title_carries_a_state_and_no_name() {
+        // `◇ Ready (tmp)` — how it is and which directory, and nothing about
+        // which agent. Identity comes from the process; this is only asked
+        // once omt knows the answer, which is why the name list is empty.
+        let marks = Gemini.fingerprint().title.expect("title marks");
+        assert!(marks.names.is_empty(), "a name would never match its title");
+        assert_eq!(
+            crate::detect::activity_from_title(&marks, "\u{25c7}  Ready (tmp)"),
+            Some(crate::detect::TitleActivity::Idle)
         );
     }
 }

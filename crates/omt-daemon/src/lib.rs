@@ -7,6 +7,7 @@
 
 pub mod escalation;
 pub mod instance;
+pub mod observe;
 pub mod runtime;
 
 pub use instance::{Instance, REPLAY_CAPACITY};

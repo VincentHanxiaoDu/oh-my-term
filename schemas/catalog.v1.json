@@ -7208,6 +7208,13 @@
             "null"
           ]
         },
+        "agent_state": {
+          "description": "What that agent is doing, where omt can tell.\n\nSeparate from `state`, which is the *session's* lifecycle — running,\norphaned, exited. A session can be running while the agent in it is\nwaiting for a person, and those are the two facts a roster has to keep\napart.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "blocked": {
           "description": "How many of those are waiting for a human.",
           "format": "uint",

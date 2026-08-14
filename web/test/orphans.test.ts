@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isOrphaned, waitingLine } from '../src/federation.js'
+import { isOrphaned, stateWord, waitingLine } from '../src/federation.js'
+import { rowMeta } from '../src/app.js'
 import { en, zhHans } from '../src/messages.js'
 
 /** A session, as the roster sees one. */
@@ -121,5 +122,49 @@ describe('what an orphan is told about itself', () => {
     expect(en['orphan.close']).toBeTruthy()
     expect(zhHans['orphan.restart']).toBeTruthy()
     expect(zhHans['orphan.close']).toBeTruthy()
+  })
+})
+
+describe('both surfaces call a state the same thing', () => {
+  it('says waiting on you rather than blocked', () => {
+    // A person looking at the phone and then at the terminal must not have to
+    // work out that "blocked" and "waiting on you" are the same thing. The
+    // wire carries the state; what to call it was a decision each surface was
+    // making separately, and differently.
+    expect(stateWord('blocked')).toBe('waiting on you')
+    expect(stateWord('working')).toBe('working')
+  })
+
+  it('separates done from idle by whether anybody looked', () => {
+    // Not on the wire, and not the agent's business: an agent is idle either
+    // way. An agent that finished while you were elsewhere is the one thing
+    // this product exists to surface.
+    expect(stateWord('idle', false)).toBe('done')
+    expect(stateWord('idle', true)).toBe('idle')
+  })
+
+  it('never says unknown', () => {
+    expect(stateWord('unknown')).not.toContain('unknown')
+  })
+
+  it('passes through a state it has no word for rather than inventing one', () => {
+    // A new state from a newer instance is a word omt does not have. Printing
+    // it is honest; guessing at a friendlier one is not.
+    expect(stateWord('quiescing')).toBe('quiescing')
+  })
+})
+
+describe('what this device has looked at', () => {
+  it('is a fact about the device, not about the agent', () => {
+    // A session you read on your laptop is not one you have seen on your
+    // phone. A flag shared through the instance would get that wrong in the
+    // direction that loses things: the phone would call an agent's result
+    // "idle" because somebody else had looked at it.
+    expect(rowMeta({ state: 'idle' }, false, undefined, [])).toContain('done')
+    expect(rowMeta({ state: 'idle' }, true, undefined, [])).toContain('idle')
+  })
+
+  it('says what is waiting whether or not anybody looked', () => {
+    expect(rowMeta({ state: 'blocked' }, true, undefined, [])).toContain('waiting on you')
   })
 })

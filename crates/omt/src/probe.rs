@@ -127,39 +127,31 @@ pub fn title_reading(activity: TitleActivity, now_ms: u64) -> SourceReading {
 /// which is the exact failure the tier ladder exists to prevent.
 #[must_use]
 pub fn readings(probed: &Probed, now_ms: u64) -> Vec<SourceReading> {
-    vec![
-        SourceReading {
-            tier: probed.detection.tier,
-            // A process probe can say an agent is *there*. Whether it is
-            // working is not something a process table knows, so it reports
-            // the weakest true thing.
-            state: AgentState::Unknown,
-            at: now_ms,
-            // Never authoritative: it does not report a lifecycle, so it must
-            // not suspend the heuristic that does the only reporting there is.
-            authoritative: false,
-        },
-        SourceReading {
-            tier: Tier::Heuristic,
-            state: match probed.activity {
-                // No detail: the floor watched bytes arrive. What the agent
-                // is doing is not something it can know, and inventing a
-                // string here would put a made-up sentence on a phone.
-                ActivityGuess::Busy => AgentState::Working { detail: None },
-                ActivityGuess::Idle => AgentState::Idle,
-                ActivityGuess::NeedsAttention => AgentState::Blocked {
-                    // `Unspecified` and no interaction, which is the honest
-                    // pair: a bell means somebody is wanted, never what for,
-                    // and never an answerable card.
-                    reason: omt_types::BlockReason::Unspecified,
-                    interaction: None,
-                },
-                ActivityGuess::Unknown => AgentState::Unknown,
+    // The identity reading is the daemon's, not this surface's: it comes from
+    // the same look that produced the detection. Pushing a second one here —
+    // at the detection's own tier, with `Unknown` for a state, a moment later
+    // — overwrote the state the title had just reported at that same tier, and
+    // an agent that said it was working came back "state not reported yet".
+    vec![SourceReading {
+        tier: Tier::Heuristic,
+        state: match probed.activity {
+            // No detail: the floor watched bytes arrive. What the agent
+            // is doing is not something it can know, and inventing a
+            // string here would put a made-up sentence on a phone.
+            ActivityGuess::Busy => AgentState::Working { detail: None },
+            ActivityGuess::Idle => AgentState::Idle,
+            ActivityGuess::NeedsAttention => AgentState::Blocked {
+                // `Unspecified` and no interaction, which is the honest
+                // pair: a bell means somebody is wanted, never what for,
+                // and never an answerable card.
+                reason: omt_types::BlockReason::Unspecified,
+                interaction: None,
             },
-            at: now_ms,
-            authoritative: false,
+            ActivityGuess::Unknown => AgentState::Unknown,
         },
-    ]
+        at: now_ms,
+        authoritative: false,
+    }]
 }
 
 /// The floor's guess about a pane, from what its terminal has been doing.
@@ -244,15 +236,21 @@ mod tests {
     }
 
     #[test]
-    fn a_process_probe_never_claims_to_know_what_the_agent_is_doing() {
-        // It read a process table. That says which program is running and
-        // nothing whatever about whether it is waiting for a human.
-        let out = readings(&probed(Tier::Process, ActivityGuess::Busy), 0);
-        let process = out
-            .iter()
-            .find(|r| r.tier == Tier::Process)
-            .expect("a process reading");
-        assert_eq!(process.state, AgentState::Unknown);
+    fn this_surface_contributes_the_floor_and_nothing_else() {
+        // The identity reading belongs to the observation that produced the
+        // detection, which is the daemon's. Pushing a second one here — at the
+        // detection's own tier, with `Unknown` for a state, a moment later —
+        // overwrote the state a title had just reported at that same tier, and
+        // an agent that said it was working came back "state not reported
+        // yet".
+        //
+        // What this surface knows that the daemon does not is whether bytes
+        // arrived on *this* pty, which is the floor.
+        let out = readings(&probed(Tier::Marker, ActivityGuess::Busy), 0);
+        assert!(
+            out.iter().all(|r| r.tier == Tier::Heuristic),
+            "a surface reading claims a tier it did not earn: {out:?}"
+        );
     }
 
     #[test]

@@ -418,3 +418,116 @@ mod tests {
         assert!(bar.contains('?'), "{bar:?}");
     }
 }
+
+/// What to call an agent's state to somebody looking at a list.
+///
+/// Takes whether the pane has been looked at since, because that is not
+/// something the agent knows and not something the wire should carry: an
+/// agent is idle either way, and whether *you* have seen it is a fact about
+/// you.
+///
+/// The distinction it buys is the one this product exists for. An agent that
+/// finished while its pane was off screen is not the same as one sitting at a
+/// prompt you have been watching — the first is a thing to go and look at, and
+/// collapsing them into "idle" is how somebody misses that the thing they were
+/// waiting for is done.
+#[must_use]
+pub fn state_word(state: &omt_types::AgentState, seen: bool) -> &'static str {
+    match state {
+        omt_types::AgentState::Blocked { .. } => "waiting on you",
+        omt_types::AgentState::Working { .. } => "working",
+        omt_types::AgentState::Starting => "starting",
+        omt_types::AgentState::Exited { .. } => "exited",
+        omt_types::AgentState::Idle if !seen => "done",
+        omt_types::AgentState::Idle => "idle",
+        // Never "unknown". The word describes omt's knowledge, not the agent,
+        // and beside an agent omt has just found it reads as "omt has no idea
+        // what this is" — which is how it was read, twice, by the person it
+        // was shown to.
+        //
+        // It is also the honest answer for the first two seconds of every
+        // agent's life: the floor needs two seconds of quiet before it will
+        // say idle, and a process table cannot report a lifecycle at all.
+        omt_types::AgentState::Unknown => "state not reported yet",
+    }
+}
+
+/// The mark an agent wears in a list.
+///
+/// Filled for something that wants attention or is moving, hollow for
+/// something at rest that has been seen, and a dim point for a state omt
+/// cannot report. Shape rather than colour alone, because a colour is the
+/// first thing a terminal theme takes away.
+#[must_use]
+pub fn state_mark(state: &omt_types::AgentState, seen: bool) -> &'static str {
+    match state {
+        omt_types::AgentState::Blocked { .. } | omt_types::AgentState::Working { .. } => "\u{25cf}",
+        omt_types::AgentState::Idle if !seen => "\u{25cf}",
+        omt_types::AgentState::Idle | omt_types::AgentState::Starting => "\u{25cb}",
+        omt_types::AgentState::Exited { .. } | omt_types::AgentState::Unknown => "\u{b7}",
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod state_word_tests {
+    use super::{state_mark, state_word};
+    use omt_types::AgentState;
+
+    #[test]
+    fn finished_and_unseen_is_not_idle() {
+        // The state this product exists to surface. An agent that finished
+        // while nobody was looking is a thing to go and look at.
+        assert_eq!(state_word(&AgentState::Idle, false), "done");
+        assert_eq!(state_word(&AgentState::Idle, true), "idle");
+    }
+
+    #[test]
+    fn done_and_waiting_are_both_marked_rather_than_only_coloured() {
+        // A colour is the first thing a terminal theme takes away, and a
+        // person reading a list in a light theme they did not choose still has
+        // to be able to see which row wants them.
+        assert_eq!(state_mark(&AgentState::Idle, false), "\u{25cf}");
+        assert_eq!(state_mark(&AgentState::Idle, true), "\u{25cb}");
+        assert_ne!(
+            state_mark(&AgentState::Idle, false),
+            state_mark(&AgentState::Idle, true)
+        );
+    }
+
+    #[test]
+    fn nothing_ever_says_unknown() {
+        // It describes omt's knowledge rather than the agent, and beside an
+        // agent omt has just found it reads as "omt has no idea what this is".
+        for state in [
+            AgentState::Unknown,
+            AgentState::Starting,
+            AgentState::Idle,
+            AgentState::Working { detail: None },
+        ] {
+            for seen in [true, false] {
+                let said = state_word(&state, seen);
+                assert!(!said.contains("unknown"), "{state:?} says {said:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn being_waited_on_outranks_having_been_seen() {
+        // Looking at a pane does not answer the question in it.
+        assert_eq!(
+            state_word(
+                &AgentState::Blocked {
+                    reason: omt_types::BlockReason::Unspecified,
+                    interaction: None
+                },
+                true
+            ),
+            "waiting on you"
+        );
+    }
+}

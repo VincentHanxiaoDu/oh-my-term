@@ -118,6 +118,46 @@ export function waitingLine(
 }
 
 /**
+ * What to call a session's state to somebody reading a list.
+ *
+ * The same words the TUI uses, from the same rules, because a person looking
+ * at one surface and then the other must not have to work out that "blocked"
+ * and "waiting on you" are the same thing. The wire carries the state; what to
+ * call it was a decision each surface was making separately, and differently.
+ *
+ * `seen` is not on the wire and is not the agent's business: an agent is idle
+ * either way, and whether *you* have looked at it is a fact about you. An
+ * agent that finished while you were elsewhere is the one thing this product
+ * exists to surface, and calling that "idle" is how somebody misses it.
+ */
+export function stateWord(state: string, seen = true): string {
+  switch (state) {
+    case 'blocked':
+      return 'waiting on you'
+    case 'working':
+    case 'running':
+      return 'working'
+    case 'starting':
+      return 'starting'
+    case 'orphaned':
+      return 'ended with omt'
+    case 'exited':
+      return 'exited'
+    case 'idle':
+      return seen ? 'idle' : 'done'
+    case 'unknown':
+      // Never the word itself. It describes what omt knows rather than what
+      // the agent is, and beside a session omt has just listed it reads as
+      // "omt has no idea what this is".
+      return 'state not reported yet'
+    default:
+      // A state from a newer instance is a word this client does not have.
+      // Printing it is honest; guessing at a friendlier one is not.
+      return state
+  }
+}
+
+/**
  * Merge every instance's sessions into one ordered list.
  *
  * The order is the whole point: what needs a human, then what is working, then

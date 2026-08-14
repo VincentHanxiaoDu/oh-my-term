@@ -25,7 +25,7 @@ import { markElement, markFor } from './mark.js';
 import { cardTitle, holdToConfirm, planElement, promptElement } from './cards.js';
 import { dictate, dictationAvailable } from './dictate.js';
 import { ARROWS, DOUBLE_TAP_MS, DRAG_ARM_MS, directionOf, fontForPinch, isDoubleTap, repeatsFor, spanOf, } from './gestures.js';
-import { unify, unifiedSubtitle, waitingLine } from './federation.js';
+import { stateWord, unify, unifiedSubtitle, waitingLine } from './federation.js';
 import { isOrphaned } from './federation.js';
 import { pairCalls, renderEntry, surfacesFor } from './surfaces.js';
 /** How often the terminal screen asks for a new picture. */
@@ -125,10 +125,10 @@ export function chipTone(block) {
  * The instance comes first when there is more than one, because "which
  * machine" outranks "which directory" the moment two machines are on screen.
  */
-export function rowMeta(session, instanceLabel, workspaces) {
+export function rowMeta(session, seen, instanceLabel, workspaces) {
     const where = workspaces.find((w) => w.id === session.workspace)?.name ??
         session.cwd?.split('/').filter(Boolean).pop();
-    const parts = [instanceLabel, where, session.state].filter((p) => p !== undefined && p !== '');
+    const parts = [instanceLabel, where, stateWord(session.state, seen)].filter((p) => p !== undefined && p !== '');
     return parts.join(' · ');
 }
 /** Whether this row is the reason the phone buzzed. */
@@ -2059,7 +2059,7 @@ export class App {
             // a row that carries only the title and the state is four
             // identical rows — and the thing that tells them apart is where
             // they are.
-            meta: rowMeta(session, this.#peers.length > 0
+            meta: rowMeta(session, this.#seen.has(session.id), this.#peers.length > 0
                 ? session.instanceLabel
                 : undefined, this.#store.state.workspaces),
             ...(needsYou(session.state)
@@ -2067,7 +2067,7 @@ export class App {
                 : session.state === 'running'
                     ? { tone: 'working' }
                     : {}),
-            label: `${session.title} — ${needsYou(session.state) ? 'needs you' : session.state}`,
+            label: `${session.title} — ${stateWord(session.state)}`,
             onTap: () => {
                 const row = session;
                 const here = current(this.#storage);
@@ -2113,7 +2113,18 @@ export class App {
      * stopped mid-sentence. None of it is visible on a desktop, where the
      * keyboard is not attached to the element at all.
      */
+    /**
+     * Sessions this client has had open since their agent last worked.
+     *
+     * Not on the wire, and not the agent's business: an agent is idle either
+     * way, and whether *you* have looked at it is a fact about you — and about
+     * *this* device. A session you read on your laptop is not one you have seen
+     * on your phone, which is the case a shared flag would get wrong.
+     */
+    #seen = new Set();
     #renderTerminal(session) {
+        // Opening it is looking at it.
+        this.#seen.add(session);
         // Mounted per session, and the mount is keyed on what the bottom of the
         // screen is: a full-screen program takes keys directly and an ordinary
         // shell is typed into through a field, and switching between them is a

@@ -151,58 +151,40 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 continue;
             }
             pane.probed_at = now;
-            let Some(runtime) = instance.runtime(pane.session) else {
+            if instance.runtime(pane.session).is_none() {
                 continue;
-            };
-            let fd = runtime.pty().as_raw_fd();
-            // What the program in this pane calls the terminal. omt already
-            // parses the title; nothing had ever read it.
-            let title = runtime.terminal().title().map(str::to_owned);
+            }
             let quiet_ms = now.saturating_sub(pane.last_output_ms);
             let refs: Vec<&dyn omt_agent_adapters::AgentAdapter> = adapter_set.all();
 
-            // The title first, and the process table only if the title says
-            // nothing. A title is set deliberately by the program: it needs no
-            // permission, survives ssh, and does not depend on how the binary
-            // was launched or signed. Reading the process table is none of
-            // those — a hardened binary refuses its arguments, and a
-            // self-updating agent runs from a versioned path with its name
-            // only in argv[0].
-            let from_title = crate::probe::identify_from_title(title.as_deref(), &refs);
-            let said = from_title.as_ref().and_then(|(_, activity)| *activity);
-            let detection = from_title
-                .map(|(detection, _)| detection)
-                .or_else(|| crate::probe::identify(fd, &refs));
-
+            // One observation, in the daemon, so a session opened from a phone
+            // is looked at by the same code that looks at this one. This used
+            // to live here, which meant the web client's sessions were never
+            // probed at all — two surfaces, one of which could see agents and
+            // one of which structurally could not.
+            let detection = instance.observe_session(pane.session, pane.binding, &refs, now);
             pane.agent = detection.map(|detection| crate::probe::Probed {
                 activity: crate::probe::activity(quiet_ms < 1_000, false, quiet_ms / 1_000),
                 detection,
             });
-            if let Some(probed) = pane.agent.clone() {
-                for reading in crate::probe::readings(&probed, now) {
-                    instance.observe_agent(pane.binding, reading);
-                }
-                // And what the agent said about itself, which outranks every
-                // guess made from bytes arriving on a pty.
-                if let Some(activity) = said {
-                    instance
-                        .observe_agent(pane.binding, crate::probe::title_reading(activity, now));
-                }
-                // And what its own interface is showing. A question below the
-                // last rule it drew is somebody being waited for, and no
-                // amount of watching the pty can see that.
-                if let Some(adapter) = refs.iter().find(|a| a.kind() == probed.detection.agent) {
-                    let rules = adapter.screen_rules();
-                    if !rules.is_empty()
-                        && let Some(runtime) = instance.runtime(pane.session)
-                    {
-                        let text = crate::probe::screen_text(runtime.terminal().grid());
-                        if let Some(verdict) = omt_agent_adapters::read_screen(&rules, &text)
-                            && let Some(reading) = crate::probe::screen_reading(verdict.state, now)
-                        {
-                            instance.observe_agent(pane.binding, reading);
-                        }
+            if pane.agent.is_some() {
+                // The floor, which is this surface's own contribution: it is
+                // the one that knows whether bytes arrived on *this* pty.
+                if let Some(probed) = pane.agent.clone() {
+                    for reading in crate::probe::readings(&probed, now) {
+                        instance.observe_agent(pane.binding, reading);
                     }
+                }
+                // An agent that starts working is one whose result nobody has
+                // seen yet. Cleared here rather than when it finishes, because
+                // "finished" is the moment there is something to look at and
+                // the flag has to already be false by then.
+                if matches!(
+                    instance.agent_state(pane.binding, now),
+                    Some(omt_types::AgentState::Working { .. })
+                        | Some(omt_types::AgentState::Blocked { .. })
+                ) {
+                    pane.seen = false;
                 }
             }
         }
@@ -278,6 +260,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 .context("drawing")?;
         }
 
+        // Whatever is on screen and focused is being looked at, so its result
+        // is not something somebody has yet to find.
+        if let Some(pane) = panes.get_mut(focus) {
+            pane.seen = true;
+        }
         let focused_session = panes[focus].session;
         let situation = omt_tui::Situation {
             prefix_armed: armed
@@ -665,6 +652,15 @@ struct LocalPane {
     /// When this pane last produced anything, which is the entirety of what
     /// the heuristic floor has to go on.
     last_output_ms: u64,
+    /// Whether anybody has looked at this pane since its agent stopped
+    /// working.
+    ///
+    /// Not on the wire and not in `AgentState`, because it is not something
+    /// the agent knows: an agent is idle either way, and whether *you* have
+    /// seen it is a fact about you. It is what separates "it finished while
+    /// you were elsewhere" from "it is sitting there and you have been
+    /// watching it", which is the distinction this whole product is for.
+    seen: bool,
 }
 
 impl LocalPane {
@@ -713,6 +709,8 @@ impl LocalPane {
             agent: None,
             probed_at: 0,
             last_output_ms: 0,
+            // A pane somebody just opened is one they are looking at.
+            seen: true,
         })
     }
 }
@@ -806,7 +804,7 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
                 detail: format!(
                     "{} · {} · {}",
                     title,
-                    state_word(&state),
+                    omt_tui::state_word(&state, pane.seen),
                     probed.detection.evidence
                 ),
                 chord: None,
@@ -887,27 +885,6 @@ fn agent_name(kind: omt_types::AgentKind) -> String {
         out.push(ch);
     }
     out
-}
-
-/// What an agent state reads as in one word.
-fn state_word(state: &omt_types::AgentState) -> &'static str {
-    match state {
-        omt_types::AgentState::Starting => "starting",
-        omt_types::AgentState::Idle => "idle",
-        omt_types::AgentState::Working { .. } => "working",
-        omt_types::AgentState::Blocked { .. } => "waiting on you",
-        omt_types::AgentState::Exited { .. } => "exited",
-        // Not "unknown". This word sits beside an agent omt has *found* — the
-        // row exists because it found it — and "unknown" there reads as "omt
-        // does not know what this is" rather than "omt cannot yet tell what it
-        // is doing". The distinction is the whole difference between a probe
-        // that works and one that looks broken.
-        //
-        // It is the honest answer for the first two seconds of every agent:
-        // the floor needs two seconds of quiet before it will say idle, and a
-        // process table cannot report a lifecycle at all.
-        omt_types::AgentState::Unknown => "state not reported yet",
-    }
 }
 
 /// The rows behind the sessions list.
@@ -1040,7 +1017,7 @@ fn config_home() -> Option<std::path::PathBuf> {
 ///
 /// Monotonic rather than wall-clock: the writer token's idle timeout must not
 /// move because somebody's clock was corrected.
-fn monotonic_ms() -> u64 {
+pub(crate) fn monotonic_ms() -> u64 {
     use std::sync::OnceLock;
     static START: OnceLock<std::time::Instant> = OnceLock::new();
     let start = START.get_or_init(std::time::Instant::now);

@@ -48,6 +48,18 @@ pub struct Instance {
     merges: BTreeMap<BindingId, MergeMachine>,
     runtimes: BTreeMap<SessionId, crate::SessionRuntime>,
     rosters: BTreeMap<SessionId, omt_agent::ThreadRoster>,
+    /// One binding per session, for as long as the session lives.
+    bindings: BTreeMap<SessionId, BindingId>,
+    /// The last thing observation decided is running in each session.
+    observed: BTreeMap<SessionId, omt_agent_adapters::Detection>,
+    /// Which foreground process that decision was about.
+    ///
+    /// Reading another process's arguments and environment copies the whole
+    /// block out of the kernel, and observation runs twice a second for every
+    /// session. A program cannot become a different program without the pty's
+    /// foreground changing, so the expensive question is asked once per
+    /// foreground and remembered.
+    observed_for: BTreeMap<SessionId, Option<i32>>,
     /// Terminals for sessions restored from a snapshot, which have no pty.
     orphans: BTreeMap<SessionId, omt_term::Terminal>,
     /// What each session has spent, and what any agent said about its limits.
@@ -76,6 +88,9 @@ impl Instance {
             merges: BTreeMap::new(),
             runtimes: BTreeMap::new(),
             rosters: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+            observed: BTreeMap::new(),
+            observed_for: BTreeMap::new(),
             orphans: BTreeMap::new(),
             usage: omt_agent::UsageLedger::new(),
         }
@@ -102,6 +117,116 @@ impl Instance {
         let id = self.tree.create_session(workspace, kind, mode)?;
         self.streams.insert(id, Stream::new());
         Ok(id)
+    }
+
+    /// The binding that represents "the agent occupying this session".
+    ///
+    /// Minted once per session and kept for as long as the session lives.
+    /// Re-minting it when a detection changed would throw away the history the
+    /// merge machine decides from, which is the whole of how a weak guess
+    /// stops overruling a strong statement.
+    ///
+    /// Held here rather than by whoever happens to be observing, because two
+    /// surfaces observing the same session must feed the same machine — and
+    /// because a capability answering "what is running in this session" needs
+    /// the same binding the observer used, without being told.
+    pub fn binding_for(&mut self, id: SessionId) -> BindingId {
+        *self.bindings.entry(id).or_default()
+    }
+
+    /// What omt has decided is running in a session, if anything.
+    #[must_use]
+    pub fn observed_agent(&self, id: SessionId) -> Option<&omt_agent_adapters::Detection> {
+        self.observed.get(&id)
+    }
+
+    /// Look at what a session is running and tell the merge machine.
+    ///
+    /// **Here rather than in the TUI's loop.** This was in `omt run`, which
+    /// meant a session created through the daemon — every session a phone or
+    /// the web client ever opens — was never looked at by anything: the
+    /// probe, the title reader and the screen rules all lived in the one
+    /// process that draws a terminal. Two surfaces, one of which could see
+    /// agents and one of which structurally could not, and the difference was
+    /// invisible from either.
+    ///
+    /// Idempotent and cheap enough to call on a timer: a `tcgetpgrp`, a
+    /// `proc_pidpath`, and a walk over the visible grid.
+    ///
+    /// # Panics
+    /// Does not panic; the signature returns nothing because every failure
+    /// here is an absence of evidence rather than an error — a pty whose
+    /// foreground process has gone, a platform that will not report another
+    /// process, a screen no rule describes.
+    pub fn observe_session(
+        &mut self,
+        id: SessionId,
+        binding: BindingId,
+        adapters: &[&dyn omt_agent_adapters::AgentAdapter],
+        now_ms: u64,
+    ) -> Option<omt_agent_adapters::Detection> {
+        let runtime = self.runtimes.get(&id)?;
+        let title = runtime.terminal().title().map(str::to_owned);
+        let screen = crate::observe::screen_text(runtime.terminal().grid());
+        let fd = runtime.pty().as_raw_fd();
+
+        // Which process holds the terminal, which is cheap, before deciding
+        // whether to ask the expensive questions about it.
+        let foreground = omt_pty::foreground_process(fd).ok();
+
+        // The title first: an agent that sets one is telling its host what it
+        // is, and that needs no permission and survives ssh. The process table
+        // is the fallback, because reading a hardened binary's arguments is
+        // refused and a self-updating agent runs from a versioned path.
+        //
+        // And the process table is *expensive*: reading another process's
+        // arguments and environment copies the whole block out of the kernel,
+        // and this runs twice a second for every session. So it is asked once
+        // per foreground process and remembered — a program cannot become a
+        // different program without the pty's foreground changing.
+        let cached = self
+            .observed
+            .get(&id)
+            .filter(|_| foreground.is_some() && self.observed_for.get(&id) == Some(&foreground))
+            .cloned();
+        let (detection, said) = match cached {
+            Some(detection) => {
+                // The identity is remembered; what it is *doing* is asked
+                // every time, because that is what changes.
+                let said = title.as_deref().and_then(|title| {
+                    adapters
+                        .iter()
+                        .find(|a| a.kind() == detection.agent)
+                        .and_then(|a| a.fingerprint().title)
+                        .and_then(|marks| omt_agent_adapters::activity_from_title(&marks, title))
+                });
+                (detection, said)
+            }
+            None => {
+                let found = crate::observe::identify(fd, title.as_deref(), adapters)?;
+                self.observed_for.insert(id, foreground);
+                found
+            }
+        };
+
+        for reading in crate::observe::readings(&detection, said, now_ms) {
+            self.observe_agent(binding, reading);
+        }
+        self.observed.insert(id, detection.clone());
+
+        // And what its own interface is showing. An agent waiting for
+        // permission produces no output and rings no bell: to everything else
+        // it is indistinguishable from one that finished.
+        if let Some(adapter) = adapters.iter().find(|a| a.kind() == detection.agent) {
+            let rules = adapter.screen_rules();
+            if !rules.is_empty()
+                && let Some(verdict) = omt_agent_adapters::read_screen(&rules, &screen)
+                && let Some(reading) = crate::observe::screen_reading(verdict.state, now_ms)
+            {
+                self.observe_agent(binding, reading);
+            }
+        }
+        Some(detection)
     }
 
     /// Feed a source reading into a binding's merge machine.
@@ -209,6 +334,11 @@ impl Instance {
         // dropping a Pty hangs its child up.
         self.runtimes.remove(&id);
         self.rosters.remove(&id);
+        // The binding and what was observed go with it. Keeping either would
+        // answer a question about a session that no longer exists.
+        self.bindings.remove(&id);
+        self.observed.remove(&id);
+        self.observed_for.remove(&id);
         Ok(())
     }
 

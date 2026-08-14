@@ -362,6 +362,31 @@ pub fn detect_from_title(adapters: &[&dyn AgentAdapter], title: &str) -> Option<
     None
 }
 
+/// What an already-identified agent's title says it is doing.
+///
+/// Separate from `detect_from_title`, and the separation is the point: a title
+/// may carry a state and not a name. Gemini's is `◇ Ready (dir)` — a state
+/// glyph, a word, and the directory, with nothing that says which agent it is.
+/// Requiring the name would throw away the state it *does* report.
+///
+/// So identity comes from wherever it can — a title that names the agent, the
+/// process it was started as, an environment marker — and this asks the agent
+/// omt settled on what its own glyph means.
+#[must_use]
+pub fn activity_from_title(
+    marks: &crate::adapter::TitleMarks,
+    title: &str,
+) -> Option<TitleActivity> {
+    let first = title.trim().chars().next()?;
+    if marks.working_prefix.iter().any(|r| r.contains(&first)) {
+        return Some(TitleActivity::Working);
+    }
+    marks
+        .idle_prefix
+        .contains(&first)
+        .then_some(TitleActivity::Idle)
+}
+
 /// What a title told us.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TitleReading {

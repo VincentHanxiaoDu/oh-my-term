@@ -107,6 +107,26 @@ pub fn foreground_process(fd: RawFd) -> io::Result<i32> {
             "nothing holds the foreground of this terminal yet",
         ));
     }
+    // Never our own group. In the window between spawning a child and its
+    // taking the terminal, the kernel answers with the group of whoever is
+    // asking — and the caller then reads *its own* argv and environment and
+    // concludes that whatever is in them is running in the pane.
+    //
+    // That is not hypothetical. Every agent-detection test in this project
+    // passed for months on exactly this: the suite runs inside an agent
+    // session, so the caller's environment carries that agent's markers, and
+    // the probe reported it for a pty running a plain shell. An answer about
+    // ourselves is never an answer about the pane.
+    //
+    // SAFETY: getpgrp takes no arguments and has no memory effects.
+    #[allow(unsafe_code, reason = "no safe wrapper for getpgrp")]
+    let ours = unsafe { libc::getpgrp() };
+    if pgid == ours {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "the terminal's foreground is this process, not its child",
+        ));
+    }
     Ok(pgid)
 }
 
