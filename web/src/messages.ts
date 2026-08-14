@@ -22,6 +22,9 @@ const table = {
   'projects.emptyTitle': 'No projects yet',
   'projects.emptyDetail': 'Run omt in a directory to open it as a project.',
   'projects.openIn': (name: string) => `Start a session in ${name}`,
+  'worktree.remove': 'Remove this worktree',
+  'worktree.removeAnyway': 'Remove it anyway, discarding that work',
+  'worktree.keep': 'Keep it',
   'projects.newDirectory':
     'To open a directory omt has not seen, run omt in it. This list only offers what the instance already knows, because a path typed on a phone cannot be checked before it is wrong.',
   'projects.gone': 'this directory is gone',
@@ -42,6 +45,7 @@ const table = {
 
   'changes.title': 'Changes',
   'changes.clean': 'Nothing has changed.',
+  'changes.noRepository': 'This project is not a git repository, so there is nothing to compare.',
   'changes.binary': 'Binary file — no diff to show.',
   'changes.tooLarge': 'Too large to diff here.',
   'changes.noDiff': 'No diff for this file.',
@@ -91,6 +95,9 @@ export const zhHans: Partial<Messages> = {
   'projects.emptyTitle': '还没有项目',
   'projects.emptyDetail': '在某个目录里运行 omt，它就会成为一个项目。',
   'projects.openIn': (name: string) => `在 ${name} 中新建会话`,
+  'worktree.remove': '删除此工作树',
+  'worktree.removeAnyway': '仍然删除，丢弃这些改动',
+  'worktree.keep': '保留',
   'projects.newDirectory':
     '要打开 omt 没见过的目录，请在该目录中运行 omt。这里只列出实例已知的位置——在手机上输入的路径，无法在出错之前被验证。',
   'projects.gone': '该目录已不存在',
@@ -111,6 +118,7 @@ export const zhHans: Partial<Messages> = {
 
   'changes.title': '改动',
   'changes.clean': '没有任何改动。',
+  'changes.noRepository': '这个项目不是 git 仓库，没有可比较的内容。',
   'changes.binary': '二进制文件——没有可显示的差异。',
   'changes.tooLarge': '文件过大，无法在此显示差异。',
   'changes.noDiff': '这个文件没有差异。',

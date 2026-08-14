@@ -90,3 +90,28 @@ describe('where the client is', () => {
     expect(titleOf({ screen: 'files', workspace: 'w', path: '' }, { title: 'omt' })).toBe('omt')
   })
 })
+
+describe('a chooser is not somewhere to go back to', () => {
+  it('leaves no step behind when it has been answered', () => {
+    // The project picker exists to choose a workspace. Pushed, back from the
+    // new session landed on the picker again and the way out was to press
+    // back a second time — which on a phone reads as the button not having
+    // worked the first time.
+    const history = fakeHistory()
+    const nav = new Navigator(history)
+    nav.push({ screen: 'projects' })
+    nav.replace({ screen: 'terminal', session: 's1' })
+
+    // One entry for both, not two: the picker is gone rather than underneath.
+    expect(history.entries).toHaveLength(1)
+    expect(history.entries[0]).toEqual({ route: { screen: 'terminal', session: 's1' } })
+  })
+
+  it('still has somewhere to go back to', () => {
+    // Replacing must not leave a screen with no way out. The roster is the
+    // entry the client loaded on, and it is still there underneath.
+    const nav = new Navigator(fakeHistory())
+    nav.replace({ screen: 'terminal', session: 's1' })
+    expect(hasBack(nav.route)).toBe(true)
+  })
+})

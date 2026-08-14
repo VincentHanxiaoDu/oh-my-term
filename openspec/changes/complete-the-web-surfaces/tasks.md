@@ -27,8 +27,11 @@
 - [x] 3.1 The attach sheet: photo, file, workspace file, paste — four visible
       rows, none gesture-only
 - [x] 3.2 Staging in the composer with a per-attachment progress state
-- [ ] 3.3 Transfer through `media.put`, and a workspace file referenced rather
-      than uploaded
+- [x] 3.3 Transfer through `media.put`, and a workspace file referenced rather
+      than uploaded — needed a new `media.materialize`, because `media.put`
+      answers with a digest and an agent reads a path. It writes under omt's
+      managed root per 09 §2; the client had been using `fs.write`, which put
+      an unreviewed file from a phone into the repository root.
 - [x] 3.4 A failure names the attachment and leaves the typed text alone
 - [x] 3.5 The reference handed to the agent uses that agent's own syntax
 
@@ -48,7 +51,9 @@
 
 - [x] 5.1 List a workspace's worktrees with their branches
 - [x] 5.2 Open a session in one
-- [ ] 5.3 A refused removal reports what would be lost
+- [x] 5.3 A refused removal reports what would be lost — the counts, not
+      "it has uncommitted changes", which is what git says about every worktree
+      anybody has ever removed on purpose
 
 ## 6. Settings
 
@@ -73,7 +78,7 @@
 - [x] 8.2 Simplified Chinese for every string omt owns
 - [x] 8.3 A phrase with a count is one template per language, never a
       concatenation
-- [ ] 8.4 An agent's words are passed through untranslated, and a test pins it
+- [x] 8.4 An agent's words are passed through untranslated, and a test pins it
 - [x] 8.5 A `columns(text)` helper that counts display width, used everywhere
       text is cut to fit — a CJK glyph is two columns
 - [x] 8.6 Chosen from the browser, overridable in settings, stored client-side
@@ -90,12 +95,23 @@
       length
 - [x] 9.5 Unit: every English key has a Chinese entry, or is deliberately
       listed as untranslated
-- [ ] 9.6 A screenshot pass over every new screen in both themes and both
-      shapes, reviewed rather than only diffed
+- [x] 9.6 A screenshot pass over every new screen in both themes and both
+      shapes, reviewed rather than only diffed. Four defects were visible in
+      the renders and in nothing else:
+      - the measure was on each row rather than on the container, and `.tap`
+        sets `margin: 0`, so every row was measured and then pinned left under
+        a centred header
+      - the projects screen indented its sub-rows with two leading spaces,
+        which HTML collapses, so four projects rendered as twelve unrelated
+        things
+      - a directory and a file were indistinguishable in a listing, because
+        the client read `directory` and the instance sends `is_dir`
+      - a workspace with no git history rendered as alarm-red "That did not
+        work", for a fact about the place rather than a failure
 
 ## 10. Close-out
 
-- [ ] 10.1 `npm run check` clean: typecheck, unit, build
-- [ ] 10.2 The Rust gates unaffected: clippy, tests, codegen-check, parity
-- [ ] 10.3 Record in this change any architecture-document correction the
+- [x] 10.1 `npm run check` clean: typecheck, unit, build
+- [x] 10.2 The Rust gates unaffected: clippy, tests, codegen-check, parity
+- [x] 10.3 Record in this change any architecture-document correction the
       implementation forced

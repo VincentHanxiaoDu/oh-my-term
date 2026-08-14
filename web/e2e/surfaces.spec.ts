@@ -10,6 +10,7 @@
 import { devices, expect, test } from '@playwright/test'
 import { attachAgent, listSessions } from './agent.js'
 import type { Page } from '@playwright/test'
+import { createASession, firstShellRow } from './new-session.js'
 
 // The credential the global setup joined with, not the invite: an invite is
 // exchanged once, and every test after the first would be refused.
@@ -19,18 +20,22 @@ test.beforeEach(async ({ page }) => {
   await page.goto(`/#token=${TOKEN}`)
 })
 
-/** Open a session, creating one if the roster is empty. */
+/**
+ * Open a session, creating one if the roster is empty.
+ *
+ * The creating branch is `createASession`, which goes through the project
+ * picker — see that helper for why every call site here was tapping a button
+ * that no longer exists and staying green.
+ */
 async function openASession(page: Page): Promise<void> {
   // A shell, never an agent session: one test attaches an agent, and a session
   // with an agent in it opens on its conversation rather than its terminal —
   // correctly, and not what a test about the terminal wants.
-  const rows = page.locator('.body button.tap').filter({ hasNotText: 'codex' })
-  if ((await rows.count()) === 0) {
-    await page.getByRole('button', { name: 'New session' }).tap()
-    await expect(page.locator('.terminal-body')).toBeVisible()
+  if ((await firstShellRow(page).count()) === 0) {
+    await createASession(page)
     return
   }
-  await rows.first().tap()
+  await firstShellRow(page).tap()
 }
 
 test('a session offers its surfaces, and says why one is unavailable', async ({ page }) => {
@@ -179,8 +184,7 @@ test('the roster updates from the stream, not by asking again', async ({ page, b
   const other = await browser.newContext({ ...devices['iPhone 13'] })
   const second = await other.newPage()
   await second.goto(`/#token=${TOKEN}`)
-  await second.getByRole('button', { name: 'New session' }).tap()
-  await expect(second.locator('.terminal-body')).toBeVisible()
+  await createASession(second)
 
   // No reload and no navigation on the first page: if this arrives, it arrived
   // on the socket.
@@ -286,8 +290,7 @@ test('an agent session is read through its conversation, not its grid', async ({
   const url = process.env['OMT_URL'] ?? 'http://127.0.0.1:7788'
   const token = TOKEN
 
-  await page.getByRole('button', { name: 'New session' }).tap()
-  await expect(page.locator('.terminal-body')).toBeVisible()
+  await createASession(page)
 
   // Which session the client is on, so the agent is attached to that one.
   const session = await page.evaluate(() => location.hash || document.title)
@@ -303,6 +306,15 @@ test('an agent session is read through its conversation, not its grid', async ({
 
   await page.reload()
   await page.waitForTimeout(1500)
+  // Back to the roster, explicitly. A reload used to land there on its own,
+  // which was a defect — a phone backgrounds the browser, the tab is reloaded,
+  // and somebody loses the screen they had open three taps down. The client
+  // restores where it was now, so a test that wants the roster has to ask.
+  const back = page.getByRole('button', { name: 'Back' })
+  while ((await back.count()) > 0) {
+    await back.tap()
+    await page.waitForTimeout(300)
+  }
   // By name, because a session with an agent in it is named after the agent —
   // five rows all called `shell` is the one thing a roster exists to tell
   // apart, and tapping the first of them picks at random.

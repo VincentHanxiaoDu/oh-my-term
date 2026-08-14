@@ -62,6 +62,7 @@
   "media.describe",
   "media.get",
   "media.list",
+  "media.materialize",
   "media.paste_tier",
   "media.put",
   "migrate.tmux_preview",

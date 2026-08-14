@@ -708,3 +708,271 @@ impl CapabilityHandler<RemoteDiscard> for MirrorHandler {
         })
     }
 }
+
+// ---------------------------------------------------------------------------
+// Materialising a blob — 09 §2
+// ---------------------------------------------------------------------------
+
+/// Where a materialised blob is written.
+///
+/// omt's own managed root, never the workspace. 09 §2 is explicit about this
+/// and the reason is not tidiness: writing an attachment into the repository
+/// puts an unreviewed file from a phone into somebody's working tree, where it
+/// shows up in `git status`, in the agent's own file listing, and eventually in
+/// a commit. Every agent in the covered set expands an absolute path outside
+/// the workspace (09 §4.3.2 records the verification), so there is nothing to
+/// buy by putting it inside one.
+fn managed_root() -> Result<std::path::PathBuf, CapabilityError> {
+    if let Ok(explicit) = std::env::var("OMT_MEDIA_DIR") {
+        return Ok(std::path::PathBuf::from(explicit));
+    }
+    let base = std::env::var("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|_| {
+            std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })
+        .map_err(|_| {
+            CapabilityError::precondition_failed(
+                "neither HOME nor XDG_STATE_HOME is set, so there is nowhere to put an attachment",
+            )
+        })?;
+    Ok(base.join("omt").join("media"))
+}
+
+/// The extension a materialised blob gets.
+///
+/// From the sniffed class, never from the name the sender supplied. A sender
+/// that names its own file type decides how the receiver treats it — the same
+/// rule `media.put` already applies to the content type, applied to the one
+/// other place the type is visible.
+fn extension_for(kind: &str) -> &'static str {
+    match kind {
+        "image" => "png",
+        "text" => "txt",
+        "pdf" => "pdf",
+        "archive" => "zip",
+        "audio" => "audio",
+        "video" => "video",
+        _ => "bin",
+    }
+}
+
+/// Input to `media.materialize`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MaterializeIn {
+    /// Which blob, by digest.
+    pub digest: String,
+    /// A name to prefer for the file, where the caller has one.
+    ///
+    /// Advisory. The stem is taken from it and everything else is discarded:
+    /// the extension comes from what the bytes are, and a name is otherwise a
+    /// path traversal waiting to be written somewhere it was not meant to go.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// What `media.materialize` reports.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct MaterializeOut {
+    /// The absolute path the bytes are now at.
+    pub path: String,
+    /// How many bytes were written.
+    pub size: usize,
+}
+
+omt_catalog::capability! {
+    /// Write a blob out where an agent can read it.
+    pub struct MediaMaterialize;
+    input  = MaterializeIn,
+    output = MaterializeOut,
+    decl = omt_catalog::Decl {
+        name: "media.materialize",
+        group: "media",
+        verb: "materialize",
+        title: "Write a blob to a path",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: omt_catalog::Kind::Command,
+        role: omt_types::Role::Operator,
+        effects: omt_catalog::Effects::WRITES_FS,
+        // Cas: the path is derived from the digest, so materialising twice
+        // writes the same bytes to the same place and answers the same.
+        intent: Some(omt_catalog::Intent::Cas),
+        parity: omt_catalog::Parity::Full,
+        since: "0.1.0",
+        doc: "Under omt's managed root, never inside the workspace: an attachment written into the repository is an unreviewed file from a phone sitting in somebody's working tree.",
+    },
+}
+
+/// Write the bytes out, given a root.
+///
+/// Separate from the handler because the root is the only thing here that
+/// depends on the environment, and a function that reads the environment can
+/// only be tested by writing to it — which this workspace forbids, for the
+/// good reason that a process-wide variable is not a test fixture.
+fn materialize_into(
+    root: &std::path::Path,
+    bytes: &[u8],
+    kind: &str,
+    digest: &str,
+    name: Option<&str>,
+) -> Result<MaterializeOut, CapabilityError> {
+    // The stem, and nothing else. `../../.ssh/authorized_keys` arrives as a
+    // name like any other, and joining it to a root is how a blob store
+    // becomes a write-anywhere primitive.
+    let stem = name
+        .and_then(|n| std::path::Path::new(n).file_stem())
+        .and_then(|s| s.to_str())
+        .map(|s| {
+            s.chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .take(48)
+                .collect::<String>()
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "attachment".to_owned());
+
+    std::fs::create_dir_all(root)
+        .map_err(|e| CapabilityError::internal(format!("creating the media root: {e}")))?;
+    // The digest is in the filename, so two files with the same name are two
+    // files, and the same file twice is one.
+    let short: String = digest
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(12)
+        .collect();
+    let path = root.join(format!("{stem}-{short}.{}", extension_for(kind)));
+    std::fs::write(&path, bytes)
+        .map_err(|e| CapabilityError::internal(format!("writing the attachment: {e}")))?;
+
+    Ok(MaterializeOut {
+        path: path.display().to_string(),
+        size: bytes.len(),
+    })
+}
+
+impl CapabilityHandler<MediaMaterialize> for MediaHandler {
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: MaterializeIn,
+    ) -> Result<MaterializeOut, CapabilityError> {
+        let (bytes, kind) = {
+            let store = self
+                .0
+                .lock()
+                .map_err(|_| CapabilityError::internal("the blob lock was poisoned"))?;
+            let bytes = store
+                .get(&input.digest)
+                .map_err(|e| CapabilityError::not_found(e.to_string()))?
+                .to_vec();
+            let kind = store.meta(&input.digest).map_or_else(
+                || "binary".to_owned(),
+                |r| format!("{:?}", r.meta.kind).to_lowercase(),
+            );
+            (bytes, kind)
+        };
+        materialize_into(
+            &managed_root()?,
+            &bytes,
+            &kind,
+            &input.digest,
+            input.name.as_deref(),
+        )
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod materialize_tests {
+    use super::*;
+
+    fn root() -> tempfile::TempDir {
+        tempfile::tempdir().expect("a temp dir")
+    }
+
+    #[test]
+    fn writes_outside_any_workspace() {
+        // The point of the whole capability: an attachment from a phone must
+        // not appear in somebody's `git status`.
+        let dir = root();
+        let out = materialize_into(dir.path(), b"hello", "text", "abc123", Some("notes.md"))
+            .expect("it materialises");
+        assert!(out.path.starts_with('/'), "an agent needs an absolute path");
+        assert_eq!(std::fs::read(&out.path).expect("readable"), b"hello");
+        assert_eq!(out.size, 5);
+    }
+
+    #[test]
+    fn a_name_cannot_climb_out_of_the_root() {
+        // The name comes from a phone. Joined to a root it is a write-anywhere
+        // primitive, so only the stem survives.
+        let dir = root();
+        let out = materialize_into(
+            dir.path(),
+            b"x",
+            "binary",
+            "abc123",
+            Some("../../../../etc/passwd"),
+        )
+        .expect("it materialises");
+        assert!(!out.path.contains(".."), "{}", out.path);
+        assert!(
+            out.path.starts_with(&dir.path().display().to_string()),
+            "{}",
+            out.path
+        );
+        assert!(out.path.contains("passwd"), "the stem is still useful");
+    }
+
+    #[test]
+    fn the_extension_comes_from_the_bytes() {
+        // Not from the name. A sender that names its own content type decides
+        // how the receiver treats it.
+        let dir = root();
+        let out = materialize_into(dir.path(), b"text", "text", "abc123", Some("totally.exe"))
+            .expect("it materialises");
+        assert!(out.path.ends_with(".txt"), "{}", out.path);
+    }
+
+    #[test]
+    fn the_same_blob_twice_is_one_file() {
+        // Cas, as the declaration claims. A retried upload after a dropped
+        // acknowledgement must not leave two copies.
+        let dir = root();
+        let first = materialize_into(dir.path(), b"once", "text", "deadbeef", None).expect("first");
+        let second =
+            materialize_into(dir.path(), b"once", "text", "deadbeef", None).expect("second");
+        assert_eq!(first.path, second.path);
+        assert_eq!(std::fs::read_dir(dir.path()).expect("readable").count(), 1);
+    }
+
+    #[test]
+    fn a_nameless_blob_still_gets_a_filename() {
+        // The clipboard has no name, and a file called `.txt` is one nothing
+        // will open.
+        let dir = root();
+        let out =
+            materialize_into(dir.path(), b"pasted", "text", "abc123", None).expect("it works");
+        assert!(out.path.contains("attachment-"), "{}", out.path);
+    }
+
+    #[test]
+    fn a_digest_is_never_taken_into_a_filename_verbatim() {
+        // A digest arrives as a string like `sha256:...`, and a colon is a
+        // path separator on one of the platforms this runs on.
+        let dir = root();
+        let out =
+            materialize_into(dir.path(), b"x", "text", "sha256:ff/00", None).expect("it works");
+        let name = std::path::Path::new(&out.path)
+            .file_name()
+            .expect("a filename");
+        assert!(!name.to_string_lossy().contains(':'));
+        assert!(!name.to_string_lossy().contains('/'));
+    }
+}

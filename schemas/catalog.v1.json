@@ -4075,6 +4075,46 @@
         }
       ]
     },
+    "MaterializeIn": {
+      "description": "Input to `media.materialize`.",
+      "properties": {
+        "digest": {
+          "description": "Which blob, by digest.",
+          "type": "string"
+        },
+        "name": {
+          "description": "A name to prefer for the file, where the caller has one.\n\nAdvisory. The stem is taken from it and everything else is discarded:\nthe extension comes from what the bytes are, and a name is otherwise a\npath traversal waiting to be written somewhere it was not meant to go.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "digest"
+      ],
+      "type": "object"
+    },
+    "MaterializeOut": {
+      "description": "What `media.materialize` reports.",
+      "properties": {
+        "path": {
+          "description": "The absolute path the bytes are now at.",
+          "type": "string"
+        },
+        "size": {
+          "description": "How many bytes were written.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size"
+      ],
+      "type": "object"
+    },
     "MediaDescribeIn": {
       "description": "Input to `media.describe`.",
       "properties": {
@@ -7161,6 +7201,13 @@
     "SessionSummary": {
       "description": "One session, as a client sees it.",
       "properties": {
+        "agent": {
+          "description": "Which agent is running in it, where one is.\n\nThe instance has always known this — a session's kind is fixed at\ncreation — and reported only the title. So every client that needed the\nagent guessed from the title, and a guess is wrong for most of the\ncovered set: each agent has its own attachment syntax, and a reference\nin the wrong one is silently ignored, which looks exactly like an agent\nchoosing not to read the file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "blocked": {
           "description": "How many of those are waiting for a human.",
           "format": "uint",
@@ -10148,6 +10195,28 @@
     },
     {
       "aliases": [],
+      "doc": "Under omt's managed root, never inside the workspace: an attachment written into the repository is an unreviewed file from a phone sitting in somebody's working tree.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "media",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "media.materialize",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/media/materialize",
+      "since": "0.1.0",
+      "title": "Write a blob to a path",
+      "verb": "materialize"
+    },
+    {
+      "aliases": [],
       "doc": "A tier is never claimed without a positive handshake. `Probably` means a paste that silently does nothing, and no way for the user to tell whether they mis-copied or omt mis-guessed.",
       "effects": [],
       "group": "media",
@@ -12035,6 +12104,12 @@
     },
     "media.list.output": {
       "$ref": "#/$defs/ListOut"
+    },
+    "media.materialize.input": {
+      "$ref": "#/$defs/MaterializeIn"
+    },
+    "media.materialize.output": {
+      "$ref": "#/$defs/MaterializeOut"
     },
     "media.paste_tier.input": {
       "$ref": "#/$defs/TierIn"

@@ -6,6 +6,19 @@ import { defineConfig, devices } from '@playwright/test'
  * A mocked server would have passed every previous round too: the failures were
  * in what the browser does with a focused element and what the client does with
  * an unrelated store update, and neither involves the server being wrong.
+ *
+ * Start the instance with a **state file of its own**:
+ *
+ *   OMT_STATE_FILE=$(mktemp -d)/state.json omt serve --web 127.0.0.1:7788
+ *   OMT_TOKEN=<the printed invite> npx playwright test
+ *
+ * Not optional. omt restores what was open when it last stopped, and a
+ * restored session is an orphan with no process behind it. On a machine that
+ * has run omt before, the roster's first row is a corpse — and these tests
+ * open the first row. That hid a real product gap (nothing offers to restart
+ * or close an orphan) for as long as the suite was green, and it made the
+ * empty-roster path unreachable, so six call sites went on tapping a button
+ * that had been removed.
  */
 export default defineConfig({
   testDir: './e2e',

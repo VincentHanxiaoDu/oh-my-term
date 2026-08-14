@@ -73,9 +73,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     first_run_summary();
 
     let mut instance = Instance::new();
-    let cwd = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| ".".to_owned());
+    let cwd = crate::state::canonical_root(
+        &std::env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| ".".to_owned()),
+    );
     let workspace = instance
         .open_workspace(&cwd)
         .context("opening a workspace")?;

@@ -46,10 +46,26 @@ pub enum WorktreeError {
         path: String,
     },
     /// It has changes that removing would discard.
-    #[error("`{path}` has uncommitted changes; pass force to remove it anyway")]
+    ///
+    /// The counts are in the message, not only in the refusal. "It has
+    /// uncommitted changes" is a sentence somebody forces past without
+    /// looking, because it is what git says about every worktree they have
+    /// ever removed on purpose; "4 modified, 2 untracked" is a number they can
+    /// recognise as either their own afternoon or nothing they care about.
+    /// That is the whole difference between a confirmation and a formality —
+    /// and a worktree is usually an agent's output, which is unrecoverable.
+    #[error(
+        "`{path}` has uncommitted changes that removing would discard: {modified} modified, {staged} staged, {untracked} untracked. Pass force to remove it anyway."
+    )]
     Dirty {
         /// Which worktree.
         path: String,
+        /// Tracked files changed and not staged.
+        modified: u32,
+        /// Changes staged and not committed.
+        staged: u32,
+        /// Files git is not tracking at all.
+        untracked: u32,
     },
     /// The repository could not be read.
     #[error(transparent)]
@@ -137,10 +153,16 @@ pub fn add(dir: &Path, path: &str, branch: &str) -> Result<Worktree, WorktreeErr
 /// Fails if the worktree has changes and `force` was not given, or if git
 /// refuses.
 pub fn remove(dir: &Path, path: &str, force: bool) -> Result<(), WorktreeError> {
-    if !force && has_changes(Path::new(path)) {
-        return Err(WorktreeError::Dirty {
-            path: path.to_owned(),
-        });
+    if !force {
+        let (modified, staged, untracked) = uncommitted(Path::new(path));
+        if modified + staged + untracked > 0 {
+            return Err(WorktreeError::Dirty {
+                path: path.to_owned(),
+                modified,
+                staged,
+                untracked,
+            });
+        }
     }
     let mut args = vec!["worktree", "remove"];
     if force {
@@ -151,12 +173,14 @@ pub fn remove(dir: &Path, path: &str, force: bool) -> Result<(), WorktreeError> 
     Ok(())
 }
 
-/// Whether a worktree has anything uncommitted.
-fn has_changes(path: &Path) -> bool {
-    // A failure to read is treated as "has changes": refusing to remove
-    // something omt could not inspect is the safe direction, and the caller can
-    // still force it.
-    crate::git::status(path).map_or(true, |s| s.modified > 0 || s.staged > 0 || s.untracked > 0)
+/// What a worktree has uncommitted: modified, staged, untracked.
+///
+/// A failure to read reports one modified file rather than none: refusing to
+/// remove something omt could not inspect is the safe direction, and the
+/// caller can still force it. Reported as counts rather than as a yes/no,
+/// because the refusal has to say what is at stake to be worth reading.
+fn uncommitted(path: &Path) -> (u32, u32, u32) {
+    crate::git::status(path).map_or((1, 0, 0), |s| (s.modified, s.staged, s.untracked))
 }
 
 /// Compare two paths without requiring both to exist.
@@ -329,5 +353,45 @@ mod tests {
             panic!("expected git's own message");
         };
         assert!(!message.is_empty(), "git's message was thrown away");
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod what_a_refusal_says {
+    use super::*;
+
+    #[test]
+    fn a_refusal_names_what_would_be_lost() {
+        // "It has uncommitted changes" is what git says about every worktree
+        // anybody has ever removed on purpose, so it is a sentence people
+        // force past. A worktree is usually an agent's output and removing it
+        // is unrecoverable, which makes the counts the whole point.
+        let refusal = WorktreeError::Dirty {
+            path: "/w/feature".to_owned(),
+            modified: 4,
+            staged: 1,
+            untracked: 12,
+        };
+        let said = refusal.to_string();
+        assert!(said.contains("/w/feature"), "{said}");
+        assert!(said.contains("4 modified"), "{said}");
+        assert!(said.contains("1 staged"), "{said}");
+        assert!(said.contains("12 untracked"), "{said}");
+        // And how to proceed anyway, in the same breath. A refusal with no way
+        // past it is one somebody works around outside omt.
+        assert!(said.to_lowercase().contains("force"), "{said}");
+    }
+
+    #[test]
+    fn a_worktree_that_cannot_be_read_is_treated_as_dirty() {
+        // The safe direction. Refusing to remove something omt could not
+        // inspect costs one forced call; the other way costs the work.
+        let (modified, staged, untracked) = uncommitted(Path::new("/no/such/worktree"));
+        assert!(modified + staged + untracked > 0);
     }
 }

@@ -33,6 +33,13 @@ export interface SessionSummary {
    * client that has to ask separately gets both wrong until it has asked. */
   threads?: number
   blocked?: number
+  /** Which agent is running in it, where one is.
+   *
+   * From the instance, which has known it since the session was created.
+   * A client that guesses from the title gets it wrong for most of the
+   * covered set, and an attachment reference in the wrong agent's syntax is
+   * silently ignored. */
+  agent?: string
 }
 
 /** One entry in a file listing. */
@@ -516,6 +523,12 @@ export const HANDLERS = {
 
   'media.put': (request: RequestId, content: string, origin: string) =>
     call(request, 'media.put', { content, origin }),
+
+  'media.materialize': (request: RequestId, digest: string, name?: string) =>
+    call(request, 'media.materialize', {
+      digest,
+      ...(name === undefined ? {} : { name }),
+    }),
 
   'media.get': (request: RequestId, digest: string) =>
     call(request, 'media.get', { digest }),

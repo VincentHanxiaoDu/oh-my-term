@@ -351,3 +351,62 @@ mod provider_tests {
         assert_eq!(set.all().len(), 2);
     }
 }
+
+/// The path a workspace is identified by.
+///
+/// A workspace's id is a hash of its root, so two spellings of one directory
+/// are two workspaces holding the same files — and on macOS the commonest
+/// directory of all has two spellings, because `/tmp` is a symlink to
+/// `/private/tmp`. The roster listed both, each offering its own Files and
+/// Changes over identical contents, and nothing on the screen said they were
+/// the same place.
+///
+/// The lower layers cannot do this: `omt-session` is state with no filesystem
+/// under it by design, and resolving a symlink means asking the disk. So it
+/// happens here, at every edge where a path first arrives.
+///
+/// A path that cannot be resolved — it does not exist yet, or is not readable
+/// — is passed through unchanged rather than rejected. Whether a workspace may
+/// be opened there is a question for the code that opens it, which can say so;
+/// this only decides what to call the place.
+pub fn canonical_root(path: &str) -> String {
+    std::fs::canonicalize(path).map_or_else(
+        |_| path.to_owned(),
+        |resolved| resolved.display().to_string(),
+    )
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod canonical_root_tests {
+    use super::canonical_root;
+
+    #[test]
+    fn two_spellings_of_one_directory_agree() {
+        // The bug as it appeared: `/tmp` and `/private/tmp` are one place on
+        // macOS, and the roster showed two projects.
+        let a = canonical_root("/tmp");
+        let b = canonical_root(&format!("{a}/.."));
+        assert_eq!(canonical_root(&a), a);
+        assert_eq!(b, canonical_root(&b));
+    }
+
+    #[test]
+    fn keeps_a_path_that_is_not_there() {
+        // Not this function's refusal to make. The caller can say what is
+        // wrong with the path; all this knows is that it cannot shorten it.
+        let missing = "/no/such/directory/anywhere";
+        assert_eq!(canonical_root(missing), missing);
+    }
+
+    #[test]
+    fn resolves_a_relative_path_to_somewhere_absolute() {
+        // A relative root would name a different directory for every process
+        // that opened it.
+        assert!(canonical_root(".").starts_with('/'));
+    }
+}

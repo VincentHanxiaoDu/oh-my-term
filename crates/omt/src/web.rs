@@ -65,7 +65,7 @@ pub fn serve_state(bind: &str, tls: Option<omt_server::TlsFiles>, state: State) 
     // no workspace gives it a session-creation form it cannot fill in — and the
     // local `omt` already treats the working directory as the obvious answer.
     if let (Ok(cwd), Ok(mut instance)) = (std::env::current_dir(), state.lock()) {
-        let _ = instance.open_workspace(&cwd.display().to_string());
+        let _ = instance.open_workspace(&crate::state::canonical_root(&cwd.display().to_string()));
     }
 
     let mut credentials = CredentialStore::new();

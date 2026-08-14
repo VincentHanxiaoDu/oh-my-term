@@ -793,6 +793,19 @@
       "used"
     ]
   },
+  "media.materialize": {
+    "required_input": [
+      "digest"
+    ],
+    "input": [
+      "digest",
+      "name"
+    ],
+    "output": [
+      "path",
+      "size"
+    ]
+  },
   "media.paste_tier": {
     "required_input": [],
     "input": [

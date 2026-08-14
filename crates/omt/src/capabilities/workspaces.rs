@@ -134,10 +134,14 @@ impl CapabilityHandler<WorkspaceOpen> for WorkspaceOpenHandler {
         input: WorkspaceOpenIn,
     ) -> Result<WorkspaceOpenOut, CapabilityError> {
         let mut instance = self.0.lock()?;
-        let existing = WorkspaceId::from_canonical_path(&input.root);
+        // The parameter is documented as canonical and callers send whatever
+        // they have. `/tmp` and `/private/tmp` are one directory with two
+        // names, and taking both at their word opened it twice.
+        let root = crate::state::canonical_root(&input.root);
+        let existing = WorkspaceId::from_canonical_path(&root);
         let already_open = instance.workspace_exists(existing);
         let id = instance
-            .open_workspace(&input.root)
+            .open_workspace(&root)
             .map_err(|e| CapabilityError::internal(e.to_string()))?;
         Ok(WorkspaceOpenOut {
             id: id.to_wire(),
@@ -181,6 +185,16 @@ pub struct SessionSummary {
     pub threads: usize,
     /// How many of those are waiting for a human.
     pub blocked: usize,
+    /// Which agent is running in it, where one is.
+    ///
+    /// The instance has always known this — a session's kind is fixed at
+    /// creation — and reported only the title. So every client that needed the
+    /// agent guessed from the title, and a guess is wrong for most of the
+    /// covered set: each agent has its own attachment syntax, and a reference
+    /// in the wrong one is silently ignored, which looks exactly like an agent
+    /// choosing not to read the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
 }
 
 /// What `session.list` reports.
@@ -244,6 +258,12 @@ impl CapabilityHandler<SessionList> for SessionListHandler {
                         cwd: s.cwd.clone(),
                         threads: roster.map_or(0, omt_agent::ThreadRoster::len),
                         blocked: roster.map_or(0, |r| r.awaiting_human().len()),
+                        agent: match &s.kind {
+                            omt_session::SessionKind::Agent { kind } => {
+                                Some(format!("{kind:?}").to_lowercase())
+                            }
+                            _ => None,
+                        },
                     }
                 })
                 .collect(),
@@ -602,6 +622,25 @@ capability! {
     },
 }
 
+/// Turn a git failure into a capability error.
+///
+/// "This directory is not a repository" is not a failure, it is a fact about
+/// the place — and mapped to a generic `precondition_failed` it reached the
+/// phone as an alarm-red "That did not work" for a directory nobody expected
+/// to have a history. `unsupported` is the code for a thing that cannot be
+/// done here rather than a thing that went wrong, which lets a client render
+/// it as an empty state.
+fn git_failure(e: &omt_workspace_fs::GitError) -> CapabilityError {
+    match e {
+        omt_workspace_fs::GitError::NotARepository(_) => {
+            CapabilityError::unsupported(e.to_string())
+        }
+        omt_workspace_fs::GitError::Unavailable(_) => {
+            CapabilityError::precondition_failed(e.to_string())
+        }
+    }
+}
+
 pub(crate) struct GitStatusHandler(pub(crate) State);
 
 impl CapabilityHandler<GitStatus> for GitStatusHandler {
@@ -619,8 +658,8 @@ impl CapabilityHandler<GitStatus> for GitStatusHandler {
                 .workspace_root(id)
                 .ok_or_else(|| CapabilityError::not_found("no such workspace"))?
         };
-        let status = omt_workspace_fs::status(std::path::Path::new(&root))
-            .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
+        let status =
+            omt_workspace_fs::status(std::path::Path::new(&root)).map_err(|e| git_failure(&e))?;
         Ok(GitStatusOut {
             branch: status.branch,
             ahead: status.ahead,
@@ -711,7 +750,7 @@ impl CapabilityHandler<GitDiff> for GitDiffHandler {
             omt_workspace_fs::DiffTarget::Unstaged
         };
         let files = omt_workspace_fs::changed_files(std::path::Path::new(&root), target, None)
-            .map_err(|e| CapabilityError::precondition_failed(e.to_string()))?;
+            .map_err(|e| git_failure(&e))?;
         Ok(GitDiffOut {
             files: files
                 .into_iter()

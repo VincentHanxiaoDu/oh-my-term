@@ -190,3 +190,48 @@ words.
 
 - **WHEN** text is truncated or a bar is drawn to a width
 - **THEN** the measurement counts display columns, where a CJK glyph is two
+
+### Requirement: An attachment lands outside the workspace
+
+The client SHALL transfer an attachment through `media.put` and `media.materialize`,
+and SHALL NOT write it into the workspace.
+
+#### Scenario: A photo sent from a phone
+
+- **WHEN** somebody attaches a photo to a session
+- **THEN** the bytes are stored under their digest and written out under omt's
+  managed root
+- **AND** the repository's working tree is unchanged
+
+#### Scenario: A file already in the workspace
+
+- **WHEN** somebody attaches a file the instance already has
+- **THEN** it is referenced by path and nothing is transferred
+
+#### Scenario: The reference syntax comes from the instance
+
+- **WHEN** the client tells an agent about a path
+- **THEN** it asks `media.attach` which syntax that agent wants, and falls back
+  to a bare path only when the instance cannot say
+
+### Requirement: A refused worktree removal says what it would cost
+
+The instance SHALL report how many files are modified, staged and untracked
+when it refuses to remove a worktree, and the client SHALL render that count
+before offering to force it.
+
+#### Scenario: Removing a worktree an agent has been working in
+
+- **WHEN** somebody asks to remove a worktree with uncommitted changes
+- **THEN** the refusal names the counts and the path
+- **AND** the option to remove it anyway is offered against those counts rather
+  than against a generic warning
+
+### Requirement: One directory is one project
+
+The instance SHALL canonicalize a workspace root before deriving its id.
+
+#### Scenario: A directory reached through a symlink
+
+- **WHEN** a workspace is opened at `/tmp` and again at `/private/tmp`
+- **THEN** both resolve to one workspace, and the project list shows it once

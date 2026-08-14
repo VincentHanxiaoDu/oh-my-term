@@ -87,3 +87,38 @@ whatever the screens did. The three that carry a decision — the project picker
 refusing a path, an attachment failing without eating the text, and a CJK
 string truncating to the right width — get unit tests as well, since those are
 properties rather than renderings.
+
+## What the implementation forced back into the documents
+
+Three corrections, each recorded here and applied where it belonged.
+
+**08 §6.3's capability table named a surface that does not exist.** It lists
+`media.image.upload`, `media.picker.open` and `media.blob.begin`/`.commit`/
+`.abort`. The catalog has `media.put`, `media.get`, `media.attach`,
+`media.list` and `media.clipboard`. The client had been quietly using
+`fs.write` instead — which is not a smaller version of the documented design
+but a different one, because it put an unreviewed file from a phone into the
+repository root, where it shows up in `git status` and eventually in a commit.
+09 §2 already says the managed root. So the change added `media.materialize`,
+which writes a stored blob out under omt's own root and answers with the path,
+and 08 §6.3 now carries a table mapping what it wrote against what is built.
+The sheet's rows are unchanged: which capability sits behind a row is the
+row's business.
+
+**`session.list` knew which agent was running and did not say.** A session's
+kind is fixed at creation and `SessionKind::Agent { kind }` was right there;
+the summary reported only the title. Every client that needed the agent
+therefore guessed from the title, and the guess is wrong for most of the
+covered set — each agent has its own attachment syntax, and a reference in the
+wrong one is silently ignored, which is indistinguishable from an agent
+choosing not to read the file. `agent` is now a field, and `media.attach`
+answers the syntax question from the instance's own per-adapter table rather
+than from a regex in the client.
+
+**A workspace id is a hash of a path that nothing canonicalized.** The
+`workspace.open` input is documented as canonical and callers send what they
+have. On macOS `/tmp` is a symlink to `/private/tmp`, so the project list
+showed the same directory twice, each with its own Files and Changes over
+identical contents. Canonicalization happens at the three edges in `omt` where
+a path first arrives; it cannot happen in `omt-session`, which is state with
+no filesystem under it by design.

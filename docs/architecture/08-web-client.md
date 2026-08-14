@@ -1553,6 +1553,21 @@ through the paste event, because §8.4's rule is that no capability is reachable
 by gesture alone — a keyboard-less phone user must have a control, and the parity
 test cannot drive a `paste` event through the real UI.
 
+**What is built, as of `complete-the-web-surfaces`.** The table above names the
+capabilities this section was written against; the catalog has a smaller set,
+and the client uses that set rather than a name nothing answers to:
+
+| Written above | Built | What differs |
+|---|---|---|
+| `media.blob.begin` / `.commit` / `.abort` | `media.put` | One call, content-addressed. Chunking and `resume_from` are 09's and are not built, so a large attachment is one request. |
+| `media.image.upload` | `media.put` + `media.materialize` | `media.put` holds bytes under a digest; `media.materialize` writes them out where an agent can read them — under omt's managed root, per 09 §2, never inside the workspace. |
+| `media.picker.open` | — | The workspace-file row references a path the instance already has rather than opening a picker capability: nothing is transferred, so there is nothing to pick *into*. |
+| (unwritten) | `media.attach` | Which reference syntax this agent wants. The per-agent table is the instance's, because a client that guesses gets it wrong for most of the covered set and a wrong reference is silently ignored. |
+
+The rows in §6.3.1's sheet are unchanged: what a person taps is what this
+section says, and the capability behind a row is an implementation detail of
+the row.
+
 #### 6.3.1 The attach control
 
 A single `+` button on the **left of the text field**, in the bottom bar: mic on

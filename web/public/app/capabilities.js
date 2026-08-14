@@ -178,6 +178,10 @@ export const HANDLERS = {
     // splitting them invites a client that offers only the nuclear option.
     'onboarding.dismiss_hints': (request, hint) => call(request, 'onboarding.dismiss_hints', hint === undefined ? {} : { hint }),
     'media.put': (request, content, origin) => call(request, 'media.put', { content, origin }),
+    'media.materialize': (request, digest, name) => call(request, 'media.materialize', {
+        digest,
+        ...(name === undefined ? {} : { name }),
+    }),
     'media.get': (request, digest) => call(request, 'media.get', { digest }),
     'device.rename': (request, device, label) => call(request, 'device.rename', { device, label }),
     'device.revoke_all': (request, keep) => call(request, 'device.revoke_all', { keep }),

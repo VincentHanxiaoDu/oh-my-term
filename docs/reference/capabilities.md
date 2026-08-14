@@ -72,6 +72,7 @@ vanishing.
 | `media.describe` | query | viewer | What a blob is, from its bytes rather than from a filename somebody supplied. A name is a claim; the bytes are the evidence, and writing an executable as a `.png` is what trusting the claim allows. |
 | `media.get` | query | viewer | By digest, which is the only name a blob has. There is no path to traverse because there is no path. |
 | `media.list` | query | operator | A landing zone nobody can see the contents of is one that has quietly become the place things live. |
+| `media.materialize` | command | operator | Under omt's managed root, never inside the workspace: an attachment written into the repository is an unreviewed file from a phone sitting in somebody's working tree. |
 | `media.paste_tier` | query | viewer | A tier is never claimed without a positive handshake. `Probably` means a paste that silently does nothing, and no way for the user to tell whether they mis-copied or omt mis-guessed. |
 | `media.put` | command | operator | The type is sniffed here and never taken from the sender. A sender that names its own content type decides how the receiver treats it. |
 | `migrate.tmux_preview` | query | operator | Every directive comes back classified, including the ones omt cannot map. A migration that silently drops a third of somebody's bindings fails without ever reporting an error. |
@@ -150,7 +151,7 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-140 capabilities.
+141 capabilities.
 
 ## Parity exemptions
 

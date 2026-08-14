@@ -244,10 +244,16 @@ html, body {
 /* The client was a phone laid out once and stretched. At 1440px that put a
    session name at one edge of the screen and its chevron at the other, with
    1300px of nothing between them — the eye cannot join those, so the list
-   stopped being a list. Everything is measured now, and centred. */
-.body > * {
+   stopped being a list.
+
+   The measure is on the *container*, not on each child. It was on the children
+   via margin-inline: auto, and .tap sets margin: 0 — so every row was
+   measured and then pinned to the left edge, with the header centred above it.
+   A container cannot be overridden by the thing inside it. */
+.body {
   max-width: var(--measure);
   margin-inline: auto;
+  width: 100%;
 }
 
 .bar {
@@ -524,6 +530,22 @@ html, body {
   border-bottom-right-radius: var(--radius-lg);
 }
 .tap { background: var(--bg-elevated); }
+
+/* A row that belongs to the one above it.
+
+   An indent, not two leading spaces in the title: HTML collapses those, so a
+   list of four projects with two sub-rows each rendered as twelve unrelated
+   things at the same level. The recess is what says "inside" — the indent
+   alone is arguable at a glance, and a phone is all glances. */
+.tap.sub {
+  padding-left: calc(var(--gutter) + var(--space-4));
+  background: var(--bg-sunken);
+}
+.tap.sub .gutter { display: none; }
+.tap.sub .title {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
 
 /* A pointer exists here and the design did not know it: this ran in a browser
    with no hover state at all, so a desktop user had no way to tell what was a

@@ -73,10 +73,36 @@ for (const [name, device] of shots) {
     },
     { token: credential, origin: url },
   )
-  await page.goto(url)
+  await page.goto(url, { waitUntil: 'commit' })
   await page.waitForTimeout(2500)
-  await page.screenshot({ path: `${outDir}/omt-${name}.png` })
-  console.log(`${outDir}/omt-${name}.png`)
+  await page.screenshot({ path: `${outDir}/omt-${name}-roster.png` })
+
+  // Every screen this client has a route to, so a design pass looks at all of
+  // them rather than at the one somebody remembered. A screen that cannot be
+  // reached is skipped rather than failing the run: this is a review tool, and
+  // a picture of four screens is worth more than an error about the fifth.
+  for (const [screen, open] of [
+    ['projects', async () => {
+      await page.getByRole('button', { name: /Open a project|打开项目/ }).click()
+    }],
+    ['files', async () => {
+      await page.getByRole('button', { name: /— (Files|文件)/ }).first().click()
+    }],
+    ['changes', async () => {
+      await page.goBack()
+      await page.getByRole('button', { name: /— (Changes|改动)/ }).first().click()
+    }],
+  ]) {
+    try {
+      await open()
+      await page.waitForTimeout(1600)
+      await page.screenshot({ path: `${outDir}/omt-${name}-${screen}.png` })
+      console.log(`${outDir}/omt-${name}-${screen}.png`)
+    } catch {
+      console.log(`${outDir}/omt-${name}-${screen}.png — not reachable, skipped`)
+    }
+  }
+  console.log(`${outDir}/omt-${name}-roster.png`)
   await context.close()
 }
 await browser.close()

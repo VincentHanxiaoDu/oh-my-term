@@ -1,3 +1,6 @@
+import { entryTitle, bytes, row } from '../src/view.js'
+import { isUnsupported } from '../src/store.js'
+import { en, zhHans } from '../src/messages.js'
 import { describe, expect, it } from 'vitest'
 import {
   DEAD_ZONE,
@@ -473,5 +476,51 @@ describe('what a finger means', () => {
   it('measures two fingers and ignores one', () => {
     expect(spanOf([{ clientX: 0, clientY: 0 }, { clientX: 3, clientY: 4 }])).toBe(5)
     expect(spanOf([{ clientX: 0, clientY: 0 }])).toBe(0)
+  })
+})
+
+describe('a place with no history is not a failure', () => {
+  it('tells an unsupported answer apart from a broken one', () => {
+    // The defect this exists for: `/tmp` is not a git repository, and the
+    // changes screen said "That did not work" in alarm red over an empty
+    // screen. Nothing went wrong. Nothing was ever going to be there.
+    expect(isUnsupported({ code: 'unsupported', message: 'not inside a git repository' })).toBe(
+      true,
+    )
+    expect(isUnsupported({ code: 'precondition_failed', message: 'could not run git' })).toBe(false)
+    expect(isUnsupported(new Error('the connection dropped'))).toBe(false)
+    expect(isUnsupported(null)).toBe(false)
+    expect(isUnsupported(undefined)).toBe(false)
+  })
+
+  it('has something to say about it, in both languages', () => {
+    // An empty state with no sentence in it is a blank screen, which is the
+    // other way to say nothing.
+    expect(en['changes.noRepository']).toBeTruthy()
+    expect(zhHans['changes.noRepository']).toBeTruthy()
+    expect(zhHans['changes.noRepository']).not.toBe(en['changes.noRepository'])
+  })
+})
+
+describe('a file listing you can read without tapping', () => {
+  it('marks a directory the way a terminal does', () => {
+    // The listing was a column of identical rows, and the only way to find out
+    // which were directories was to tap one — because the client read a field
+    // called `directory` and the instance sends `is_dir`, so every entry read
+    // as a file.
+    expect(entryTitle({ name: 'crates', is_dir: true })).toBe('crates/')
+    expect(entryTitle({ name: 'README.md', is_dir: false })).toBe('README.md')
+    // And never a second slash on something that already ends in one.
+    expect(entryTitle({ name: 'README.md', is_dir: false })).not.toContain('/')
+  })
+
+  it('says a size in a unit somebody reads rather than counts', () => {
+    expect(bytes(0)).toBe('0 B')
+    expect(bytes(512)).toBe('512 B')
+    expect(bytes(1000)).toBe('1.0 kB')
+    expect(bytes(1_048_576)).toBe('1.0 MB')
+    expect(bytes(9_500_000_000)).toBe('9.5 GB')
+    // Never a bare number with no unit, at any magnitude.
+    expect(bytes(10 ** 18)).toMatch(/[A-Za-z]B$/)
   })
 })

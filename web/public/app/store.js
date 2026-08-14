@@ -12,6 +12,20 @@ import { isAnswerable, isTerminal } from './protocol.js';
 import { InstanceClient } from './session.js';
 import { grid, summarize } from './threads.js';
 /**
+ * Whether a failure means "not here" rather than "went wrong".
+ *
+ * `unsupported` is what the instance answers when a thing cannot be done in
+ * this place at all — a workspace with no git history, a capability an older
+ * instance does not have. Rendering those as errors puts an alarm on a screen
+ * whose honest content is one calm sentence, and an alarm somebody learns to
+ * ignore is worse than none.
+ */
+export function isUnsupported(failure) {
+    return (typeof failure === 'object' &&
+        failure !== null &&
+        failure.code === 'unsupported');
+}
+/**
  * The client's state, and the only way to change it.
  */
 /**

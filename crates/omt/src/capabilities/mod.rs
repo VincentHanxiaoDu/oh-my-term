@@ -301,6 +301,7 @@ pub fn registry_full(
     r.register::<crate::media::MediaList, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::MediaClipboard, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::MediaAttach, _>(crate::media::MediaHandler(blobs.clone()))?;
+    r.register::<crate::media::MediaMaterialize, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::PasteTier, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::SshPlan, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenResolve, _>(crate::media::MediaHandler(blobs.clone()))?;

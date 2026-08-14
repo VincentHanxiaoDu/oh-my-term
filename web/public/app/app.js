@@ -12,10 +12,11 @@
  * buzzed, and a terminal that opens to a wall of text has already failed that.
  */
 import { KEY_BAR, KEY_BAR_SECONDARY, applyLatch, confirmation, riskOf } from './touch.js';
+import { isUnsupported } from './store.js';
 import { changed, paint } from './terminal.js';
 import { keyToBytes } from './touch.js';
 import { Navigator, hasBack, titleOf } from './nav.js';
-import { appBar, decodeBase64, describe, el, empty, renderState, row, stateOf } from './view.js';
+import { appBar, bytes, decodeBase64, describe, el, empty, entryTitle, renderState, row, stateOf, } from './view.js';
 import { t } from './messages.js';
 import { Attachments } from './staging.js';
 import { choose, current, forget, list, readInvite, remember } from './instances.js';
@@ -372,6 +373,16 @@ export class App {
     /** Go somewhere. */
     go(route) {
         this.#nav.push(route);
+    }
+    /**
+     * Go somewhere without leaving a step behind.
+     *
+     * For a screen that has finished its job the moment it is answered — the
+     * project picker, which exists to choose a workspace and has nothing to
+     * offer once one is chosen.
+     */
+    #replace(route) {
+        this.#nav.replace(route);
     }
     /** Which modifier is armed, for the key bar to show. */
     get latched() {
@@ -847,10 +858,6 @@ export class App {
      * and it is never what a failure is allowed to cost.
      */
     async attach(session, file) {
-        const workspace = this.#store.state.sessions.find((s) => s.id === session)?.workspace;
-        if (workspace === undefined) {
-            return;
-        }
         const staged = this.#staged.begin(file.name);
         this.render();
         try {
@@ -859,17 +866,71 @@ export class App {
             for (const byte of bytes) {
                 binary += String.fromCharCode(byte);
             }
-            await this.#store.call('fs.write', workspace, file.name, btoa(binary), 0, 1);
+            // `media.put`, not `fs.write`. Three differences, each of which was a
+            // real defect while this went through the workspace:
+            //
+            //  - It landed an unreviewed file from a phone in the repository root,
+            //    where it turned up in `git status` and eventually in a commit.
+            //    09 §2 says the managed root, and every agent in the covered set
+            //    expands an absolute path outside the workspace.
+            //  - The type came from the sender's filename. It is sniffed here.
+            //  - The call is content-addressed, so a retry after a dropped
+            //    acknowledgement lands on the same digest instead of a second file.
+            const put = (await this.#store.call('media.put', btoa(binary), 'web_upload'));
+            const where = (await this.#store.call('media.materialize', put.digest, file.name));
             this.#staged.succeed(staged);
             this.render();
-            // Named in the message rather than attached invisibly: an agent reads a
-            // path, and a file it was never told about is a file it never opens.
-            void this.type(`${this.#reference(session, file.name)}\r`);
+            await this.#refer(session, where.path);
         }
         catch (e) {
             this.#staged.fail(staged, e instanceof Error ? e.message : String(e));
             this.render();
         }
+    }
+    /**
+     * A file that is already in the workspace, referenced rather than sent.
+     *
+     * Uploading it would be a round trip to fetch bytes the instance is sitting
+     * on, a second copy under the managed root, and a path the agent has not
+     * seen before for a file it could already open. What the agent needs is the
+     * path it already has.
+     */
+    async attachWorkspaceFile(session, path) {
+        const workspace = this.#store.state.sessions.find((s) => s.id === session)?.workspace;
+        if (workspace === undefined) {
+            return;
+        }
+        try {
+            const root = this.#store.state.workspaces.find((w) => w.id === workspace)?.root;
+            await this.#refer(session, root === undefined ? path : `${root}/${path}`);
+        }
+        catch (e) {
+            this.fail('transcript', e);
+        }
+    }
+    /**
+     * Tell the agent about a path, in that agent's own syntax.
+     *
+     * Asked of the instance rather than decided here: `media.attach` holds the
+     * per-adapter table, which was compiled from each agent's own interface, and
+     * a client that guessed would guess wrong for most of them — which looks
+     * exactly like an agent choosing not to read the file.
+     */
+    async #refer(session, path) {
+        const agent = this.#store.state.sessions.find((s) => s.id === session)?.agent ?? '';
+        let reference;
+        try {
+            const out = (await this.#store.call('media.attach', agent, path));
+            reference = out.reference;
+        }
+        catch {
+            // An older instance, or one that does not know this agent. A bare path
+            // is what the fallback would have been anyway.
+            reference = path;
+        }
+        // Named in the message rather than attached invisibly: an agent reads a
+        // path, and a file it was never told about is a file it never opens.
+        void this.type(`${reference}\r`);
     }
     /**
      * The clipboard, as an attachment.
@@ -897,18 +958,6 @@ export class App {
         catch (e) {
             this.fail('transcript', e);
         }
-    }
-    /**
-     * How this agent wants to be handed a file that is already on disk.
-     *
-     * Each agent has its own mention syntax and `omt-agent-adapters` knows all
-     * of them, but the client does not have that table — so this covers the one
-     * distinction that matters on the wire and falls back to a bare path, which
-     * every agent reads.
-     */
-    #reference(session, name) {
-        const detected = this.#store.state.sessions.find((s) => s.id === session)?.title ?? '';
-        return /claude|opencode/i.test(detected) ? `@${name}` : `(attached ${name})`;
     }
     /** Hand a dictated chunk to the instance's buffer. */
     async dictated(session, text, final) {
@@ -1065,11 +1114,13 @@ export class App {
             // screen: they belong to it, and a separate list of workspaces to
             // browse the files of would be the same list twice.
             row({
-                title: `  ${t('files.title')}`,
+                title: t('files.title'),
+                nested: true,
                 label: `${workspace.name} — ${t('files.title')}`,
                 onTap: () => this.go({ screen: 'files', workspace: workspace.id, path: '' }),
             }), row({
-                title: `  ${t('changes.title')}`,
+                title: t('changes.title'),
+                nested: true,
                 label: `${workspace.name} — ${t('changes.title')}`,
                 onTap: () => this.go({ screen: 'changes', workspace: workspace.id }),
             }));
@@ -1084,11 +1135,51 @@ export class App {
                     continue;
                 }
                 body.append(row({
-                    title: `  ${tree.branch}`,
+                    title: tree.branch,
+                    nested: true,
                     meta: tree.path,
                     label: t('projects.openIn', tree.branch),
                     onTap: () => void this.newSession(tree.workspace),
                 }));
+                // Removal, and what a refusal costs.
+                //
+                // Two taps and never one, because a worktree is usually where an
+                // agent put an afternoon's work and `git worktree remove` does not
+                // go to a trash. The first tap asks the instance, which refuses while
+                // there is anything uncommitted and says how much — and *that* is
+                // what the second tap is offered against, so the choice is made
+                // against a number rather than against a generic warning.
+                const refusal = this.#worktreeRefusal[tree.path];
+                if (refusal === undefined) {
+                    body.append(row({
+                        title: t('worktree.remove'),
+                        nested: true,
+                        label: `${tree.branch} — ${t('worktree.remove')}`,
+                        leadsSomewhere: false,
+                        onTap: () => void this.removeWorktree(workspace.id, tree.path, false),
+                    }));
+                }
+                else {
+                    const notice = el('p', 'notice', refusal);
+                    notice.setAttribute('role', 'alert');
+                    body.append(notice, row({
+                        title: t('worktree.removeAnyway'),
+                        nested: true,
+                        tone: 'needs-you',
+                        label: `${tree.branch} — ${t('worktree.removeAnyway')}`,
+                        leadsSomewhere: false,
+                        onTap: () => void this.removeWorktree(workspace.id, tree.path, true),
+                    }), row({
+                        title: t('worktree.keep'),
+                        nested: true,
+                        label: `${tree.branch} — ${t('worktree.keep')}`,
+                        leadsSomewhere: false,
+                        onTap: () => {
+                            delete this.#worktreeRefusal[tree.path];
+                            this.render();
+                        },
+                    }));
+                }
             }
         }
         // Said, rather than left to be discovered by looking for a control that is
@@ -1100,6 +1191,30 @@ export class App {
     }
     /** Worktrees per workspace, loaded once a project list is on screen. */
     #worktrees = {};
+    /** Why the instance refused to remove a worktree, keyed by its path. */
+    #worktreeRefusal = {};
+    /**
+     * Remove a worktree, or find out what that would cost.
+     *
+     * The refusal is rendered rather than logged: it names how many files are
+     * modified, staged and untracked, and those numbers are the only reason
+     * anybody would stop. A confirmation that says "are you sure" says nothing,
+     * and is answered yes.
+     */
+    async removeWorktree(workspace, path, force) {
+        try {
+            await this.#store.call('worktree.remove', workspace, path, force);
+            delete this.#worktreeRefusal[path];
+            // Ask again rather than splice: `remaining` is the instance's count and
+            // the list is the instance's list.
+            this.#asked.delete(`worktrees:${workspace}`);
+            this.render();
+        }
+        catch (e) {
+            this.#worktreeRefusal[path] = e instanceof Error ? e.message : String(e);
+            this.render();
+        }
+    }
     /** Whether a workspace's root is gone. Checked, not assumed. */
     #gone = {};
     async #loadWorktrees() {
@@ -1161,7 +1276,8 @@ export class App {
         });
         body.append(renderState(state, (entries) => {
             return entries.map((entry) => row({
-                title: entry.name,
+                title: entryTitle(entry),
+                ...(entry.is_dir || entry.size === undefined ? {} : { meta: bytes(entry.size) }),
                 label: entry.name,
                 leadsSomewhere: true,
                 onTap: () => this.go({
@@ -1272,7 +1388,9 @@ export class App {
         const body = el('div', 'body');
         const state = stateOf(this.#changes[workspace], this.#errors['changes'], {
             headline: t('changes.title'),
-            detail: t('changes.clean'),
+            detail: this.#noRepository.has(workspace)
+                ? t('changes.noRepository')
+                : t('changes.clean'),
         });
         body.append(renderState(state, (files) => {
             return files.map((file) => row({
@@ -1289,6 +1407,8 @@ export class App {
         void this.#loadChanges(workspace);
     }
     #changes = {};
+    /** Workspaces git has no history for, which is not an error. */
+    #noRepository = new Set();
     async #loadChanges(workspace) {
         if (!this.#ask(`changes:${workspace}`)) {
             return;
@@ -1299,6 +1419,17 @@ export class App {
             this.render();
         }
         catch (e) {
+            // A directory that is not a repository is not a failure — it is a fact
+            // about the place, and it reached the phone as an alarm-red "That did
+            // not work" over an otherwise empty screen. The instance says
+            // `unsupported` for what cannot be done here, as against
+            // `precondition_failed` for what went wrong.
+            if (isUnsupported(e)) {
+                this.#changes[workspace] = [];
+                this.#noRepository.add(workspace);
+                this.render();
+                return;
+            }
             this.fail('changes', e);
         }
     }
@@ -1651,7 +1782,13 @@ export class App {
             await this.#store.refresh();
             // Straight to the terminal, because the reason somebody pressed this is
             // that they want to type.
-            this.go({ screen: 'terminal', session: out.session });
+            //
+            // Replacing rather than pushing: the picker is a chooser, and once it
+            // has been answered it is not somewhere anybody wants to go back to.
+            // Pushed, back from a new session landed on the picker again, and the
+            // way out of it was to press back a second time — which on a phone reads
+            // as the button not having worked the first time.
+            this.#replace({ screen: 'terminal', session: out.session });
         }
         catch (e) {
             this.fail('roster', e);

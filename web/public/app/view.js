@@ -95,7 +95,7 @@ export function appBar(options) {
 }
 /** A row in a list: a status dot, a label, and a chevron if it leads somewhere. */
 export function row(options) {
-    const button = el('button', 'tap');
+    const button = el('button', options.nested === true ? 'tap sub' : 'tap');
     button.setAttribute('aria-label', options.label);
     const dot = el('span', options.tone ? `dot ${options.tone}` : 'dot');
     dot.setAttribute('aria-hidden', 'true');
@@ -190,4 +190,35 @@ export function decodeBase64(data) {
         bytes[i] = binary.charCodeAt(i);
     }
     return new TextDecoder().decode(bytes);
+}
+/**
+ * What a directory listing calls an entry.
+ *
+ * A trailing slash on a directory, which is what one looks like in every
+ * terminal anybody using this client has ever typed into. Without it a listing
+ * is a column of identical rows and the only way to find out which are
+ * directories is to tap one.
+ */
+export function entryTitle(entry) {
+    return entry.is_dir ? `${entry.name}/` : entry.name;
+}
+/**
+ * A size, in the largest unit that keeps it short.
+ *
+ * `1048576` is a number somebody has to count the digits of; `1.0 MB` is one
+ * they read. Decimal units, because that is what a file manager on the phone
+ * this is held in says, and disagreeing with the device about what a megabyte
+ * is buys nothing.
+ */
+export function bytes(size) {
+    const units = ['B', 'kB', 'MB', 'GB', 'TB'];
+    let value = size;
+    let unit = 0;
+    while (value >= 1000 && unit < units.length - 1) {
+        value /= 1000;
+        unit += 1;
+    }
+    // No decimal on whole bytes: `512 B` and not `512.0 B`.
+    const shown = unit === 0 ? String(Math.round(value)) : value.toFixed(1);
+    return `${shown} ${units[unit] ?? 'B'}`;
 }

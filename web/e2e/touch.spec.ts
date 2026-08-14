@@ -12,6 +12,7 @@
  * cannot make.
  */
 import { devices, expect, test } from '@playwright/test'
+import { createASession, firstShellRow } from './new-session.js'
 
 // The credential the global setup joined with, not the invite: an invite is
 // exchanged once, and every test after the first would be refused.
@@ -26,18 +27,11 @@ const TOKEN = process.env['OMT_CREDENTIAL'] ?? process.env['OMT_TOKEN'] ?? ''
  * on instead of the one it meant to open.
  */
 async function openASession(page: import('@playwright/test').Page): Promise<void> {
-  // A shell, never an agent session: one test attaches an agent, and a session
-  // with an agent in it opens on its conversation rather than its terminal —
-  // correctly, and not what a test about the terminal wants.
-  const rows = page.locator('.body button.tap').filter({ hasNotText: 'codex' })
-  if ((await rows.count()) === 0) {
-    // Creating one goes straight to its terminal, which is the point of the
-    // button — so there is nothing left to tap.
-    await page.getByRole('button', { name: 'New session' }).tap()
-    await expect(page.locator('.terminal-body')).toBeVisible()
+  if ((await firstShellRow(page).count()) === 0) {
+    await createASession(page)
     return
   }
-  await rows.first().tap()
+  await firstShellRow(page).tap()
 }
 
 test.beforeEach(async ({ page }) => {
@@ -101,16 +95,15 @@ test('a keystroke that is refused says so instead of doing nothing', async ({ pa
   // Found by typing into a session another browser was driving: nothing
   // happened, and nothing said why. The refusal was recorded and never
   // rendered, so the terminal looked simply broken.
-  await page.getByRole('button', { name: 'New session' }).tap()
-  await expect(page.locator('.terminal-body')).toBeVisible()
+  await createASession(page)
 
   // A second client, which is what holding the writer token elsewhere means.
   const other = await browser.newContext({ ...devices['iPhone 13'] })
   const second = await other.newPage()
   await second.goto(`/#token=${TOKEN}`)
-  const rows = second.locator('.body button.tap')
-  await expect(rows.first()).toBeVisible()
-  await rows.first().tap()
+  const row = firstShellRow(second)
+  await expect(row).toBeVisible()
+  await row.tap()
   await second.locator('.composer-field').fill('echo second')
   await second.locator('.composer-send').tap()
 
@@ -128,17 +121,15 @@ test('typing works in a session opened from the roster, not only a new one', asy
   // client just created — the writer token is claimed on open for that reason.
   // Two sessions, because with only one the stale epoch happens to be the
   // right one and the bug hides completely.
-  await page.getByRole('button', { name: 'New session' }).tap()
-  await expect(page.locator('.terminal-body')).toBeVisible()
+  await createASession(page)
   await page.getByRole('button', { name: 'Back' }).tap()
-  await page.getByRole('button', { name: 'New session' }).tap()
-  await expect(page.locator('.terminal-body')).toBeVisible()
+  await createASession(page)
   await page.getByRole('button', { name: 'Back' }).tap()
 
   // Now open the *first* one, whose epoch this client is not holding.
-  const rows = page.locator('.body button.tap')
-  await expect(rows.first()).toBeVisible()
-  await rows.first().tap()
+  const row = firstShellRow(page)
+  await expect(row).toBeVisible()
+  await row.tap()
 
   await page.locator('.composer-field').fill('echo from-the-roster')
   await page.locator('.composer-send').tap()

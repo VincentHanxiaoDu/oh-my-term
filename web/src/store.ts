@@ -52,6 +52,23 @@ export interface CallFailure {
   message: string
 }
 
+/**
+ * Whether a failure means "not here" rather than "went wrong".
+ *
+ * `unsupported` is what the instance answers when a thing cannot be done in
+ * this place at all — a workspace with no git history, a capability an older
+ * instance does not have. Rendering those as errors puts an alarm on a screen
+ * whose honest content is one calm sentence, and an alarm somebody learns to
+ * ignore is worse than none.
+ */
+export function isUnsupported(failure: unknown): boolean {
+  return (
+    typeof failure === 'object' &&
+    failure !== null &&
+    (failure as { code?: unknown }).code === 'unsupported'
+  )
+}
+
 /** How the store reaches the server. */
 export interface Sink {
   send(message: ClientMessage): void
