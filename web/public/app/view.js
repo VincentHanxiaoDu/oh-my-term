@@ -158,3 +158,36 @@ export function empty(title, detail) {
     box.append(el('h2', 'empty-title', title), el('p', 'empty-detail', detail));
     return box;
 }
+/**
+ * A setting's value, in one line.
+ *
+ * `String(value)` gives `[object Object]` for a table and `` for an empty
+ * string, both of which read as a bug rather than as a value.
+ */
+export function describe(value) {
+    if (value === null || value === undefined) {
+        return 'unset';
+    }
+    if (typeof value === 'string') {
+        return value === '' ? '(empty)' : value;
+    }
+    if (typeof value === 'object') {
+        return Array.isArray(value) ? `${value.length} items` : 'a table';
+    }
+    return String(value);
+}
+/**
+ * Base64 back to text.
+ *
+ * `atob` gives one byte per character, which is not a string: a UTF-8 file
+ * read that way renders every non-ASCII character as two pieces of mojibake,
+ * and most files in this repository have an em dash in them.
+ */
+export function decodeBase64(data) {
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+}

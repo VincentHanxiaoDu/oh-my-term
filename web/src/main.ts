@@ -222,6 +222,14 @@ async function main(): Promise<void> {
   // has. A web app that ignores it throws them out to the previous website
   // rather than the previous screen.
   window.addEventListener('popstate', (event) => nav.restore(event.state))
+  // And once, now. `popstate` fires when somebody goes back, not when the tab
+  // is reloaded — and a phone reloads a backgrounded tab whenever it feels
+  // like it. Without this the client came back on the roster every time,
+  // which is how somebody loses the diff they had open three taps down.
+  // `?.` for the same reason the language lookup has one: this runs before
+  // anything renders, and an environment without `window.history` must not
+  // take the client down over where to land.
+  nav.restore(window.history?.state)
 
   // The grid follows the viewport, not the other way round. A phone rotating
   // or a keyboard opening halves the usable height, and a terminal that keeps

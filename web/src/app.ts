@@ -20,7 +20,7 @@ import { keyToBytes } from './touch.js'
 import type { Snapshot } from './terminal.js'
 import { Navigator, hasBack, titleOf } from './nav.js'
 import type { Route } from './nav.js'
-import { appBar, el, empty, renderState, row, stateOf } from './view.js'
+import { appBar, decodeBase64, describe, el, empty, renderState, row, stateOf } from './view.js'
 import { t } from './messages.js'
 import { Attachments } from './staging.js'
 
@@ -80,6 +80,16 @@ interface SettingRow {
   key: string
   type: string
   default: unknown
+  doc?: string
+  choices?: string[]
+}
+
+/** One resolved setting and where it came from, as `config.get` reports it. */
+interface ConfigValueRow {
+  key: string
+  value: unknown
+  layer: string
+  file?: string | null
 }
 import { choose, current, forget, list, readInvite, remember } from './instances.js'
 import { canScan, scanCode } from './scan.js'
@@ -987,7 +997,7 @@ export class App {
   #usage: Record<string, UsageRow | undefined> = {}
 
   async #loadUsage(session: string): Promise<void> {
-    if (this.#usage[session] !== undefined) {
+    if (!this.#ask(`usage:${session}`)) {
       return
     }
     try {
@@ -1350,7 +1360,7 @@ export class App {
 
   async #loadWorktrees(): Promise<void> {
     for (const workspace of this.#store.state.workspaces) {
-      if (this.#worktrees[workspace.id] !== undefined) {
+      if (!this.#ask(`worktrees:${workspace.id}`)) {
         continue
       }
       try {
@@ -1365,11 +1375,12 @@ export class App {
         this.#worktrees[workspace.id] = []
       }
       // Whether the directory is still there, asked rather than assumed: a
-      // workspace on an unmounted volume is the ordinary case and starting a
-      // session in it fails in a way that says nothing.
+      // workspace on an unmounted volume is the ordinary case, and starting a
+      // session in one fails in a way that says nothing.
+      //
+      this.#gone[workspace.id] = false
       try {
         await this.#store.call('fs.list', workspace.id, '')
-        this.#gone[workspace.id] = false
       } catch {
         this.#gone[workspace.id] = true
         this.render()
@@ -1390,6 +1401,24 @@ export class App {
       onBack: () => this.#nav.back(),
     })
     const body = el('div', 'body')
+
+    // A file rather than a directory: the listing came back empty and the
+    // read came back with content. One route, two answers, and the screen
+    // renders whichever arrived.
+    const contents = this.#files[`${workspace}:${path}`]
+    if (contents !== undefined) {
+      body.append(
+        contents.kind === 'text'
+          ? el('pre', 'file-body', contents.text)
+          : empty(
+              path.split('/').filter(Boolean).pop() ?? path,
+              contents.kind === 'binary' ? t('files.binary') : t('files.tooLarge', contents.bytes),
+            ),
+      )
+      this.#root.append(bar, body)
+      return
+    }
+
     const state = stateOf(this.#listings[`${workspace}:${path}`], this.#errors['files'], {
       headline: t('files.title'),
       detail: t('files.empty'),
@@ -1401,17 +1430,17 @@ export class App {
           row({
             title: entry.name,
             label: entry.name,
-            leadsSomewhere: entry.directory === true,
-            ...(entry.directory === true
-              ? {
-                  onTap: () =>
-                    this.go({
-                      screen: 'files',
-                      workspace,
-                      path: path === '' ? entry.name : `${path}/${entry.name}`,
-                    }),
-                }
-              : {}),
+            leadsSomewhere: true,
+            onTap: () =>
+              this.go({
+                // A directory opens as a listing and a file opens as itself;
+                // both are the same route, because "what is at this path" is
+                // one question and answering it twice would be two screens
+                // that have to agree about where they are.
+                screen: 'files',
+                workspace,
+                path: path === '' ? entry.name : `${path}/${entry.name}`,
+              }),
           }),
         )
       }),
@@ -1420,11 +1449,53 @@ export class App {
     void this.#loadListing(workspace, path)
   }
 
+  /**
+   * What has already been asked for, whatever the answer was.
+   *
+   * Every loader here is called from `render` and calls `render`, so a loader
+   * that only records *success* retries forever on failure — each failure
+   * re-renders, each render asks again. That pinned the tab: a reload while
+   * the socket was still connecting made the first call fail, and the client
+   * spun until it was closed.
+   *
+   * Keyed separately from the results so "asked and got nothing" stays
+   * distinct from "not asked yet", which is the distinction the loop turned on.
+   */
+  #asked = new Set<string>()
+
+  /**
+   * Whether to make this call, and record that it was made.
+   *
+   * Nothing is asked before the connection is up, and nothing is *recorded*
+   * either — a call made during the handshake fails because the client does
+   * not yet know what the instance offers, and reporting "this instance does
+   * not offer git.diff" for a socket that had not finished connecting is a
+   * transient race dressed up as a permanent gap. Worse, recording it would
+   * make it permanent: the screen would say so until the tab was closed.
+   *
+   * The client re-renders on every store update, and connecting is one, so
+   * the call is made the moment there is something to make it against.
+   */
+  #ask(key: string): boolean {
+    if (this.#store.state.connection !== 'connected') {
+      return false
+    }
+    if (this.#asked.has(key)) {
+      return false
+    }
+    this.#asked.add(key)
+    return true
+  }
+
   #listings: Record<string, FsEntryRow[] | undefined> = {}
+  #files: Record<
+    string,
+    { kind: 'text'; text: string } | { kind: 'binary' | 'large'; bytes: number } | undefined
+  > = {}
 
   async #loadListing(workspace: string, path: string): Promise<void> {
     const key = `${workspace}:${path}`
-    if (this.#listings[key] !== undefined) {
+    if (!this.#ask(`list:${key}`)) {
       return
     }
     try {
@@ -1432,6 +1503,40 @@ export class App {
         entries?: FsEntryRow[]
       }
       this.#listings[key] = out.entries ?? []
+      this.render()
+    } catch {
+      // Not a directory, most likely. Tried as a file rather than reported as
+      // a failure: "cannot list" is the wrong words for a file, and it is the
+      // thing somebody actually tapped.
+      await this.#loadFile(workspace, path)
+    }
+  }
+
+  /**
+   * Read one file.
+   *
+   * Binary and over-limit are *said*, not rendered as an empty page. An empty
+   * page is indistinguishable from a file with nothing in it, and the two are
+   * different facts.
+   */
+  async #loadFile(workspace: string, path: string): Promise<void> {
+    const key = `${workspace}:${path}`
+    try {
+      const out = (await this.#store.call('fs.read', workspace, path, 0)) as {
+        data?: string
+        bytes?: number
+        binary?: boolean
+        chunks?: number
+      }
+      if (out.binary === true) {
+        this.#files[key] = { kind: 'binary', bytes: out.bytes ?? 0 }
+      } else if ((out.chunks ?? 1) > 1) {
+        // More than one chunk: too much to put on a phone screen in one go,
+        // and reading it all to throw most of it away is worse than saying so.
+        this.#files[key] = { kind: 'large', bytes: out.bytes ?? 0 }
+      } else {
+        this.#files[key] = { kind: 'text', text: decodeBase64(out.data ?? '') }
+      }
       this.render()
     } catch (e) {
       this.fail('files', e)
@@ -1474,7 +1579,7 @@ export class App {
   #changes: Record<string, ChangedFileRow[] | undefined> = {}
 
   async #loadChanges(workspace: string): Promise<void> {
-    if (this.#changes[workspace] !== undefined) {
+    if (!this.#ask(`changes:${workspace}`)) {
       return
     }
     try {
@@ -1537,7 +1642,7 @@ export class App {
 
   async #loadHunks(workspace: string, path: string): Promise<void> {
     const key = `${workspace}:${path}`
-    if (this.#hunks[key] !== undefined) {
+    if (!this.#ask(`hunks:${key}`)) {
       return
     }
     try {
@@ -1568,14 +1673,23 @@ export class App {
 
     body.append(
       renderState(state, (keys) =>
-        keys.map((setting) =>
-          row({
+        keys.map((setting) => {
+          // Where it came from, when it is not the default. `config.get`
+          // carries the layer that won, which is the half somebody actually
+          // needs: "why is this true" is a different question from "what is
+          // it", and only the first one sends people looking through files.
+          const set = this.#values[setting.key]
+          const meta =
+            set === undefined
+              ? `${setting.type} \u00b7 ${t('settings.default')} ${describe(setting.default)}`
+              : `${describe(set.value)} \u00b7 ${t('settings.from', set.file ?? set.layer)}`
+          return row({
             title: setting.key,
-            meta: `${setting.type} \u00b7 ${t('settings.default')} ${String(setting.default)}`,
+            meta: setting.doc === undefined ? meta : `${meta} \u00b7 ${setting.doc}`,
             label: setting.key,
             leadsSomewhere: false,
-          }),
-        ),
+          })
+        }),
       ),
     )
     this.#root.append(bar, body)
@@ -1583,14 +1697,21 @@ export class App {
   }
 
   #settings: SettingRow[] | undefined
+  #values: Record<string, ConfigValueRow | undefined> = {}
 
   async #loadSettings(): Promise<void> {
-    if (this.#settings !== undefined) {
+    if (!this.#ask('settings')) {
       return
     }
     try {
-      const out = (await this.#store.call('config.schema')) as { settings?: SettingRow[] }
-      this.#settings = out.settings ?? []
+      const [schema, resolved] = (await Promise.all([
+        this.#store.call('config.schema'),
+        this.#store.call('config.get'),
+      ])) as [{ settings?: SettingRow[] }, { values?: ConfigValueRow[] }]
+      this.#settings = schema.settings ?? []
+      for (const value of resolved.values ?? []) {
+        this.#values[value.key] = value
+      }
       this.render()
     } catch (e) {
       this.fail('settings', e)

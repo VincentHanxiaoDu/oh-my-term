@@ -35,12 +35,12 @@
 ## 4. Files and diffs
 
 - [x] 4.1 The files sheet: `fs.list`, one directory per expansion
-- [ ] 4.2 Reading a file with `fs.read`, with the size cap the instance
+- [x] 4.2 Reading a file with `fs.read`, with the size cap the instance
       enforces reported rather than hit silently
 - [x] 4.3 The changes list from `git.status`
 - [x] 4.4 The diff reader from `git.hunks`, with line numbers, following
       15 §7.4
-- [ ] 4.5 Binary and over-limit files say which they are rather than rendering
+- [x] 4.5 Binary and over-limit files say which they are rather than rendering
       an empty diff
 - [x] 4.6 No stage, unstage or commit anywhere, per 15 §1.1
 
@@ -54,8 +54,10 @@
 
 - [x] 6.1 Render every key from `config.schema` with type, default and
       description
-- [ ] 6.2 Show the layer a non-default value came from, via `config.sources`
+- [x] 6.2 Show the layer a non-default value came from, via `config.sources`
 - [ ] 6.3 Editing writes through `config.import`, which is the only write path
+      — **not done.** Reading is; writing needs a per-type editor (a toggle, a
+      number, a choice list) and that is a screen's worth of work, not a row's
 
 ## 7. Cost and context
 
@@ -79,9 +81,9 @@
 
 ## 9. Tests
 
-- [ ] 9.1 A Playwright case per new screen, on both device profiles, against a
+- [x] 9.1 A Playwright case per new screen, on both device profiles, against a
       real instance
-- [ ] 9.2 Unit: the picker offers no path field and no unknown directory
+- [x] 9.2 Unit: the picker offers no path field and no unknown directory
 - [x] 9.3 Unit: a failed attachment names itself and the composer's text
       survives
 - [x] 9.4 Unit: a CJK string truncates to the right *width*, not the right

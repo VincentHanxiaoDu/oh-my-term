@@ -66,6 +66,9 @@ function stubDom(hash: string) {
     // the whole surface the client uses, and a window with no navigator on it
     // is not a window any browser has ever had.
     navigator: { userAgent: 'node', languages: ['en-GB'], serviceWorker: { register() {} } },
+    // Read once at startup, to land on the screen the tab was last on. A
+    // `popstate` listener is not enough: a reload does not fire one.
+    history: { state: null, pushState() {}, replaceState() {}, back() {} },
     addEventListener() {},
     matchMedia: () => ({ matches: false }),
     isSecureContext: false,

@@ -277,7 +277,10 @@ html, body {
   font-size: var(--text-sm);
   font-weight: 400;
   letter-spacing: 0.02em;
-  text-transform: lowercase;
+  /* Not lower-cased. It was, to make the instance name read as quiet context
+     rather than as news — and then the title became a file name, and
+     README.md rendered as readme.md. A filename's case is not a style choice,
+     and neither is a branch's or a session's. */
   color: var(--fg-muted);
   flex: 1 1 auto;
   overflow: hidden;
@@ -1478,5 +1481,28 @@ html, body {
 }
 .staged.failed {
   color: var(--danger);
+}
+
+/* A file, read on a phone.
+
+   Wrapped rather than scrolled sideways, for the same reason a diff is: a
+   horizontal scroller is a thing nobody reads to the end of one-handed. The
+   hanging indent keeps a wrapped continuation visibly part of the line above
+   it, which is most of what makes wrapped code readable at all. */
+.file-body {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: inset 0 1px 0 0 var(--lit);
+  font-family: var(--face-machine);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-indent: -2ch;
+  padding-left: calc(var(--space-3) + 2ch);
+  color: var(--fg);
 }
 `
