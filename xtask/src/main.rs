@@ -138,7 +138,10 @@ fn licensing(root: Option<String>) -> Result<()> {
     // matters, and being ignored is not proof it did not happen — a file added
     // with `-f` stays tracked forever after.
     let ignore = std::fs::read_to_string(root.join(".gitignore")).unwrap_or_default();
-    if !ignore.lines().any(|l| l.trim().trim_end_matches('/') == ".research") {
+    if !ignore
+        .lines()
+        .any(|l| l.trim().trim_end_matches('/') == ".research")
+    {
         problems.push(".research/ is no longer gitignored".to_owned());
     }
     let tracked = std::process::Command::new("git")
@@ -167,7 +170,10 @@ fn licensing(root: Option<String>) -> Result<()> {
             checked = deps.len();
             for (name, licence) in deps {
                 if let Some((_, why)) = EXCEPTIONS.iter().find(|(n, _)| *n == name) {
-                    debug_assert!(!why.is_empty(), "an exception with no reason is a silencing");
+                    debug_assert!(
+                        !why.is_empty(),
+                        "an exception with no reason is a silencing"
+                    );
                     continue;
                 }
                 let Some(expression) = licence else {
@@ -299,9 +305,7 @@ const ALLOWED: &[&str] = &[
 ///
 /// Prefixes, because these are families: `GPL-3.0-or-later` and `AGPL-3.0`
 /// are not strings anybody enumerates correctly by hand.
-const FORBIDDEN: &[&str] = &[
-    "GPL", "AGPL", "LGPL", "SSPL", "BUSL", "Elastic", "CC-BY-NC",
-];
+const FORBIDDEN: &[&str] = &["GPL", "AGPL", "LGPL", "SSPL", "BUSL", "Elastic", "CC-BY-NC"];
 
 /// Dependencies §6 calls case-by-case, each with its justification.
 ///
@@ -417,7 +421,8 @@ fn settings_reference() -> String {
     let mut out = String::from(
         "# Settings\n\nGenerated from `omt-config`'s schema. Every setting has a default, because a feature works before it is configured.\n\n| Key | Holds | Default | Reload | What it does |\n|---|---|---|---|---|\n",
     );
-    let mut settings: Vec<&omt_config::schema::Setting> = omt_config::schema::SETTINGS.iter().collect();
+    let mut settings: Vec<&omt_config::schema::Setting> =
+        omt_config::schema::SETTINGS.iter().collect();
     settings.sort_by_key(|s| s.key);
     for setting in settings {
         let choices = if setting.choices.is_empty() {
@@ -484,7 +489,11 @@ fn file_length() -> Result<()> {
     let mut failed = Vec::new();
     for path in &sources {
         let lines = std::fs::read_to_string(path)?.lines().count();
-        let shown = path.strip_prefix(&root).unwrap_or(path).display().to_string();
+        let shown = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
         if lines >= FAIL {
             failed.push((shown, lines));
         } else if lines >= WARN {
@@ -506,10 +515,7 @@ fn file_length() -> Result<()> {
     for (path, lines) in &failed {
         println!("error: {path} is {lines} lines (over {FAIL})");
     }
-    anyhow::bail!(
-        "{} file(s) over the {FAIL}-line limit (P1)",
-        failed.len()
-    )
+    anyhow::bail!("{} file(s) over the {FAIL}-line limit (P1)", failed.len())
 }
 
 /// Every `.rs` file under a directory.
@@ -703,7 +709,10 @@ fn codegen(check: bool) -> Result<()> {
             root.join("docs/reference/capabilities.md"),
             reference(&entries),
         ),
-        (root.join("docs/reference/settings.md"), settings_reference()),
+        (
+            root.join("docs/reference/settings.md"),
+            settings_reference(),
+        ),
     ];
 
     let mut stale = Vec::new();
@@ -874,12 +883,7 @@ fn reference(entries: &[serde_json::Value]) -> String {
         let surfaces = parity
             .get("surfaces")
             .and_then(|s| s.as_array())
-            .map(|a| {
-                a.iter()
-                    .map(render_tag)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
+            .map(|a| a.iter().map(render_tag).collect::<Vec<_>>().join(", "))
             .unwrap_or_default();
         out.push_str(&format!(
             "| `{}` | {surfaces} | {} |\n",
@@ -892,6 +896,49 @@ fn reference(entries: &[serde_json::Value]) -> String {
         ));
     }
     out
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod determinism_tests {
+    use super::*;
+
+    /// The generators, twice, over the same input.
+    ///
+    /// The gate this protects is `codegen-check`, which fails CI on a diff. If
+    /// generation is not deterministic that gate fires on changes nobody made,
+    /// and a gate that cries wolf is one people regenerate past without
+    /// reading — which is the only way it was ever going to catch anything.
+    ///
+    /// The usual sources are a `HashMap` iteration order and a timestamp, and
+    /// both produce a diff that looks exactly like a real change. The other
+    /// half of this — that the *dump* is stable — is in `omt`'s own suite,
+    /// where the binary that produces it lives.
+    #[test]
+    fn the_generators_are_pure_functions_of_their_input() {
+        let entries: Vec<serde_json::Value> = (0..40)
+            .map(|i| {
+                serde_json::json!({
+                    "name": format!("group{}.verb{}", i % 7, i),
+                    "kind": if i % 2 == 0 { "query" } else { "command" },
+                    "role": "operator",
+                    "doc": format!("capability {i}"),
+                    "parity": if i % 11 == 0 {
+                        serde_json::json!({ "surfaces": ["web"], "reason": "reason" })
+                    } else {
+                        serde_json::json!("full")
+                    },
+                })
+            })
+            .collect();
+
+        assert_eq!(reference(&entries), reference(&entries));
+        assert_eq!(settings_reference(), settings_reference());
+    }
 }
 
 #[cfg(test)]

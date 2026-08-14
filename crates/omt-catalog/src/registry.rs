@@ -104,6 +104,18 @@ trait ErasedHandler: Send + Sync {
     ) -> Result<serde_json::Value, CapabilityError>;
 
     fn refine_effects_json(&self, input: &serde_json::Value) -> Effects;
+
+    /// This capability's input and output schemas.
+    ///
+    /// Through the erased handler rather than off the `Decl`, because a
+    /// `Decl` is `const` data and a schema is generated. Reachable generically
+    /// is the whole point: `dump()` used to hand-list six of them, which meant
+    /// the committed artifact described three capabilities out of a hundred
+    /// and forty and every other client generated nothing for the rest.
+    fn schemas_json(
+        &self,
+        generator: &mut schemars::SchemaGenerator,
+    ) -> (serde_json::Value, serde_json::Value);
 }
 
 struct Erased<C: Capability, H: CapabilityHandler<C>> {
@@ -112,6 +124,16 @@ struct Erased<C: Capability, H: CapabilityHandler<C>> {
 }
 
 impl<C: Capability, H: CapabilityHandler<C>> ErasedHandler for Erased<C, H> {
+    fn schemas_json(
+        &self,
+        generator: &mut schemars::SchemaGenerator,
+    ) -> (serde_json::Value, serde_json::Value) {
+        (
+            generator.subschema_for::<C::Input>().to_value(),
+            generator.subschema_for::<C::Output>().to_value(),
+        )
+    }
+
     fn call_json(
         &self,
         ctx: &CallContext,
@@ -258,6 +280,27 @@ impl CapabilityRegistry {
     /// byte-identical run to run.
     pub fn decls(&self) -> impl Iterator<Item = &'static Decl> + '_ {
         self.decls.values().copied()
+    }
+
+    /// Every capability's schemas, keyed by name.
+    ///
+    /// Walks the registry rather than being written out, so a capability that
+    /// registers is a capability the artifact describes — the property `dump`
+    /// claims and did not have.
+    ///
+    /// The generator is the caller's because its `$defs` must be emitted
+    /// alongside: a schema full of `$ref`s to definitions nobody wrote out is
+    /// worse than no schema, since it parses and resolves to nothing.
+    pub fn schemas(
+        &self,
+        generator: &mut schemars::SchemaGenerator,
+    ) -> std::collections::BTreeMap<&'static str, (serde_json::Value, serde_json::Value)> {
+        self.decls()
+            .filter_map(|d| {
+                let handler = self.handlers.get(d.name)?;
+                Some((d.name, handler.schemas_json(generator)))
+            })
+            .collect()
     }
 
     /// One declaration.
@@ -617,10 +660,20 @@ mod tests {
         let r = injecting_registry();
         let c = ctx(Role::Operator);
         let mut recent = crate::Recent::new();
-        r.dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
-            .expect("the first call goes through");
+        r.dispatch_with(
+            "test.inject",
+            &c,
+            serde_json::json!({"text": "y"}),
+            &mut recent,
+        )
+        .expect("the first call goes through");
         let err = r
-            .dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
+            .dispatch_with(
+                "test.inject",
+                &c,
+                serde_json::json!({"text": "y"}),
+                &mut recent,
+            )
             .expect_err("the second call must be refused");
         assert_eq!(err.code, crate::error::ErrorCode::Conflict);
         let Some(crate::ConflictState::AlreadyRequested { reason }) = err.conflict_state() else {
@@ -638,11 +691,21 @@ mod tests {
         let r = injecting_registry();
         let mut c = ctx(Role::Operator);
         let mut recent = crate::Recent::new();
-        r.dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
-            .expect("first");
+        r.dispatch_with(
+            "test.inject",
+            &c,
+            serde_json::json!({"text": "y"}),
+            &mut recent,
+        )
+        .expect("first");
         c.request.n += 1;
-        r.dispatch_with("test.inject", &c, serde_json::json!({"text": "y"}), &mut recent)
-            .expect("a new request id is a new request");
+        r.dispatch_with(
+            "test.inject",
+            &c,
+            serde_json::json!({"text": "y"}),
+            &mut recent,
+        )
+        .expect("a new request id is a new request");
     }
 
     #[test]
@@ -651,10 +714,20 @@ mod tests {
         let c = ctx(Role::Operator);
         let mut recent = crate::Recent::new();
         let first = r
-            .dispatch_with("test.echo", &c, serde_json::json!({"text": "hi"}), &mut recent)
+            .dispatch_with(
+                "test.echo",
+                &c,
+                serde_json::json!({"text": "hi"}),
+                &mut recent,
+            )
             .expect("first");
         let second = r
-            .dispatch_with("test.echo", &c, serde_json::json!({"text": "hi"}), &mut recent)
+            .dispatch_with(
+                "test.echo",
+                &c,
+                serde_json::json!({"text": "hi"}),
+                &mut recent,
+            )
             .expect("second");
         assert_eq!(first.output, second.output);
         // The replay did nothing, so it records nothing. Copying the first
@@ -862,7 +935,11 @@ mod alias_tests {
         let error = r
             .dispatch("thing.nonsense", &ctx(), serde_json::json!({}))
             .expect_err("not found");
-        assert!(error.message.contains("thing.nonsense"), "{}", error.message);
+        assert!(
+            error.message.contains("thing.nonsense"),
+            "{}",
+            error.message
+        );
     }
 
     #[test]

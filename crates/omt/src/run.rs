@@ -309,8 +309,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // No save/restore: the cursor is placed once, after all of this,
             // which is the only ordering that can be right when three
             // different pieces of chrome each move it.
-            write!(out, "\x1b[{};1H{bottom}", term_rows)
-                .context("drawing the status row")?;
+            write!(out, "\x1b[{};1H{bottom}", term_rows).context("drawing the status row")?;
             shown_bottom = Some(bottom);
         }
         let _ = &mut shown_hint;
@@ -340,8 +339,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             first = false;
             crossterm::event::poll(TICK).context("polling for input")?
         } else {
-            crossterm::event::poll(std::time::Duration::ZERO)
-                .context("polling for input")?
+            crossterm::event::poll(std::time::Duration::ZERO).context("polling for input")?
         } {
             let event = crossterm::event::read().context("reading input")?;
             // An open overlay takes every key: it is a list somebody is
@@ -421,19 +419,22 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     layout_dirty = true;
                 }
                 Input::Agents => {
-                overlay = Some(omt_tui::Overlay::new(
-                    "Agents",
-                    agent_rows(&mut instance, &panes, monotonic_ms()),
-                ));
-                layout_dirty = true;
-            }
-            Input::Sessions => {
+                    overlay = Some(omt_tui::Overlay::new(
+                        "Agents",
+                        agent_rows(&mut instance, &panes, monotonic_ms()),
+                    ));
+                    layout_dirty = true;
+                }
+                Input::Sessions => {
                     // Every session this instance holds, not only the ones with
                     // a pane on screen. A session that is running somewhere
                     // else is exactly the one somebody opens this list to find,
                     // and a list that showed only what was already visible
                     // answered a question nobody had.
-                    overlay = Some(omt_tui::Overlay::new("Sessions", session_rows(&instance, &panes)));
+                    overlay = Some(omt_tui::Overlay::new(
+                        "Sessions",
+                        session_rows(&instance, &panes),
+                    ));
                     layout_dirty = true;
                 }
                 Input::Resize { cols, rows } => {
@@ -639,11 +640,7 @@ impl BranchCache {
 /// A roster is filled by hooks and protocols; a pty-only session has neither,
 /// which is why this said "nothing matches" with an agent plainly running in
 /// the pane.
-fn agent_rows(
-    instance: &mut Instance,
-    panes: &[LocalPane],
-    now: u64,
-) -> Vec<omt_tui::Choice> {
+fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt_tui::Choice> {
     let mut rows: Vec<omt_tui::Choice> = Vec::new();
     for pane in panes {
         let title = instance

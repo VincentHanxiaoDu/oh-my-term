@@ -241,7 +241,13 @@ mod tests {
         let DamageKind::Rows(rows) = t.take().kind else {
             panic!("rows");
         };
-        assert_eq!(rows, vec![RowDamage { row: 3, cols: 10..20 }]);
+        assert_eq!(
+            rows,
+            vec![RowDamage {
+                row: 3,
+                cols: 10..20
+            }]
+        );
     }
 
     #[test]
@@ -266,7 +272,10 @@ mod tests {
         let DamageKind::Rows(rows) = t.take().kind else {
             panic!("rows");
         };
-        assert_eq!(rows.iter().map(|d| d.row).collect::<Vec<_>>(), vec![2, 5, 9]);
+        assert_eq!(
+            rows.iter().map(|d| d.row).collect::<Vec<_>>(),
+            vec![2, 5, 9]
+        );
     }
 
     #[test]

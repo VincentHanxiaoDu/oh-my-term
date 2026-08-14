@@ -220,7 +220,6 @@ mod tests {
         assert!(json.contains("\"content_encrypted\":false"), "{json}");
     }
 
-
     #[test]
     fn nothing_omt_writes_is_readable_by_anybody_else() {
         for artefact in INVENTORY {

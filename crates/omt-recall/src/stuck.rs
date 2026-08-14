@@ -242,7 +242,11 @@ fn describe(reasons: &[Reason]) -> String {
     let parts: Vec<String> = reasons
         .iter()
         .map(|r| match r {
-            Reason::LongWorking { elapsed_secs, ratio, .. } => {
+            Reason::LongWorking {
+                elapsed_secs,
+                ratio,
+                ..
+            } => {
                 format!("working {}m, {ratio:.0}× its usual", elapsed_secs / 60)
             }
             Reason::RepeatedCall { call, count } => format!("{call} ×{count}"),
@@ -361,7 +365,9 @@ mod tests {
         let mut slow = healthy();
         slow.working_secs = 22 * 60;
         assert_eq!(
-            examine(&slow, &Thresholds::default()).expect("fires").confidence,
+            examine(&slow, &Thresholds::default())
+                .expect("fires")
+                .confidence,
             Confidence::Weak
         );
 
@@ -391,7 +397,11 @@ mod tests {
         o.tokens_since_file_change = 120_000;
         o.since_file_change_secs = 15 * 60;
         let signal = examine(&o, &Thresholds::default()).expect("fires");
-        assert!(signal.detail.contains("no file changed"), "{}", signal.detail);
+        assert!(
+            signal.detail.contains("no file changed"),
+            "{}",
+            signal.detail
+        );
     }
 
     #[test]

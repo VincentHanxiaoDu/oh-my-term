@@ -568,9 +568,8 @@ impl CapabilityHandler<PaneNavigate> for KeysHandler {
 }
 
 /// Saved layouts, by name.
-pub type Layouts = std::sync::Arc<
-    std::sync::Mutex<std::collections::BTreeMap<String, omt_tui::geometry::Saved>>,
->;
+pub type Layouts =
+    std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, omt_tui::geometry::Saved>>>;
 
 /// Input to `layout.save`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]

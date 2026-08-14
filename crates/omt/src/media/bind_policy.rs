@@ -369,8 +369,10 @@ impl CapabilityHandler<LaunchPreview> for SecurityHandler {
         _ctx: &omt_catalog::CallContext,
         input: LaunchPreviewIn,
     ) -> Result<LaunchPreviewOut, CapabilityError> {
-        let launch: omt_config::launch::Launch = serde_json::from_value(input.launch)
-            .map_err(|e| CapabilityError::invalid_input(format!("that is not a launch configuration: {e}")))?;
+        let launch: omt_config::launch::Launch =
+            serde_json::from_value(input.launch).map_err(|e| {
+                CapabilityError::invalid_input(format!("that is not a launch configuration: {e}"))
+            })?;
         let problems = omt_config::launch::check(&launch);
         Ok(LaunchPreviewOut {
             focused: omt_config::launch::focused(&launch),
@@ -481,13 +483,13 @@ impl CapabilityHandler<CheckBindingFile> for BindingFileHandler {
                 &file,
                 self.0.get().map_or(&[][..], Vec::as_slice),
             )
-                .into_iter()
-                .map(|p| BindingProblemOut {
-                    trigger: p.trigger,
-                    message: p.message,
-                    help: p.help,
-                })
-                .collect(),
+            .into_iter()
+            .map(|p| BindingProblemOut {
+                trigger: p.trigger,
+                message: p.message,
+                help: p.help,
+            })
+            .collect(),
         })
     }
 }

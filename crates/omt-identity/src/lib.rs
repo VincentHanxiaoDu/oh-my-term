@@ -552,7 +552,10 @@ mod tests {
         let id = IdentityId::new();
         let mut e = enrolment(id);
         e.revoked.push("grant-1".to_owned());
-        assert_eq!(check_grant(&grant(id), 1_000, &e), Some(GrantRefusal::Revoked));
+        assert_eq!(
+            check_grant(&grant(id), 1_000, &e),
+            Some(GrantRefusal::Revoked)
+        );
     }
 
     #[test]
@@ -591,19 +594,24 @@ mod tests {
         // different problems, four of which it is wrong about.
         let mut seen = std::collections::BTreeSet::new();
         for refusal in [
-            GrantRefusal::IdentityNotEnrolled { fix: "x".to_owned() },
+            GrantRefusal::IdentityNotEnrolled {
+                fix: "x".to_owned(),
+            },
             GrantRefusal::UnknownRoot,
             GrantRefusal::Expired { at: 1 },
             GrantRefusal::Revoked,
             GrantRefusal::BelowEpochFloor { floor: 1 },
         ] {
             let json = serde_json::to_value(&refusal).expect("json");
-            let code = json.get("code").and_then(|c| c.as_str()).expect("a code").to_owned();
+            let code = json
+                .get("code")
+                .and_then(|c| c.as_str())
+                .expect("a code")
+                .to_owned();
             assert!(seen.insert(code));
         }
         assert_eq!(seen.len(), 5);
     }
-
 
     fn directory() -> (Directory, IdentityId) {
         let mut d = Directory::new();

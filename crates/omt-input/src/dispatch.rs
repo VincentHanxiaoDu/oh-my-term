@@ -163,7 +163,12 @@ mod tests {
         // Without a leader press first, omt claims nothing at all.
         let p = press("a", b"a");
         let (out, pending) = resolve(&p, &keymap(), &[], &leader(), Pending::None);
-        assert_eq!(out, Resolution::Passthrough { bytes: b"a".to_vec() });
+        assert_eq!(
+            out,
+            Resolution::Passthrough {
+                bytes: b"a".to_vec()
+            }
+        );
         assert_eq!(pending, Pending::None);
     }
 
@@ -235,7 +240,12 @@ mod tests {
         // what its user pressed.
         let p = press("ctrl-b", b"\x02");
         let (out, pending) = resolve(&p, &keymap(), &[], &leader(), Pending::Leader);
-        assert_eq!(out, Resolution::Passthrough { bytes: b"\x02".to_vec() });
+        assert_eq!(
+            out,
+            Resolution::Passthrough {
+                bytes: b"\x02".to_vec()
+            }
+        );
         assert_eq!(pending, Pending::None);
     }
 

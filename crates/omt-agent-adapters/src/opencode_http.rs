@@ -88,7 +88,10 @@ pub fn decode(event: &sse::Event) -> Decoded {
             event: String::new(),
         };
     };
-    let data = inner.get("data").unwrap_or(&serde_json::Value::Null).clone();
+    let data = inner
+        .get("data")
+        .unwrap_or(&serde_json::Value::Null)
+        .clone();
     map(unversioned(name), &data).map_or_else(
         || Decoded::Unmapped {
             event: name.to_owned(),
@@ -124,12 +127,12 @@ fn map(event: &str, data: &serde_json::Value) -> Option<Vec<AgentPayload>> {
         "session.deleted" => Some(vec![AgentPayload::SessionEnd {
             reason: "deleted".to_owned(),
         }]),
-        "session.compacted" | "session.next.compaction.ended" => Some(vec![
-            AgentPayload::Compaction {
+        "session.compacted" | "session.next.compaction.ended" => {
+            Some(vec![AgentPayload::Compaction {
                 phase: omt_events::CompactionPhase::After,
                 trigger: Some("automatic".to_owned()),
-            },
-        ]),
+            }])
+        }
         "session.next.compaction.started" => Some(vec![AgentPayload::Compaction {
             phase: omt_events::CompactionPhase::Before,
             trigger: Some("automatic".to_owned()),
@@ -211,11 +214,17 @@ fn map(event: &str, data: &serde_json::Value) -> Option<Vec<AgentPayload>> {
         "session.next.tool.called" => Some(vec![AgentPayload::ToolCall {
             call: text("callID"),
             name: text("tool"),
-            input: data.get("input").cloned().unwrap_or(serde_json::Value::Null),
+            input: data
+                .get("input")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
         }]),
         "session.next.tool.success" => Some(vec![AgentPayload::ToolResult {
             call: text("callID"),
-            output: data.get("structured").or_else(|| data.get("result")).cloned(),
+            output: data
+                .get("structured")
+                .or_else(|| data.get("result"))
+                .cloned(),
             error: None,
             duration_ms: None,
         }]),
@@ -264,7 +273,12 @@ fn map(event: &str, data: &serde_json::Value) -> Option<Vec<AgentPayload>> {
 /// opencode's token counts, where a step reported them.
 fn usage_from(data: &serde_json::Value) -> Option<AgentPayload> {
     let tokens = data.get("tokens")?;
-    let n = |key: &str| tokens.get(key).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let n = |key: &str| {
+        tokens
+            .get(key)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     let cache = |key: &str| {
         tokens
             .get("cache")
@@ -295,7 +309,8 @@ fn questions_from(data: &serde_json::Value) -> Vec<ChoiceQuestion> {
                             .unwrap_or_default()
                             .to_owned()
                     };
-                    let flag = |key: &str| q.get(key).and_then(serde_json::Value::as_bool) == Some(true);
+                    let flag =
+                        |key: &str| q.get(key).and_then(serde_json::Value::as_bool) == Some(true);
                     ChoiceQuestion {
                         question: s("question"),
                         header: s("header"),
@@ -441,9 +456,13 @@ mod tests {
         };
         assert_eq!((id.as_str(), name.as_str()), ("c1", "bash"));
 
-        let done =
-            payloads(r#"{"type":"session.next.tool.success","data":{"callID":"c1","structured":{"ok":true}}}"#);
-        let AgentPayload::ToolResult { call: id, error, .. } = &done[0] else {
+        let done = payloads(
+            r#"{"type":"session.next.tool.success","data":{"callID":"c1","structured":{"ok":true}}}"#,
+        );
+        let AgentPayload::ToolResult {
+            call: id, error, ..
+        } = &done[0]
+        else {
             panic!("expected a tool result, got {done:?}");
         };
         assert_eq!(id, "c1");
@@ -493,9 +512,7 @@ mod tests {
     fn a_question_with_no_tool_falls_back_to_its_own_id() {
         // Better than an empty correlation key, which would make two concurrent
         // questions indistinguishable.
-        let out = payloads(
-            r#"{"type":"question.v2.asked","data":{"id":"que_7","questions":[]}}"#,
-        );
+        let out = payloads(r#"{"type":"question.v2.asked","data":{"id":"que_7","questions":[]}}"#);
         let AgentPayload::Question { call, .. } = &out[0] else {
             panic!("expected a question, got {out:?}");
         };

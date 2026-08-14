@@ -2477,7 +2477,7 @@ The web client's composition path is testable in Playwright with
 ([15 §6.2](15-workspace-explorer.md#62-the-workspaceexplorer-group--surface-navigation)),
 `open.hints.begin` / `open.hints.cancel`
 ([18 §9](18-semantic-open.md#9-capabilities)) and `job.list` / `job.cancel`
-([`capabilities-draft.md` § `job`](../reference/capabilities-draft.md)).
+([`capabilities.md`](../reference/capabilities.md), the `job` group).
 This document introduces no capability of its own for any of them; the earlier
 spellings `tui.search`, `tui.detach`, `tui.enter_copy_mode` and the unqualified
 `explorer.*` were second names for capabilities that already exist or belong to

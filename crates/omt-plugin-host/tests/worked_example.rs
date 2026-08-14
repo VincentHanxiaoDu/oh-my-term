@@ -15,9 +15,9 @@
     reason = "in a test, expect() is the assertion"
 )]
 
-use omt_plugin_host::distribution::{admit, admit_contribution, Source};
+use omt_plugin_host::distribution::{Source, admit, admit_contribution};
 use omt_plugin_host::lifecycle::{Health, Restart, Stage};
-use omt_plugin_host::manifest::{check_api, read, Status};
+use omt_plugin_host::manifest::{Status, check_api, read};
 
 const NTFY: &str = include_str!("fixtures/ntfy.omt-plugin.toml");
 

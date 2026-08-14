@@ -399,7 +399,8 @@ mod tests {
         assert!(text.starts_with("\x1b[200~"), "{text:?}");
         assert!(text.ends_with("\x1b[201~"), "{text:?}");
         assert!(
-            text.trim_start_matches("\x1b[200~").starts_with("first\nsecond"),
+            text.trim_start_matches("\x1b[200~")
+                .starts_with("first\nsecond"),
             "{text:?}"
         );
     }
@@ -409,11 +410,7 @@ mod tests {
         // Somebody who pressed the leader and then pasted has not cancelled
         // the leader, and swallowing it would make the next keystroke run a
         // command they did not mean.
-        let (_, armed) = translate(
-            &Event::Paste("x".to_owned()),
-            true,
-            EncodeMode::default(),
-        );
+        let (_, armed) = translate(&Event::Paste("x".to_owned()), true, EncodeMode::default());
         assert!(armed);
     }
 

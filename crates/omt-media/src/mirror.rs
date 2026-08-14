@@ -75,9 +75,7 @@ pub fn local_path(root: &Path, host: &str, remote_path: &str) -> PathBuf {
         .map(|p| {
             p.components()
                 .filter_map(|c| match c {
-                    std::path::Component::Normal(part) => {
-                        Some(part.to_string_lossy().into_owned())
-                    }
+                    std::path::Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
                     _ => None,
                 })
                 .collect()

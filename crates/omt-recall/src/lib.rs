@@ -553,8 +553,16 @@ mod tests {
             instance: "a".to_owned(),
             reachable: true,
             suggestions: vec![
-                Suggestion { command: "b".to_owned(), score: 1.0, uses_here: 1 },
-                Suggestion { command: "a".to_owned(), score: 1.0, uses_here: 1 },
+                Suggestion {
+                    command: "b".to_owned(),
+                    score: 1.0,
+                    uses_here: 1,
+                },
+                Suggestion {
+                    command: "a".to_owned(),
+                    score: 1.0,
+                    uses_here: 1,
+                },
             ],
         }];
         let once = merge(&answers).0;
@@ -562,7 +570,6 @@ mod tests {
             assert_eq!(merge(&answers).0, once);
         }
     }
-
 
     fn entry(command: &str, workspace: WorkspaceId, secs: i64) -> HistoryEntry {
         HistoryEntry {
@@ -816,7 +823,13 @@ mod tests {
         // Treating "not yet" as "failed" is wrong in the other direction; the
         // honest answer is that it is neither.
         let mut h = History::new(10);
-        h.record(queryable("sleep 100", SessionId::new(), WorkspaceId::from_canonical_path("/tmp/p"), None, 0));
+        h.record(queryable(
+            "sleep 100",
+            SessionId::new(),
+            WorkspaceId::from_canonical_path("/tmp/p"),
+            None,
+            0,
+        ));
         assert!(
             h.query(&HistoryQuery {
                 only_successful: true,
@@ -829,7 +842,13 @@ mod tests {
     #[test]
     fn a_session_scope_leaves_out_everything_else() {
         let (mut h, session, workspace) = queried();
-        h.record(queryable("elsewhere", SessionId::new(), workspace, Some(0), 9));
+        h.record(queryable(
+            "elsewhere",
+            SessionId::new(),
+            workspace,
+            Some(0),
+            9,
+        ));
         let out = h.query(&HistoryQuery {
             scope: HistoryScope::Session(session),
             dedup: Dedup::None,
@@ -867,7 +886,11 @@ mod tests {
             ..HistoryQuery::default()
         });
         assert_eq!(removed, 2, "both runs went");
-        assert!(h.query(&HistoryQuery::default()).iter().all(|e| e.command != "cargo test"));
+        assert!(
+            h.query(&HistoryQuery::default())
+                .iter()
+                .all(|e| e.command != "cargo test")
+        );
         assert_eq!(h.len(), 2, "and nothing else did");
     }
 

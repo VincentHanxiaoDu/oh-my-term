@@ -286,7 +286,12 @@ mod tests {
     fn nothing_is_deleted_before_it_is_compacted() {
         // A ladder where the order inverted would delete data that was about
         // to become cheap to keep.
-        for kind in [Kind::Output, Kind::AgentEvents, Kind::Interactions, Kind::Transcript] {
+        for kind in [
+            Kind::Output,
+            Kind::AgentEvents,
+            Kind::Interactions,
+            Kind::Transcript,
+        ] {
             let l = ladder(kind);
             let compact_at = l.compact_after_days.expect("compacted");
             assert!(compact_at < l.delete_after_days, "{kind:?}");

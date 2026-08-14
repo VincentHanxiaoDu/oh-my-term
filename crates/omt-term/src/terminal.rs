@@ -1060,7 +1060,6 @@ fn parse_x_color(s: &str) -> Option<Color> {
     None
 }
 
-
 #[cfg(test)]
 #[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
 mod alt_screen_tests {
@@ -1771,7 +1770,10 @@ mod tests {
         }
         let kind = t.take_damage().kind;
         assert!(
-            matches!(kind, crate::damage::DamageKind::Full | crate::damage::DamageKind::Rows(_)),
+            matches!(
+                kind,
+                crate::damage::DamageKind::Full | crate::damage::DamageKind::Rows(_)
+            ),
             "{kind:?}"
         );
     }

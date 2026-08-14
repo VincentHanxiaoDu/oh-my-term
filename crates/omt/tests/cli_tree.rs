@@ -73,7 +73,11 @@ fn a_capability_is_reachable_as_a_subcommand_without_being_written_out() {
     // command line without anybody adding a match arm for it.
     let daemon = Daemon::start();
     let out = daemon.run(&["session", "list"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let parsed: serde_json::Value =
         serde_json::from_slice(&out.stdout).expect("stdout is the capability's output");
     assert!(parsed.get("sessions").is_some(), "{parsed}");
@@ -103,7 +107,12 @@ fn a_usage_error_exits_two() {
     // succeed, so the two must not be the same code.
     let daemon = Daemon::start();
     let out = daemon.run(&["session", "capture", "--session"]);
-    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]
@@ -121,7 +130,12 @@ fn an_unreachable_instance_exits_five() {
     // retry answers, which is the whole reason §8.1 lists seven codes.
     let empty = tempfile::tempdir().expect("tempdir");
     let out = run_without_a_daemon(&["session", "list"], empty.path());
-    assert_eq!(out.status.code(), Some(5), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(5),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]
@@ -135,7 +149,12 @@ fn a_refusal_from_the_instance_exits_one_not_five() {
         "--session",
         "sess_00000000000000000000000000000000",
     ]);
-    assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]
@@ -147,7 +166,11 @@ fn arguments_reach_the_capability_with_their_types_intact() {
     assert!(created.status.success());
 
     let out = daemon.run(&["task", "list", "--include-finished", "true"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
     assert!(parsed.get("tasks").is_some(), "{parsed}");
 }
@@ -158,7 +181,11 @@ fn a_command_is_dispatched_as_a_command_and_a_query_as_a_query() {
     // backwards refuses every mutation, so this runs one of each.
     let daemon = Daemon::start();
     let query = daemon.run(&["instance", "info"]);
-    assert!(query.status.success(), "{}", String::from_utf8_lossy(&query.stderr));
+    assert!(
+        query.status.success(),
+        "{}",
+        String::from_utf8_lossy(&query.stderr)
+    );
 
     // Opening one is itself a command, so this exercises the mutation path
     // twice over.

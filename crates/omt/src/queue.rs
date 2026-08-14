@@ -28,9 +28,9 @@ fn refused(refusal: &Refusal) -> CapabilityError {
         Refusal::NotCurrentBinding => {
             CapabilityError::precondition_failed("that binding is not the session's current one")
         }
-        Refusal::NotWorking => {
-            CapabilityError::precondition_failed("the agent is not working, so there is no turn to queue behind")
-        }
+        Refusal::NotWorking => CapabilityError::precondition_failed(
+            "the agent is not working, so there is no turn to queue behind",
+        ),
         Refusal::TextMoved => CapabilityError::precondition_failed(
             "that entry no longer carries that text; nothing was written",
         ),

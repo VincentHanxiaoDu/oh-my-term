@@ -235,7 +235,11 @@ fn tab_stops_are_set_and_cleared() {
     // HTS, TBC and CSI g. A shell that sets its own stops and then finds them
     // ignored draws its prompt in the wrong place.
     let t = after(b"\tx");
-    assert_eq!(screen(&t)[0], "        x", "the default stop is every eight");
+    assert_eq!(
+        screen(&t)[0],
+        "        x",
+        "the default stop is every eight"
+    );
 
     let t = after(b"\x1b[1;4H\x1bH\x1b[1;1H\ty");
     assert_eq!(screen(&t)[0], "   y", "HTS set a stop at column four");
@@ -261,7 +265,10 @@ fn the_cursor_position_is_reported_because_shells_measure_prompts_with_it() {
     let mut t = term();
     t.advance(b"\x1b[3;5H\x1b[6n");
     let reply = replies(&mut t);
-    assert!(reply.contains("3;5"), "DSR 6 reported the position: {reply:?}");
+    assert!(
+        reply.contains("3;5"),
+        "DSR 6 reported the position: {reply:?}"
+    );
 }
 
 #[test]
@@ -294,9 +301,7 @@ fn a_window_operation_is_never_honoured() {
     t.advance(b"\x1b[8;40;100t");
     let actions = t.drain_actions();
     assert!(
-        !actions
-            .iter()
-            .any(|a| matches!(a, HostAction::Reply(_))),
+        !actions.iter().any(|a| matches!(a, HostAction::Reply(_))),
         "a resize request was answered as if it had been performed"
     );
     assert_eq!(

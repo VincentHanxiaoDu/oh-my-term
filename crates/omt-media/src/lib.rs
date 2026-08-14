@@ -167,8 +167,8 @@ pub fn sanitize_component(requested: &str, digest: &str) -> String {
     // Windows reserved device names. On those systems a file called `CON` is
     // not a file, and opening it does something else entirely.
     const RESERVED: &[&str] = &[
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
 
     let cleaned: String = requested
@@ -190,10 +190,12 @@ pub fn sanitize_component(requested: &str, digest: &str) -> String {
     if name.is_empty() {
         return format!("omt-{stem}");
     }
-    if RESERVED
-        .iter()
-        .any(|r| name.split('.').next().unwrap_or_default().eq_ignore_ascii_case(r))
-    {
+    if RESERVED.iter().any(|r| {
+        name.split('.')
+            .next()
+            .unwrap_or_default()
+            .eq_ignore_ascii_case(r)
+    }) {
         name.push_str(".bin");
     }
     // Truncated on a character boundary, and to leave room for the prefix: a

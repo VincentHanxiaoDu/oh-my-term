@@ -137,7 +137,10 @@ mod tests {
     fn tmux_gets_a_passthrough_wrapper() {
         let out = osc52("hello", "screen-256color", DEFAULT_MAX_BYTES).expect("osc");
         assert!(out.starts_with("\x1bPtmux;"), "{out:?}");
-        assert!(out.ends_with("\x1b\\"), "tmux only accepts ESC backslash as ST");
+        assert!(
+            out.ends_with("\x1b\\"),
+            "tmux only accepts ESC backslash as ST"
+        );
     }
 
     #[test]
@@ -181,7 +184,10 @@ mod tests {
 
     #[test]
     fn copying_nothing_is_refused() {
-        assert_eq!(osc52("", "xterm", DEFAULT_MAX_BYTES), Err(ClipboardError::Empty));
+        assert_eq!(
+            osc52("", "xterm", DEFAULT_MAX_BYTES),
+            Err(ClipboardError::Empty)
+        );
     }
 
     #[test]

@@ -60,7 +60,10 @@ impl std::fmt::Display for ResolveError {
                 f,
                 "`{requested}` points outside every open workspace, so omt will not open it"
             ),
-            Self::NoRoots => write!(f, "there is no workspace to resolve a relative path against"),
+            Self::NoRoots => write!(
+                f,
+                "there is no workspace to resolve a relative path against"
+            ),
         }
     }
 }
@@ -309,7 +312,8 @@ mod tests {
         // A path resolved against the wrong root opens somebody else's file.
         // Naming the root is what makes a wrong answer visible.
         let (_d, root) = workspace();
-        let r = resolve("src/main.rs", Some(42), std::slice::from_ref(&root), true).expect("resolve");
+        let r =
+            resolve("src/main.rs", Some(42), std::slice::from_ref(&root), true).expect("resolve");
         assert_eq!(r.existence, Existence::File);
         assert_eq!(r.root.as_deref(), Some(root.display().to_string().as_str()));
         assert_eq!(r.line, Some(42));
@@ -386,7 +390,10 @@ mod tests {
         let (_b, second) = workspace();
         std::fs::remove_file(first.join("src/main.rs")).expect("remove");
         let r = resolve("src/main.rs", None, &[first, second.clone()], true).expect("resolve");
-        assert_eq!(r.root.as_deref(), Some(second.display().to_string().as_str()));
+        assert_eq!(
+            r.root.as_deref(),
+            Some(second.display().to_string().as_str())
+        );
         assert_eq!(r.existence, Existence::File);
     }
 

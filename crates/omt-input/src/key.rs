@@ -414,7 +414,6 @@ mod tests {
         assert!(Chord::parse("ctrl-").is_err());
     }
 
-
     #[test]
     fn ctrl_c_is_the_interrupt_byte() {
         // 0x03 whatever else is happening, which is exactly why it is safe to

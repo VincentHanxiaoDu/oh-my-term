@@ -356,7 +356,9 @@ fn resolving_an_interaction_needs_operator_not_admin() {
     let r = registry();
     let resolve = r
         .decls()
-        .find(|d| d.name.starts_with("interaction.") && matches!(d.kind, omt_catalog::Kind::Command))
+        .find(|d| {
+            d.name.starts_with("interaction.") && matches!(d.kind, omt_catalog::Kind::Command)
+        })
         .expect("an interaction command");
     assert_eq!(resolve.role, Role::Operator, "`{}`", resolve.name);
 }
@@ -453,7 +455,13 @@ fn no_capability_is_named_like_telemetry() {
     // There is none, and the way it stays that way is that adding one has to
     // get past a test that says so out loud. A metrics endpoint arrives
     // sounding harmless.
-    let forbidden = ["telemetry", "analytics", "crash_report", "phone_home", "usage_ping"];
+    let forbidden = [
+        "telemetry",
+        "analytics",
+        "crash_report",
+        "phone_home",
+        "usage_ping",
+    ];
     let r = registry();
     for decl in r.decls() {
         let name = decl.name.to_lowercase();
@@ -462,7 +470,6 @@ fn no_capability_is_named_like_telemetry() {
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Capability groups — 03 §6
@@ -499,7 +506,10 @@ fn layout_is_a_group_of_its_own_and_not_a_pane_sub_group() {
         .filter(|d| d.group == "pane" && d.verb.starts_with("layout"))
         .map(|d| d.name)
         .collect();
-    assert!(misfiled.is_empty(), "layout operations under pane: {misfiled:?}");
+    assert!(
+        misfiled.is_empty(),
+        "layout operations under pane: {misfiled:?}"
+    );
 }
 
 #[test]
@@ -543,7 +553,6 @@ fn a_renamed_capability_keeps_answering_to_its_old_name() {
         "and the alias is not a second entry in the catalog"
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // No push in v1 — 07 §8, D12

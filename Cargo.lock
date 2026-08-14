@@ -1464,6 +1464,7 @@ dependencies = [
  "omt-transport",
  "omt-tui",
  "omt-types",
+ "omt-util",
  "omt-workspace-fs",
  "qrcode",
  "rqrr",

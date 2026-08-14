@@ -221,23 +221,23 @@ impl CapabilityHandler<EventsSubscribe> for EventsSubscribeHandler {
     }
 }
 
-mod workspaces;
-mod session_input_and_geometry;
-mod file_transfer;
-mod layouts;
-mod history;
 mod dictation;
-mod worktrees;
+mod file_transfer;
+mod history;
 mod keys;
+mod layouts;
+mod session_input_and_geometry;
+mod workspaces;
+mod worktrees;
 
-pub use workspaces::*;
-pub use session_input_and_geometry::*;
-pub use file_transfer::*;
-pub use layouts::*;
-pub use history::*;
 pub use dictation::*;
-pub use worktrees::*;
+pub use file_transfer::*;
+pub use history::*;
 pub use keys::*;
+pub use layouts::*;
+pub use session_input_and_geometry::*;
+pub use workspaces::*;
+pub use worktrees::*;
 
 /// Build the registry this binary serves.
 ///
@@ -312,27 +312,26 @@ pub fn registry_full(
         state.clone(),
     ))?;
     r.register::<crate::surfaces::HistoryQuery, _>(crate::surfaces::HistoryHandler(state.clone()))?;
-    r.register::<crate::surfaces::HistoryForget, _>(crate::surfaces::HistoryHandler(state.clone()))?;
-    let tasks: crate::ops::Tasks = std::sync::Arc::new(std::sync::Mutex::new(
-        std::collections::BTreeMap::new(),
-    ));
+    r.register::<crate::surfaces::HistoryForget, _>(crate::surfaces::HistoryHandler(
+        state.clone(),
+    ))?;
+    let tasks: crate::ops::Tasks =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     r.register::<crate::ops::TaskList, _>(crate::ops::TaskHandler(tasks.clone()))?;
     r.register::<crate::ops::TaskGet, _>(crate::ops::TaskHandler(tasks.clone()))?;
     r.register::<crate::ops::TaskCancel, _>(crate::ops::TaskHandler(tasks))?;
     r.register::<crate::ops::UpgradeCheck, _>(crate::ops::UpgradeHandler(state.clone()))?;
     r.register::<crate::ops::InstanceShutdown, _>(crate::ops::LifecycleHandler(state.clone()))?;
     r.register::<crate::ops::RemoteProbe, _>(crate::ops::RemoteHandler)?;
-    let queues: crate::queue::Queues = std::sync::Arc::new(std::sync::Mutex::new(
-        std::collections::BTreeMap::new(),
-    ));
+    let queues: crate::queue::Queues =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     r.register::<crate::queue::QueueEnqueue, _>(crate::queue::QueueHandler(queues.clone()))?;
     r.register::<crate::queue::QueueList, _>(crate::queue::QueueHandler(queues.clone()))?;
     r.register::<crate::queue::QueueRemove, _>(crate::queue::QueueHandler(queues.clone()))?;
     r.register::<crate::queue::QueueEdit, _>(crate::queue::QueueHandler(queues.clone()))?;
     r.register::<crate::queue::QueueReorder, _>(crate::queue::QueueHandler(queues))?;
-    let mirrors: crate::media::Mirrors = std::sync::Arc::new(std::sync::Mutex::new(
-        std::collections::BTreeMap::new(),
-    ));
+    let mirrors: crate::media::Mirrors =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     r.register::<crate::media::RemoteList, _>(crate::media::MirrorHandler(mirrors.clone()))?;
     r.register::<crate::media::RemoteDiscard, _>(crate::media::MirrorHandler(mirrors))?;
     r.register::<crate::media::KeysConflicts, _>(crate::media::KeysHandler)?;
@@ -342,9 +341,8 @@ pub fn registry_full(
     r.register::<crate::media::KeysExplain, _>(crate::media::KeysHandler)?;
     r.register::<crate::media::KeysRegistry, _>(crate::media::KeysHandler)?;
     r.register::<crate::media::PaneNavigate, _>(crate::media::KeysHandler)?;
-    let layouts: crate::media::Layouts = std::sync::Arc::new(std::sync::Mutex::new(
-        std::collections::BTreeMap::new(),
-    ));
+    let layouts: crate::media::Layouts =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     r.register::<crate::media::LayoutSave, _>(crate::media::LayoutHandler(layouts.clone()))?;
     r.register::<crate::media::LayoutRestore, _>(crate::media::LayoutHandler(layouts))?;
     r.register::<crate::media::SearchExplain, _>(crate::media::SearchHandler)?;
@@ -377,7 +375,9 @@ pub fn registry_full(
     r.register::<crate::setup::DetectAgents, _>(crate::setup::SetupHandler)?;
     r.register::<crate::setup::TermProfile, _>(crate::setup::SetupHandler)?;
     r.register::<crate::onboarding::DisclosureState, _>(crate::onboarding::DisclosureHandler(
-        std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Disclosures::default())),
+        std::sync::Arc::new(std::sync::Mutex::new(
+            crate::onboarding::Disclosures::default(),
+        )),
     ))?;
     r.register::<crate::onboarding::HelpTopics, _>(crate::onboarding::HelpHandler)?;
     r.register::<crate::onboarding::HelpRender, _>(crate::onboarding::HelpHandler)?;
@@ -523,20 +523,33 @@ pub fn dump() -> Result<String> {
         })
         .collect();
 
-    let schemas = serde_json::json!({
-        "InfoIn": generator.subschema_for::<InfoIn>(),
-        "InfoOut": generator.subschema_for::<InfoOut>(),
-        "CatalogIn": generator.subschema_for::<CatalogIn>(),
-        "CatalogOut": generator.subschema_for::<CatalogOut>(),
-        "SubscribeIn": generator.subschema_for::<SubscribeIn>(),
-        "SubscribeOut": generator.subschema_for::<SubscribeOut>(),
-    });
+    // Walked, not written out. This hand-listed six schemas, which meant the
+    // committed artifact described three capabilities out of a hundred and
+    // forty — and every client that generates types from it generated types
+    // for three.
+    let per_capability = registry.schemas(&mut generator);
+    let schemas: serde_json::Map<String, serde_json::Value> = per_capability
+        .into_iter()
+        .flat_map(|(name, (input, output))| {
+            [
+                (format!("{name}.input"), input),
+                (format!("{name}.output"), output),
+            ]
+        })
+        .collect();
+
+    // The definitions those schemas point at. Without them every `$ref`
+    // resolves to nothing, which is worse than an absent schema: it parses,
+    // and a generator built on it emits empty types rather than failing.
+    let definitions: serde_json::Map<String, serde_json::Value> =
+        generator.take_definitions(true).into_iter().collect();
 
     Ok(serde_json::to_string_pretty(&serde_json::json!({
         "version": 1,
         "proto": omt_proto::PROTO_VERSION,
         "capabilities": entries,
         "schemas": schemas,
+        "$defs": definitions,
     }))?)
 }
 

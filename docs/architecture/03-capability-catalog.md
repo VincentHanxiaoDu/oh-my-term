@@ -845,9 +845,9 @@ This is the shape, not the exhaustive list; each change adds its own.
 | `audit` | `query` (Admin) |
 | `events` | `subscribe`, `resume` |
 
-The full consolidated list, with kinds, roles and effects, is the hand-written
-[`docs/reference/capabilities-draft.md`](../reference/capabilities-draft.md),
-which §5 artifact #4 replaces with generated output.
+The full consolidated list, with kinds, roles and effects, is
+[`docs/reference/capabilities.md`](../reference/capabilities.md) — §5 artifact
+#4, generated from the linked binary rather than maintained by hand.
 
 There is deliberately **no `notification` group**:
 [D12](decisions.md#d12--no-push-notifications-in-v1-open-and-replay-instead)

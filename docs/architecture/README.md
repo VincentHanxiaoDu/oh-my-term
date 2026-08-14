@@ -121,11 +121,13 @@ say. The split is deliberate; the boundary is stated in both.
 
 ## Reference
 
-- [`../reference/capabilities-draft.md`](../reference/capabilities-draft.md) —
-  the consolidated capability table. Hand-written and temporary; the
-  `capability!` declaration in the owning crate is the source of truth, and a
-  disagreement means this table is stale. It is replaced by generated output
-  when the codegen lands ([03 §5](03-capability-catalog.md#5-the-parity-contract)).
+- [`../reference/capabilities.md`](../reference/capabilities.md) — the
+  consolidated capability table, **generated** from the linked binary by
+  `cargo xtask codegen` ([03 §5](03-capability-catalog.md#5-the-parity-contract)).
+  Generated from the binary rather than from source, so a declaration that
+  failed to link is absent here and the committed diff fails — instead of the
+  capability silently vanishing. The hand-written table that stood in for it
+  has been deleted; two lists of capabilities is one list that is wrong.
 
 ## Adding a document
 

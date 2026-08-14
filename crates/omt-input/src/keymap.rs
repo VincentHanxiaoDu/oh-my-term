@@ -713,7 +713,10 @@ mod binding_file_tests {
 
     #[test]
     fn a_good_file_reports_nothing() {
-        let f = file(vec![("ctrl-t", "session.create"), ("copy:y", "session.close")]);
+        let f = file(vec![
+            ("ctrl-t", "session.create"),
+            ("copy:y", "session.close"),
+        ]);
         assert!(check_bindings(&f, &capabilities()).is_empty());
     }
 
@@ -731,7 +734,11 @@ mod binding_file_tests {
     fn a_near_miss_is_suggested_because_the_fix_is_one_character() {
         let f = file(vec![("ctrl-t", "session.creat")]);
         let found = check_bindings(&f, &capabilities());
-        assert!(found[0].help.contains("session.create"), "{}", found[0].help);
+        assert!(
+            found[0].help.contains("session.create"),
+            "{}",
+            found[0].help
+        );
     }
 
     #[test]

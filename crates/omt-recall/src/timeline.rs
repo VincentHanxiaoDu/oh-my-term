@@ -141,9 +141,7 @@ pub fn assemble(events: &[Event]) -> Timeline {
 
         let canonical_label = canonical(&event.label);
         match entries.last_mut() {
-            Some(last)
-                if last.kind == event.kind && canonical(&last.label) == canonical_label =>
-            {
+            Some(last) if last.kind == event.kind && canonical(&last.label) == canonical_label => {
                 last.count += 1;
                 last.spanned_secs = event.at.saturating_sub(last.at);
             }
@@ -175,16 +173,32 @@ pub fn digest(timeline: &Timeline) -> String {
     let s = timeline.stats;
     let mut parts = Vec::new();
     if s.tool_calls > 0 {
-        parts.push(format!("{} tool call{}", s.tool_calls, plural(s.tool_calls)));
+        parts.push(format!(
+            "{} tool call{}",
+            s.tool_calls,
+            plural(s.tool_calls)
+        ));
     }
     if s.files_changed > 0 {
-        parts.push(format!("{} file{} changed", s.files_changed, plural(s.files_changed)));
+        parts.push(format!(
+            "{} file{} changed",
+            s.files_changed,
+            plural(s.files_changed)
+        ));
     }
     if s.interactions > 0 {
-        parts.push(format!("{} question{}", s.interactions, plural(s.interactions)));
+        parts.push(format!(
+            "{} question{}",
+            s.interactions,
+            plural(s.interactions)
+        ));
     }
     if s.failed_blocks > 0 {
-        parts.push(format!("{} failure{}", s.failed_blocks, plural(s.failed_blocks)));
+        parts.push(format!(
+            "{} failure{}",
+            s.failed_blocks,
+            plural(s.failed_blocks)
+        ));
     }
     if parts.is_empty() {
         return "Nothing happened.".to_owned();
@@ -353,7 +367,18 @@ mod tests {
         // otherwise a cached one and a rebuilt one disagree and there is no way
         // to tell which is right.
         let events: Vec<Event> = (0..20)
-            .map(|i| event(i, i, if i % 3 == 0 { Kind::ToolCall } else { Kind::FileChanged }, "x"))
+            .map(|i| {
+                event(
+                    i,
+                    i,
+                    if i % 3 == 0 {
+                        Kind::ToolCall
+                    } else {
+                        Kind::FileChanged
+                    },
+                    "x",
+                )
+            })
             .collect();
         let once = assemble(&events);
         for _ in 0..3 {

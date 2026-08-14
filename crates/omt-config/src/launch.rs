@@ -165,7 +165,11 @@ pub fn focused(launch: &Launch) -> Option<usize> {
         .panes
         .iter()
         .position(|p| p.focused)
-        .or(if launch.panes.is_empty() { None } else { Some(0) })
+        .or(if launch.panes.is_empty() {
+            None
+        } else {
+            Some(0)
+        })
 }
 
 #[cfg(test)]

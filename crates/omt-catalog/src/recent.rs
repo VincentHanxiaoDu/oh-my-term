@@ -216,7 +216,10 @@ mod tests {
 
     #[test]
     fn last_writer_wins_re_executes_so_the_loser_is_visible() {
-        assert_eq!(repeat_for(Some(&Intent::LwwFreeText), true), Repeat::Execute);
+        assert_eq!(
+            repeat_for(Some(&Intent::LwwFreeText), true),
+            Repeat::Execute
+        );
     }
 
     #[test]

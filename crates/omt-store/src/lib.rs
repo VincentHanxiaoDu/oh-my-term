@@ -7,12 +7,12 @@
 //! The two want opposite responses, so the record frame is built to tell them
 //! apart, and a restore never silently drops either.
 
-pub mod retention;
-pub mod version;
-pub mod log;
 pub mod inventory;
+pub mod log;
 pub mod record;
+pub mod retention;
 pub mod snapshot;
+pub mod version;
 
 pub use log::{CLEAN_MARKER, Log, RestoreOutcome, restore};
 pub use record::{MAGIC, MAX_RECORD, ReadOutcome, crc32, read_record, write_record};

@@ -327,23 +327,35 @@ mod tests {
     fn an_ip_address_can_never_be_a_relying_party() {
         // Not a browser limitation to work around — the spec has no syntax for
         // one, so a LAN address can never register or use a passkey.
-        assert_eq!(rp_id_for("http://192.168.1.20:7878"), Err(NotAnRpId::IpAddress));
+        assert_eq!(
+            rp_id_for("http://192.168.1.20:7878"),
+            Err(NotAnRpId::IpAddress)
+        );
         assert_eq!(rp_id_for("http://[::1]:7788"), Err(NotAnRpId::IpAddress));
-        assert_eq!(rp_id_for("http://127.0.0.1:7788"), Err(NotAnRpId::IpAddress));
+        assert_eq!(
+            rp_id_for("http://127.0.0.1:7788"),
+            Err(NotAnRpId::IpAddress)
+        );
     }
 
     #[test]
     fn localhost_is_a_suffix_of_nothing() {
         // A real origin somebody reaches omt at, and one where a passkey would
         // work at exactly that name and nowhere else.
-        assert_eq!(rp_id_for("http://localhost:7788"), Err(NotAnRpId::NotRegistrable));
+        assert_eq!(
+            rp_id_for("http://localhost:7788"),
+            Err(NotAnRpId::NotRegistrable)
+        );
     }
 
     #[test]
     fn an_ipv6_host_is_not_mangled_into_something_that_parses() {
         // Cutting at the last colon turns `[::1]` into `[::`, which is not an
         // address and would fall through to being treated as a hostname.
-        assert_eq!(rp_id_for("http://[2001:db8::1]:7788"), Err(NotAnRpId::IpAddress));
+        assert_eq!(
+            rp_id_for("http://[2001:db8::1]:7788"),
+            Err(NotAnRpId::IpAddress)
+        );
     }
 
     #[test]
@@ -476,7 +488,6 @@ mod tests {
         assert!(startup_refusal(trusted()).is_none());
         assert!(startup_refusal(HeaderTrust::default()).is_none());
     }
-
 
     fn everything() -> Backends {
         Backends {

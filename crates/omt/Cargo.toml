@@ -19,6 +19,7 @@ workspace = true
 
 [dependencies]
 omt-types = { workspace = true }
+omt-util = { workspace = true }
 omt-catalog = { workspace = true }
 omt-events = { workspace = true }
 omt-proto = { workspace = true }

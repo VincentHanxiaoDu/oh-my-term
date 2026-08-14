@@ -318,7 +318,10 @@ mod tests {
             installed_from("/opt/homebrew/bin/omt").delegate_to(),
             Some("brew upgrade oh-my-term")
         );
-        assert_eq!(installed_from("/home/ada/.cargo/bin/omt").delegate_to(), Some("cargo install omt --force"));
+        assert_eq!(
+            installed_from("/home/ada/.cargo/bin/omt").delegate_to(),
+            Some("cargo install omt --force")
+        );
         assert_eq!(installed_from("/usr/local/bin/omt").delegate_to(), None);
     }
 

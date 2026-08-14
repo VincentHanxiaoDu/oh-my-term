@@ -210,10 +210,7 @@ pub fn step(lines: &[Line], first_line: u64, query: &Query, cursor: &mut Cursor)
                 let cells = text[..offset].chars().count() as u32;
                 Match {
                     start: Position::new(cursor.at, cells),
-                    end: Position::new(
-                        cursor.at,
-                        cells + query.pattern.chars().count() as u32,
-                    ),
+                    end: Position::new(cursor.at, cells + query.pattern.chars().count() as u32),
                     preview: text.trim_end().to_owned(),
                 }
             })

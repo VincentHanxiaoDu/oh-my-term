@@ -318,7 +318,12 @@ mod tests {
     fn an_agent_session_id_is_carried_verbatim() {
         // Never minted or parsed by omt. A shape assumption here breaks the
         // first time an agent changes its format.
-        for raw in ["ses_2e70d8700ffe3Sfps9jaDaYMOG", "1f0c-4e", "", "not/a/uuid"] {
+        for raw in [
+            "ses_2e70d8700ffe3Sfps9jaDaYMOG",
+            "1f0c-4e",
+            "",
+            "not/a/uuid",
+        ] {
             assert_eq!(AgentSessionId::new(raw).as_str(), raw);
         }
     }

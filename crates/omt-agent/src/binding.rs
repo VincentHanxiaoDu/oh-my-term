@@ -18,7 +18,7 @@
 //! recomputed alongside state, that identity is rediscovered hundreds of times
 //! a minute and any flicker in detection silently re-keys the lot.
 
-use omt_types::{AgentKind, Timestamp, Tier};
+use omt_types::{AgentKind, Tier, Timestamp};
 use serde::Serialize;
 
 /// Which agent occupies a session, and since when.
@@ -140,7 +140,10 @@ mod tests {
         );
         assert_eq!(change, Change::Rebound);
         assert_eq!(next.kind, AgentKind::Codex);
-        assert_eq!(next.agent_session, None, "the old conversation's id does not carry over");
+        assert_eq!(
+            next.agent_session, None,
+            "the old conversation's id does not carry over"
+        );
     }
 
     #[test]
@@ -208,7 +211,11 @@ mod tests {
         // Everything else keys off it — transcript lookups, resume, usage
         // attribution — and losing it re-keys the lot.
         let (next, _) = apply(
-            Some(binding(AgentKind::ClaudeCode, Some("s-1"), Tier::Transcript)),
+            Some(binding(
+                AgentKind::ClaudeCode,
+                Some("s-1"),
+                Tier::Transcript,
+            )),
             binding(AgentKind::ClaudeCode, None, Tier::Process),
         );
         assert_eq!(next.agent_session.as_deref(), Some("s-1"));

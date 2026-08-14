@@ -128,7 +128,8 @@ pub fn treatment(source: Source, settings: &Settings) -> Treatment {
 /// A list rather than "everything except": a new tool with a new payload field
 /// would otherwise be indexed in full the day it appears, and nobody would
 /// notice until the index doubled.
-pub const INDEXED_TOOL_FIELDS: &[&str] = &["command", "file_path", "path", "pattern", "description"];
+pub const INDEXED_TOOL_FIELDS: &[&str] =
+    &["command", "file_path", "path", "pattern", "description"];
 
 /// Apply a treatment to some text.
 ///
@@ -204,7 +205,10 @@ pub const QUESTIONS: &[(&str, &[Source])] = &[
         &[Source::FileChanged],
     ),
     ("Where did E0499 come from?", &[Source::BlockOutput]),
-    ("What did it ask me about the migration?", &[Source::Interaction]),
+    (
+        "What did it ask me about the migration?",
+        &[Source::Interaction],
+    ),
 ];
 
 /// Whether a question can be answered under these settings.
@@ -420,7 +424,6 @@ mod tests {
         ));
     }
 
-
     #[test]
     fn the_command_is_indexed_in_full_because_it_is_the_point() {
         // Sixteen kilobytes a day, and the single highest-value field.
@@ -463,8 +466,8 @@ mod tests {
         // Truncating from the front alone drops exactly the part somebody is
         // searching for.
         let log = format!("{}ERROR: it broke", "x".repeat(50_000));
-        let indexed = apply(&log, treatment(Source::BlockOutput, &Settings::default()))
-            .expect("indexed");
+        let indexed =
+            apply(&log, treatment(Source::BlockOutput, &Settings::default())).expect("indexed");
         assert!(indexed.contains("ERROR: it broke"), "the tail survived");
         assert!(indexed.len() < log.len() / 2);
     }
@@ -472,8 +475,8 @@ mod tests {
     #[test]
     fn output_keeps_the_start_where_the_command_echo_is() {
         let log = format!("$ cargo build\n{}", "x".repeat(50_000));
-        let indexed = apply(&log, treatment(Source::BlockOutput, &Settings::default()))
-            .expect("indexed");
+        let indexed =
+            apply(&log, treatment(Source::BlockOutput, &Settings::default())).expect("indexed");
         assert!(indexed.starts_with("$ cargo build"));
     }
 
@@ -482,16 +485,16 @@ mod tests {
         // A silent join makes the halves look contiguous and produces phantom
         // matches across the seam.
         let log = "a".repeat(50_000);
-        let indexed = apply(&log, treatment(Source::BlockOutput, &Settings::default()))
-            .expect("indexed");
+        let indexed =
+            apply(&log, treatment(Source::BlockOutput, &Settings::default())).expect("indexed");
         assert!(indexed.contains("not indexed"), "{}", &indexed[..80]);
     }
 
     #[test]
     fn something_smaller_than_the_window_is_kept_whole() {
         let short = "just a little output";
-        let indexed = apply(short, treatment(Source::BlockOutput, &Settings::default()))
-            .expect("indexed");
+        let indexed =
+            apply(short, treatment(Source::BlockOutput, &Settings::default())).expect("indexed");
         assert_eq!(indexed, short);
     }
 
@@ -502,7 +505,10 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(treatment(Source::BlockOutput, &off), Treatment::Excluded);
-        assert_eq!(apply("anything", treatment(Source::BlockOutput, &off)), None);
+        assert_eq!(
+            apply("anything", treatment(Source::BlockOutput, &off)),
+            None
+        );
     }
 
     #[test]

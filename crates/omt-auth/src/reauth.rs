@@ -175,9 +175,7 @@ mod tests {
     fn nothing_is_challenged_when_it_is_off() {
         // A proof-of-presence prompt on a machine nobody else can reach is a
         // keystroke tax with nothing on the other side of it.
-        assert!(
-            decide(&Policy::default(), "config.set", &[], None).proceeds()
-        );
+        assert!(decide(&Policy::default(), "config.set", &[], None).proceeds());
     }
 
     #[test]
@@ -190,7 +188,12 @@ mod tests {
         // The same argument the role policy makes: a new destructive
         // capability is covered the day it appears rather than the day
         // somebody remembers to list it.
-        let decision = decide(&on(), "something.brand_new", &["DESTRUCTIVE".to_owned()], None);
+        let decision = decide(
+            &on(),
+            "something.brand_new",
+            &["DESTRUCTIVE".to_owned()],
+            None,
+        );
         assert!(!decision.proceeds());
     }
 
@@ -216,7 +219,10 @@ mod tests {
         // is not proof of presence, it is a login.
         let mut eager = on();
         eager.freshness_secs = 1;
-        assert!(decide(&eager, "config.set", &[], Some(20)).proceeds(), "floor");
+        assert!(
+            decide(&eager, "config.set", &[], Some(20)).proceeds(),
+            "floor"
+        );
 
         let mut lax = on();
         lax.freshness_secs = 10 * 24 * 60 * 60;

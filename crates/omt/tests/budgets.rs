@@ -183,9 +183,7 @@ fn the_session_limit_refuses_with_the_number_rather_than_degrading() {
     assert_eq!(limits.max_sessions, 200, "22 §9's documented default");
 
     let mut tree = omt_session::Instance::default();
-    let workspace = tree
-        .open_workspace("/tmp")
-        .expect("workspace");
+    let workspace = tree.open_workspace("/tmp").expect("workspace");
     for _ in 0..limits.max_sessions {
         tree.create_session(
             workspace,
@@ -244,4 +242,94 @@ fn the_budgets_this_file_does_not_check_are_named() {
         7,
         "if one of these grows an assertion, take it off this list"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The sequence allocator — D-2's risk
+// ---------------------------------------------------------------------------
+
+/// How fast the allocator must be to be free.
+///
+/// Not a figure from 04 §9.1, which measures the parser. The allocator's
+/// budget is derived from it: 04 §9.1 asks for 400 MB/s through `advance` with
+/// no renderer, and every event that comes out of that path takes a position.
+/// If issuing one costs anything measurable, the number that matters becomes
+/// this one rather than the parser's — and D-2 flagged exactly that risk,
+/// because the fix would be a contracts-layer change rather than a local one.
+///
+/// Ten million a second is two orders of magnitude above any real event rate,
+/// so this is a tripwire rather than a target: it fails if somebody replaces
+/// the relaxed atomic with a lock or a `SeqCst` fence, and passes comfortably
+/// otherwise.
+const SEQ_PER_SECOND_FLOOR: f64 = 10_000_000.0;
+
+#[test]
+fn issuing_a_position_is_free_enough_to_ignore() {
+    if !throughput_is_measurable() {
+        eprintln!("skipping: a debug build measures the allocator's inlining, not its cost");
+        return;
+    }
+    let seq = omt_util::SeqGenerator::new();
+    // Warm, so the first measurement is not the page fault.
+    for _ in 0..10_000 {
+        std::hint::black_box(seq.next());
+    }
+
+    const ROUNDS: u64 = 2_000_000;
+    let start = std::time::Instant::now();
+    for _ in 0..ROUNDS {
+        std::hint::black_box(seq.next());
+    }
+    let per_second = ROUNDS as f64 / start.elapsed().as_secs_f64();
+
+    assert!(
+        per_second >= SEQ_PER_SECOND_FLOOR,
+        "the sequence allocator issues {per_second:.0}/s, below the {SEQ_PER_SECOND_FLOOR:.0}/s \
+         floor. D-2: if this does not hold, the fix is a contracts-layer change — a per-scope \
+         allocator or a batched reservation — not a local one."
+    );
+}
+
+#[test]
+fn positions_are_never_reused_across_a_restart() {
+    // The property the allocator exists for, and the reason it is not simply
+    // a counter reset at startup: a client presenting an old position after a
+    // restart would be silently accepted at the wrong place in the stream.
+    let before = omt_util::SeqGenerator::new();
+    for _ in 0..1000 {
+        before.next();
+    }
+    let after = omt_util::SeqGenerator::resuming_after(before.current());
+    assert!(
+        after.next() > before.current(),
+        "a restart reissued a position that had already been handed out"
+    );
+}
+
+#[test]
+fn positions_are_unique_under_contention() {
+    // `Relaxed` is deliberate — uniqueness and monotonicity of the values, not
+    // ordering against other memory. That is a claim worth checking against
+    // real threads rather than reading off the ordering.
+    use std::sync::Arc;
+    let seq = Arc::new(omt_util::SeqGenerator::new());
+    const THREADS: usize = 8;
+    const EACH: usize = 20_000;
+
+    let handles: Vec<_> = (0..THREADS)
+        .map(|_| {
+            let seq = Arc::clone(&seq);
+            std::thread::spawn(move || (0..EACH).map(|_| seq.next()).collect::<Vec<_>>())
+        })
+        .collect();
+
+    let mut all: Vec<u64> = handles
+        .into_iter()
+        .flat_map(|h| h.join().expect("thread"))
+        .collect();
+    all.sort_unstable();
+    let before = all.len();
+    all.dedup();
+    assert_eq!(before, all.len(), "the allocator issued a position twice");
+    assert_eq!(all.len(), THREADS * EACH);
 }

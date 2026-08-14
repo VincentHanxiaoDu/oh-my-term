@@ -356,7 +356,10 @@ mod tests {
         (UNKNOWN_KEY, "a key nothing knows about"),
         (BAD_VALUE, "a value of the wrong shape for its key"),
         (DROPPED_BY_SCOPE, "a key its layer may not set"),
-        (INLINE_SECRET, "a secret written into the configuration itself"),
+        (
+            INLINE_SECRET,
+            "a secret written into the configuration itself",
+        ),
     ];
 
     #[test]
@@ -462,7 +465,6 @@ mod tests {
         current
     }
 
-
     #[test]
     fn a_value_of_the_wrong_type_is_a_merge_diagnostic() {
         // The validator existed in the schema module and nothing called it,
@@ -522,7 +524,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn a_secret_in_the_config_file_is_an_error_with_somewhere_to_put_it() {
         // A config file is what people paste into an issue, commit to a
@@ -531,7 +532,10 @@ mod tests {
         // `layer()` below builds these; a literal here would miss the `file`
         // field and drift again the next time one is added.
         let resolved = merge(
-            &[layer(Layer::User, serde_json::json!({ "auth": { "password": "hunter2" } }))],
+            &[layer(
+                Layer::User,
+                serde_json::json!({ "auth": { "password": "hunter2" } }),
+            )],
             &[],
         );
         let found: Vec<&Diagnostic> = resolved
@@ -542,7 +546,10 @@ mod tests {
         assert_eq!(found.len(), 1, "{:?}", resolved.diagnostics());
         assert_eq!(found[0].severity, Severity::Error);
         assert!(
-            found[0].help.as_ref().is_some_and(|h| h.contains("auth.password_file")),
+            found[0]
+                .help
+                .as_ref()
+                .is_some_and(|h| h.contains("auth.password_file")),
             "{:?}",
             found[0].help
         );
@@ -554,7 +561,10 @@ mod tests {
         // in every dump of the resolved config, and in the settings surface —
         // which is most of the ways it would have leaked from the file.
         let resolved = merge(
-            &[layer(Layer::User, serde_json::json!({ "auth": { "token": "omt_c_secret" } }))],
+            &[layer(
+                Layer::User,
+                serde_json::json!({ "auth": { "token": "omt_c_secret" } }),
+            )],
             &[],
         );
         assert!(resolved.get("auth.token").is_none());
@@ -572,7 +582,10 @@ mod tests {
             &[],
         );
         assert!(
-            !resolved.diagnostics().iter().any(|d| d.code == INLINE_SECRET),
+            !resolved
+                .diagnostics()
+                .iter()
+                .any(|d| d.code == INLINE_SECRET),
             "{:?}",
             resolved.diagnostics()
         );

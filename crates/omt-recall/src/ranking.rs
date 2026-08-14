@@ -265,7 +265,11 @@ mod tests {
         let mut failed = candidate("failed");
         failed.exit = Some(1);
         let s = score(&failed);
-        let status = s.factors.iter().find(|f| f.name == "status").expect("status");
+        let status = s
+            .factors
+            .iter()
+            .find(|f| f.name == "status")
+            .expect("status");
         assert!(status.value > 0.5, "{}", status.value);
         assert!(status.value < 1.2);
     }

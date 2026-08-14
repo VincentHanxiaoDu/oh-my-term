@@ -106,8 +106,21 @@ pub fn admit(
 /// A plugin that could contribute `session.*` could shadow the calls every
 /// surface makes, which is a takeover rather than an extension.
 pub const RESERVED_GROUPS: &[&str] = &[
-    "session", "agent", "block", "config", "instance", "events", "plugin", "keys", "media",
-    "interaction", "queue", "workspace", "identity", "store", "security",
+    "session",
+    "agent",
+    "block",
+    "config",
+    "instance",
+    "events",
+    "plugin",
+    "keys",
+    "media",
+    "interaction",
+    "queue",
+    "workspace",
+    "identity",
+    "store",
+    "security",
 ];
 
 /// Whether a contributed capability name may be registered.

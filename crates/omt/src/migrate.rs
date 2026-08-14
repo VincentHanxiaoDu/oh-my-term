@@ -104,8 +104,14 @@ pub const UNSUPPORTED: &[(&str, &str)] = &[
         "choose-buffer",
         "omt's buffer capabilities are not built yet.",
     ),
-    ("save-buffer", "omt's buffer capabilities are not built yet."),
-    ("load-buffer", "omt's buffer capabilities are not built yet."),
+    (
+        "save-buffer",
+        "omt's buffer capabilities are not built yet.",
+    ),
+    (
+        "load-buffer",
+        "omt's buffer capabilities are not built yet.",
+    ),
     (
         "display-panes",
         "omt has no pane-number overlay yet, so the binding would do nothing.",

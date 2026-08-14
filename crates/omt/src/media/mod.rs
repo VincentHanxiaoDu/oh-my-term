@@ -197,11 +197,10 @@ impl CapabilityHandler<MediaGet> for MediaHandler {
         let bytes = store
             .get(&input.digest)
             .map_err(|e| CapabilityError::not_found(e.to_string()))?;
-        let kind = store
-            .meta(&input.digest)
-            .map_or_else(|| "binary".to_owned(), |r| {
-                format!("{:?}", r.meta.kind).to_lowercase()
-            });
+        let kind = store.meta(&input.digest).map_or_else(
+            || "binary".to_owned(),
+            |r| format!("{:?}", r.meta.kind).to_lowercase(),
+        );
         Ok(GetOut {
             content: to_base64(bytes),
             size: bytes.len(),
@@ -358,15 +357,15 @@ impl CapabilityHandler<MediaClipboard> for MediaHandler {
     }
 }
 
+mod bind_policy;
 mod handing_a_blob_to_an_agent;
 mod keymap_conflicts;
 mod why_one_result_beat_another;
-mod bind_policy;
 
+pub use bind_policy::*;
 pub use handing_a_blob_to_an_agent::*;
 pub use keymap_conflicts::*;
 pub use why_one_result_beat_another::*;
-pub use bind_policy::*;
 
 #[cfg(test)]
 #[allow(
@@ -421,9 +420,19 @@ mod tests {
     fn every_reference_contains_the_path_it_is_about() {
         // A reference that lost the path is one the agent cannot act on, and
         // the failure is silent.
-        for agent in ["claudecode", "aider", "gemini", "codex", "opencode", "whatever"] {
+        for agent in [
+            "claudecode",
+            "aider",
+            "gemini",
+            "codex",
+            "opencode",
+            "whatever",
+        ] {
             let (reference, _) = attachment_reference(agent, "/tmp/needle.png");
-            assert!(reference.contains("/tmp/needle.png"), "{agent}: {reference}");
+            assert!(
+                reference.contains("/tmp/needle.png"),
+                "{agent}: {reference}"
+            );
         }
     }
 

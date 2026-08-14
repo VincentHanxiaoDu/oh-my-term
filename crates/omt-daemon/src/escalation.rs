@@ -28,11 +28,7 @@ use omt_types::{Actor, Role};
 #[must_use]
 pub fn effective_role(granted: Role, trigger: Option<Role>) -> Role {
     let ceiling = trigger.unwrap_or(Role::Operator);
-    if granted < ceiling {
-        granted
-    } else {
-        ceiling
-    }
+    if granted < ceiling { granted } else { ceiling }
 }
 
 /// The actor a plugin-originated call carries.
@@ -150,7 +146,12 @@ mod tests {
         // A table rather than a spot check: the rule is about the whole matrix,
         // and an ordering bug shows up in one cell.
         for granted in [Role::Viewer, Role::Operator, Role::Admin] {
-            for trigger in [None, Some(Role::Viewer), Some(Role::Operator), Some(Role::Admin)] {
+            for trigger in [
+                None,
+                Some(Role::Viewer),
+                Some(Role::Operator),
+                Some(Role::Admin),
+            ] {
                 let carried = effective_role(granted, trigger);
                 assert!(carried <= granted, "{granted:?} {trigger:?}");
                 if let Some(trigger) = trigger {

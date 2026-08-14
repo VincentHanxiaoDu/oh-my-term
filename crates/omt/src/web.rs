@@ -302,7 +302,11 @@ mod origin_tests {
         // operator states — the same shape as the bind policy, where the
         // escape hatch is a file rather than a wildcard.
         let origins = served_origins("0.0.0.0:7788");
-        assert!(origins.iter().all(|o| o.contains("127.0.0.1") || o.contains("localhost") || o.contains("[::1]")));
+        assert!(
+            origins
+                .iter()
+                .all(|o| o.contains("127.0.0.1") || o.contains("localhost") || o.contains("[::1]"))
+        );
         assert!(!origins.iter().any(|o| o.contains("0.0.0.0")));
     }
 

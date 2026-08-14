@@ -104,7 +104,9 @@ pub struct EventSink {
 
 impl std::fmt::Debug for EventSink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EventSink").field("tier", &self.tier).finish()
+        f.debug_struct("EventSink")
+            .field("tier", &self.tier)
+            .finish()
     }
 }
 

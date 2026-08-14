@@ -86,12 +86,7 @@ fn overlap_cells(a0: u16, a1: u16, b0: u16, b1: u16) -> u32 {
 
 /// The pane focus should move to, if any.
 #[must_use]
-pub fn navigate(
-    panes: &[Placed],
-    from: &str,
-    direction: Direction,
-    wrap: bool,
-) -> Option<String> {
+pub fn navigate(panes: &[Placed], from: &str, direction: Direction, wrap: bool) -> Option<String> {
     let source = panes.iter().find(|p| p.id == from)?;
     let f = source.rect;
 
@@ -360,7 +355,10 @@ mod tests {
 
     #[test]
     fn navigating_from_a_pane_that_is_not_there_is_none_rather_than_a_panic() {
-        assert_eq!(navigate(&side_by_side(), "nope", Direction::Left, false), None);
+        assert_eq!(
+            navigate(&side_by_side(), "nope", Direction::Left, false),
+            None
+        );
     }
 
     #[test]
@@ -372,7 +370,11 @@ mod tests {
             Direction::Up,
             Direction::Down,
         ] {
-            assert_eq!(navigate(&alone, "a", direction, true), None, "{direction:?}");
+            assert_eq!(
+                navigate(&alone, "a", direction, true),
+                None,
+                "{direction:?}"
+            );
         }
     }
 

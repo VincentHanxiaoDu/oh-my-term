@@ -229,7 +229,8 @@ impl CapabilityHandler<AgentAttention> for AttentionHandler {
             tokens_since_file_change: input.tokens_since_file_change,
             since_file_change_secs: input.since_file_change_secs,
         };
-        let signal = omt_recall::stuck::examine(&observation, &omt_recall::stuck::Thresholds::default());
+        let signal =
+            omt_recall::stuck::examine(&observation, &omt_recall::stuck::Thresholds::default());
         Ok(match signal {
             None => AttentionOut {
                 needs_attention: false,
@@ -245,7 +246,9 @@ impl CapabilityHandler<AgentAttention> for AttentionHandler {
                     .map(|r| {
                         serde_json::to_value(r)
                             .ok()
-                            .and_then(|v| v.get("reason").and_then(|x| x.as_str()).map(str::to_owned))
+                            .and_then(|v| {
+                                v.get("reason").and_then(|x| x.as_str()).map(str::to_owned)
+                            })
                             .unwrap_or_else(|| "unknown".to_owned())
                     })
                     .collect(),

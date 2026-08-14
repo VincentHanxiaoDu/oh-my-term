@@ -49,14 +49,14 @@ fn corpus_dir() -> PathBuf {
 fn corpora() -> Vec<(String, Corpus)> {
     let dir = corpus_dir();
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
+    for entry in
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
     {
         let path = entry.expect("entry").path();
         if path.extension().is_some_and(|e| e == "json") {
             let text = std::fs::read_to_string(&path).expect("read");
-            let parsed: Corpus = serde_json::from_str(&text)
-                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            let parsed: Corpus =
+                serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
             out.push((path.display().to_string(), parsed));
         }
     }

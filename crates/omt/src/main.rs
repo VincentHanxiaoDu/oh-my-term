@@ -57,9 +57,7 @@ fn main() -> Result<()> {
         // from the catalog rather than written out here (03 §1, artifact 5),
         // so a capability is reachable from a shell the moment it is declared.
         other => {
-            let code = omt::cli::run(
-                &other.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>(),
-            );
+            let code = omt::cli::run(&other.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>());
             if code == omt::automation::Exit::Ok {
                 Ok(())
             } else {

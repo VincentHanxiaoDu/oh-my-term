@@ -104,7 +104,10 @@ impl std::fmt::Display for FileError {
                 "this file is version {v}; this build of omt does not know it"
             ),
             Self::Truncated { wanted, got } => {
-                write!(f, "the file is truncated: expected {wanted} bytes, found {got}")
+                write!(
+                    f,
+                    "the file is truncated: expected {wanted} bytes, found {got}"
+                )
             }
             Self::BadHeader(why) => write!(f, "the header is unreadable: {why}"),
         }
@@ -174,8 +177,8 @@ pub fn unframe(bytes: &[u8]) -> Result<(Header, Vec<u8>, Vec<u8>), FileError> {
         });
     }
     let header_bytes = bytes[header_at..header_end].to_vec();
-    let header: Header = serde_json::from_slice(&header_bytes)
-        .map_err(|e| FileError::BadHeader(e.to_string()))?;
+    let header: Header =
+        serde_json::from_slice(&header_bytes).map_err(|e| FileError::BadHeader(e.to_string()))?;
     if header.v != 1 {
         return Err(FileError::Version(header.v));
     }

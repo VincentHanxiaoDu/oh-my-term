@@ -271,7 +271,10 @@ mod tests {
         // than no hint at all.
         let hint = hint_for(&situation()).expect("a hint");
         assert!(hint.contains(&leader()), "{hint}");
-        assert_eq!(leader(), format!("^{}", crate::app::PREFIX_KEY.to_ascii_uppercase()));
+        assert_eq!(
+            leader(),
+            format!("^{}", crate::app::PREFIX_KEY.to_ascii_uppercase())
+        );
     }
 
     #[test]

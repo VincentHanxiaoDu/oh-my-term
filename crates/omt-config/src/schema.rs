@@ -493,7 +493,6 @@ pub const SETTINGS: &[Setting] = &[
         choices: &[],
         scope: crate::Scope::Any,
     },
-
     Setting {
         key: "font.family",
         kind: Kind::Text,
@@ -743,7 +742,12 @@ pub fn reload_class(key: &str) -> Reload {
     // The listener can be rebuilt without touching a PTY, which is why this is
     // its own class rather than folded into a full restart: losing a session
     // to change a TLS certificate would be a poor trade.
-    const NEEDS_LISTENER: &[&str] = &["server.bind", "server.tls", "server.auth", "server.tailscale"];
+    const NEEDS_LISTENER: &[&str] = &[
+        "server.bind",
+        "server.tls",
+        "server.auth",
+        "server.tailscale",
+    ];
 
     if NEEDS_PROCESS.iter().any(|p| key.starts_with(p)) {
         Reload::Restart
@@ -761,8 +765,7 @@ pub fn reload_class(key: &str) -> Reload {
 /// is one somebody adjusts once and never trusts again.
 #[must_use]
 pub fn is_lossy(key: &str, before: Option<i64>, after: Option<i64>) -> bool {
-    key == "terminal.scrollback_lines"
-        && matches!((before, after), (Some(b), Some(a)) if a < b)
+    key == "terminal.scrollback_lines" && matches!((before, after), (Some(b), Some(a)) if a < b)
 }
 
 #[cfg(test)]
@@ -870,8 +873,13 @@ mod tests {
 mod validation_tests {
     use super::*;
 
-    fn values(pairs: &[(&str, serde_json::Value)]) -> std::collections::BTreeMap<String, serde_json::Value> {
-        pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
+    fn values(
+        pairs: &[(&str, serde_json::Value)],
+    ) -> std::collections::BTreeMap<String, serde_json::Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect()
     }
 
     fn a_setting_of(kind: Kind) -> &'static Setting {
@@ -913,7 +921,10 @@ mod validation_tests {
     fn a_decimal_is_not_quietly_truncated_into_an_integer() {
         // Truncating `1.5` to `1` applies a setting nobody wrote.
         let setting = a_setting_of(Kind::Integer);
-        assert_eq!(validate(&values(&[(setting.key, serde_json::json!(1.5))])).len(), 1);
+        assert_eq!(
+            validate(&values(&[(setting.key, serde_json::json!(1.5))])).len(),
+            1
+        );
     }
 
     #[test]
@@ -965,7 +976,10 @@ mod validation_tests {
         // A diagnostic list that shuffles is one nobody can diff.
         let a = a_setting_of(Kind::Bool);
         let b = a_setting_of(Kind::Integer);
-        let input = values(&[(a.key, serde_json::json!("no")), (b.key, serde_json::json!("lots"))]);
+        let input = values(&[
+            (a.key, serde_json::json!("no")),
+            (b.key, serde_json::json!("lots")),
+        ]);
         let once = validate(&input);
         for _ in 0..5 {
             assert_eq!(validate(&input), once);
@@ -1019,7 +1033,12 @@ mod reload_tests {
     fn the_store_and_the_parser_need_the_process_back() {
         // Both are built once and handed to everything else; swapping either
         // under a running session is not a reload, it is a different program.
-        for key in ["store.backend", "store.path", "terminal.vt.strict", "media.tmp_dir"] {
+        for key in [
+            "store.backend",
+            "store.path",
+            "terminal.vt.strict",
+            "media.tmp_dir",
+        ] {
             assert_eq!(reload_class(key), Reload::Restart, "{key}");
         }
     }
@@ -1043,9 +1062,21 @@ mod reload_tests {
     fn shrinking_the_scrollback_is_lossy_and_growing_it_is_not() {
         // A setting that silently discards a day of output is one somebody
         // adjusts once and never trusts again.
-        assert!(is_lossy("terminal.scrollback_lines", Some(10_000), Some(1_000)));
-        assert!(!is_lossy("terminal.scrollback_lines", Some(1_000), Some(10_000)));
-        assert!(!is_lossy("terminal.scrollback_lines", Some(1_000), Some(1_000)));
+        assert!(is_lossy(
+            "terminal.scrollback_lines",
+            Some(10_000),
+            Some(1_000)
+        ));
+        assert!(!is_lossy(
+            "terminal.scrollback_lines",
+            Some(1_000),
+            Some(10_000)
+        ));
+        assert!(!is_lossy(
+            "terminal.scrollback_lines",
+            Some(1_000),
+            Some(1_000)
+        ));
     }
 
     #[test]

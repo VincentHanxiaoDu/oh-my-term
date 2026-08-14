@@ -91,15 +91,7 @@ fn known_keys(table: &str) -> Option<&'static [&'static str]> {
     match table {
         "entrypoint" => Some(&["kind", "command", "module", "restart", "max_restarts"]),
         "build" => Some(&["command", "timeout"]),
-        "permissions" => Some(&[
-            "capabilities",
-            "events",
-            "role",
-            "fs",
-            "net",
-            "exec",
-            "env",
-        ]),
+        "permissions" => Some(&["capabilities", "events", "role", "fs", "net", "exec", "env"]),
         "limits" => Some(&["memory", "cpu", "timeout", "queue"]),
         "config_schema" => Some(&["path"]),
         _ => None,
@@ -452,7 +444,10 @@ command = ["bun", "run", "index.ts"]
 
     #[test]
     fn the_bounds_are_the_ones_a_reader_would_expect() {
-        assert!(satisfies(">=1.0, <2.0", "1.0.0"), "the lower bound is inclusive");
+        assert!(
+            satisfies(">=1.0, <2.0", "1.0.0"),
+            "the lower bound is inclusive"
+        );
         assert!(!satisfies(">=1.0, <2.0", "2.0.0"), "the upper is not");
         assert!(!satisfies(">=1.0, <2.0", "0.9.9"));
     }

@@ -87,11 +87,15 @@ fn the_terminal_core_is_a_real_one() {
     term.advance(&[b'x'; 200]);
     let before = term.total_rows();
     term.resize(omt_term::GridSize { cols: 40, rows: 24 });
-    assert!(term.total_rows() > 0, "content survived the resize: {before}");
+    assert!(
+        term.total_rows() > 0,
+        "content survived the resize: {before}"
+    );
 
     // The block model, from the shell's own marks rather than a guess.
     let mut marked = omt_term::Terminal::new(omt_term::TermConfig::default());
-    marked.advance(b"\x1b]133;A\x07$ \x1b]133;B\x07echo hi\r\n\x1b]133;C\x07hi\r\n\x1b]133;D;0\x07");
+    marked
+        .advance(b"\x1b]133;A\x07$ \x1b]133;B\x07echo hi\r\n\x1b]133;C\x07hi\r\n\x1b]133;D;0\x07");
     assert!(!marked.blocks().is_empty(), "OSC 133 produced a block");
 }
 
@@ -131,4 +135,43 @@ fn the_three_built_in_auth_methods_are_there_plus_tailnet() {
         offered.contains(&Method::Tailnet),
         "transport-level trust inside a tailnet is not offered"
     );
+}
+
+#[test]
+fn the_catalog_dump_is_byte_identical_across_runs() {
+    // `codegen-check` fails CI on a diff between the committed artifact and a
+    // fresh generation. If the dump is not deterministic, that gate fires on
+    // changes nobody made — and a gate that cries wolf is one people
+    // regenerate past without reading, which is the only way it was ever
+    // going to catch a capability silently vanishing.
+    //
+    // The usual sources are a `HashMap` iteration order and a timestamp, and
+    // both produce a diff that looks exactly like a real change.
+    let first = omt::capabilities::dump().expect("dump");
+    for _ in 0..5 {
+        assert_eq!(
+            omt::capabilities::dump().expect("dump"),
+            first,
+            "two runs against the same binary produced different bytes"
+        );
+    }
+}
+
+#[test]
+fn the_dump_is_ordered_by_name_rather_than_by_link_order() {
+    // A distributed slice has no ordering to depend on, so the sort is what
+    // makes the artifact stable across a rebuild. Without it, a rebuild that
+    // happened to link in a different order is a diff on every unrelated
+    // change.
+    let dump: serde_json::Value =
+        serde_json::from_str(&omt::capabilities::dump().expect("dump")).expect("parse");
+    let names: Vec<&str> = dump["capabilities"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|c| c["name"].as_str().expect("name"))
+        .collect();
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(names, sorted);
 }

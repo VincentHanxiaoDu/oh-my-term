@@ -504,9 +504,10 @@ mod tests {
     #[test]
     fn a_removal_names_the_entry_by_text_as_well_as_by_id() {
         let (binding, mut q, id) = with_one(Ownership::Mirrored);
-        assert!(q
-            .remove(binding, &working(), id, text_hash("run the tests"))
-            .is_ok());
+        assert!(
+            q.remove(binding, &working(), id, text_hash("run the tests"))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -570,7 +571,8 @@ mod tests {
         let a = q.enqueue(binding, &working(), "a", at(0), None).expect("a");
         let b = q.enqueue(binding, &working(), "b", at(0), None).expect("b");
         let version = q.order_version();
-        q.reorder(binding, &working(), &[b, a], version).expect("reordered");
+        q.reorder(binding, &working(), &[b, a], version)
+            .expect("reordered");
         let View::Known(entries) = q.view() else {
             panic!("readable");
         };

@@ -1,0 +1,1812 @@
+{
+  "agent.attention": {
+    "required_input": [],
+    "input": [
+      "baseline_gap_secs",
+      "baseline_working_secs",
+      "consecutive_failures",
+      "last_failure",
+      "recent_calls",
+      "silent_secs",
+      "since_file_change_secs",
+      "tokens_since_file_change",
+      "working_secs"
+    ],
+    "output": [
+      "confidence",
+      "detail",
+      "needs_attention",
+      "reasons"
+    ]
+  },
+  "agent.compare": {
+    "required_input": [
+      "runs"
+    ],
+    "input": [
+      "runs"
+    ],
+    "output": [
+      "caveats",
+      "rows"
+    ]
+  },
+  "agent.connect": {
+    "required_input": [
+      "agent",
+      "command",
+      "session"
+    ],
+    "input": [
+      "agent",
+      "command",
+      "session"
+    ],
+    "output": [
+      "events",
+      "unmapped"
+    ]
+  },
+  "agent.interrupt": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "method"
+    ]
+  },
+  "agent.offers": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "commands",
+      "models",
+      "queue",
+      "tools"
+    ]
+  },
+  "agent.threads": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "blocked",
+      "threads"
+    ]
+  },
+  "agent.wait": {
+    "required_input": [
+      "session",
+      "timeout_ms",
+      "until"
+    ],
+    "input": [
+      "immediate",
+      "session",
+      "timeout_ms",
+      "until"
+    ],
+    "output": [
+      "matched",
+      "state",
+      "timed_out",
+      "waited_ms"
+    ]
+  },
+  "audit.list": {
+    "required_input": [],
+    "input": [
+      "limit"
+    ],
+    "output": [
+      "dropped",
+      "entries"
+    ]
+  },
+  "block.body": {
+    "required_input": [
+      "block",
+      "session"
+    ],
+    "input": [
+      "block",
+      "from",
+      "lines",
+      "session"
+    ],
+    "output": [
+      "command",
+      "lines",
+      "total",
+      "truncated"
+    ]
+  },
+  "block.rerun": {
+    "required_input": [
+      "block",
+      "epoch",
+      "session"
+    ],
+    "input": [
+      "block",
+      "epoch",
+      "session"
+    ],
+    "output": [
+      "command"
+    ]
+  },
+  "config.get": {
+    "required_input": [],
+    "input": [
+      "key"
+    ],
+    "output": [
+      "values"
+    ]
+  },
+  "config.import": {
+    "required_input": [
+      "settings",
+      "source"
+    ],
+    "input": [
+      "settings",
+      "source"
+    ],
+    "output": [
+      "unmapped",
+      "usual_paths",
+      "values"
+    ]
+  },
+  "config.reload_class": {
+    "required_input": [
+      "keys"
+    ],
+    "input": [
+      "keys"
+    ],
+    "output": [
+      "keys",
+      "pending"
+    ]
+  },
+  "config.schema": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "settings"
+    ]
+  },
+  "device.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "devices"
+    ]
+  },
+  "device.rename": {
+    "required_input": [
+      "device",
+      "label"
+    ],
+    "input": [
+      "device",
+      "label"
+    ],
+    "output": [
+      "label"
+    ]
+  },
+  "device.revoke": {
+    "required_input": [
+      "device"
+    ],
+    "input": [
+      "device"
+    ],
+    "output": [
+      "revoked"
+    ]
+  },
+  "device.revoke_all": {
+    "required_input": [
+      "keep"
+    ],
+    "input": [
+      "keep"
+    ],
+    "output": [
+      "kept",
+      "revoked"
+    ]
+  },
+  "doctor.report": {
+    "required_input": [],
+    "input": [
+      "what_happened"
+    ],
+    "output": [
+      "report"
+    ]
+  },
+  "doctor.run": {
+    "required_input": [],
+    "input": [
+      "group"
+    ],
+    "output": [
+      "checks",
+      "failures",
+      "not_checked"
+    ]
+  },
+  "events.subscribe": {
+    "required_input": [],
+    "input": [
+      "filter"
+    ],
+    "output": [
+      "subscription"
+    ]
+  },
+  "fanout.choose": {
+    "required_input": [
+      "agent",
+      "name"
+    ],
+    "input": [
+      "agent",
+      "name"
+    ],
+    "output": [
+      "branch",
+      "merged",
+      "worktree"
+    ]
+  },
+  "fanout.start": {
+    "required_input": [
+      "agents",
+      "name",
+      "prompt",
+      "workspace"
+    ],
+    "input": [
+      "agents",
+      "base",
+      "name",
+      "prompt",
+      "workspace"
+    ],
+    "output": [
+      "arms",
+      "name",
+      "prepared"
+    ]
+  },
+  "fanout.status": {
+    "required_input": [],
+    "input": [
+      "name"
+    ],
+    "output": [
+      "fanouts"
+    ]
+  },
+  "fs.list": {
+    "required_input": [
+      "workspace"
+    ],
+    "input": [
+      "path",
+      "workspace"
+    ],
+    "output": [
+      "entries"
+    ]
+  },
+  "fs.read": {
+    "required_input": [
+      "path",
+      "workspace"
+    ],
+    "input": [
+      "chunk",
+      "path",
+      "workspace"
+    ],
+    "output": [
+      "chunk",
+      "chunks",
+      "data",
+      "media_type",
+      "total_bytes"
+    ]
+  },
+  "fs.write": {
+    "required_input": [
+      "data",
+      "path",
+      "workspace"
+    ],
+    "input": [
+      "chunk",
+      "chunks",
+      "data",
+      "path",
+      "workspace"
+    ],
+    "output": [
+      "complete",
+      "received",
+      "remaining"
+    ]
+  },
+  "git.diff": {
+    "required_input": [
+      "workspace"
+    ],
+    "input": [
+      "staged",
+      "workspace"
+    ],
+    "output": [
+      "files"
+    ]
+  },
+  "git.hunks": {
+    "required_input": [
+      "path",
+      "workspace"
+    ],
+    "input": [
+      "base",
+      "path",
+      "staged",
+      "workspace"
+    ],
+    "output": [
+      "hunks"
+    ]
+  },
+  "git.status": {
+    "required_input": [
+      "workspace"
+    ],
+    "input": [
+      "workspace"
+    ],
+    "output": [
+      "ahead",
+      "behind",
+      "branch",
+      "dirty",
+      "modified",
+      "staged",
+      "untracked"
+    ]
+  },
+  "help.render": {
+    "required_input": [
+      "topic"
+    ],
+    "input": [
+      "topic"
+    ],
+    "output": [
+      "entries",
+      "topic"
+    ]
+  },
+  "help.topics": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "topics"
+    ]
+  },
+  "history.forget": {
+    "required_input": [],
+    "input": [
+      "every_run",
+      "filter",
+      "limit",
+      "mode",
+      "of",
+      "only_successful",
+      "scope"
+    ],
+    "output": [
+      "removed"
+    ]
+  },
+  "history.query": {
+    "required_input": [],
+    "input": [
+      "every_run",
+      "filter",
+      "limit",
+      "mode",
+      "of",
+      "only_successful",
+      "scope"
+    ],
+    "output": [
+      "entries",
+      "held"
+    ]
+  },
+  "identity.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "identities"
+    ]
+  },
+  "identity.reauth_check": {
+    "required_input": [
+      "capability"
+    ],
+    "input": [
+      "capability",
+      "effects",
+      "enabled",
+      "freshness_secs",
+      "require",
+      "require_effects",
+      "verified_secs_ago"
+    ],
+    "output": [
+      "because",
+      "failing_narrows_authority",
+      "proceeds"
+    ]
+  },
+  "identity.revoke": {
+    "required_input": [
+      "identity"
+    ],
+    "input": [
+      "identity"
+    ],
+    "output": [
+      "devices"
+    ]
+  },
+  "instance.catalog": {
+    "required_input": [],
+    "input": [
+      "known_hash"
+    ],
+    "output": [
+      "entries",
+      "hash",
+      "unchanged"
+    ]
+  },
+  "instance.info": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "proto",
+      "version"
+    ]
+  },
+  "instance.metrics": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "calls",
+      "clients",
+      "failures",
+      "sessions",
+      "started_at"
+    ]
+  },
+  "instance.shutdown": {
+    "required_input": [],
+    "input": [
+      "force"
+    ],
+    "output": [
+      "blocked_by",
+      "shutting_down"
+    ]
+  },
+  "interaction.list": {
+    "required_input": [],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "interactions"
+    ]
+  },
+  "interaction.resolve": {
+    "required_input": [
+      "interaction",
+      "option"
+    ],
+    "input": [
+      "interaction",
+      "option",
+      "text"
+    ],
+    "output": [
+      "state"
+    ]
+  },
+  "invite.create": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "expires_in_secs",
+      "invite"
+    ]
+  },
+  "job.create": {
+    "required_input": [
+      "name",
+      "run",
+      "workspace"
+    ],
+    "input": [
+      "daily_at_secs",
+      "enabled",
+      "every_seconds",
+      "name",
+      "run",
+      "workspace"
+    ],
+    "output": [
+      "name",
+      "replaced"
+    ]
+  },
+  "job.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "jobs"
+    ]
+  },
+  "keys.audit": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "conflicts",
+      "programs_known"
+    ]
+  },
+  "keys.cheatsheet": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "bindings"
+    ]
+  },
+  "keys.check_file": {
+    "required_input": [
+      "bindings",
+      "leader"
+    ],
+    "input": [
+      "bindings",
+      "keymap",
+      "leader"
+    ],
+    "output": [
+      "problems"
+    ]
+  },
+  "keys.conflicts": {
+    "required_input": [
+      "chord"
+    ],
+    "input": [
+      "chord"
+    ],
+    "output": [
+      "chord",
+      "conflicts",
+      "refused"
+    ]
+  },
+  "keys.explain": {
+    "required_input": [
+      "chord"
+    ],
+    "input": [
+      "chord"
+    ],
+    "output": [
+      "action",
+      "alias",
+      "awkward",
+      "chord",
+      "conflicts",
+      "in_a_pane",
+      "mode"
+    ]
+  },
+  "keys.flavour": {
+    "required_input": [
+      "flavour"
+    ],
+    "input": [
+      "flavour"
+    ],
+    "output": [
+      "bindings",
+      "governs"
+    ]
+  },
+  "keys.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "bindings"
+    ]
+  },
+  "keys.registry": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "flavours",
+      "programs"
+    ]
+  },
+  "launch.preview": {
+    "required_input": [
+      "launch"
+    ],
+    "input": [
+      "launch"
+    ],
+    "output": [
+      "focused",
+      "panes",
+      "problems"
+    ]
+  },
+  "layout.open": {
+    "required_input": [
+      "panes",
+      "workspace"
+    ],
+    "input": [
+      "panes",
+      "workspace"
+    ],
+    "output": [
+      "opened",
+      "panes"
+    ]
+  },
+  "layout.restore": {
+    "required_input": [
+      "alive",
+      "height",
+      "name",
+      "width"
+    ],
+    "input": [
+      "alive",
+      "height",
+      "name",
+      "width"
+    ],
+    "output": [
+      "hidden",
+      "missing",
+      "panes"
+    ]
+  },
+  "layout.save": {
+    "required_input": [
+      "name",
+      "panes",
+      "preset"
+    ],
+    "input": [
+      "name",
+      "panes",
+      "preset"
+    ],
+    "output": [
+      "name",
+      "saved"
+    ]
+  },
+  "media.attach": {
+    "required_input": [
+      "agent",
+      "path"
+    ],
+    "input": [
+      "agent",
+      "path"
+    ],
+    "output": [
+      "confidence",
+      "reference"
+    ]
+  },
+  "media.clipboard": {
+    "required_input": [
+      "text"
+    ],
+    "input": [
+      "term",
+      "text"
+    ],
+    "output": [
+      "message",
+      "sequence"
+    ]
+  },
+  "media.describe": {
+    "required_input": [
+      "data"
+    ],
+    "input": [
+      "data"
+    ],
+    "output": [
+      "bytes",
+      "digest",
+      "filename",
+      "kind",
+      "media_type"
+    ]
+  },
+  "media.get": {
+    "required_input": [
+      "digest"
+    ],
+    "input": [
+      "digest"
+    ],
+    "output": [
+      "content",
+      "kind",
+      "size"
+    ]
+  },
+  "media.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "blobs",
+      "used"
+    ]
+  },
+  "media.paste_tier": {
+    "required_input": [],
+    "input": [
+      "omt_on_both_ends",
+      "osc_companion_answered",
+      "reverse_socket_answered",
+      "terminal_upload_confirmed"
+    ],
+    "output": [
+      "explanation",
+      "tier"
+    ]
+  },
+  "media.put": {
+    "required_input": [
+      "content",
+      "origin"
+    ],
+    "input": [
+      "content",
+      "origin"
+    ],
+    "output": [
+      "digest",
+      "kind",
+      "media_type",
+      "size"
+    ]
+  },
+  "migrate.tmux_preview": {
+    "required_input": [
+      "config"
+    ],
+    "input": [
+      "config"
+    ],
+    "output": [
+      "directives",
+      "mapped",
+      "preview",
+      "review",
+      "unsupported"
+    ]
+  },
+  "onboarding.disclosures": {
+    "required_input": [],
+    "input": [
+      "trigger"
+    ],
+    "output": [
+      "line",
+      "recorded",
+      "surface"
+    ]
+  },
+  "onboarding.dismiss_hints": {
+    "required_input": [],
+    "input": [
+      "hint"
+    ],
+    "output": [
+      "remaining",
+      "silenced"
+    ]
+  },
+  "onboarding.hint_state": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "next",
+      "remaining",
+      "runs",
+      "silenced"
+    ]
+  },
+  "open.click": {
+    "required_input": [],
+    "input": [
+      "alt",
+      "mouse_reporting",
+      "shift",
+      "super_key"
+    ],
+    "output": [
+      "consumed",
+      "owner"
+    ]
+  },
+  "open.recognize": {
+    "required_input": [
+      "line"
+    ],
+    "input": [
+      "line"
+    ],
+    "output": [
+      "matches"
+    ]
+  },
+  "open.remote_discard": {
+    "required_input": [
+      "path"
+    ],
+    "input": [
+      "path"
+    ],
+    "output": [
+      "discarded",
+      "remaining"
+    ]
+  },
+  "open.remote_list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "files"
+    ]
+  },
+  "open.resolve": {
+    "required_input": [
+      "path",
+      "roots"
+    ],
+    "input": [
+      "line",
+      "path",
+      "roots"
+    ],
+    "output": [
+      "actions",
+      "existence",
+      "line",
+      "path",
+      "root"
+    ]
+  },
+  "open.rules_list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "rules"
+    ]
+  },
+  "open.rules_test": {
+    "required_input": [
+      "text"
+    ],
+    "input": [
+      "text"
+    ],
+    "output": [
+      "matches",
+      "rule"
+    ]
+  },
+  "pane.close": {
+    "required_input": [
+      "pane",
+      "workspace"
+    ],
+    "input": [
+      "pane",
+      "workspace"
+    ],
+    "output": [
+      "closed"
+    ]
+  },
+  "pane.focus": {
+    "required_input": [
+      "pane",
+      "workspace"
+    ],
+    "input": [
+      "pane",
+      "workspace"
+    ],
+    "output": [
+      "focused"
+    ]
+  },
+  "pane.list": {
+    "required_input": [
+      "workspace"
+    ],
+    "input": [
+      "workspace"
+    ],
+    "output": [
+      "fit",
+      "panes"
+    ]
+  },
+  "pane.navigate": {
+    "required_input": [
+      "direction",
+      "from",
+      "panes"
+    ],
+    "input": [
+      "direction",
+      "from",
+      "panes",
+      "wrap"
+    ],
+    "output": [
+      "focus"
+    ]
+  },
+  "pane.open": {
+    "required_input": [
+      "session",
+      "workspace"
+    ],
+    "input": [
+      "session",
+      "workspace"
+    ],
+    "output": [
+      "pane"
+    ]
+  },
+  "plugin.enable": {
+    "required_input": [
+      "enabled",
+      "id"
+    ],
+    "input": [
+      "enabled",
+      "id"
+    ],
+    "output": [
+      "enabled"
+    ]
+  },
+  "plugin.install": {
+    "required_input": [
+      "id",
+      "name",
+      "permissions",
+      "version"
+    ],
+    "input": [
+      "description",
+      "entry",
+      "grant",
+      "id",
+      "name",
+      "permissions",
+      "version"
+    ],
+    "output": [
+      "granted",
+      "id",
+      "refused"
+    ]
+  },
+  "plugin.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "plugins"
+    ]
+  },
+  "plugin.start": {
+    "required_input": [
+      "id"
+    ],
+    "input": [
+      "id",
+      "socket"
+    ],
+    "output": [
+      "pid",
+      "role"
+    ]
+  },
+  "presence.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "clients"
+    ]
+  },
+  "queue.edit": {
+    "required_input": [
+      "binding",
+      "entry",
+      "expected_version",
+      "state",
+      "text"
+    ],
+    "input": [
+      "binding",
+      "entry",
+      "expected_version",
+      "state",
+      "text"
+    ],
+    "output": [
+      "version"
+    ]
+  },
+  "queue.enqueue": {
+    "required_input": [
+      "binding",
+      "state",
+      "text"
+    ],
+    "input": [
+      "binding",
+      "ownership",
+      "state",
+      "text",
+      "valid_for_seconds"
+    ],
+    "output": [
+      "entry",
+      "state"
+    ]
+  },
+  "queue.list": {
+    "required_input": [
+      "binding"
+    ],
+    "input": [
+      "binding"
+    ],
+    "output": [
+      "can_rearrange",
+      "entries",
+      "kind"
+    ]
+  },
+  "queue.remove": {
+    "required_input": [
+      "binding",
+      "entry",
+      "expected_text",
+      "state"
+    ],
+    "input": [
+      "binding",
+      "entry",
+      "expected_text",
+      "state"
+    ],
+    "output": [
+      "removed"
+    ]
+  },
+  "queue.reorder": {
+    "required_input": [
+      "binding",
+      "expected_version",
+      "order",
+      "state"
+    ],
+    "input": [
+      "binding",
+      "expected_version",
+      "order",
+      "state"
+    ],
+    "output": [
+      "version"
+    ]
+  },
+  "recall.policy": {
+    "required_input": [],
+    "input": [
+      "index_reasoning"
+    ],
+    "output": [
+      "indexed_tool_fields",
+      "sources"
+    ]
+  },
+  "recall.record": {
+    "required_input": [
+      "command",
+      "session",
+      "workspace"
+    ],
+    "input": [
+      "command",
+      "cwd",
+      "duration_ms",
+      "exit_code",
+      "session",
+      "workspace"
+    ],
+    "output": [
+      "held"
+    ]
+  },
+  "recall.suggest": {
+    "required_input": [
+      "prefix",
+      "workspace"
+    ],
+    "input": [
+      "limit",
+      "prefix",
+      "workspace"
+    ],
+    "output": [
+      "suggestions"
+    ]
+  },
+  "remote.probe": {
+    "required_input": [
+      "host"
+    ],
+    "input": [
+      "host"
+    ],
+    "output": [
+      "artifact",
+      "decision",
+      "has_zstd",
+      "present",
+      "uname"
+    ]
+  },
+  "search.explain": {
+    "required_input": [
+      "candidates"
+    ],
+    "input": [
+      "candidates"
+    ],
+    "output": [
+      "results"
+    ]
+  },
+  "search.session": {
+    "required_input": [
+      "query",
+      "session"
+    ],
+    "input": [
+      "case_sensitive",
+      "limit",
+      "query",
+      "session"
+    ],
+    "output": [
+      "hits",
+      "truncated"
+    ]
+  },
+  "security.bind_check": {
+    "required_input": [
+      "binds"
+    ],
+    "input": [
+      "auth_backend",
+      "binds",
+      "default_role",
+      "tailnet_identity",
+      "tls",
+      "trust_proxy"
+    ],
+    "output": [
+      "may_start",
+      "refusals",
+      "warnings"
+    ]
+  },
+  "security.publish_check": {
+    "required_input": [],
+    "input": [
+      "allowed_origins",
+      "auth_backend",
+      "bearer_device_bound",
+      "default_role",
+      "password_length",
+      "rate_limited",
+      "tailnet_identity_only"
+    ],
+    "output": [
+      "may_start",
+      "refusals",
+      "warnings"
+    ]
+  },
+  "session.acquire": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "force",
+      "session"
+    ],
+    "output": [
+      "epoch"
+    ]
+  },
+  "session.blocks": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "failed_only",
+      "session"
+    ],
+    "output": [
+      "blocks",
+      "shell_integration"
+    ]
+  },
+  "session.capture": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "format",
+      "lines",
+      "session"
+    ],
+    "output": [
+      "content",
+      "format",
+      "lines",
+      "total"
+    ]
+  },
+  "session.close": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "closed"
+    ]
+  },
+  "session.create": {
+    "required_input": [
+      "workspace"
+    ],
+    "input": [
+      "args",
+      "cols",
+      "program",
+      "rows",
+      "workspace"
+    ],
+    "output": [
+      "session"
+    ]
+  },
+  "session.list": {
+    "required_input": [],
+    "input": [
+      "workspace"
+    ],
+    "output": [
+      "sessions"
+    ]
+  },
+  "session.read": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "history",
+      "session"
+    ],
+    "output": [
+      "alternate_screen",
+      "cursor",
+      "history",
+      "screen"
+    ]
+  },
+  "session.release": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "released"
+    ]
+  },
+  "session.resize": {
+    "required_input": [
+      "cols",
+      "rows",
+      "session"
+    ],
+    "input": [
+      "cols",
+      "rows",
+      "session"
+    ],
+    "output": [
+      "cols",
+      "rows"
+    ]
+  },
+  "session.restart": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "cols",
+      "program",
+      "rows",
+      "session"
+    ],
+    "output": [
+      "kept_lines",
+      "session"
+    ]
+  },
+  "session.scrollback": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "from",
+      "lines",
+      "session"
+    ],
+    "output": [
+      "from",
+      "lines",
+      "total"
+    ]
+  },
+  "session.snapshot": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "alternate_screen",
+      "cols",
+      "cursor",
+      "cursor_visible",
+      "rows",
+      "rows_count"
+    ]
+  },
+  "session.timeline": {
+    "required_input": [
+      "events"
+    ],
+    "input": [
+      "events"
+    ],
+    "output": [
+      "digest",
+      "entries",
+      "events",
+      "failed_blocks",
+      "files_changed",
+      "interactions",
+      "tool_calls"
+    ]
+  },
+  "session.transcript": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "from",
+      "limit",
+      "session"
+    ],
+    "output": [
+      "dropped",
+      "entries",
+      "total"
+    ]
+  },
+  "session.write": {
+    "required_input": [
+      "epoch",
+      "session",
+      "text"
+    ],
+    "input": [
+      "epoch",
+      "session",
+      "text"
+    ],
+    "output": [
+      "bytes"
+    ]
+  },
+  "setup.detect_agents": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "agents",
+      "found",
+      "searched"
+    ]
+  },
+  "shell.integration": {
+    "required_input": [],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "active",
+      "blocks_seen",
+      "shell",
+      "snippet"
+    ]
+  },
+  "ssh.plan": {
+    "required_input": [
+      "target"
+    ],
+    "input": [
+      "bootstrap",
+      "remote_has_omt",
+      "target"
+    ],
+    "output": [
+      "argv",
+      "direct_media",
+      "mode",
+      "reason"
+    ]
+  },
+  "state.restore": {
+    "required_input": [],
+    "input": [
+      "path"
+    ],
+    "output": [
+      "found",
+      "missing",
+      "sessions",
+      "workspaces"
+    ]
+  },
+  "state.save": {
+    "required_input": [],
+    "input": [
+      "path"
+    ],
+    "output": [
+      "path",
+      "workspaces"
+    ]
+  },
+  "store.migrate_status": {
+    "required_input": [
+      "marker"
+    ],
+    "input": [
+      "marker"
+    ],
+    "output": [
+      "openable",
+      "problem",
+      "remedy",
+      "steps"
+    ]
+  },
+  "store.paths": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "artefacts",
+      "at_rest",
+      "summary"
+    ]
+  },
+  "store.redaction_test": {
+    "required_input": [
+      "text"
+    ],
+    "input": [
+      "text"
+    ],
+    "output": [
+      "redacted",
+      "removed"
+    ]
+  },
+  "store.retention": {
+    "required_input": [
+      "age_days",
+      "kind"
+    ],
+    "input": [
+      "age_days",
+      "agent_touched",
+      "failed",
+      "kind",
+      "output_bytes"
+    ],
+    "output": [
+      "compact_after_days",
+      "delete_after_days",
+      "fate"
+    ]
+  },
+  "task.cancel": {
+    "required_input": [
+      "task"
+    ],
+    "input": [
+      "task"
+    ],
+    "output": [
+      "state"
+    ]
+  },
+  "task.get": {
+    "required_input": [
+      "task"
+    ],
+    "input": [
+      "task"
+    ],
+    "output": [
+      "outcome",
+      "task"
+    ]
+  },
+  "task.list": {
+    "required_input": [],
+    "input": [
+      "include_finished"
+    ],
+    "output": [
+      "tasks"
+    ]
+  },
+  "term.profile": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "disagreements",
+      "entry_resolved",
+      "nested",
+      "program",
+      "term",
+      "truecolor"
+    ]
+  },
+  "theme.get": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "ansi",
+      "appearance",
+      "background",
+      "cursor",
+      "foreground",
+      "name",
+      "selection"
+    ]
+  },
+  "uninstall.apply": {
+    "required_input": [
+      "accept",
+      "plan"
+    ],
+    "input": [
+      "accept",
+      "keep_config",
+      "keep_data",
+      "plan"
+    ],
+    "output": [
+      "preserved",
+      "removed",
+      "steps"
+    ]
+  },
+  "uninstall.plan": {
+    "required_input": [],
+    "input": [
+      "keep_config",
+      "keep_data"
+    ],
+    "output": [
+      "binary",
+      "plan",
+      "steps"
+    ]
+  },
+  "upgrade.check": {
+    "required_input": [],
+    "input": [
+      "channel"
+    ],
+    "output": [
+      "available",
+      "blocked_by",
+      "current",
+      "delegate_to",
+      "installed_by"
+    ]
+  },
+  "usage.report": {
+    "required_input": [],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "headroom",
+      "limit_status",
+      "resets_at",
+      "session",
+      "sessions_reporting",
+      "total"
+    ]
+  },
+  "voice.append": {
+    "required_input": [
+      "session",
+      "text"
+    ],
+    "input": [
+      "final_chunk",
+      "session",
+      "text"
+    ],
+    "output": [
+      "committed",
+      "display"
+    ]
+  },
+  "voice.clear": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "had_text"
+    ]
+  },
+  "voice.providers": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "providers",
+      "usable"
+    ]
+  },
+  "workspace.list": {
+    "required_input": [],
+    "input": [],
+    "output": [
+      "workspaces"
+    ]
+  },
+  "workspace.open": {
+    "required_input": [
+      "root"
+    ],
+    "input": [
+      "root"
+    ],
+    "output": [
+      "already_open",
+      "id"
+    ]
+  },
+  "worktree.add": {
+    "required_input": [
+      "branch",
+      "path",
+      "workspace"
+    ],
+    "input": [
+      "branch",
+      "path",
+      "workspace"
+    ],
+    "output": [
+      "worktree"
+    ]
+  },
+  "worktree.list": {
+    "required_input": [
+      "workspace"
+    ],
+    "input": [
+      "workspace"
+    ],
+    "output": [
+      "worktrees"
+    ]
+  },
+  "worktree.remove": {
+    "required_input": [
+      "path",
+      "workspace"
+    ],
+    "input": [
+      "force",
+      "path",
+      "workspace"
+    ],
+    "output": [
+      "remaining"
+    ]
+  }
+}

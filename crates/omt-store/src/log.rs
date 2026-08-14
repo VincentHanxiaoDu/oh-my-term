@@ -118,11 +118,7 @@ impl Log {
     ///
     /// # Errors
     /// Fails if the underlying write does.
-    pub fn append_text(
-        &mut self,
-        text: &str,
-        redact: &dyn Fn(&str) -> String,
-    ) -> io::Result<()> {
+    pub fn append_text(&mut self, text: &str, redact: &dyn Fn(&str) -> String) -> io::Result<()> {
         self.append(redact(text).as_bytes())
     }
 
@@ -303,7 +299,10 @@ mod tests {
         }
         let raw = std::fs::read(&path).expect("read");
         let text = String::from_utf8_lossy(&raw);
-        assert!(!text.contains("ghp_secret"), "the plaintext reached the disk");
+        assert!(
+            !text.contains("ghp_secret"),
+            "the plaintext reached the disk"
+        );
         assert!(text.contains("[redacted]"));
     }
 
@@ -323,7 +322,6 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(String::from_utf8_lossy(&records[0]), "replaced entirely");
     }
-
 
     fn dir() -> tempfile::TempDir {
         tempfile::tempdir().expect("tempdir")

@@ -204,10 +204,7 @@ pub fn check(listen: &Listen) -> Verdict {
         }
     }
 
-    Verdict {
-        refusals,
-        warnings,
-    }
+    Verdict { refusals, warnings }
 }
 
 /// Whether a connecting process may use the socket.
@@ -289,8 +286,7 @@ pub fn check_publication(publication: &Publication) -> Verdict {
         refusals.push(Refusal {
             problem: "this instance would be on the public internet with no authentication"
                 .to_owned(),
-            remedy: "Configure auth.password_file or auth.token_file before publishing."
-                .to_owned(),
+            remedy: "Configure auth.password_file or auth.token_file before publishing.".to_owned(),
         });
     }
     if publication.tailnet_identity_only {
@@ -465,7 +461,6 @@ mod tests {
         assert!(v.refusals.len() >= 4, "{:?}", v.refusals);
     }
 
-
     fn listen(binds: Vec<Bind>) -> Listen {
         Listen {
             binds,
@@ -503,7 +498,9 @@ mod tests {
         let v = check(&l);
         assert!(!v.may_start());
         assert!(
-            v.refusals.iter().any(|r| r.problem.contains("without authentication")),
+            v.refusals
+                .iter()
+                .any(|r| r.problem.contains("without authentication")),
             "{:?}",
             v.refusals
         );

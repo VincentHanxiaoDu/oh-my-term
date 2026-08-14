@@ -691,7 +691,10 @@ mod tests {
         // Not the most impressive feature — the prefix key. Somebody who cannot
         // reach omt at all has no use for what omt can do.
         assert_eq!(HINTS.first().map(|h| h.id), Some("prefix"));
-        assert!(HINTS[0].text.contains("{leader}"), "the prefix hint must name the prefix");
+        assert!(
+            HINTS[0].text.contains("{leader}"),
+            "the prefix hint must name the prefix"
+        );
         // And it must come out as the key that is actually bound, not as the
         // placeholder and not as a hardcoded one.
         let shown = HINTS[0].resolved();
@@ -846,12 +849,8 @@ mod tests {
 
     #[test]
     fn help_topics_come_from_the_catalog() {
-        let out = CapabilityHandler::<HelpTopics>::call(
-            &HelpHandler,
-            &ctx(),
-            TopicsIn {},
-        )
-        .expect("topics");
+        let out = CapabilityHandler::<HelpTopics>::call(&HelpHandler, &ctx(), TopicsIn {})
+            .expect("topics");
         assert!(
             out.topics.iter().any(|t| t.name == "session"),
             "sessions are a topic because they are a capability group"

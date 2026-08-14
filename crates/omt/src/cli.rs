@@ -57,7 +57,10 @@ impl std::fmt::Display for ParseError {
             Self::NotACapability => write!(f, "name a group and a verb, as in `omt session list`"),
             Self::DanglingFlag { flag } => write!(f, "`{flag}` needs a value after it"),
             Self::Unexpected { word } => {
-                write!(f, "`{word}` is not a flag; arguments are given as --name value")
+                write!(
+                    f,
+                    "`{word}` is not a flag; arguments are given as --name value"
+                )
             }
         }
     }
@@ -101,9 +104,7 @@ pub fn parse(args: &[String]) -> Result<Invocation, ParseError> {
     while i < rest.len() {
         let word = rest[i];
         let Some(name) = word.strip_prefix("--") else {
-            return Err(ParseError::Unexpected {
-                word: word.clone(),
-            });
+            return Err(ParseError::Unexpected { word: word.clone() });
         };
         if name == "json" {
             json = true;
@@ -118,9 +119,7 @@ pub fn parse(args: &[String]) -> Result<Invocation, ParseError> {
             continue;
         }
         let Some(next) = rest.get(i + 1) else {
-            return Err(ParseError::DanglingFlag {
-                flag: word.clone(),
-            });
+            return Err(ParseError::DanglingFlag { flag: word.clone() });
         };
         // Repeating a flag builds a list, which is how a capability taking a
         // vector is reachable without a second syntax: `--until idle --until
@@ -190,7 +189,10 @@ pub fn run(args: &[String]) -> Exit {
     let mut daemon = match crate::attach::Attached::connect(&socket) {
         Ok(daemon) => daemon,
         Err(error) => {
-            eprintln!("omt: cannot reach an instance at {}: {error}", socket.display());
+            eprintln!(
+                "omt: cannot reach an instance at {}: {error}",
+                socket.display()
+            );
             return Exit::Unreachable;
         }
     };

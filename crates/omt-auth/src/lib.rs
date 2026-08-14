@@ -8,10 +8,10 @@
 //! noise.
 
 pub mod at_rest;
+pub mod bind;
 pub mod identity_file;
 pub mod methods;
 pub mod reauth;
-pub mod bind;
 pub mod token;
 
 pub use token::{

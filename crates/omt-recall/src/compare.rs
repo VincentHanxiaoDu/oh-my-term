@@ -167,8 +167,7 @@ pub fn compare(runs: &[Run]) -> Comparison {
     }
     if runs.iter().any(|r| r.tokens.is_none()) {
         caveats.push(
-            "At least one agent did not report usage. Blank means unreported, not zero."
-                .to_owned(),
+            "At least one agent did not report usage. Blank means unreported, not zero.".to_owned(),
         );
     }
     if rows.iter().any(|r| !r.files_disagreement.is_empty()) {
@@ -252,7 +251,11 @@ mod tests {
         let mut r = run("a");
         r.files_from_agent.push("src/imagined.rs".to_owned());
         let c = compare(&[r]);
-        assert!(c.caveats.iter().any(|x| x.contains("disagree")), "{:?}", c.caveats);
+        assert!(
+            c.caveats.iter().any(|x| x.contains("disagree")),
+            "{:?}",
+            c.caveats
+        );
     }
 
     #[test]
@@ -324,7 +327,9 @@ mod tests {
         r.base_ref = None;
         let c = compare(&[r]);
         assert!(
-            c.caveats.iter().any(|x| x.contains("unknown starting point")),
+            c.caveats
+                .iter()
+                .any(|x| x.contains("unknown starting point")),
             "{:?}",
             c.caveats
         );

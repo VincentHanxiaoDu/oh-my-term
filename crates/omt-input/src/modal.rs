@@ -212,7 +212,10 @@ mod tests {
         for flavour in [Flavour::Vim, Flavour::Emacs] {
             for (_, spec, capability) in bindings(flavour) {
                 assert!(Chord::parse(spec).is_ok(), "`{spec}` in {flavour:?}");
-                assert!(capability.contains('.'), "`{capability}` is not a capability");
+                assert!(
+                    capability.contains('.'),
+                    "`{capability}` is not a capability"
+                );
             }
         }
     }

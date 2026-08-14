@@ -410,10 +410,11 @@ async fn serve_socket(mut socket: WebSocket, state: HttpState, role: Option<Role
         invite: true,
         ..omt_auth::methods::Backends::default()
     };
-    let offered: Vec<String> = omt_auth::methods::offered_for(backends, omt_auth::methods::Peer::Loopback)
-        .into_iter()
-        .map(|m| m.id().to_owned())
-        .collect();
+    let offered: Vec<String> =
+        omt_auth::methods::offered_for(backends, omt_auth::methods::Peer::Loopback)
+            .into_iter()
+            .map(|m| m.id().to_owned())
+            .collect();
     let mut peer = Peer::new(Actor::Local, role.unwrap_or(Role::Viewer)).offering(offered);
     // Its own identity for as long as it is connected, so presence can name a
     // client and the audit log can say which one did something.
@@ -927,11 +928,8 @@ mod origin_tests {
     use super::*;
 
     fn state() -> HttpState {
-        HttpState::new(
-            CapabilityRegistry::new(),
-            CredentialStore::new(),
-        )
-        .with_origins(vec!["http://127.0.0.1:7788".to_owned()])
+        HttpState::new(CapabilityRegistry::new(), CredentialStore::new())
+            .with_origins(vec!["http://127.0.0.1:7788".to_owned()])
     }
 
     fn headers(origin: Option<&str>) -> HeaderMap {
@@ -951,7 +949,11 @@ mod origin_tests {
         // answering "bad token" to it would confirm the token is the only
         // thing missing.
         assert!(!state().origin_allowed(&headers(Some("https://evil.example")), true));
-        assert!(state().authorize_upgrade(&headers(Some("https://evil.example"))).is_none());
+        assert!(
+            state()
+                .authorize_upgrade(&headers(Some("https://evil.example")))
+                .is_none()
+        );
     }
 
     #[test]
@@ -971,11 +973,11 @@ mod origin_tests {
     fn an_instance_serving_no_browser_still_refuses_a_page() {
         // The default allow-list is empty, so a daemon nobody configured for
         // the web does not quietly accept browser traffic.
-        let bare = HttpState::new(
-            CapabilityRegistry::new(),
-            CredentialStore::new(),
-        );
+        let bare = HttpState::new(CapabilityRegistry::new(), CredentialStore::new());
         assert!(!bare.origin_allowed(&headers(Some("http://127.0.0.1:7788")), true));
-        assert!(bare.origin_allowed(&headers(None), true), "and the TUI still connects");
+        assert!(
+            bare.origin_allowed(&headers(None), true),
+            "and the TUI still connects"
+        );
     }
 }

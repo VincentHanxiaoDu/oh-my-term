@@ -116,9 +116,9 @@ pub const RESERVED: &[Reserved] = &[
 #[must_use]
 pub fn reserved_by(chord: &Chord) -> Option<&'static Reserved> {
     let wanted = chord.canonical();
-    RESERVED.iter().find(|r| {
-        Chord::parse(r.chord).is_ok_and(|parsed| parsed.canonical() == wanted)
-    })
+    RESERVED
+        .iter()
+        .find(|r| Chord::parse(r.chord).is_ok_and(|parsed| parsed.canonical() == wanted))
 }
 
 /// Which of a keymap's bindings collide with a layer omt cannot see.
@@ -131,9 +131,7 @@ pub fn audit(keymap: &Keymap) -> Vec<(Mode, String, &'static Reserved)> {
     let mut out: Vec<(Mode, String, &'static Reserved)> = keymap
         .bindings()
         .into_iter()
-        .filter_map(|(mode, chord, _)| {
-            reserved_by(chord).map(|r| (mode, chord.canonical(), r))
-        })
+        .filter_map(|(mode, chord, _)| reserved_by(chord).map(|r| (mode, chord.canonical(), r)))
         .collect();
     out.sort_by(|a, b| a.2.layer.cmp(&b.2.layer).then(a.1.cmp(&b.1)));
     out

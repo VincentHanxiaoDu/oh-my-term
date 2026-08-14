@@ -22,8 +22,7 @@
 /// where camera software puts everything it could not fit elsewhere. Comments
 /// go too: they are free text somebody may not know is there.
 const METADATA_MARKERS: &[u8] = &[
-    0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF,
-    0xFE,
+    0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF, 0xFE,
 ];
 
 /// Whether these bytes look like a JPEG.
@@ -94,8 +93,8 @@ pub fn strip_png_metadata(bytes: &[u8]) -> Vec<u8> {
     let mut out: Vec<u8> = bytes[..8].to_vec();
     let mut i = 8usize;
     while i + 8 <= bytes.len() {
-        let length = u32::from_be_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]])
-            as usize;
+        let length =
+            u32::from_be_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]) as usize;
         let Some(kind) = bytes.get(i + 4..i + 8) else {
             break;
         };

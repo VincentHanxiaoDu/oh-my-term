@@ -30,10 +30,7 @@ pub fn attachment_reference(agent: &str, path: &str) -> (String, &'static str) {
         // The fallback is a bare absolute path with a human sentence in front,
         // because an agent that does not recognise any syntax still reads
         // English and can be asked to open a path.
-        _ => (
-            format!("Please look at this file: {path}"),
-            "fallback",
-        ),
+        _ => (format!("Please look at this file: {path}"), "fallback"),
     }
 }
 
@@ -89,8 +86,10 @@ impl CapabilityHandler<MediaAttach> for MediaHandler {
                 "an attachment reference needs an absolute path; a relative one resolves against whatever directory the agent happens to be in",
             ));
         }
-        let (reference, confidence) =
-            attachment_reference(&input.agent.to_lowercase().replace(['-', '_'], ""), &input.path);
+        let (reference, confidence) = attachment_reference(
+            &input.agent.to_lowercase().replace(['-', '_'], ""),
+            &input.path,
+        );
         Ok(AttachOut {
             reference,
             confidence: confidence.to_owned(),
@@ -564,9 +563,8 @@ impl CapabilityHandler<OpenRulesTest> for MediaHandler {
 // ---------------------------------------------------------------------------
 
 /// Every mirror this instance holds, keyed by local path.
-pub type Mirrors = std::sync::Arc<
-    std::sync::Mutex<std::collections::BTreeMap<String, omt_media::mirror::Mirror>>,
->;
+pub type Mirrors =
+    std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, omt_media::mirror::Mirror>>>;
 
 /// Input to `open.remote_list`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
@@ -643,7 +641,11 @@ impl CapabilityHandler<RemoteList> for MirrorHandler {
                 read_only: m.read_only,
             })
             .collect();
-        files.sort_by(|a, b| b.fetched_at.cmp(&a.fetched_at).then(a.local_path.cmp(&b.local_path)));
+        files.sort_by(|a, b| {
+            b.fetched_at
+                .cmp(&a.fetched_at)
+                .then(a.local_path.cmp(&b.local_path))
+        });
         Ok(RemoteListOut { files })
     }
 }

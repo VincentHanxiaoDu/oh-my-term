@@ -94,10 +94,9 @@ fn rust_panic(line: &str) -> Option<Found> {
 /// parenthesised form is the common one and the bare form appears for
 /// top-level frames, so both have to work or half a stack trace is clickable.
 fn node_stack(line: &str) -> Option<Found> {
-    let anchor = line.find(" at ").map_or_else(
-        || line.strip_prefix("at ").map(|_| 0usize),
-        |i| Some(i + 1),
-    )?;
+    let anchor = line
+        .find(" at ")
+        .map_or_else(|| line.strip_prefix("at ").map(|_| 0usize), |i| Some(i + 1))?;
     let rest = &line[anchor + 3..];
     // Prefer whatever is inside parentheses; that is where the location goes
     // when the frame has a function name.
@@ -155,7 +154,9 @@ fn split_path_line_column(token: &str) -> Option<(String, Option<u32>, Option<u3
         {
             Some(((*path).to_owned(), line.parse().ok(), column.parse().ok()))
         }
-        [line, path] if !path.is_empty() && !line.is_empty() && line.chars().all(|c| c.is_ascii_digit()) => {
+        [line, path]
+            if !path.is_empty() && !line.is_empty() && line.chars().all(|c| c.is_ascii_digit()) =>
+        {
             Some(((*path).to_owned(), line.parse().ok(), None))
         }
         _ => Some((token.to_owned(), None, None)),
@@ -299,8 +300,7 @@ mod tests {
 
     #[test]
     fn a_python_traceback_frame_is_found() {
-        let (path, line, _) =
-            path_of(r#"  File "/app/service.py", line 42, in handle_request"#);
+        let (path, line, _) = path_of(r#"  File "/app/service.py", line 42, in handle_request"#);
         assert_eq!(path, "/app/service.py");
         assert_eq!(line, Some(42));
     }
@@ -322,8 +322,7 @@ mod tests {
 
     #[test]
     fn a_rust_panic_location_is_found() {
-        let (path, line, column) =
-            path_of("thread 'main' panicked at src/lib.rs:120:9:");
+        let (path, line, column) = path_of("thread 'main' panicked at src/lib.rs:120:9:");
         assert_eq!(path, "src/lib.rs");
         assert_eq!((line, column), (Some(120), Some(9)));
     }

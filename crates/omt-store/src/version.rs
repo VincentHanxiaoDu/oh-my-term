@@ -122,7 +122,12 @@ mod tests {
         // A partial parse reads the fields it recognises and ignores the rest
         // — and the rest is, by definition, what the newer version added.
         let refusal = plan("7").expect_err("refused");
-        let Refusal::FromTheFuture { store, binary, remedy } = refusal else {
+        let Refusal::FromTheFuture {
+            store,
+            binary,
+            remedy,
+        } = refusal
+        else {
             panic!("wrong refusal");
         };
         assert_eq!(store, 7);
@@ -163,8 +168,7 @@ mod tests {
     fn a_long_marker_is_quoted_back_in_a_readable_amount() {
         // The file may be a whole session log if something wrote to the wrong
         // path, and an error message is not a place to print one.
-        let Refusal::Unreadable { found } = plan(&"x".repeat(10_000)).expect_err("refused")
-        else {
+        let Refusal::Unreadable { found } = plan(&"x".repeat(10_000)).expect_err("refused") else {
             panic!("wrong refusal");
         };
         assert!(found.len() <= 40);
@@ -173,8 +177,13 @@ mod tests {
     #[test]
     fn surrounding_whitespace_does_not_make_a_version_unreadable() {
         // Every editor that opens the file adds a trailing newline.
-        assert_eq!(plan(" 1
-"), Ok(Vec::new()));
+        assert_eq!(
+            plan(
+                " 1
+"
+            ),
+            Ok(Vec::new())
+        );
     }
 
     #[test]

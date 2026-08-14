@@ -8,9 +8,9 @@
 
 pub mod highlight;
 pub use highlight::{Class, Span, classify};
-pub mod key;
 pub mod conflicts;
 pub mod dispatch;
+pub mod key;
 pub mod keymap;
 pub mod layers;
 pub mod layout;

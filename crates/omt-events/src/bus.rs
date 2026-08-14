@@ -261,7 +261,11 @@ mod tests {
             panic!("expected a replay");
         };
         assert_eq!(events.len(), 2, "{events:?}");
-        assert!(events.iter().all(|e| e.scope == SeqScope::Session { session: mine }));
+        assert!(
+            events
+                .iter()
+                .all(|e| e.scope == SeqScope::Session { session: mine })
+        );
     }
 
     #[test]

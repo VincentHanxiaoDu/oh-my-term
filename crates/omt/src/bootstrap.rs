@@ -96,7 +96,9 @@ pub const INSTALL_PATH: &str = "~/.local/bin/omt";
 /// the failure this shape exists to rule out.
 #[must_use]
 pub fn install_command(prefix: &str) -> String {
-    format!("cat > {prefix}/omt.tmp && chmod 755 {prefix}/omt.tmp && mv -f {prefix}/omt.tmp {prefix}/omt")
+    format!(
+        "cat > {prefix}/omt.tmp && chmod 755 {prefix}/omt.tmp && mv -f {prefix}/omt.tmp {prefix}/omt"
+    )
 }
 
 /// What the user has said about installing on a host.
@@ -187,8 +189,16 @@ mod tests {
     fn nozstd_is_not_read_as_zstd() {
         // The words overlap, and getting this backwards means compressing to a
         // host that cannot decompress.
-        assert!(!Probe::parse("OMT-MISSING Linux x86_64 nozstd").expect("parsed").zstd);
-        assert!(Probe::parse("OMT-MISSING Linux x86_64 zstd").expect("parsed").zstd);
+        assert!(
+            !Probe::parse("OMT-MISSING Linux x86_64 nozstd")
+                .expect("parsed")
+                .zstd
+        );
+        assert!(
+            Probe::parse("OMT-MISSING Linux x86_64 zstd")
+                .expect("parsed")
+                .zstd
+        );
     }
 
     #[test]

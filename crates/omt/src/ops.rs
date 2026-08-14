@@ -641,10 +641,10 @@ mod tests {
             &TaskHandler(tasks),
             &ctx(),
             TaskCancelIn {
-                    task: "task_1".to_owned(),
-                },
-            )
-            .expect("not an error");
+                task: "task_1".to_owned(),
+            },
+        )
+        .expect("not an error");
         assert_eq!(out.state, "done");
     }
 

@@ -333,7 +333,6 @@ mod tests {
         );
     }
 
-
     fn targets(line: &str) -> Vec<Target> {
         recognize(line).into_iter().map(|m| m.target).collect()
     }

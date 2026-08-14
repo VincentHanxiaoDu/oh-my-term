@@ -392,10 +392,7 @@ mod tests {
         updated.verified_against = "3.0.x".to_owned();
         r.insert(updated);
         assert_eq!(r.len(), 1);
-        assert_eq!(
-            r.conflicts(&chord("ctrl-o"))[0].verified_against,
-            "3.0.x"
-        );
+        assert_eq!(r.conflicts(&chord("ctrl-o"))[0].verified_against, "3.0.x");
     }
 
     #[test]

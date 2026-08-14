@@ -166,7 +166,10 @@ pub fn clear_on_signal(state_dir: &Path) {
     }
 
     for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
-        #[allow(unsafe_code, reason = "installing a signal handler has no safe wrapper")]
+        #[allow(
+            unsafe_code,
+            reason = "installing a signal handler has no safe wrapper"
+        )]
         unsafe {
             libc::signal(signal, handle as *const () as libc::sighandler_t);
         }
@@ -282,7 +285,10 @@ mod tests {
         assert!(outcome.needs_telling());
         let notice = outcome.notice().expect("a notice");
         assert!(notice.contains("10s"), "{notice}");
-        assert!(notice.contains("about"), "it is honest that this is an estimate");
+        assert!(
+            notice.contains("about"),
+            "it is honest that this is an estimate"
+        );
     }
 
     #[test]

@@ -354,7 +354,11 @@ mod tests {
         let issued = store.mint(Role::Operator, "iPhone", None, None);
         assert!(store.rename(&issued.credential.id, "Vincent's iPhone"));
         assert_eq!(
-            store.list().iter().find(|c| c.id == issued.credential.id).map(|c| c.label.as_str()),
+            store
+                .list()
+                .iter()
+                .find(|c| c.id == issued.credential.id)
+                .map(|c| c.label.as_str()),
             Some("Vincent's iPhone")
         );
     }
@@ -386,9 +390,16 @@ mod tests {
 
         assert_eq!(store.revoke_all_except(&mine.credential.id), 2);
         let revoked = |id: &str| {
-            store.list().iter().find(|c| c.id == id).is_some_and(|c| c.revoked)
+            store
+                .list()
+                .iter()
+                .find(|c| c.id == id)
+                .is_some_and(|c| c.revoked)
         };
-        assert!(!revoked(&mine.credential.id), "the one in your hand survives");
+        assert!(
+            !revoked(&mine.credential.id),
+            "the one in your hand survives"
+        );
         assert!(revoked(&phone.credential.id));
         assert!(revoked(&other.credential.id));
     }
@@ -403,7 +414,6 @@ mod tests {
         assert_eq!(store.revoke_all_except(&mine.credential.id), 1);
         assert_eq!(store.revoke_all_except(&mine.credential.id), 0);
     }
-
 
     fn store() -> CredentialStore {
         CredentialStore::new()

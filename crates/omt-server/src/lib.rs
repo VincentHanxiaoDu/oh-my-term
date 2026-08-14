@@ -5,9 +5,9 @@
 //! faster local route: a second path is how "remote is equivalent to local"
 //! stops being true without anybody noticing.
 
-pub mod origin;
 pub mod dispatch;
 pub mod http;
+pub mod origin;
 pub mod watch;
 
 pub use dispatch::{Peer, catalog_hash, handle};

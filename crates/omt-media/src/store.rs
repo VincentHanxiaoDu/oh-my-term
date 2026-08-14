@@ -272,9 +272,7 @@ impl BlobStore {
             .index
             .values()
             .filter(|r| {
-                r.class == Class::Runtime
-                    && r.refs == 0
-                    && at.saturating_sub(r.created) >= ttl
+                r.class == Class::Runtime && r.refs == 0 && at.saturating_sub(r.created) >= ttl
             })
             .map(|r| r.meta.digest.clone())
             .collect();
@@ -289,7 +287,11 @@ impl BlobStore {
     #[must_use]
     pub fn list(&self) -> Vec<&Record> {
         let mut all: Vec<&Record> = self.index.values().collect();
-        all.sort_by(|a, b| b.created.cmp(&a.created).then(a.meta.digest.cmp(&b.meta.digest)));
+        all.sort_by(|a, b| {
+            b.created
+                .cmp(&a.created)
+                .then(a.meta.digest.cmp(&b.meta.digest))
+        });
         all
     }
 
@@ -343,7 +345,9 @@ mod tests {
         jpeg.extend_from_slice(b"IMAGEDATA");
 
         let mut s = store();
-        let meta = s.put(&jpeg, Origin::WebUpload, Class::Runtime).expect("put");
+        let meta = s
+            .put(&jpeg, Origin::WebUpload, Class::Runtime)
+            .expect("put");
         let stored = String::from_utf8_lossy(s.get(&meta.digest).expect("get")).into_owned();
         assert!(!stored.contains("GPSLatitude"), "{stored:?}");
         assert!(stored.contains("IMAGEDATA"), "the picture itself survived");
@@ -363,7 +367,9 @@ mod tests {
     #[test]
     fn a_blob_lands_and_comes_back() {
         let mut s = store();
-        let meta = s.put(PNG, Origin::LocalClipboard, Class::Runtime).expect("put");
+        let meta = s
+            .put(PNG, Origin::LocalClipboard, Class::Runtime)
+            .expect("put");
         assert_eq!(s.get(&meta.digest).expect("get"), PNG);
     }
 
@@ -371,7 +377,9 @@ mod tests {
     fn the_same_bytes_twice_are_one_blob() {
         // A retried paste must not consume quota a second time.
         let mut s = store();
-        let a = s.put(PNG, Origin::LocalClipboard, Class::Runtime).expect("a");
+        let a = s
+            .put(PNG, Origin::LocalClipboard, Class::Runtime)
+            .expect("a");
         let b = s.put(PNG, Origin::WebUpload, Class::Runtime).expect("b");
         assert_eq!(a.digest, b.digest);
         assert_eq!(s.len(), 1);
@@ -410,7 +418,10 @@ mod tests {
         let err = s
             .put(&[7u8; 64], Origin::WebUpload, Class::Runtime)
             .expect_err("must refuse");
-        assert!(matches!(err, StoreError::Media(MediaError::TooLarge { .. })));
+        assert!(matches!(
+            err,
+            StoreError::Media(MediaError::TooLarge { .. })
+        ));
     }
 
     #[test]
@@ -471,7 +482,9 @@ mod tests {
             ttl: Duration::from_secs(0),
             ..Quota::default()
         });
-        let meta = s.put(PNG, Origin::AgentOutput, Class::Runtime).expect("put");
+        let meta = s
+            .put(PNG, Origin::AgentOutput, Class::Runtime)
+            .expect("put");
         s.hold(&meta.digest).expect("hold");
         assert_eq!(s.sweep(now() + 10_000), 0);
         s.release(&meta.digest).expect("release");
@@ -523,7 +536,10 @@ mod tests {
         // bytes.
         let mut s = store();
         let meta = s.put(PNG, Origin::OscBridge, Class::Runtime).expect("put");
-        assert_eq!(s.meta(&meta.digest).expect("meta").origin, Origin::OscBridge);
+        assert_eq!(
+            s.meta(&meta.digest).expect("meta").origin,
+            Origin::OscBridge
+        );
     }
 
     #[test]

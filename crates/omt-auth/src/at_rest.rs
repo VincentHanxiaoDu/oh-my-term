@@ -218,7 +218,12 @@ mod tests {
     #[test]
     fn everything_omt_stores_is_locked_to_its_own_uid() {
         for artefact in LAYOUT {
-            assert_eq!(artefact.mode & 0o077, 0, "`{}` is readable by others", artefact.name);
+            assert_eq!(
+                artefact.mode & 0o077,
+                0,
+                "`{}` is readable by others",
+                artefact.name
+            );
             let expected = if artefact.directory { 0o700 } else { 0o600 };
             assert_eq!(artefact.mode, expected, "`{}`", artefact.name);
         }
@@ -231,7 +236,11 @@ mod tests {
         let found = inline_secrets(["auth.password", "ui.theme"]);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].key, "auth.password");
-        assert!(found[0].remedy.contains("auth.password_file"), "{:?}", found[0]);
+        assert!(
+            found[0].remedy.contains("auth.password_file"),
+            "{:?}",
+            found[0]
+        );
     }
 
     #[test]

@@ -137,7 +137,10 @@ pub fn compute(tree: &Node, area: Rect) -> Geometry {
     // rejects — on a phone somebody is holding, an empty screen is worse than
     // any arrangement. One readable pane and an honest count of what is hidden
     // is the floor.
-    if panes.is_empty() && !hidden.is_empty() && area.width >= MIN_WIDTH && area.height >= MIN_HEIGHT
+    if panes.is_empty()
+        && !hidden.is_empty()
+        && area.width >= MIN_WIDTH
+        && area.height >= MIN_HEIGHT
     {
         let first = hidden.remove(0);
         panes.push(Placement {
@@ -356,7 +359,8 @@ fn even(direction: Split, panes: &[String]) -> Node {
 #[must_use]
 pub fn compute_zoomed(tree: &Node, area: Rect, zoomed: &str) -> Geometry {
     let full = compute(tree, area);
-    let known = full.panes.iter().any(|p| p.pane == zoomed) || full.hidden.iter().any(|h| h == zoomed);
+    let known =
+        full.panes.iter().any(|p| p.pane == zoomed) || full.hidden.iter().any(|h| h == zoomed);
     if !known {
         return full;
     }
@@ -450,13 +454,7 @@ pub fn overlay(base: Geometry, area: Rect, floats: &[Float], stacks: &[Stack]) -
         };
         // The rest are hidden rather than absent: somebody has to be able to
         // see that four things are in this stack and one is showing.
-        hidden.extend(
-            stack
-                .members
-                .iter()
-                .filter(|m| *m != showing)
-                .cloned(),
-        );
+        hidden.extend(stack.members.iter().filter(|m| *m != showing).cloned());
     }
 
     for float in floats {
@@ -496,8 +494,14 @@ fn clamp(rect: Rect, area: Rect) -> Rect {
     let width = rect.width.min(area.width);
     let height = rect.height.min(area.height);
     Rect {
-        left: rect.left.min(area.right().saturating_sub(width)).max(area.left),
-        top: rect.top.min(area.bottom().saturating_sub(height)).max(area.top),
+        left: rect
+            .left
+            .min(area.right().saturating_sub(width))
+            .max(area.left),
+        top: rect
+            .top
+            .min(area.bottom().saturating_sub(height))
+            .max(area.top),
         width,
         height,
     }
@@ -673,10 +677,7 @@ pub fn restore(saved: &Saved, alive: &[String]) -> Option<(Node, Vec<String>)> {
         .filter(|id| !alive.contains(id))
         .cloned()
         .collect();
-    let surviving: Vec<String> = named
-        .into_iter()
-        .filter(|id| alive.contains(id))
-        .collect();
+    let surviving: Vec<String> = named.into_iter().filter(|id| alive.contains(id)).collect();
     if surviving.is_empty() {
         return None;
     }
@@ -865,7 +866,10 @@ mod tests {
             split(Split::Horizontal, 0.5, leaf("b"), leaf("c")),
         );
         let d = dividers(&compute(&tree, screen()));
-        assert!(!d.iter().any(|x| (x.before == "b" && x.after == "c") && x.vertical));
+        assert!(
+            !d.iter()
+                .any(|x| (x.before == "b" && x.after == "c") && x.vertical)
+        );
     }
 
     #[test]
@@ -924,7 +928,12 @@ mod tests {
     fn a_phone_sized_screen_gets_a_layout_it_can_show() {
         // §7. Mobile is a target, not a fallback: the same tree on a narrow
         // screen must produce something usable rather than four slivers.
-        let phone = Rect { left: 0, top: 0, width: 30, height: 60 };
+        let phone = Rect {
+            left: 0,
+            top: 0,
+            width: 30,
+            height: 60,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c", "d"])).expect("t");
         let g = compute(&tree, phone);
         assert!(!g.panes.is_empty(), "something is shown");
@@ -936,8 +945,24 @@ mod tests {
     fn the_same_tree_gives_different_answers_on_different_screens() {
         // The point of computing geometry per client rather than sharing one.
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
-        let desktop = compute(&tree, Rect { left: 0, top: 0, width: 200, height: 50 });
-        let phone = compute(&tree, Rect { left: 0, top: 0, width: 30, height: 60 });
+        let desktop = compute(
+            &tree,
+            Rect {
+                left: 0,
+                top: 0,
+                width: 200,
+                height: 50,
+            },
+        );
+        let phone = compute(
+            &tree,
+            Rect {
+                left: 0,
+                top: 0,
+                width: 30,
+                height: 60,
+            },
+        );
         assert_eq!(desktop.panes.len(), 3);
         assert!(phone.panes.len() < desktop.panes.len());
     }
@@ -975,10 +1000,21 @@ mod tests {
         // A layout describes sessions that were running, and by restore time
         // some are not.
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
-        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
+        let saved = Saved {
+            name: "w".to_owned(),
+            tree: SavedNode::from(&tree),
+        };
         let (restored, missing) = restore(&saved, &ids(&["a", "c"])).expect("something survived");
         assert_eq!(missing, ["b"]);
-        let g = compute(&restored, Rect { left: 0, top: 0, width: 80, height: 24 });
+        let g = compute(
+            &restored,
+            Rect {
+                left: 0,
+                top: 0,
+                width: 80,
+                height: 24,
+            },
+        );
         let names: Vec<String> = g.panes.iter().map(|p| p.pane.clone()).collect();
         assert_eq!(names, ["a", "c"]);
     }
@@ -986,7 +1022,10 @@ mod tests {
     #[test]
     fn a_restore_with_nothing_left_is_none_rather_than_an_empty_layout() {
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
-        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
+        let saved = Saved {
+            name: "w".to_owned(),
+            tree: SavedNode::from(&tree),
+        };
         assert!(restore(&saved, &[]).is_none());
     }
 
@@ -995,9 +1034,11 @@ mod tests {
         // The common case must not be rebuilt into something merely
         // equivalent: somebody saved a main-vertical and expects it back.
         let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c"])).expect("t");
-        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
-        let (restored, missing) =
-            restore(&saved, &ids(&["a", "b", "c"])).expect("all alive");
+        let saved = Saved {
+            name: "w".to_owned(),
+            tree: SavedNode::from(&tree),
+        };
+        let (restored, missing) = restore(&saved, &ids(&["a", "b", "c"])).expect("all alive");
         assert!(missing.is_empty());
         assert_eq!(restored, tree);
     }
@@ -1007,9 +1048,20 @@ mod tests {
         // Pruning in place leaves them, and a split with one child renders as
         // a pane that has mysteriously stopped filling its space.
         let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c", "d"])).expect("t");
-        let saved = Saved { name: "w".to_owned(), tree: SavedNode::from(&tree) };
+        let saved = Saved {
+            name: "w".to_owned(),
+            tree: SavedNode::from(&tree),
+        };
         let (restored, _) = restore(&saved, &ids(&["a", "d"])).expect("some alive");
-        let g = compute(&restored, Rect { left: 0, top: 0, width: 80, height: 24 });
+        let g = compute(
+            &restored,
+            Rect {
+                left: 0,
+                top: 0,
+                width: 80,
+                height: 24,
+            },
+        );
         assert_eq!(
             g.panes.iter().map(|p| p.outer.width).sum::<u16>(),
             80,
@@ -1024,20 +1076,38 @@ mod tests {
         let json = r#"{"name":"w","tree":{"kind":"split","direction":"diagonal","ratio":0.5,"first":{"kind":"leaf","id":"a"},"second":{"kind":"leaf","id":"b"}}}"#;
         let saved: Saved = serde_json::from_str(json).expect("parses");
         let (tree, _) = restore(&saved, &ids(&["a", "b"])).expect("restores");
-        let g = compute(&tree, Rect { left: 0, top: 0, width: 80, height: 24 });
+        let g = compute(
+            &tree,
+            Rect {
+                left: 0,
+                top: 0,
+                width: 80,
+                height: 24,
+            },
+        );
         assert_eq!(g.panes.len(), 2);
     }
 
     #[test]
     fn a_float_sits_on_top_of_the_layout() {
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
         let g = overlay(
             compute(&tree, area),
             area,
             &[Float {
                 pane: "scratch".to_owned(),
-                rect: Rect { left: 10, top: 4, width: 40, height: 10 },
+                rect: Rect {
+                    left: 10,
+                    top: 4,
+                    width: 40,
+                    height: 10,
+                },
             }],
             &[],
         );
@@ -1049,13 +1119,23 @@ mod tests {
     fn a_float_is_clamped_into_the_screen_rather_than_hanging_off_it() {
         // One that opens partly off-screen on a narrow client is one somebody
         // cannot close.
-        let area = Rect { left: 0, top: 0, width: 40, height: 20 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 40,
+            height: 20,
+        };
         let g = overlay(
             compute(&leaf("a"), area),
             area,
             &[Float {
                 pane: "f".to_owned(),
-                rect: Rect { left: 200, top: 200, width: 30, height: 8 },
+                rect: Rect {
+                    left: 200,
+                    top: 200,
+                    width: 30,
+                    height: 8,
+                },
             }],
             &[],
         );
@@ -1066,13 +1146,23 @@ mod tests {
 
     #[test]
     fn a_float_too_small_to_read_is_dropped_like_any_other_pane() {
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let g = overlay(
             compute(&leaf("a"), area),
             area,
             &[Float {
                 pane: "f".to_owned(),
-                rect: Rect { left: 0, top: 0, width: 5, height: 1 },
+                rect: Rect {
+                    left: 0,
+                    top: 0,
+                    width: 5,
+                    height: 1,
+                },
             }],
             &[],
         );
@@ -1083,7 +1173,12 @@ mod tests {
     fn a_stack_occupies_exactly_one_slot_and_reflows_nothing() {
         // A stack that resized its neighbours would move the pane somebody is
         // reading every time they cycled a background one.
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
         let plain = compute(&tree, area);
         let b_rect = plain.panes.iter().find(|p| p.pane == "b").expect("b").outer;
@@ -1105,7 +1200,12 @@ mod tests {
 
     #[test]
     fn cycling_a_stack_swaps_which_member_is_drawn_in_the_same_rect() {
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
         let stack = |visible| Stack {
             at: "b".to_owned(),
@@ -1114,9 +1214,8 @@ mod tests {
         };
         let first = overlay(compute(&tree, area), area, &[], &[stack(0)]);
         let second = overlay(compute(&tree, area), area, &[], &[stack(1)]);
-        let rect_of = |g: &Geometry, id: &str| {
-            g.panes.iter().find(|p| p.pane == id).map(|p| p.outer)
-        };
+        let rect_of =
+            |g: &Geometry, id: &str| g.panes.iter().find(|p| p.pane == id).map(|p| p.outer);
         assert_eq!(rect_of(&first, "b"), rect_of(&second, "b2"));
         assert!(rect_of(&second, "b").is_none());
     }
@@ -1125,12 +1224,21 @@ mod tests {
     fn the_members_a_stack_conceals_are_reported_as_hidden() {
         // Somebody has to be able to see that four things are in this stack
         // and one is showing.
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let g = overlay(
             compute(&leaf("b"), area),
             area,
             &[],
-            &[Stack { at: "b".to_owned(), members: ids(&["b", "b2", "b3"]), visible: 0 }],
+            &[Stack {
+                at: "b".to_owned(),
+                members: ids(&["b", "b2", "b3"]),
+                visible: 0,
+            }],
         );
         assert_eq!(g.hidden.len(), 2);
     }
@@ -1140,16 +1248,24 @@ mod tests {
         // Removing and re-inserting changes the shape around the hole, so
         // panes that did not move end up somewhere new — which is not what
         // anybody means by "move this pane there".
-        let area = Rect { left: 0, top: 0, width: 120, height: 40 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 120,
+            height: 40,
+        };
         let tree = preset(Preset::MainVertical, &ids(&["a", "b", "c"])).expect("t");
         let before = compute(&tree, area);
         let after = compute(&swap(&tree, "a", "c"), area);
-        let rect_of = |g: &Geometry, id: &str| {
-            g.panes.iter().find(|p| p.pane == id).map(|p| p.outer)
-        };
+        let rect_of =
+            |g: &Geometry, id: &str| g.panes.iter().find(|p| p.pane == id).map(|p| p.outer);
         assert_eq!(rect_of(&before, "a"), rect_of(&after, "c"));
         assert_eq!(rect_of(&before, "c"), rect_of(&after, "a"));
-        assert_eq!(rect_of(&before, "b"), rect_of(&after, "b"), "b did not move");
+        assert_eq!(
+            rect_of(&before, "b"),
+            rect_of(&after, "b"),
+            "b did not move"
+        );
     }
 
     #[test]
@@ -1179,7 +1295,15 @@ mod tests {
         // Naive recursive halving gives 1/2, 1/4, 1/8, 1/16, 1/16, which looks
         // nothing like "even" and is what this is built to avoid.
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c", "d"])).expect("a tree");
-        let g = compute(&tree, Rect { left: 0, top: 0, width: 80, height: 24 });
+        let g = compute(
+            &tree,
+            Rect {
+                left: 0,
+                top: 0,
+                width: 80,
+                height: 24,
+            },
+        );
         assert_eq!(g.panes.len(), 4);
         let widths: Vec<u16> = g.panes.iter().map(|p| p.outer.width).collect();
         let smallest = widths.iter().min().copied().expect("some");
@@ -1192,14 +1316,27 @@ mod tests {
         // Proportional would shrink it as panes arrive, which is backwards:
         // the main pane is the one being worked in, and adding a log tail
         // should not narrow the thing you are reading.
-        let area = Rect { left: 0, top: 0, width: 120, height: 24 };
-        let two = compute(&preset(Preset::MainVertical, &ids(&["a", "b"])).expect("t"), area);
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 120,
+            height: 24,
+        };
+        let two = compute(
+            &preset(Preset::MainVertical, &ids(&["a", "b"])).expect("t"),
+            area,
+        );
         let four = compute(
             &preset(Preset::MainVertical, &ids(&["a", "b", "c", "d"])).expect("t"),
             area,
         );
         let main_of = |g: &Geometry| {
-            g.panes.iter().find(|p| p.pane == "a").expect("main").outer.width
+            g.panes
+                .iter()
+                .find(|p| p.pane == "a")
+                .expect("main")
+                .outer
+                .width
         };
         assert_eq!(main_of(&two), main_of(&four));
     }
@@ -1226,14 +1363,27 @@ mod tests {
             Preset::MainHorizontal,
         ] {
             let tree = preset(kind, &names).expect("a tree");
-            let g = compute(&tree, Rect { left: 0, top: 0, width: 120, height: 40 });
+            let g = compute(
+                &tree,
+                Rect {
+                    left: 0,
+                    top: 0,
+                    width: 120,
+                    height: 40,
+                },
+            );
             assert_eq!(g.panes.len() + g.hidden.len(), 3, "{kind:?}");
         }
     }
 
     #[test]
     fn a_zoomed_pane_fills_the_area() {
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
         let g = compute_zoomed(&tree, area, "b");
         assert_eq!(g.panes.len(), 1);
@@ -1244,7 +1394,12 @@ mod tests {
     fn zoom_does_not_edit_the_tree() {
         // A zoom that survived into a saved layout would have somebody restore
         // it and find their other panes gone, with no way to tell zoom was why.
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
         let before = tree.clone();
         let _ = compute_zoomed(&tree, area, "b");
@@ -1256,7 +1411,12 @@ mod tests {
     fn the_panes_a_zoom_hides_are_reported_as_hidden() {
         // True — they are not drawn — and it means a client showing "n hidden"
         // needs no special case for zoom.
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c"])).expect("t");
         let g = compute_zoomed(&tree, area, "b");
         assert_eq!(g.hidden.len(), 2);
@@ -1265,11 +1425,15 @@ mod tests {
 
     #[test]
     fn zooming_a_pane_that_is_not_there_changes_nothing() {
-        let area = Rect { left: 0, top: 0, width: 80, height: 24 };
+        let area = Rect {
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b"])).expect("t");
         assert_eq!(compute_zoomed(&tree, area, "nope"), compute(&tree, area));
     }
-
 
     fn leaf(id: &str) -> Node {
         Node::Leaf { id: id.to_owned() }
@@ -1305,10 +1469,7 @@ mod tests {
     fn a_split_divides_the_space_and_leaves_no_gap() {
         // A column lost to rounding is a one-cell strip nothing draws into,
         // and it shows as a flickering line between two panes.
-        let g = compute(
-            &split(Split::Vertical, 0.5, leaf("a"), leaf("b")),
-            screen(),
-        );
+        let g = compute(&split(Split::Vertical, 0.5, leaf("a"), leaf("b")), screen());
         assert_eq!(g.panes[0].outer.right(), g.panes[1].outer.left);
         assert_eq!(
             g.panes[0].outer.width + g.panes[1].outer.width,
@@ -1322,7 +1483,10 @@ mod tests {
         // eighty columns the first child is eight wide and is dropped, which
         // is the design working rather than a gap.
         for ratio in [0.33f32, 0.5, 0.67] {
-            let g = compute(&split(Split::Vertical, ratio, leaf("a"), leaf("b")), screen());
+            let g = compute(
+                &split(Split::Vertical, ratio, leaf("a"), leaf("b")),
+                screen(),
+            );
             assert_eq!(g.panes.len(), 2, "ratio {ratio}");
             assert_eq!(
                 g.panes[0].outer.width + g.panes[1].outer.width,
@@ -1397,7 +1561,12 @@ mod tests {
         // The floor. An empty screen on a phone somebody is holding is worse
         // than any arrangement, and it is what four even splits at thirty
         // columns produced before this.
-        let phone = Rect { left: 0, top: 0, width: 30, height: 60 };
+        let phone = Rect {
+            left: 0,
+            top: 0,
+            width: 30,
+            height: 60,
+        };
         let tree = preset(Preset::EvenVertical, &ids(&["a", "b", "c", "d"])).expect("t");
         let g = compute(&tree, phone);
         assert_eq!(g.panes.len(), 1);
@@ -1459,8 +1628,20 @@ mod tests {
             leaf("a"),
             split(Split::Vertical, 0.5, leaf("b"), leaf("c")),
         );
-        let roomy = compute(&tree, Rect { width: 120, ..screen() });
-        let cramped = compute(&tree, Rect { width: 45, ..screen() });
+        let roomy = compute(
+            &tree,
+            Rect {
+                width: 120,
+                ..screen()
+            },
+        );
+        let cramped = compute(
+            &tree,
+            Rect {
+                width: 45,
+                ..screen()
+            },
+        );
         let a_roomy = roomy.panes.iter().find(|p| p.pane == "a").expect("a").index;
         let a_cramped = cramped
             .panes
@@ -1496,7 +1677,10 @@ mod tests {
     #[test]
     fn an_absurd_ratio_is_clamped_rather_than_producing_an_empty_pane() {
         for ratio in [-5.0f32, 0.0, 1.0, 12.0] {
-            let g = compute(&split(Split::Vertical, ratio, leaf("a"), leaf("b")), screen());
+            let g = compute(
+                &split(Split::Vertical, ratio, leaf("a"), leaf("b")),
+                screen(),
+            );
             assert_eq!(
                 g.panes.len() + g.hidden.len(),
                 2,

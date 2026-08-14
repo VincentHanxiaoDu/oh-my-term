@@ -86,7 +86,13 @@ const PREFIXES: &[(&str, &str)] = &[
 
 /// Environment-assignment shapes, where the name says what the value is.
 const SECRET_NAMES: &[&str] = &[
-    "PASSWORD", "SECRET", "TOKEN", "APIKEY", "API_KEY", "PRIVATE_KEY", "CREDENTIAL",
+    "PASSWORD",
+    "SECRET",
+    "TOKEN",
+    "APIKEY",
+    "API_KEY",
+    "PRIVATE_KEY",
+    "CREDENTIAL",
 ];
 
 /// What replaces a redacted span.
@@ -112,13 +118,15 @@ pub fn redact(raw: &Raw) -> Redacted {
         // whatever it looks like. This is the case a shape-based detector
         // always misses, and it is the most common one in a shell.
         if let Some((name, _)) = trimmed.split_once('=')
-            && let bare = name.rsplit([' ', '\t']).next().unwrap_or(name).to_uppercase()
+            && let bare = name
+                .rsplit([' ', '\t'])
+                .next()
+                .unwrap_or(name)
+                .to_uppercase()
             && !bare.is_empty()
             && SECRET_NAMES.iter().any(|s| bare.contains(s))
         {
-            let keep = &trimmed[..=trimmed
-                .find('=')
-                .unwrap_or(trimmed.len().saturating_sub(1))];
+            let keep = &trimmed[..=trimmed.find('=').unwrap_or(trimmed.len().saturating_sub(1))];
             out.push_str(keep);
             out.push_str(&placeholder("a secret"));
             out.push_str(ending);
@@ -198,7 +206,11 @@ mod tests {
     fn a_token_does_not_survive_into_a_document() {
         let raw = Raw::new("export KEY=sk-abcdef1234567890 && run");
         let doc = Doc::new("d1", redact(&raw));
-        assert!(!doc.body.text().contains("sk-abcdef"), "{}", doc.body.text());
+        assert!(
+            !doc.body.text().contains("sk-abcdef"),
+            "{}",
+            doc.body.text()
+        );
     }
 
     #[test]
@@ -214,7 +226,11 @@ mod tests {
         // A blank looks like output that never existed, and somebody goes
         // hunting for why the command printed nothing.
         let out = redact(&Raw::new("key: ghp_abc123"));
-        assert!(out.text().contains("[redacted: a GitHub token]"), "{}", out.text());
+        assert!(
+            out.text().contains("[redacted: a GitHub token]"),
+            "{}",
+            out.text()
+        );
     }
 
     #[test]

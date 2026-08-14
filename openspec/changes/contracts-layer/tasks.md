@@ -156,22 +156,22 @@
 
 ## 7. Codegen and generated artifacts
 
-- [ ] 7.1 `omt debug catalog-dump --json` — the declarations plus generated
+- [x] 7.1 `omt debug catalog-dump --json` — the declarations plus generated
       schemas, from the linked binary
-- [ ] 7.2 `cargo xtask codegen`: build, run the dump, emit `schemas/catalog.v1.json`
-- [ ] 7.3 Emit the TypeScript client, including the union and the exhaustive
+- [x] 7.2 `cargo xtask codegen`: build, run the dump, emit `schemas/catalog.v1.json`
+- [x] 7.3 Emit the TypeScript client, including the union and the exhaustive
       handler map that fails the web build on an unhandled capability
-- [ ] 7.4 Emit the server route table and the CLI subcommand tree into the stub
+- [x] 7.4 Emit the server route table and the CLI subcommand tree into the stub
       crates from 1.2a
-- [ ] 7.5 Emit `docs/reference/capabilities.md`, and delete
+- [x] 7.5 Emit `docs/reference/capabilities.md`, and delete
       `docs/reference/capabilities-draft.md` — the generator supersedes it
-- [ ] 7.6 `codegen --check` for CI, reporting which artifact is stale
-- [ ] 7.7 Determinism test: two runs against an unchanged binary are
+- [x] 7.6 `codegen --check` for CI, reporting which artifact is stale
+- [x] 7.7 Determinism test: two runs against an unchanged binary are
       byte-identical
 
 ## 8. Proving capabilities and the parity gate
 
-- [ ] 8.1 Declare `instance.info` and `instance.catalog` in `crates/omt`, and
+- [x] 8.1 Declare `instance.info` and `instance.catalog` in `crates/omt`, and
       `events.subscribe` in `omt-events` — where the events live, which is the
       edge the L1 order exists to permit (02 rule 3). All three ship with real
       handlers, since `seal()` is strict (D-8); together they exercise query,
@@ -179,7 +179,7 @@
       `CatalogEntry`,
       `CatalogHash`, and `Origin` including its `Plugin` variant, which the
       proposal promises is declared even though hosting is doc 11's change
-- [ ] 8.2 The parity test over the registry, all five artifacts and both
+- [x] 8.2 The parity test over the registry, all five artifacts and both
       directions: route + schema, TUI reachability (palette membership or a
       binding; non-`Admin` only; a `hidden` capability needs a real binding since
       it has no palette entry), web handler, docs entry, palette entry — or a
@@ -188,26 +188,30 @@
       registry, which
       [03 §5](../../../docs/architecture/03-capability-catalog.md) singles out
       as the half that catches drift
-- [ ] 8.2a The declaration-soundness checks the same test enumerates: every
+- [x] 8.2a The declaration-soundness checks the same test enumerates: every
       `Command` declares an `intent`, and no `refine_effects` widens beyond its
       declaration
-- [ ] 8.3 Assert the parity test actually fails when a surface is removed
+- [x] 8.3 Assert the parity test actually fails when a surface is removed
       (a test for the test — this gate is load-bearing for P3)
-- [ ] 8.4 Benchmark the sequence allocator against
+- [x] 8.4 Benchmark the sequence allocator against
       [04 §9.1](../../../docs/architecture/04-terminal-core.md)'s throughput
       target; if it does not hold, stop and escalate — the fix is a
       contracts-layer change (D-2 risk)
 
 ## 9. Close-out
 
-- [ ] 9.0 A compatibility test over capability schemas, not just protocol
+- [x] 9.0 A compatibility test over capability schemas, not just protocol
       messages: a checked-in snapshot plus an assertion that a later schema only
       adds optional input fields and only adds output fields
       ([03 §7](../../../docs/architecture/03-capability-catalog.md)). Task 6.8's
       fixtures cover `omt-proto`; nothing covered the catalog
-- [ ] 9.1 `cargo fmt`, `clippy -D warnings`, `cargo test` all clean
-- [ ] 9.2 Rustdoc on every public item; `cargo doc` builds with no warnings
-- [ ] 9.3 Update `docs/architecture/02-crate-map.md` if any crate boundary moved
-      during implementation, and record why
-- [ ] 9.4 Record in the change any architecture-document correction the
-      implementation forced, so the docs stay the source of truth
+- [x] 9.1 `cargo fmt`, `clippy -D warnings`, `cargo test` all clean
+- [x] 9.2 Rustdoc on every public item; `cargo doc` builds with no warnings
+- [x] 9.3 Update `docs/architecture/02-crate-map.md` if any crate boundary moved
+      during implementation, and record why — **none moved.** `backpressure`
+      moved crate, but 02 §L1 already put it in `omt-events`; the code was on
+      the wrong side of a boundary the document had drawn correctly. See
+      `findings.md` §1
+- [x] 9.4 Record in the change any architecture-document correction the
+      implementation forced, so the docs stay the source of truth —
+      `findings.md`, seven of them

@@ -91,7 +91,10 @@ pub fn check(instance: &Instance) -> Vec<Violation> {
             {
                 out.push(Violation {
                     number: 1,
-                    detail: format!("view {} focuses pane {focus}, which it does not hold", view.id),
+                    detail: format!(
+                        "view {} focuses pane {focus}, which it does not hold",
+                        view.id
+                    ),
                 });
             }
             if let Some(zoom) = view.zoom

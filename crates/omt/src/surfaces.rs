@@ -641,7 +641,6 @@ impl CapabilityHandler<BlockRerun> for BlockRerunHandler {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Automation primitives (22 §8.3)
 // ---------------------------------------------------------------------------
@@ -708,8 +707,12 @@ omt_catalog::capability! {
 pub struct AgentWaitHandler(pub State);
 
 impl CapabilityHandler<AgentWait> for AgentWaitHandler {
-    fn call(&self, _ctx: &omt_catalog::CallContext, input: WaitIn) -> Result<WaitOut, CapabilityError> {
-        use crate::automation::{already_satisfied, WaitCondition};
+    fn call(
+        &self,
+        _ctx: &omt_catalog::CallContext,
+        input: WaitIn,
+    ) -> Result<WaitOut, CapabilityError> {
+        use crate::automation::{WaitCondition, already_satisfied};
 
         let id = session_id(&input.session)?;
         if input.until.is_empty() {

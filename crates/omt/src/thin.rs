@@ -180,7 +180,10 @@ mod tests {
         // execution.
         for target in ["-oProxyCommand=touch /tmp/pwned", "-J evil", "-"] {
             assert!(
-                matches!(plan(target, true, Bootstrap::Ask), Err(ThinError::BadTarget(_))),
+                matches!(
+                    plan(target, true, Bootstrap::Ask),
+                    Err(ThinError::BadTarget(_))
+                ),
                 "{target} was accepted"
             );
         }
@@ -208,7 +211,13 @@ mod tests {
 
     #[test]
     fn an_ordinary_target_is_accepted_in_every_usual_form() {
-        for target in ["box", "user@box", "user@box.example.com", "10.0.0.4", "my-host"] {
+        for target in [
+            "box",
+            "user@box",
+            "user@box.example.com",
+            "10.0.0.4",
+            "my-host",
+        ] {
             assert!(plan(target, true, Bootstrap::Ask).is_ok(), "{target}");
         }
     }
@@ -245,9 +254,11 @@ mod tests {
         // would in fact go through the escape-sequence bridge, and the user
         // finds out by pasting.
         assert!(plan("box", true, Bootstrap::Ask).expect("a").direct_media());
-        assert!(!plan("box", false, Bootstrap::Never)
-            .expect("b")
-            .direct_media());
+        assert!(
+            !plan("box", false, Bootstrap::Never)
+                .expect("b")
+                .direct_media()
+        );
     }
 
     #[test]

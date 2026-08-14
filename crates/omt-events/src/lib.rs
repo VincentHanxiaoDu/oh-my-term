@@ -16,6 +16,11 @@ pub use agent::{
     ActivityGuess, AgentEvent, AgentPayload, CompactionPhase, FileChange, MessageOrigin, PlanStep,
     PlanStepStatus, QueueOp, SlashCommand, StartReason, ThreadRef, TurnOutcome, TurnTrigger,
 };
+pub use backpressure::{
+    Delivery, FLUSH_BYTES, FLUSH_MS, Policy, Subscription, ViewState, block_is_legal,
+    coalesce_paste, flush_after_ms, may_coalesce_input,
+};
+pub use bus::{EventBus, Fanout, SubscriberId};
 pub use envelope::{
     Event, EventKind, EventPayload, EventSourceTag, Filter, InstanceEvent, LagReason,
     PresenceEvent, ReplayWindow, ResumeOutcome, SessionTreeEvent, TerminalEvent,
@@ -25,11 +30,4 @@ pub use interaction::{
     InteractionKind, InteractionResponse, InteractionState, NotDeliverableReason, PermissionOption,
     PermissionOptionKind, PlanDecision, UndeliveredReason,
 };
-pub use sink::{
-    ActivitySink, EventSink, SourceError, floor_for, payload_name, permitted,
-};
-pub use backpressure::{
-    Delivery, FLUSH_BYTES, FLUSH_MS, Policy, Subscription, ViewState, block_is_legal,
-    coalesce_paste, flush_after_ms, may_coalesce_input,
-};
-pub use bus::{EventBus, Fanout, SubscriberId};
+pub use sink::{ActivitySink, EventSink, SourceError, floor_for, payload_name, permitted};

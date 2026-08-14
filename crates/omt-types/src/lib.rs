@@ -16,17 +16,17 @@ mod seq;
 mod timestamp;
 
 pub use diff::{
-    ChangeKind, DiffBase, DiffBody, DiffLine, DiffLineKind, EofNewline, FileDiff, Hunk,
-    IntraRange, LineStat, RedactReason, RelPath, VcsFileState, intra_ranges,
+    ChangeKind, DiffBase, DiffBody, DiffLine, DiffLineKind, EofNewline, FileDiff, Hunk, IntraRange,
+    LineStat, RedactReason, RelPath, VcsFileState, intra_ranges,
 };
 pub use domain::{Actor, AgentKind, AgentState, BlockReason, DeviceClaim, Role, SessionMode, Tier};
-pub use peer::{
-    ActorId, AgentSessionId, Fidelity, PeerInfo, PermissionMode, ResponderRef, SourceId,
-    StateDependence, Version,
-};
 pub use ids::{
     BindingId, BlockId, ClientId, CredentialId, DeviceId, IdentityId, InstanceId, IntentId,
     InteractionId, JobId, PaneId, SessionId, ViewId, WorkspaceId,
+};
+pub use peer::{
+    ActorId, AgentSessionId, Fidelity, PeerInfo, PermissionMode, ResponderRef, SourceId,
+    StateDependence, Version,
 };
 pub use seq::{Seq, SeqScope};
 
@@ -87,7 +87,10 @@ mod wire_tests {
         assert_eq!(wire(&AgentSessionId::new("ses_1")), r#""ses_1""#);
         assert_eq!(wire(&ActorId::new("conn-1")), r#""conn-1""#);
         assert_eq!(wire(&Version::new("0.1.0")), r#""0.1.0""#);
-        assert_eq!(wire(&PermissionMode::new("acceptEdits")), r#""acceptEdits""#);
+        assert_eq!(
+            wire(&PermissionMode::new("acceptEdits")),
+            r#""acceptEdits""#
+        );
         assert_eq!(wire(&RelPath::new("src/lib.rs")), r#""src/lib.rs""#);
     }
 

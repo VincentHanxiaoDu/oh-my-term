@@ -455,7 +455,10 @@ mod tests {
         l.reconcile_after_restart(1_000);
         let InteractionState::Undelivered { response, .. } = &l.get(id).expect("present").state
         else {
-            panic!("expected undelivered, got {:?}", l.get(id).expect("present").state);
+            panic!(
+                "expected undelivered, got {:?}",
+                l.get(id).expect("present").state
+            );
         };
         assert_eq!(response, &allow());
     }

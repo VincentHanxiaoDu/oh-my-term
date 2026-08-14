@@ -250,9 +250,7 @@ pub struct DiffLine {
 /// A struct rather than `Range<u32>` because `Range` is not `Copy`, does not
 /// implement `JsonSchema`, and serializes to a shape with no obvious wire
 /// spelling.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct IntraRange {
     /// First byte, inclusive.
     pub start: u32,

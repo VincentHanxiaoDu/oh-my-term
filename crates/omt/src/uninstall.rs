@@ -254,10 +254,8 @@ impl Roots {
     /// finding its bugs.
     #[must_use]
     pub fn from_environment() -> Self {
-        let root = std::env::var("OMT_UNINSTALL_ROOT").map_or_else(
-            |_| PathBuf::from("/"),
-            PathBuf::from,
-        );
+        let root =
+            std::env::var("OMT_UNINSTALL_ROOT").map_or_else(|_| PathBuf::from("/"), PathBuf::from);
         let manifest = root.join(".local/state/omt/setup-manifest.json");
         Self { manifest, root }
     }
@@ -275,8 +273,11 @@ impl UninstallHandler {
     fn manifest(&self) -> Result<Manifest, CapabilityError> {
         match std::fs::read_to_string(&self.0.manifest) {
             Err(_) => Ok(Manifest::default()),
-            Ok(text) => serde_json::from_str(&text)
-                .map_err(|e| CapabilityError::internal(format!("the setup manifest is unreadable: {e}. Refusing to guess what to remove."))),
+            Ok(text) => serde_json::from_str(&text).map_err(|e| {
+                CapabilityError::internal(format!(
+                    "the setup manifest is unreadable: {e}. Refusing to guess what to remove."
+                ))
+            }),
         }
     }
 }
@@ -428,10 +429,10 @@ fn comment_out(path: &Path) -> std::io::Result<()> {
     };
     let lines: Vec<&str> = contents.lines().collect();
     let mut out: Vec<String> = lines[..start].iter().map(|l| (*l).to_owned()).collect();
+    out.push("# omt: this block was edited after omt wrote it, so uninstall commented".to_owned());
     out.push(
-        "# omt: this block was edited after omt wrote it, so uninstall commented".to_owned(),
+        "# it out rather than deleting your changes. Remove it when you are ready.".to_owned(),
     );
-    out.push("# it out rather than deleting your changes. Remove it when you are ready.".to_owned());
     for line in &lines[start..=end] {
         if line.trim_start().starts_with('#') {
             out.push((*line).to_owned());
@@ -645,19 +646,26 @@ mod tests {
     fn apply_does_nothing_without_an_explicit_accept() {
         let dir = tempfile::tempdir().expect("tempdir");
         rc(dir.path(), &format!("{BLOCK}\n"));
-        let h = handler(dir.path(), &manifest_of(vec![Entry {
-            path: "rc".to_owned(),
-            wrote: Wrote::Block,
-            hash: hash(BLOCK),
-            config: false,
-            data: false,
-        }]));
-        let err = CapabilityHandler::<UninstallApply>::call(&h, &ctx(), ApplyIn {
-            plan: String::new(),
-            accept: false,
-            keep_config: false,
-            keep_data: false,
-        })
+        let h = handler(
+            dir.path(),
+            &manifest_of(vec![Entry {
+                path: "rc".to_owned(),
+                wrote: Wrote::Block,
+                hash: hash(BLOCK),
+                config: false,
+                data: false,
+            }]),
+        );
+        let err = CapabilityHandler::<UninstallApply>::call(
+            &h,
+            &ctx(),
+            ApplyIn {
+                plan: String::new(),
+                accept: false,
+                keep_config: false,
+                keep_data: false,
+            },
+        )
         .expect_err("must refuse");
         assert!(format!("{err:?}").contains("accept"), "{err:?}");
         assert!(dir.path().join("rc").exists(), "and nothing was touched");
@@ -669,21 +677,31 @@ mod tests {
         // confirmation of something the user never saw.
         let dir = tempfile::tempdir().expect("tempdir");
         rc(dir.path(), &format!("{BLOCK}\n"));
-        let h = handler(dir.path(), &manifest_of(vec![Entry {
-            path: "rc".to_owned(),
-            wrote: Wrote::Block,
-            hash: hash(BLOCK),
-            config: false,
-            data: false,
-        }]));
-        let err = CapabilityHandler::<UninstallApply>::call(&h, &ctx(), ApplyIn {
-            plan: "not-the-plan".to_owned(),
-            accept: true,
-            keep_config: false,
-            keep_data: false,
-        })
+        let h = handler(
+            dir.path(),
+            &manifest_of(vec![Entry {
+                path: "rc".to_owned(),
+                wrote: Wrote::Block,
+                hash: hash(BLOCK),
+                config: false,
+                data: false,
+            }]),
+        );
+        let err = CapabilityHandler::<UninstallApply>::call(
+            &h,
+            &ctx(),
+            ApplyIn {
+                plan: "not-the-plan".to_owned(),
+                accept: true,
+                keep_config: false,
+                keep_data: false,
+            },
+        )
         .expect_err("must refuse");
-        assert!(format!("{err:?}").to_lowercase().contains("changed"), "{err:?}");
+        assert!(
+            format!("{err:?}").to_lowercase().contains("changed"),
+            "{err:?}"
+        );
         assert!(dir.path().join("rc").exists());
     }
 
@@ -692,22 +710,45 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         rc(dir.path(), &format!("keep me\n{BLOCK}\n"));
         std::fs::create_dir(dir.path().join("state")).expect("mkdir");
-        let h = handler(dir.path(), &manifest_of(vec![
-            Entry { path: "rc".to_owned(), wrote: Wrote::Block, hash: hash(BLOCK), config: false, data: false },
-            Entry { path: "state".to_owned(), wrote: Wrote::Directory, hash: String::new(), config: false, data: false },
-        ]));
+        let h = handler(
+            dir.path(),
+            &manifest_of(vec![
+                Entry {
+                    path: "rc".to_owned(),
+                    wrote: Wrote::Block,
+                    hash: hash(BLOCK),
+                    config: false,
+                    data: false,
+                },
+                Entry {
+                    path: "state".to_owned(),
+                    wrote: Wrote::Directory,
+                    hash: String::new(),
+                    config: false,
+                    data: false,
+                },
+            ]),
+        );
         let c = ctx();
-        let planned = CapabilityHandler::<UninstallPlan>::call(&h, &c, PlanIn {
-            keep_config: false,
-            keep_data: false,
-        })
+        let planned = CapabilityHandler::<UninstallPlan>::call(
+            &h,
+            &c,
+            PlanIn {
+                keep_config: false,
+                keep_data: false,
+            },
+        )
         .expect("plan");
-        let out = CapabilityHandler::<UninstallApply>::call(&h, &c, ApplyIn {
-            plan: planned.plan,
-            accept: true,
-            keep_config: false,
-            keep_data: false,
-        })
+        let out = CapabilityHandler::<UninstallApply>::call(
+            &h,
+            &c,
+            ApplyIn {
+                plan: planned.plan,
+                accept: true,
+                keep_config: false,
+                keep_data: false,
+            },
+        )
         .expect("apply");
         assert_eq!(out.removed, 2);
         assert!(!dir.path().join("state").exists());
@@ -728,10 +769,14 @@ mod tests {
             manifest: dir.path().join("absent.json"),
             root: dir.path().to_path_buf(),
         }));
-        let out = CapabilityHandler::<UninstallPlan>::call(&h, &ctx(), PlanIn {
-            keep_config: false,
-            keep_data: false,
-        })
+        let out = CapabilityHandler::<UninstallPlan>::call(
+            &h,
+            &ctx(),
+            PlanIn {
+                keep_config: false,
+                keep_data: false,
+            },
+        )
         .expect("plan");
         assert!(out.steps.is_empty());
         assert!(out.binary.contains("package manager"));

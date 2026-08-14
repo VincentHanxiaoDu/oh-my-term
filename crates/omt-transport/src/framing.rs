@@ -180,7 +180,9 @@ mod tests {
     fn an_oversized_length_is_refused_before_allocating() {
         // An unbounded length prefix is a denial of service one allocation
         // deep, so the bound is checked before the Vec is made.
-        let mut buf = (omt_proto::MAX_TEXT_FRAME as u32 + 1).to_be_bytes().to_vec();
+        let mut buf = (omt_proto::MAX_TEXT_FRAME as u32 + 1)
+            .to_be_bytes()
+            .to_vec();
         buf.push(FrameKind::Text as u8);
         let err = read_frame(&buf[..]).expect_err("must refuse");
         assert!(matches!(err, FramingError::TooLarge { .. }));
