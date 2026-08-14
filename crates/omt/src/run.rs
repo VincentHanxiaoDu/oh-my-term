@@ -434,6 +434,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         _ => {}
                     }
                 }
+                // `layout_dirty` is what brings the panes back: it clears the
+                // screen and invalidates every pane's renderer, which is
+                // exactly what an overlay written over cells those renderers
+                // believe they own requires. Setting it here is not
+                // bookkeeping — it is the repaint.
                 layout_dirty = true;
                 if let Some(label) = chosen.take() {
                     // A workspace row is a session to focus; anything else is a
@@ -722,16 +727,22 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
                 .agent_state(pane.binding, now)
                 .unwrap_or(omt_types::AgentState::Unknown);
             rows.push(omt_tui::Choice {
-                // The evidence, not only the verdict: somebody looking at a
-                // wrong detection needs to see what was matched, not be told
-                // a name again.
+                // The agent's name in the column the eye lands on. This was
+                // the session title — "shell" — with the agent buried mid-line
+                // after it, so a list opened *to find out whether omt knows
+                // about Claude Code* answered with the word "shell". Somebody
+                // reading that concludes it does not, and they are reading it
+                // correctly: the first column is the answer.
+                label: agent_name(probed.detection.agent).to_owned(),
+                // Then where it is and what it is doing, and last the
+                // evidence — somebody looking at a wrong detection needs to
+                // see what was matched, not be told a name again.
                 detail: format!(
                     "{} · {} · {}",
-                    agent_name(probed.detection.agent),
+                    title,
                     state_word(&state),
                     probed.detection.evidence
                 ),
-                label: title.clone(),
                 chord: None,
             });
         }
@@ -810,7 +821,16 @@ fn state_word(state: &omt_types::AgentState) -> &'static str {
         omt_types::AgentState::Working { .. } => "working",
         omt_types::AgentState::Blocked { .. } => "waiting on you",
         omt_types::AgentState::Exited { .. } => "exited",
-        omt_types::AgentState::Unknown => "unknown",
+        // Not "unknown". This word sits beside an agent omt has *found* — the
+        // row exists because it found it — and "unknown" there reads as "omt
+        // does not know what this is" rather than "omt cannot yet tell what it
+        // is doing". The distinction is the whole difference between a probe
+        // that works and one that looks broken.
+        //
+        // It is the honest answer for the first two seconds of every agent:
+        // the floor needs two seconds of quiet before it will say idle, and a
+        // process table cannot report a lifecycle at all.
+        omt_types::AgentState::Unknown => "state not reported yet",
     }
 }
 

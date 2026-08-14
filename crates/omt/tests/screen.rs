@@ -41,6 +41,15 @@ struct Screen {
 impl Screen {
     /// Start `omt` on a pty of a known size.
     fn start() -> Self {
+        Self::start_with_shell("/bin/sh")
+    }
+
+    /// The same, under a named shell.
+    ///
+    /// Which shell is not a detail: how a shell starts a child decides what
+    /// the foreground process group is, and that is the only thing the probe
+    /// reads. A harness that always uses `/bin/sh` tests `/bin/sh`.
+    fn start_with_shell(shell: &str) -> Self {
         let binary = std::path::Path::new(env!("CARGO_BIN_EXE_omt"));
         let dir = std::env::temp_dir().join(format!("omt-screen-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
@@ -54,7 +63,7 @@ impl Screen {
                 // A prompt of exactly one known line, so what the *shell*
                 // paints cannot be mistaken for what omt paints.
                 ("PS1".to_owned(), "$ ".to_owned()),
-                ("SHELL".to_owned(), "/bin/sh".to_owned()),
+                ("SHELL".to_owned(), shell.to_owned()),
             ],
             ..PtyConfig::default()
         })
@@ -388,4 +397,111 @@ fn which(program: &str) -> Option<std::path::PathBuf> {
     std::env::split_paths(&path)
         .map(|dir| dir.join(program))
         .find(|candidate| candidate.is_file())
+}
+
+#[test]
+fn the_agent_list_finds_the_real_claude_that_the_bar_already_found() {
+    // Reported from real use, and in this exact order: start omt, start Claude
+    // Code, press the leader and `a`. The list said there was no agent while
+    // the bar in the same frame said `claude`. Two readers of one fact
+    // disagreeing is worse than either being wrong, because whichever one
+    // somebody happens to look at is the one they believe.
+    let Some(claude) = which("claude") else {
+        eprintln!("skipped: no claude on PATH");
+        return;
+    };
+
+    // The user's shell, not the harness's `/bin/sh`. How a shell starts a
+    // child decides what the foreground process group is, which is the one
+    // thing the probe reads.
+    let mut s = Screen::start_with_shell("/bin/zsh");
+    s.settle(2.0);
+    s.type_in(&format!("{}\r", claude.display()));
+    // What a person does: start it and reach for the leader. Not eight
+    // seconds of politely waiting for a probe interval nobody knows exists.
+    s.settle(2.0);
+
+    let bar = s.row(ROWS - 1);
+    s.type_in("\x02a");
+    s.settle(1.5);
+    let listed = s.screen();
+
+    // Leave before asserting, so a failure does not strand a real agent.
+    s.type_in("\x1b");
+    s.settle(0.3);
+    s.type_in("\x03");
+    s.settle(0.5);
+    s.type_in("\x04");
+
+    assert!(
+        listed.to_lowercase().contains("claude"),
+        "the agent list does not name the agent the bar found.\nbar: {bar:?}\n{listed}"
+    );
+
+    // The agent's name in the column the eye lands on, and never the word
+    // "unknown" beside an agent omt has found. The row that shipped read
+    // `shell   Claude Code · unknown · ...`, so a list opened to find out
+    // whether omt knows about Claude Code answered with "shell" and "unknown".
+    // The selected row of the overlay, not the echoed command line above it:
+    // the shell printed the path that was typed, and it starts with a `/`.
+    let row = listed
+        .lines()
+        .find(|l| l.trim_start().starts_with('>'))
+        .unwrap_or_default()
+        .trim_start()
+        .trim_start_matches('>')
+        .trim()
+        .to_owned();
+    assert!(
+        row.to_lowercase().starts_with("claude"),
+        "the agent is not the first thing on its own row: {row:?}"
+    );
+    assert!(
+        !row.split(' ').any(|word| word == "unknown"),
+        "a found agent is described as unknown: {row:?}"
+    );
+}
+
+#[test]
+fn closing_a_list_brings_the_pane_back_without_waiting_for_it_to_repaint() {
+    // Reported from real use: open `⟨leader⟩ a` over Claude Code, press Esc,
+    // and the list stays on the screen for a long time — until the agent
+    // happens to paint again, which for one sitting at a prompt is never.
+    //
+    // An overlay is written straight to the terminal, over cells each pane's
+    // diffing renderer believes it still owns. The diff then sees no change
+    // and writes nothing, so what is on the screen is a closed list.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    // Something distinctive, and a program that will not repaint on its own.
+    s.type_in("printf 'PANE-MARKER-9137\\n'\r");
+    s.settle(1.5);
+    assert!(
+        s.screen().contains("PANE-MARKER-9137"),
+        "the marker never appeared:\n{}",
+        s.screen()
+    );
+
+    s.type_in("\x02a");
+    s.settle(1.0);
+    assert!(
+        s.screen().contains("Agents"),
+        "the list did not open:\n{}",
+        s.screen()
+    );
+
+    s.type_in("\x1b");
+    // One second is far longer than a frame and far shorter than "ages". The
+    // shell is sitting at a prompt and will not paint anything by itself.
+    s.settle(1.0);
+    let after = s.screen();
+    assert!(
+        !after.contains("Agents"),
+        "the closed list is still on the screen:\n{after}"
+    );
+    assert!(
+        after.contains("PANE-MARKER-9137"),
+        "the pane did not come back after the list closed:\n{after}"
+    );
+    s.type_in("\x04");
 }
