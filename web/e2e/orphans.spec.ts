@@ -190,6 +190,35 @@ test.describe('attaching a file the instance already has', () => {
     await expect(page.locator('.bar h1')).not.toContainText(/Choose a file|选择要附加的文件/)
   })
 
+  test('the sheet has all five rows, and three separate file inputs', async ({ page }) => {
+    // 09 §4.3.3: `capture` replaces the photo picker rather than being a mode
+    // of it, so the library, the camera and the filesystem are three elements
+    // and three rows. This shipped with two.
+    test.skip(!(await anAgentConversation(page)), 'no session to attach an agent to')
+    await page.getByRole('button', { name: /Attach|附件/ }).tap()
+
+    for (const name of [
+      /Photo library|照片图库/,
+      /Take a photo|拍照/,
+      /Choose a file|选择文件/,
+      /A file in this project|项目中的文件/,
+      /Paste an image|粘贴图片/,
+    ]) {
+      await expect(page.getByRole('button', { name })).toBeVisible()
+    }
+
+    // Three inputs, distinguishable by what each one opens.
+    const inputs = await page.locator('input[type="file"]').evaluateAll((nodes) =>
+      nodes.map((n) => ({
+        accept: n.getAttribute('accept') ?? '',
+        capture: n.getAttribute('capture') ?? '',
+      })),
+    )
+    expect(inputs).toContainEqual({ accept: 'image/*', capture: '' })
+    expect(inputs).toContainEqual({ accept: 'image/*', capture: 'environment' })
+    expect(inputs).toContainEqual({ accept: '', capture: '' })
+  })
+
   test('leaving the picker cancels the pick', async ({ page }) => {
     // Otherwise it stays armed, and the next file somebody opens to *read* is
     // sent to an agent.

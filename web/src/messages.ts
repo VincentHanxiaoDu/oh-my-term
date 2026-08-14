@@ -30,6 +30,7 @@ const table = {
   'projects.gone': 'this directory is gone',
 
   'attach.label': 'Attach',
+  'attach.library': 'Photo library',
   'attach.photo': 'Take a photo',
   'attach.file': 'Choose a file',
   'attach.paste': 'Paste an image',
@@ -114,6 +115,7 @@ export const zhHans: Partial<Messages> = {
   'projects.gone': '该目录已不存在',
 
   'attach.label': '附件',
+  'attach.library': '照片图库',
   'attach.photo': '拍照',
   'attach.file': '选择文件',
   'attach.paste': '粘贴图片',

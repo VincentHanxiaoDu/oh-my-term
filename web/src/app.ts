@@ -913,9 +913,20 @@ export class App {
     const attach = el('button', 'composer-icon', '＋')
     attach.setAttribute('aria-label', t('attach.label'))
 
-    // Two pickers, because they are two different affordances on a phone:
-    // `capture` opens the camera directly, and without it iOS offers the photo
-    // library. One input cannot be both.
+    // Three pickers, not one control with modes. 09 §4.3.3: `capture` is not a
+    // mode of the photo picker, it *replaces* it — an input carrying it opens
+    // the camera and never offers the library, so one button that sometimes
+    // skips the picker is a bad surprise. And an input with no `accept` offers
+    // the whole filesystem, which is the wrong list when somebody wants a
+    // photo. Three affordances, three elements.
+    //
+    // This shipped with two, and the library — the commonest of the three, a
+    // screenshot somebody took a minute ago — was the one missing.
+    const library = document.createElement('input')
+    library.type = 'file'
+    library.accept = 'image/*'
+    library.className = 'hidden-input'
+
     const camera = document.createElement('input')
     camera.type = 'file'
     camera.accept = 'image/*'
@@ -926,7 +937,7 @@ export class App {
     anyFile.type = 'file'
     anyFile.className = 'hidden-input'
 
-    for (const picker of [camera, anyFile]) {
+    for (const picker of [library, camera, anyFile]) {
       picker.addEventListener('change', () => {
         const file = picker.files?.[0]
         if (file) {
@@ -941,6 +952,7 @@ export class App {
     attach.addEventListener('click', () => {
       const workspace = this.#store.state.sessions.find((s) => s.id === session)?.workspace
       this.#openSheet([
+        { label: t('attach.library'), onTap: () => library.click() },
         { label: t('attach.photo'), onTap: () => camera.click() },
         { label: t('attach.file'), onTap: () => anyFile.click() },
         // A file the instance already has. It is referenced rather than
@@ -1016,7 +1028,11 @@ export class App {
       box.append(note)
     }
 
-    box.append(attach, camera, anyFile, mic, field, send)
+    // Every picker in the document. A detached input can be clicked in some
+    // browsers and not others, and the one that was created and never appended
+    // was the library — so the row existed, the element existed, and the tap
+    // reached nothing.
+    box.append(attach, library, camera, anyFile, mic, field, send)
     return box
   }
 
@@ -1108,11 +1124,6 @@ export class App {
    * has to remember.
    */
   readonly #staged = new Attachments()
-
-  /** Everything currently staged, for the composer to render. */
-  staged(): ReturnType<Attachments['list']> {
-    return this.#staged.list()
-  }
 
   /**
    * Send a file to the agent.
@@ -2145,11 +2156,6 @@ export class App {
         : String(error)
     this.#errors[screen] = message
     this.render()
-  }
-
-  /** Whatever went wrong on this screen, if anything. */
-  errorFor(screen: Route['screen']): string | undefined {
-    return this.#errors[screen]
   }
 
   /** Fetch the screen and redraw only if it moved. */

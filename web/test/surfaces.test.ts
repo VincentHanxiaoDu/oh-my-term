@@ -525,6 +525,39 @@ describe('a file listing you can read without tapping', () => {
   })
 })
 
+describe('the attach sheet', () => {
+  it('offers all five rows 08 §6.3.1 specifies', () => {
+    // Five, and three of them are three *distinct* file inputs: 09 §4.3.3 is
+    // explicit that `capture` replaces the photo picker rather than being a
+    // mode of it, so one control cannot be both. This shipped with two, and
+    // the missing one was the library — the commonest of the three, a
+    // screenshot somebody took a minute ago.
+    for (const key of [
+      'attach.library',
+      'attach.photo',
+      'attach.file',
+      'attach.workspaceFile',
+      'attach.paste',
+    ] as const) {
+      expect(en[key], key).toBeTruthy()
+      expect(zhHans[key], key).toBeTruthy()
+    }
+  })
+
+  it('does not say the same thing twice', () => {
+    // A sheet with two rows reading "Photo" is a sheet somebody has to try
+    // both of.
+    const rows = [
+      en['attach.library'],
+      en['attach.photo'],
+      en['attach.file'],
+      en['attach.workspaceFile'],
+      en['attach.paste'],
+    ]
+    expect(new Set(rows).size).toBe(rows.length)
+  })
+})
+
 describe('attaching a file the instance already has', () => {
   it('offers the row 08 §6.3 specifies, in both languages', () => {
     // The row was missing and the code behind it was reachable from nothing.
