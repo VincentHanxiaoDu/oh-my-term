@@ -14,9 +14,12 @@ fn main() -> Result<()> {
         Some("handlers") => handlers(),
         Some("codegen") => codegen(false).and_then(|()| handlers()),
         Some("codegen-check") => codegen(true),
+        Some("install") => install(),
         Some(other) => bail!("unknown task `{other}`"),
         None => {
-            eprintln!("usage: cargo xtask <layering|licensing|handlers|codegen|codegen-check>");
+            eprintln!(
+                "usage: cargo xtask <layering|licensing|handlers|codegen|codegen-check|install>"
+            );
             Ok(())
         }
     }
@@ -977,4 +980,68 @@ mod reference_tests {
         let out = reference(&[entry("thing.do", serde_json::json!("full"))]);
         assert!(out.contains("None. Every capability is reachable"), "{out}");
     }
+}
+
+/// Build a release `omt` and put it on `PATH`, atomically.
+///
+/// A task rather than a line in a README, because the obvious line is wrong on
+/// the platform this is developed on. Copying over the existing binary keeps
+/// the inode and changes the contents, and macOS caches a code signature per
+/// inode: the signature no longer matches, and the kernel answers the next
+/// `exec` with SIGKILL. What that looks like is
+///
+///     $ omt
+///     [1]    42352 killed     omt
+///
+/// — no diagnostic, no log line, and nothing wrong with the binary itself. It
+/// cost a real session to work out, twice, because "reinstall it" is a step
+/// nobody writes down.
+///
+/// So: write beside the target and rename over it. A rename is atomic and
+/// gives the new file its own inode, which is the whole fix. Then run the
+/// thing once, because an install that cannot say the installed binary starts
+/// has not finished.
+fn install() -> Result<()> {
+    let root = workspace_root()?;
+    let status = Command::new("cargo")
+        .args(["build", "--release", "-p", "omt"])
+        .current_dir(&root)
+        .status()
+        .context("running cargo build")?;
+    if !status.success() {
+        bail!("the release build failed");
+    }
+
+    let built = root.join("target/release/omt");
+    let home = std::env::var("HOME").context("HOME is not set")?;
+    let dir = PathBuf::from(home).join(".local/bin");
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let target = dir.join("omt");
+    let staged = dir.join(".omt.incoming");
+
+    std::fs::copy(&built, &staged)
+        .with_context(|| format!("copying {} to {}", built.display(), staged.display()))?;
+    std::fs::rename(&staged, &target)
+        .with_context(|| format!("renaming {} into place", staged.display()))?;
+
+    // The check that would have caught it. `--version` is enough: a binary the
+    // kernel refuses to run fails here with signal 9 rather than an exit code.
+    let out = Command::new(&target)
+        .arg("--version")
+        .output()
+        .with_context(|| format!("running {}", target.display()))?;
+    if !out.status.success() {
+        bail!(
+            "{} was installed and will not run: {:?}. On macOS this is usually a stale code \
+             signature from an in-place overwrite — remove the file and install again.",
+            target.display(),
+            out.status
+        );
+    }
+    println!(
+        "installed {} — {}",
+        target.display(),
+        String::from_utf8_lossy(&out.stdout).trim()
+    );
+    Ok(())
 }
