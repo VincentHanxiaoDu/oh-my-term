@@ -338,3 +338,54 @@ fn leaving_puts_the_shell_back_where_omt_started_it() {
         s.screen()
     );
 }
+
+#[test]
+fn the_bar_names_the_real_claude_and_not_only_a_binary_called_claude() {
+    // The test above copies omt's own binary to a file named `claude`, which
+    // exercises the exe-name half of the fingerprint and nothing else. The
+    // report was about the actual agent, and the actual agent differs in every
+    // way that could matter: it is a node script behind a wrapper, so the
+    // process in the foreground may not be the one whose name was typed, and
+    // its argv and environment are its own.
+    //
+    // Skipped rather than failed when Claude Code is not installed. A test
+    // that cannot run on a machine is not a licence to assert nothing on the
+    // machines where it can.
+    let Some(claude) = which("claude") else {
+        eprintln!("skipped: no claude on PATH");
+        return;
+    };
+
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in(&format!("{} --help\r", claude.display()));
+    // `--help` runs, prints and exits, which is not what is wanted here: the
+    // probe reads whatever is in the foreground *now*. So start it for real
+    // and give it long enough to be the foreground process across at least
+    // two probe intervals.
+    s.settle(1.0);
+    s.type_in(&format!("{}\r", claude.display()));
+    s.settle(6.0);
+
+    let bar = s.row(ROWS - 1);
+    let named = bar.to_lowercase().contains("claude");
+    // Interrupt and leave before asserting, so a failure does not leave a
+    // real agent running on somebody's machine.
+    s.type_in("\x03");
+    s.settle(0.5);
+    s.type_in("\x04");
+
+    assert!(
+        named,
+        "the bar does not name the real claude in the pane: {bar:?}\n{}",
+        s.screen()
+    );
+}
+
+/// Where a program is on `PATH`, if it is anywhere.
+fn which(program: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(program))
+        .find(|candidate| candidate.is_file())
+}
