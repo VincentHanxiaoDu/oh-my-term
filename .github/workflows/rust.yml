@@ -55,6 +55,13 @@ jobs:
       - name: Layering
         run: cargo run -q -p xtask -- layering
 
+      # P1's own enforcement note: warn at 1200 lines, fail at 2000. It was the
+      # one part of P1 with nothing measuring it, which is how a 6000-line
+      # module came to exist — the rule was written down, every individual
+      # addition was small, and nothing ever added them up.
+      - name: File length
+        run: cargo run -q -p xtask -- file-length
+
       # A stale generated artifact means the committed catalog and the linked
       # binary disagree, which is how a capability silently vanishes.
       - name: Generated artifacts are current

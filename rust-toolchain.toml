@@ -1,0 +1,13 @@
+# The toolchain omt is built with, pinned so CI and a developer's machine
+# cannot disagree about whether the code compiles — a disagreement that
+# surfaces as a failure nobody can reproduce.
+#
+# Distinct from `rust-version` in the workspace manifest, which states the
+# oldest toolchain omt supports. That is a promise to consumers; this is what
+# the build actually runs on, and they are different questions.
+#
+# `1.97` rather than `stable`: "stable" is not a pin, and a release that
+# changes a lint's default turns every open branch red on the same morning.
+[toolchain]
+channel = "1.97"
+components = ["rustfmt", "clippy"]

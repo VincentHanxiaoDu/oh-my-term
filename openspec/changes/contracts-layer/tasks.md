@@ -1,31 +1,31 @@
 ## 1. Workspace skeleton
 
-- [ ] 1.1 Create the Cargo workspace root with a pinned stable toolchain, shared
+- [x] 1.1 Create the Cargo workspace root with a pinned stable toolchain, shared
       lints (`clippy -D warnings`, deny `unwrap`/`expect` outside tests), and a
       shared dependency table
-- [ ] 1.2 Create `crates/omt-types`, `omt-util`, `omt-catalog`, `omt-events`,
+- [x] 1.2 Create `crates/omt-types`, `omt-util`, `omt-catalog`, `omt-events`,
       `omt-proto` with `#![deny(missing_docs)]` and a crate-level doc comment
       each
-- [ ] 1.2a Create the stub surfaces the parity gate needs (D-6): `crates/omt`
+- [x] 1.2a Create the stub surfaces the parity gate needs (D-6): `crates/omt`
       (the binary codegen runs), `crates/omt-tui` with an action table and no
       rendering, `crates/omt-server` with a route table and no listener, and a
       `web/` package with a tsconfig and a hand-written placeholder handler map
       (7.3 replaces it; without a placeholder, 8.2 cannot run before 7.3)
-- [ ] 1.3 Create `xtask` with a `codegen` subcommand stub that exits non-zero
+- [x] 1.3 Create `xtask` with a `codegen` subcommand stub that exits non-zero
       with "not implemented"
-- [ ] 1.4 Write the layering test: assert the dependency graph matches
+- [x] 1.4 Write the layering test: assert the dependency graph matches
       [02](../../../docs/architecture/02-crate-map.md) — no cycles, no upward
       edges, the L1 order `omt-catalog → omt-events → omt-proto` with the
       reverse edges forbidden (rule 3 — the `omt-catalog → omt-events` edge is
       the one that closes a cycle), and L2 crates independent except the
       **three** documented exceptions (`omt-agent-adapters → omt-pty`,
       `omt-media → omt-term`, `omt-auth → omt-identity`)
-- [ ] 1.5 Write the CI workflow: `fmt`, `clippy -D warnings`, `test`, the
+- [x] 1.5 Write the CI workflow: `fmt`, `clippy -D warnings`, `test`, the
       layering test, and a `codegen --check` step that fails on a stale
       committed artifact. Mark the `codegen` step `continue-on-error` until 7.6
       lands — it runs against 1.3's deliberately-failing stub until then, and a
       knowingly-red pipeline trains people to ignore it
-- [ ] 1.6 Write the file-length check (warn 1200, fail 2000) per P1
+- [x] 1.6 Write the file-length check (warn 1200, fail 2000) per P1
 
 ## 2. `omt-types`
 

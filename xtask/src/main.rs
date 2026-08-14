@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         Some("layering") => layering(),
+        Some("file-length") => file_length(),
         Some("licensing") => licensing(std::env::args().nth(2)),
         Some("handlers") => handlers(),
         Some("codegen") => codegen(false).and_then(|()| handlers()),
@@ -456,6 +457,81 @@ fn workspace_members(root: &std::path::Path) -> Result<Vec<std::path::PathBuf>> 
         }
     }
     Ok(members)
+}
+
+/// P1's file-length gate: warn at 1200 lines, fail at 2000.
+///
+/// [01 §P1](../../docs/architecture/01-principles.md) names this as the
+/// enforcement for "a module over ~1500 lines is a design smell and must be
+/// split before it grows further". It was the one part of P1 with no check
+/// behind it, which is how a 6000-line module came to exist: the rule was
+/// written down, nothing measured it, and every individual addition was small.
+///
+/// Tests are counted with the code they test. A file is one unit to a reader
+/// however its halves are labelled, and excusing the test half is how a file
+/// stays "1900 lines of code" forever.
+fn file_length() -> Result<()> {
+    const WARN: usize = 1200;
+    const FAIL: usize = 2000;
+
+    let root = workspace_root()?;
+    let mut sources = Vec::new();
+    collect_rust_files(&root.join("crates"), &mut sources)?;
+    collect_rust_files(&root.join("xtask"), &mut sources)?;
+    sources.sort();
+
+    let mut warned = Vec::new();
+    let mut failed = Vec::new();
+    for path in &sources {
+        let lines = std::fs::read_to_string(path)?.lines().count();
+        let shown = path.strip_prefix(&root).unwrap_or(path).display().to_string();
+        if lines >= FAIL {
+            failed.push((shown, lines));
+        } else if lines >= WARN {
+            warned.push((shown, lines));
+        }
+    }
+
+    for (path, lines) in &warned {
+        println!("warning: {path} is {lines} lines (over {WARN})");
+    }
+    if failed.is_empty() {
+        println!(
+            "file length ok — {} files checked, {} over {WARN}",
+            sources.len(),
+            warned.len()
+        );
+        return Ok(());
+    }
+    for (path, lines) in &failed {
+        println!("error: {path} is {lines} lines (over {FAIL})");
+    }
+    anyhow::bail!(
+        "{} file(s) over the {FAIL}-line limit (P1)",
+        failed.len()
+    )
+}
+
+/// Every `.rs` file under a directory.
+fn collect_rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            // `target` is build output and `.research` is studied material that
+            // is never built; neither is omt's code to keep small.
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if name == "target" || name.starts_with('.') {
+                continue;
+            }
+            collect_rust_files(&path, out)?;
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn layering() -> Result<()> {
