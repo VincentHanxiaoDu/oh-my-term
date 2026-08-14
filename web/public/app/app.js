@@ -169,7 +169,8 @@ export function announcement(before, after) {
     return { message, urgent: true };
 }
 export function rosterSubtitle(rows) {
-    return waitingLine(rows.length, rows.filter((r) => needsYou(r.state)).length);
+    return waitingLine(rows.length, rows.filter((r) => needsYou(r.state)).length, rows.filter((r) => r.state === 'running' || r.state === 'working' || r.state === 'starting')
+        .length);
 }
 /**
  * Which screen a session opens.

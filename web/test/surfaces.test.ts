@@ -360,7 +360,7 @@ describe('one list across every instance', () => {
     const quiet = unify([
       { ...laptop, sessions: laptop.sessions.map((s) => ({ ...s, state: 'idle' })) },
     ])
-    expect(unifiedSubtitle(quiet, 1)).toBe('nothing waiting · 2 running')
+    expect(unifiedSubtitle(quiet, 1)).toBe('nothing waiting · 2 open')
   })
 
   it('does not mention instances when there is only one', () => {

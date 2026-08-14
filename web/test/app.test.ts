@@ -51,15 +51,18 @@ describe('the roster', () => {
     // "4 sessions" is the one fact nobody unlocks their phone to learn. The
     // question is whether anything needs them, so the line answers that and
     // offers the count as reassurance rather than in place of an answer.
+    // And "running" means running. Counting every session as running said
+    // "7 running" over a list where all seven read "orphaned" — a headline
+    // contradicted by the rows underneath it.
     expect(rosterSubtitle([{ id: '1', title: 'a', state: 'idle' }])).toBe(
-      'nothing waiting · 1 running',
+      'nothing waiting · 1 open',
     )
     expect(
       rosterSubtitle([
-        { id: '1', title: 'a', state: 'idle' },
+        { id: '1', title: 'a', state: 'orphaned' },
         { id: '2', title: 'b', state: 'running' },
       ]),
-    ).toBe('nothing waiting · 2 running')
+    ).toBe('nothing waiting · 1 running')
   })
 
   it('says nothing is running rather than counting to zero', () => {

@@ -239,7 +239,12 @@ export function announcement(
 }
 
 export function rosterSubtitle(rows: readonly SessionRow[]): string {
-  return waitingLine(rows.length, rows.filter((r) => needsYou(r.state)).length)
+  return waitingLine(
+    rows.length,
+    rows.filter((r) => needsYou(r.state)).length,
+    rows.filter((r) => r.state === 'running' || r.state === 'working' || r.state === 'starting')
+      .length,
+  )
 }
 
 /**

@@ -42,6 +42,11 @@ export interface InstanceRoster {
   threads?: Record<string, number>
 }
 
+/** Whether a state means the agent or shell is actually doing something. */
+function isRunning(state: string): boolean {
+  return state === 'running' || state === 'working' || state === 'starting'
+}
+
 /** Whether a state means somebody has to do something. */
 function needsSomebody(state: string): boolean {
   return state === 'blocked'
@@ -60,14 +65,24 @@ function needsSomebody(state: string): boolean {
  * on its own — "4 sessions" — is the single fact nobody unlocks their phone
  * to learn.
  */
-export function waitingLine(total: number, blocked: number): string {
+export function waitingLine(total: number, blocked: number, running = 0): string {
   if (blocked > 0) {
     return blocked === 1 ? '1 waiting on you' : `${blocked} waiting on you`
   }
   if (total === 0) {
     return 'nothing running'
   }
-  return `nothing waiting · ${total === 1 ? '1 running' : `${total} running`}`
+  // "Running" has to mean running. Counting every session as running said
+  // "7 running" over a list where all seven read "orphaned" — a headline
+  // contradicted by the rows underneath it, which is the exact failure this
+  // line was rewritten to fix.
+  if (running > 0) {
+    return `nothing waiting \u00b7 ${running === 1 ? '1 running' : `${running} running`}`
+  }
+  // Open rather than idle: an orphaned session is not idle, it is a session
+  // whose process is gone and whose output is still there. One word that is
+  // true of every state left beats a word that is true of most of them.
+  return `nothing waiting \u00b7 ${total === 1 ? '1 open' : `${total} open`}`
 }
 
 /**
@@ -118,7 +133,11 @@ export function unifiedSubtitle(rows: readonly UnifiedSession[], instances: numb
   const blocked = rows.filter((r) => needsSomebody(r.state)).length
   const unreachable = new Set(rows.filter((r) => !r.reachable).map((r) => r.instance)).size
 
-  const head = waitingLine(rows.length, blocked)
+  const head = waitingLine(
+    rows.length,
+    blocked,
+    rows.filter((r) => isRunning(r.state)).length,
+  )
 
   if (unreachable > 0) {
     // Said, because a roster missing a machine's sessions looks exactly like a
