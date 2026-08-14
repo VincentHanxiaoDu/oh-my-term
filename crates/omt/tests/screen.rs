@@ -639,3 +639,36 @@ fn the_state_comes_from_what_the_agent_says_about_itself() {
         "the state glyph reached the screen:\n{resting}"
     );
 }
+
+#[test]
+fn a_question_on_the_agents_own_screen_is_somebody_being_waited_for() {
+    // The state no amount of watching a pty can see. An agent sitting at a
+    // permission prompt produces no output and rings no bell: to everything
+    // below this it is indistinguishable from an agent that finished. It is
+    // distinguishable by looking at what it drew, in the place it draws
+    // questions — below the last rule.
+    //
+    // Driven with `printf` rather than a real agent because the point under
+    // test is that omt reads the screen at all, and a real agent's timing
+    // makes that a coin toss.
+    let mut s = Screen::start();
+    s.settle(2.0);
+
+    // Identify as the agent, then draw what the agent draws when it asks.
+    s.type_in("printf '\\e]0;\u{2733} Claude Code\\a'\r");
+    s.settle(1.0);
+    s.type_in("printf '%s\\n' '────────────────' 'Do you want to proceed?' '❯ 1. Yes' '  2. No' 'Esc to cancel'\r");
+    s.settle(3.0);
+
+    s.type_in("\x02a");
+    s.settle(1.5);
+    let listed = s.screen();
+    s.type_in("\x1b");
+    s.settle(0.3);
+    s.type_in("\x04");
+
+    assert!(
+        listed.contains("waiting on you"),
+        "an agent asking a question is not reported as waiting:\n{listed}"
+    );
+}

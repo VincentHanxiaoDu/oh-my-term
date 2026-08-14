@@ -188,6 +188,22 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     instance
                         .observe_agent(pane.binding, crate::probe::title_reading(activity, now));
                 }
+                // And what its own interface is showing. A question below the
+                // last rule it drew is somebody being waited for, and no
+                // amount of watching the pty can see that.
+                if let Some(adapter) = refs.iter().find(|a| a.kind() == probed.detection.agent) {
+                    let rules = adapter.screen_rules();
+                    if !rules.is_empty()
+                        && let Some(runtime) = instance.runtime(pane.session)
+                    {
+                        let text = crate::probe::screen_text(runtime.terminal().grid());
+                        if let Some(verdict) = omt_agent_adapters::read_screen(&rules, &text)
+                            && let Some(reading) = crate::probe::screen_reading(verdict.state, now)
+                        {
+                            instance.observe_agent(pane.binding, reading);
+                        }
+                    }
+                }
             }
         }
 

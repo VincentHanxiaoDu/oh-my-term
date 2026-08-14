@@ -172,6 +172,56 @@ pub fn activity(bytes_recently: bool, bell_recently: bool, quiet_for_secs: u64) 
     })
 }
 
+/// What a pane's visible screen says the agent is doing.
+///
+/// Read from the grid omt already keeps for the pane, so this costs a walk
+/// over the visible rows and no syscall at all. Bounded to what is on screen:
+/// scrollback is where an answered question lives, and a rule that reached
+/// into it would report an agent as waiting for something it was told an hour
+/// ago.
+#[must_use]
+pub fn screen_text(grid: &omt_term::Grid) -> String {
+    let mut out = String::new();
+    for row in grid.rows() {
+        out.push_str(row.text().trim_end());
+        out.push('\n');
+    }
+    out
+}
+
+/// The reading a screen rule produces.
+///
+/// `Transcript` tier: it is omt reading the agent's own interface, which is
+/// stronger than watching bytes arrive and weaker than the agent saying so
+/// through a title, a hook or a protocol. Authoritative, because a rule that
+/// matched is a statement about the screen as it is now — and `Hold` produces
+/// no reading at all, which is how an agent showing its own history stops the
+/// present being read out of the past.
+#[must_use]
+pub fn screen_reading(
+    state: omt_agent_adapters::ScreenState,
+    now_ms: u64,
+) -> Option<SourceReading> {
+    let state = match state {
+        omt_agent_adapters::ScreenState::Working => AgentState::Working { detail: None },
+        omt_agent_adapters::ScreenState::Blocked => AgentState::Blocked {
+            // Unspecified and no interaction: a screen rule knows somebody is
+            // wanted and never what for, and inventing an answerable card from
+            // matched text is how a locale change becomes a wrong "Allow".
+            reason: omt_types::BlockReason::Unspecified,
+            interaction: None,
+        },
+        omt_agent_adapters::ScreenState::Idle => AgentState::Idle,
+        omt_agent_adapters::ScreenState::Hold => return None,
+    };
+    Some(SourceReading {
+        tier: Tier::Transcript,
+        state,
+        at: now_ms,
+        authoritative: true,
+    })
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

@@ -29,18 +29,21 @@
 
 ## 4. Screen regions as data
 
-- [ ] 4.1 Named regions over the pane's grid: the whole recent screen, the last
+- [x] 4.1 Named regions over the pane's grid: the whole recent screen, the last
       N non-empty lines, after the last horizontal rule, the prompt box body,
       the OSC title
-- [ ] 4.2 Rules with a state, a priority, and `contains` / `regex` /
+- [x] 4.2 Rules with a state, a priority, and `contains` / `regex` /
       `line_regex`
-- [ ] 4.3 `any` / `all` / `not` combinators
-- [ ] 4.4 A rule that suppresses state updates while an agent shows its own
+- [x] 4.3 `any` / `all` / `not` combinators
+- [x] 4.4 A rule that suppresses state updates while an agent shows its own
       history
-- [ ] 4.5 Rules are data with a version, not code
-- [ ] 4.6 Claude Code's rule set, from its observed interface
+- [ ] 4.5 Rules are data with a version, not code — they are values in Rust
+      today, which gets the regions, the priorities and the combinators without
+      a parser. Making them a file the instance loads is a second step and is
+      only worth it once a rule needs changing faster than a release.
+- [x] 4.6 Claude Code's rule set, from its observed interface
 - [ ] 4.7 A rule set for each other adapter omt already declares
-- [ ] 4.8 The floor still applies when no rule matches
+- [x] 4.8 The floor still applies when no rule matches
 
 ## 5. What a person is told
 

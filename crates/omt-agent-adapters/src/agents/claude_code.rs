@@ -14,12 +14,86 @@ use crate::adapter::{
     AdapterError, AgentAdapter, AttachmentClass, AttachmentReference, Fingerprint, Interrupt,
     SpawnCtx, TitleMarks,
 };
+use crate::regions::Region;
+use crate::rules::{Rule, ScreenState, Test};
+
+/// What Claude Code's screen says it is doing.
+///
+/// Every rule here was written against the interface the shipped binary draws,
+/// and each says where it looks — because the same words appear in scrollback,
+/// in a diff, and in the answer to a question asked ten minutes ago. A rule
+/// with no region is a rule that fires on all three.
+///
+/// Priorities are spaced so a rule can be inserted between two without
+/// renumbering, and the order here is the order somebody should read them in,
+/// which is not the order they fire in.
+#[must_use]
+pub fn screen_rules() -> Vec<Rule> {
+    vec![
+        // A question, in the place questions are asked: below the last rule
+        // the agent drew. Strongest, because a person waiting is the one thing
+        // this product exists to notice.
+        Rule {
+            id: "a question below the last rule",
+            region: Region::AfterLastRule,
+            test: Test::All(vec![
+                Test::Contains(vec!["esc to cancel"]),
+                Test::Any(vec![
+                    Test::Contains(vec!["enter to select"]),
+                    // The first-run trust prompt says "confirm" rather than
+                    // "select", and it is the screen somebody meets before any
+                    // other. Found by testing against a captured screen rather
+                    // than one written from memory.
+                    Test::Contains(vec!["enter to confirm"]),
+                    Test::Contains(vec!["to navigate"]),
+                    Test::Contains(vec!["do you want to proceed"]),
+                ]),
+            ]),
+            state: ScreenState::Blocked,
+            priority: 900,
+        },
+        // Its own history on screen. Yesterday's question is there and is not
+        // being asked, so this says "not from this screen" rather than a
+        // state — without it a scrollback viewer reads as a live prompt and
+        // the agent is reported blocked until somebody closes it.
+        Rule {
+            id: "showing its own transcript",
+            region: Region::BottomNonEmpty(3),
+            test: Test::Any(vec![
+                Test::Contains(vec!["showing detailed transcript"]),
+                Test::Contains(vec!["ctrl+o", "to toggle"]),
+            ]),
+            state: ScreenState::Hold,
+            priority: 800,
+        },
+        // An empty input box. Idle, unless the box is showing a question —
+        // which is what the negation is for, and is the case this would
+        // otherwise get wrong every time.
+        Rule {
+            id: "an empty prompt box",
+            region: Region::PromptBox,
+            test: Test::All(vec![
+                Test::LineStartsWith("\u{276f}"),
+                Test::Not(Box::new(Test::Any(vec![
+                    Test::Contains(vec!["enter to select"]),
+                    Test::Contains(vec!["to navigate"]),
+                ]))),
+            ]),
+            state: ScreenState::Idle,
+            priority: 500,
+        },
+    ]
+}
 
 /// Claude Code.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClaudeCode;
 
 impl AgentAdapter for ClaudeCode {
+    fn screen_rules(&self) -> Vec<Rule> {
+        screen_rules()
+    }
+
     fn kind(&self) -> AgentKind {
         AgentKind::ClaudeCode
     }
@@ -604,5 +678,104 @@ mod tests {
             ClaudeCode.best_tier().may_emit_structured_content(),
             "a hook was told; it did not guess"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod screen_rule_tests {
+    use super::*;
+    use crate::rules::read;
+
+    /// The trust prompt, as the shipped binary draws it on first run.
+    ///
+    /// Captured from a real session rather than written from memory: a rule
+    /// tested against a screen somebody imagined is a rule that matches what
+    /// they imagined.
+    const TRUST_PROMPT: &str = "\
+ Accessing workspace:
+
+ /private/tmp/omt-screen-14115
+
+ Quick safety check: Is this a project you created or one you trust?
+
+ \u{276f} 1. Yes, I trust this folder
+   2. No, exit
+
+ Enter to confirm \u{b7} Esc to cancel
+";
+
+    /// A question with the rule above it, which is the shape of every
+    /// permission prompt it asks after the first.
+    const PERMISSION: &str = "\
+ I'll read the file.
+\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+ Do you want to proceed?
+ \u{276f} 1. Yes
+   2. No
+ Esc to cancel
+";
+
+    /// Sitting at its input box with nothing to do.
+    const RESTING: &str = "\
+ \u{2022} Done.
+\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+\u{276f}
+\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+  auto mode on (shift+tab to cycle)
+";
+
+    #[test]
+    fn a_permission_prompt_is_somebody_being_waited_for() {
+        let read = read(&screen_rules(), PERMISSION).expect("a verdict");
+        assert_eq!(read.state, ScreenState::Blocked, "rule: {}", read.rule);
+    }
+
+    #[test]
+    fn the_first_run_trust_prompt_is_too() {
+        // Different words, same shape, and the one somebody meets first.
+        let read = read(&screen_rules(), TRUST_PROMPT).expect("a verdict");
+        assert_eq!(read.state, ScreenState::Blocked, "rule: {}", read.rule);
+    }
+
+    #[test]
+    fn an_empty_input_box_is_idle() {
+        let read = read(&screen_rules(), RESTING).expect("a verdict");
+        assert_eq!(read.state, ScreenState::Idle, "rule: {}", read.rule);
+    }
+
+    #[test]
+    fn a_question_that_has_scrolled_up_is_not_being_asked() {
+        // The exact failure the regions exist for: the same words, above the
+        // box rather than below the rule.
+        let scrolled = format!("{PERMISSION}{RESTING}");
+        let read = read(&screen_rules(), &scrolled).expect("a verdict");
+        assert_eq!(
+            read.state,
+            ScreenState::Idle,
+            "an answered question still reads as blocked: {}",
+            read.rule
+        );
+    }
+
+    #[test]
+    fn its_own_transcript_says_nothing_about_now() {
+        // Yesterday's question is on the screen and is not being asked.
+        let viewing = "\
+ showing detailed transcript
+ ctrl+o to toggle
+";
+        let read = read(&screen_rules(), viewing).expect("a verdict");
+        assert_eq!(read.state, ScreenState::Hold, "rule: {}", read.rule);
+    }
+
+    #[test]
+    fn a_plain_shell_is_not_this_agent_at_all() {
+        // No rule matching is not a state: it means the floor applies.
+        assert!(read(&screen_rules(), "$ ls\nREADME.md\n$ ").is_none());
     }
 }

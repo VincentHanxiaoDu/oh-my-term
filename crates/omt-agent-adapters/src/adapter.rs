@@ -180,6 +180,20 @@ pub trait AgentAdapter: Send + Sync {
     /// How to recognize it from outside.
     fn fingerprint(&self) -> Fingerprint;
 
+    /// What this agent's screen says it is doing.
+    ///
+    /// Empty by default, which means the floor decides: an adapter with no
+    /// rules is one nobody has watched closely enough yet, and that is an
+    /// honest state to be in. A wrong rule is worse than no rule, because a
+    /// wrong rule is confident.
+    ///
+    /// Each rule names the region it looks at. The same words appear in
+    /// scrollback, in a diff, and in a question answered ten minutes ago, so a
+    /// rule without a region is a rule that fires on all three.
+    fn screen_rules(&self) -> Vec<crate::rules::Rule> {
+        Vec::new()
+    }
+
     /// Environment to inject when omt spawns it.
     ///
     /// This is what removes the entire class of "match the transcript to the
