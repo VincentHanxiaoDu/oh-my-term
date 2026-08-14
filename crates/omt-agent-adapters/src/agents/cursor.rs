@@ -31,6 +31,7 @@ impl AgentAdapter for Cursor {
             exe_names: vec!["cursor-agent"],
             argv_patterns: vec!["cursor-agent", "@cursor/agent"],
             session_id_var: Some("CURSOR_SESSION_ID"),
+            title: None,
         }
     }
 

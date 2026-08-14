@@ -781,9 +781,19 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
     if rows.is_empty() {
         // An empty list and "omt found nothing" are different answers, and the
         // second is the one that says whether to go looking for a bug.
+        //
+        // Worded as a report of what omt did, not as a verdict on what is
+        // there. "No agent in any pane" is a sentence somebody reads while an
+        // agent's own interface is on the screen behind it, and it makes omt
+        // look like it is lying rather than like it has not found something
+        // yet — which is what it was read as, twice.
         rows.push(omt_tui::Choice {
-            label: "no agent in any pane".to_owned(),
-            detail: "omt looks every half second at what each pane is running".to_owned(),
+            label: "omt has not identified an agent in any pane".to_owned(),
+            detail: format!(
+                "it looks every {}ms at what each pane is running; \
+                 a pane started moments ago may not have been seen yet",
+                crate::probe::PROBE_EVERY_MS
+            ),
             chord: None,
         });
     }

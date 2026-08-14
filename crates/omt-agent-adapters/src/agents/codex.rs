@@ -39,6 +39,7 @@ impl AgentAdapter for Codex {
             exe_names: vec!["codex"],
             argv_patterns: vec!["@openai/codex", "codex/cli.js", "codex-cli"],
             session_id_var: Some("CODEX_SESSION_ID"),
+            title: None,
         }
     }
 

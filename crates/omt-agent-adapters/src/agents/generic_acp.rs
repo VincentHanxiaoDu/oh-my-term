@@ -51,24 +51,28 @@ impl AgentAdapter for GenericAcp {
                 exe_names: vec!["opencode"],
                 argv_patterns: vec!["opencode"],
                 session_id_var: Some("OPENCODE_SESSION_ID"),
+                title: None,
             },
             AgentKind::GeminiCli => Fingerprint {
                 env_markers: vec!["GEMINI_CLI"],
                 exe_names: vec!["gemini"],
                 argv_patterns: vec!["@google/gemini-cli"],
                 session_id_var: None,
+                title: None,
             },
             AgentKind::QwenCode => Fingerprint {
                 env_markers: vec![],
                 exe_names: vec!["qwen"],
                 argv_patterns: vec!["qwen-code"],
                 session_id_var: None,
+                title: None,
             },
             AgentKind::Goose => Fingerprint {
                 env_markers: vec![],
                 exe_names: vec!["goose"],
                 argv_patterns: vec!["goose"],
                 session_id_var: None,
+                title: None,
             },
             _ => Fingerprint::default(),
         }

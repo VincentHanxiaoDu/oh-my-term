@@ -20,7 +20,15 @@ fn main() -> Result<()> {
             Ok(())
         }
         ["--version"] => {
-            println!("omt {}", env!("CARGO_PKG_VERSION"));
+            // The commit too. Without it, somebody holding a binary cannot
+            // tell whether it contains the fix they were told about, and a
+            // session started before an install goes on running the old code
+            // with no way to see that it is.
+            println!(
+                "omt {} ({})",
+                env!("CARGO_PKG_VERSION"),
+                env!("OMT_BUILD_COMMIT")
+            );
             Ok(())
         }
         // The default: run a shell here. Everything else is a subcommand, so

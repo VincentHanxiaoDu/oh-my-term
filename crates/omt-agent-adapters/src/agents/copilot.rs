@@ -38,6 +38,7 @@ impl AgentAdapter for Copilot {
             exe_names: vec!["copilot"],
             argv_patterns: vec!["@github/copilot", "copilot/index.js"],
             session_id_var: Some("COPILOT_SESSION_ID"),
+            title: None,
         }
     }
 

@@ -44,6 +44,34 @@ pub struct Fingerprint {
     pub argv_patterns: Vec<&'static str>,
     /// The variable carrying the agent's own session id, where it has one.
     pub session_id_var: Option<&'static str>,
+    /// How this agent names itself in the terminal title, and what it puts
+    /// there to say what it is doing.
+    ///
+    /// An agent that sets a title is *telling* its host what it is, through
+    /// the one channel every terminal has had since before any of this
+    /// existed. It needs no permission, it survives ssh, and it does not
+    /// depend on how the binary was launched or signed — which is the whole
+    /// list of things that make reading the process table unreliable.
+    pub title: Option<TitleMarks>,
+}
+
+/// What an agent writes in the terminal title.
+///
+/// Claude Code writes `✳ Claude Code` at rest and swaps the leading glyph for
+/// a braille spinner frame while it works. That single string carries both the
+/// identity and the state, and omt already parses it and threw it away.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TitleMarks {
+    /// A substring that identifies the agent. Matched case-insensitively.
+    pub names: Vec<&'static str>,
+    /// Leading characters that mean the agent is working.
+    ///
+    /// Ranges rather than a list, because a spinner is an animation: Claude
+    /// Code cycles the braille block, and enumerating ten frames is a list
+    /// that goes stale on the next frame they add.
+    pub working_prefix: Vec<std::ops::RangeInclusive<char>>,
+    /// Leading characters that mean it is waiting for something to do.
+    pub idle_prefix: Vec<char>,
 }
 
 /// How confidently an agent was identified, and on what evidence.

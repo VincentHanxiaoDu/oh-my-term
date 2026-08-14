@@ -36,6 +36,7 @@ impl AgentAdapter for Gemini {
             exe_names: vec!["gemini"],
             argv_patterns: vec!["@google/gemini-cli", "gemini-cli/index.js"],
             session_id_var: Some("GEMINI_SESSION_ID"),
+            title: None,
         }
     }
 

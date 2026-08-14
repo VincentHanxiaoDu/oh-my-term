@@ -12,7 +12,7 @@ use omt_types::{AgentKind, Tier};
 
 use crate::adapter::{
     AdapterError, AgentAdapter, AttachmentClass, AttachmentReference, Fingerprint, Interrupt,
-    SpawnCtx,
+    SpawnCtx, TitleMarks,
 };
 
 /// Claude Code.
@@ -32,6 +32,14 @@ impl AgentAdapter for ClaudeCode {
             exe_names: vec!["claude"],
             argv_patterns: vec!["@anthropic-ai/claude-code", "claude-code/cli.js"],
             session_id_var: Some("CLAUDE_CODE_SESSION_ID"),
+            title: Some(TitleMarks {
+                names: vec!["claude code", "claude"],
+                // The braille block. Claude Code animates a spinner there
+                // while it works, and the frames are the whole block.
+                working_prefix: vec!['\u{2800}'..='\u{28FF}'],
+                // The eight-spoked asterisk it rests at.
+                idle_prefix: vec!['\u{2733}'],
+            }),
         }
     }
 
