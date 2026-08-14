@@ -8,12 +8,21 @@
 //! No behaviour, no I/O, no runtime. Everything above depends on these, so a
 //! dependency here is a dependency everywhere.
 
+mod diff;
 mod domain;
 mod ids;
+mod peer;
 mod seq;
 mod timestamp;
 
+pub use diff::{
+    ChangeKind, DiffBase, DiffBody, DiffLine, DiffLineKind, EofNewline, FileDiff, Hunk,
+    IntraRange, LineStat, RedactReason, RelPath, VcsFileState, intra_ranges,
+};
 pub use domain::{Actor, AgentKind, AgentState, BlockReason, DeviceClaim, Role, SessionMode, Tier};
+pub use peer::{
+    AgentSessionId, Fidelity, PeerInfo, PermissionMode, ResponderRef, SourceId, StateDependence,
+};
 pub use ids::{
     BindingId, BlockId, ClientId, CredentialId, DeviceId, IdentityId, InstanceId, IntentId,
     InteractionId, JobId, PaneId, SessionId, ViewId, WorkspaceId,

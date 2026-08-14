@@ -1,0 +1,269 @@
+//! What omt actually paints, read back through omt's own terminal.
+//!
+//! Every visual bug this project has shipped was invisible to its tests for
+//! one reason: the tests asserted on *bytes*. A cursor placed a row too high, a
+//! list painted over by the pane underneath, a shell prompt left halfway down
+//! the screen on exit — all of those are correct byte streams. They are only
+//! wrong once something interprets them.
+//!
+//! omt has that something. `omt-term` is a terminal emulator with two hundred
+//! tests of its own, so the harness here is small: run the real binary on a
+//! real pty, feed everything it writes into a `Terminal`, and ask the resulting
+//! grid what is on screen and where the cursor ended up. That is the same
+//! question a person looking at the screen is asking, and it is the one that
+//! kept being answered by hand.
+
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "in a test, expect() is the assertion"
+)]
+
+use std::io::{Read, Write};
+use std::time::{Duration, Instant};
+
+use omt_pty::{Pty, PtyConfig, PtySize};
+use omt_term::{GridSize, ScrollbackLimits, TermConfig, Terminal};
+
+const COLS: u16 = 100;
+const ROWS: u16 = 30;
+
+/// A running `omt`, with a terminal emulator watching its output.
+struct Screen {
+    pty: Pty,
+    term: Terminal,
+}
+
+impl Screen {
+    /// Start `omt` on a pty of a known size.
+    fn start() -> Self {
+        let binary = std::path::Path::new(env!("CARGO_BIN_EXE_omt"));
+        let dir = std::env::temp_dir().join(format!("omt-screen-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let pty = Pty::spawn(&PtyConfig {
+            program: binary.into(),
+            args: Vec::new(),
+            cwd: Some(dir),
+            size: PtySize::new(COLS, ROWS),
+            env: vec![
+                ("TERM".to_owned(), "xterm-256color".to_owned()),
+                // A prompt of exactly one known line, so what the *shell*
+                // paints cannot be mistaken for what omt paints.
+                ("PS1".to_owned(), "$ ".to_owned()),
+                ("SHELL".to_owned(), "/bin/sh".to_owned()),
+            ],
+            ..PtyConfig::default()
+        })
+        .expect("spawn omt");
+        pty.set_nonblocking(true).expect("nonblocking");
+        Self {
+            pty,
+            term: Terminal::new(TermConfig {
+                size: GridSize::new(COLS, ROWS),
+                scrollback: ScrollbackLimits::default(),
+                ..TermConfig::default()
+            }),
+        }
+    }
+
+    /// Read whatever omt has painted for a while, interpreting as it arrives.
+    fn settle(&mut self, seconds: f32) {
+        let deadline = Instant::now() + Duration::from_secs_f32(seconds);
+        let mut buf = [0u8; 65536];
+        let mut reader = self.pty.reader();
+        while Instant::now() < deadline {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    self.term.advance(&buf[..n]);
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+    }
+
+    fn type_in(&mut self, text: &str) {
+        self.pty
+            .writer()
+            .write_all(text.as_bytes())
+            .expect("write to omt");
+    }
+
+    /// One row of the screen, as text.
+    fn row(&self, row: u16) -> String {
+        self.term.grid().row(row).text().trim_end().to_owned()
+    }
+
+    /// The whole screen, as lines.
+    fn rows(&self) -> Vec<String> {
+        (0..ROWS).map(|r| self.row(r)).collect()
+    }
+
+    fn screen(&self) -> String {
+        self.rows().join("\n")
+    }
+
+    fn cursor(&self) -> (u16, u16) {
+        let c = self.term.grid().cursor;
+        (c.row, c.col)
+    }
+
+    /// Which row the last non-blank content is on.
+    fn last_written_row(&self) -> u16 {
+        self.rows()
+            .iter()
+            .rposition(|line| !line.trim().is_empty())
+            .map_or(0, |r| r as u16)
+    }
+}
+
+impl Drop for Screen {
+    fn drop(&mut self) {
+        // Killed rather than left: a detach test that failed before detaching
+        // would otherwise leave a shell running for the rest of the suite.
+        let _ = self.pty.signal(omt_pty::Signal::Kill);
+    }
+}
+
+#[test]
+fn the_cursor_sits_where_the_shell_is_typing() {
+    // The bug: panes were drawn one row below their rect, to leave the tab bar
+    // its row, and the cursor was placed without that offset — so it sat a row
+    // above the line being typed on. Invisible to a byte-level test, obvious to
+    // anybody looking at the screen.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("echo marker-one\r");
+    s.settle(1.5);
+
+    let (row, _) = s.cursor();
+    let prompt_row = s
+        .rows()
+        .iter()
+        .rposition(|line| line.contains('$'))
+        .expect("a shell prompt somewhere on screen") as u16;
+    assert_eq!(
+        row,
+        prompt_row,
+        "the cursor is on row {row} and the prompt is on {prompt_row}:\n{}",
+        s.screen()
+    );
+}
+
+#[test]
+fn the_cursor_is_never_left_on_omts_own_status_row() {
+    // Where it ended up once every piece of chrome had written: the chrome is
+    // drawn after the panes, each piece writes an absolute position, and the
+    // last one to write was the status row.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("echo marker-two\r");
+    s.settle(1.5);
+    let (row, _) = s.cursor();
+    assert_ne!(
+        row,
+        ROWS - 1,
+        "the cursor was parked on the status row:\n{}",
+        s.screen()
+    );
+}
+
+#[test]
+fn the_tab_bar_and_the_status_row_are_both_on_screen() {
+    // omt's only contribution to the display. A multiplexer whose screen is
+    // indistinguishable from the shell it wraps is one nobody can tell they
+    // are running.
+    let mut s = Screen::start();
+    s.settle(2.5);
+    let rows = s.rows();
+    assert!(
+        !rows[0].trim().is_empty(),
+        "the tab bar row is blank:\n{}",
+        s.screen()
+    );
+    assert!(
+        !rows[(ROWS - 1) as usize].trim().is_empty(),
+        "the status row is blank:\n{}",
+        s.screen()
+    );
+}
+
+#[test]
+fn an_open_list_is_still_on_screen_after_the_pane_repaints() {
+    // The overlay redrew only when its text changed, while the panes redraw
+    // every frame from their own damage — so the list was painted over within
+    // milliseconds and what was left was half a list interleaved with a shell.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("\x02p"); // leader, palette
+    s.settle(0.5);
+    // Long enough for many frames of pane repainting to have happened.
+    s.settle(1.5);
+    assert!(
+        s.screen().contains("Commands"),
+        "the palette was painted over:\n{}",
+        s.screen()
+    );
+}
+
+#[test]
+fn the_leader_strip_lists_the_keys_after_a_pause() {
+    // 16 §3.3: after 250 ms, not instantly, and every key rather than four of
+    // nine.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("\x02");
+    s.settle(1.0);
+    let screen = s.screen();
+    for label in ["detach", "sessions", "agents", "palette"] {
+        assert!(screen.contains(label), "`{label}` missing:\n{screen}");
+    }
+    // Spend the leader so the shell is not left with one armed.
+    s.type_in("\x1b");
+}
+
+#[test]
+fn a_paste_lands_in_one_piece() {
+    // The loop read one input event per frame, and a frame cost two `git`
+    // process spawns — so a pasted paragraph arrived a character at a time.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    let text: String = (0..40).map(|i| format!("w{i} ")).collect();
+    s.type_in(&format!("echo \x1b[200~{text}\x1b[201~"));
+    // Deliberately short: this is the assertion, not a convenience.
+    s.settle(0.7);
+    let screen = s.screen();
+    assert!(screen.contains("w0"), "nothing arrived:\n{screen}");
+    assert!(
+        screen.contains("w39"),
+        "the tail of the paste had not arrived:\n{screen}"
+    );
+    s.type_in("\x03");
+}
+
+#[test]
+fn leaving_puts_the_shell_back_where_omt_started_it() {
+    // Reported from real use: after detaching, the next prompt appears far
+    // down the screen. omt prints its first-run summary on the primary screen
+    // and then enters the alternate one; whatever it leaves behind on the way
+    // out is what the user's shell inherits.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("\x02d");
+    s.settle(1.5);
+
+    let last = s.last_written_row();
+    let (cursor_row, cursor_col) = s.cursor();
+    assert!(
+        cursor_row <= last + 1,
+        "omt left the cursor on row {cursor_row} with content ending at row {last}:\n{}",
+        s.screen()
+    );
+    assert_eq!(
+        cursor_col,
+        0,
+        "omt left the cursor mid-row, so the next prompt is indented:\n{}",
+        s.screen()
+    );
+}

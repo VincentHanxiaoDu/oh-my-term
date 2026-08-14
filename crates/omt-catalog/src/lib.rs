@@ -13,10 +13,12 @@
 
 mod decl;
 mod error;
+mod origin;
 mod registry;
 
 pub use decl::{Decl, DeclError, DedupKey, Effects, Intent, Kind, Parity, Surface};
 pub use error::{CapabilityError, ConflictState, ErrorCode, ErrorDetail};
+pub use origin::{CatalogHash, Origin};
 pub use registry::{
     CallContext, Capability, CapabilityHandler, CapabilityRegistry, DispatchOutcome, RegistryError,
     RequestId,

@@ -423,10 +423,21 @@ impl Drop for Pty {
         }
 
         // It ignored the hangup, or is still shutting down. `SIGKILL` cannot be
-        // caught, so the blocking wait after it is bounded by the kernel rather
-        // than by the program's cooperation.
+        // caught — but "cannot be caught" is not "the wait returns", and the
+        // blocking wait that used to be here could hang forever. `killpg` sends
+        // to the *group*, and once the group is gone the signal reaches
+        // nothing; a child that had already been reaped by somebody else, or a
+        // grandchild still holding the pty, leaves `waitpid` with nothing to
+        // report and no reason to return. A `Drop` that can block a session
+        // tree indefinitely is worse than a zombie, so this is bounded too.
         let _ = self.signal(Signal::Kill);
-        let _ = self.wait();
+        let deadline = std::time::Instant::now() + KILL_GRACE;
+        while std::time::Instant::now() < deadline {
+            match self.try_wait() {
+                Ok(Some(_)) | Err(_) => return,
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(2)),
+            }
+        }
     }
 }
 
@@ -435,6 +446,13 @@ impl Drop for Pty {
 /// Short: this runs inside `Drop`, and a session tree must not be blocked for
 /// an arbitrary time because one program is slow to notice.
 const HANGUP_GRACE: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// How long the kernel gets to report a killed child.
+///
+/// Longer than [`HANGUP_GRACE`], because by this point the program has already
+/// had its chance and what is being waited on is the kernel — but still
+/// bounded, because dropping a value must never be able to hang.
+const KILL_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Read and write halves of the master end.
 ///

@@ -29,7 +29,14 @@ impl RawGuard {
         crossterm::execute!(
             out,
             crossterm::terminal::EnterAlternateScreen,
-            crossterm::cursor::Hide
+            crossterm::cursor::Hide,
+            // The terminal wraps a paste in markers and delivers it as one
+            // event instead of one per character. Without it a pasted
+            // paragraph is hundreds of key events, and every layer above has
+            // to be fast enough to keep up with a burst it should never have
+            // been handed. It also lets the pane below know a burst is a
+            // paste, which is what stops a pasted newline running a command.
+            crossterm::event::EnableBracketedPaste
         )?;
         out.flush()?;
         Ok(Self)
@@ -41,6 +48,7 @@ impl Drop for RawGuard {
         let mut out = io::stdout();
         let _ = crossterm::execute!(
             out,
+            crossterm::event::DisableBracketedPaste,
             crossterm::cursor::Show,
             crossterm::terminal::LeaveAlternateScreen
         );
@@ -120,8 +128,14 @@ pub fn translate(event: &Event, armed: bool, mode: EncodeMode) -> (Input, bool) 
             false,
         ),
         Event::Key(key) => translate_key(key, armed, mode),
-        // Focus, mouse and paste are the program's to handle once those modes
-        // are wired; forwarding them before then would send bytes no program
+        // A paste goes through whole, wrapped in the markers the program
+        // underneath is expecting. Forwarding the text bare would let a
+        // pasted newline submit a half-typed command in a shell, and would
+        // make a paste indistinguishable from very fast typing to an editor
+        // that cares about the difference.
+        Event::Paste(text) => (Input::Bytes(bracketed(text)), armed),
+        // Focus and mouse are the program's to handle once those modes are
+        // wired; forwarding them before then would send bytes no program
         // asked to receive.
         _ => (Input::Ignore, armed),
     }
@@ -197,6 +211,23 @@ fn translate_key(key: &KeyEvent, armed: bool, mode: EncodeMode) -> (Input, bool)
         Some(chord) => (Input::Bytes(omt_input::encode(&chord, mode)), false),
         None => (Input::Ignore, false),
     }
+}
+
+/// Wrap pasted text in the bracketed-paste markers.
+///
+/// `ESC [ 200 ~` … `ESC [ 201 ~`. A program that asked for bracketed paste
+/// uses them to tell a paste from typing — which is how an editor knows not to
+/// auto-indent it and how a shell knows a newline inside one is not `Enter`.
+/// A program that did not ask still receives them, because omt is not the
+/// layer that decides: the terminal it is running in sent them to omt for
+/// exactly the same reason.
+#[must_use]
+pub fn bracketed(text: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(text.len() + 12);
+    out.extend_from_slice(b"\x1b[200~");
+    out.extend_from_slice(text.as_bytes());
+    out.extend_from_slice(b"\x1b[201~");
+    out
 }
 
 /// Map a crossterm key onto omt's own vocabulary.
@@ -341,6 +372,49 @@ mod tests {
             Input::Bytes(vec![(PREFIX_KEY as u8) & 0x1f]),
             "the literal prefix must be the prefix that is bound"
         );
+    }
+
+    #[test]
+    fn a_paste_arrives_whole_and_wrapped() {
+        // One event, not one per character. Reading a paste a character at a
+        // time is what made a pasted paragraph appear letter by letter.
+        let (input, armed) = translate(
+            &Event::Paste("two words".to_owned()),
+            false,
+            EncodeMode::default(),
+        );
+        let Input::Bytes(bytes) = input else {
+            panic!("a paste must reach the program, got {input:?}");
+        };
+        assert_eq!(bytes, b"\x1b[200~two words\x1b[201~");
+        assert!(!armed, "a paste is not a command");
+    }
+
+    #[test]
+    fn a_pasted_newline_is_inside_the_markers_rather_than_submitted() {
+        // The markers are what tell a shell that a newline in here is text and
+        // not `Enter`. Sending the text bare would run a half-typed command.
+        let bytes = bracketed("first\nsecond");
+        let text = String::from_utf8(bytes).expect("utf-8");
+        assert!(text.starts_with("\x1b[200~"), "{text:?}");
+        assert!(text.ends_with("\x1b[201~"), "{text:?}");
+        assert!(
+            text.trim_start_matches("\x1b[200~").starts_with("first\nsecond"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn a_paste_while_the_prefix_is_armed_does_not_lose_the_prefix() {
+        // Somebody who pressed the leader and then pasted has not cancelled
+        // the leader, and swallowing it would make the next keystroke run a
+        // command they did not mean.
+        let (_, armed) = translate(
+            &Event::Paste("x".to_owned()),
+            true,
+            EncodeMode::default(),
+        );
+        assert!(armed);
     }
 
     #[test]

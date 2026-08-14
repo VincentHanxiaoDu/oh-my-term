@@ -1060,6 +1060,75 @@ fn parse_x_color(s: &str) -> Option<Color> {
     None
 }
 
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
+mod alt_screen_tests {
+    use super::*;
+
+    fn term() -> Terminal {
+        Terminal::new(TermConfig {
+            size: GridSize::new(20, 6),
+            ..TermConfig::default()
+        })
+    }
+
+    #[test]
+    fn the_primary_screens_contents_survive_the_round_trip() {
+        // What 1049 promises and the reason the two grids are separate: what
+        // was on screen before a full-screen program ran is still there after
+        // it exits.
+        let mut t = term();
+        t.advance(b"keep me\r\n");
+        t.advance(b"\x1b[?1049h");
+        t.advance(b"scribble");
+        t.advance(b"\x1b[?1049l");
+        assert!(
+            t.grid().row(0).text().starts_with("keep me"),
+            "primary contents were lost: {:?}",
+            t.grid().row(0).text()
+        );
+    }
+
+    #[test]
+    fn the_alternate_screen_starts_blank_every_time() {
+        // Cleared on entry, so a second program does not inherit the first
+        // one's screen.
+        let mut t = term();
+        t.advance(b"\x1b[?1049h");
+        t.advance(b"first program");
+        t.advance(b"\x1b[?1049l");
+        t.advance(b"\x1b[?1049h");
+        assert!(
+            t.grid().row(0).text().trim().is_empty(),
+            "the alternate screen kept the previous program's output: {:?}",
+            t.grid().row(0).text()
+        );
+    }
+
+    #[test]
+    fn the_cursor_a_program_left_on_the_alternate_screen_is_not_the_one_that_comes_back() {
+        // Each screen carries its own cursor, which is what makes 1049's
+        // "restore" free here: nothing the alternate screen's program does can
+        // move the primary's. Written down because the obvious alternative —
+        // one shared cursor plus an explicit save/restore — is what most
+        // emulators do, and somebody refactoring towards it would break this
+        // without noticing.
+        let mut t = term();
+        t.advance(b"one\r\ntwo\r\n");
+        let before = (t.grid().cursor.row, t.grid().cursor.col);
+        t.advance(b"\x1b[?1049h");
+        t.advance(b"\x1b[6;1Hbottom of the alt screen");
+        assert_ne!(
+            (t.grid().cursor.row, t.grid().cursor.col),
+            before,
+            "the alternate screen is sharing the primary's cursor"
+        );
+        t.advance(b"\x1b[?1049l");
+        assert_eq!((t.grid().cursor.row, t.grid().cursor.col), before);
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

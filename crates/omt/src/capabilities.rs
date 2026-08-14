@@ -59,7 +59,16 @@ impl CapabilityHandler<InstanceInfo> for InstanceInfoHandler {
 
 /// Input to `instance.catalog`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
-pub struct CatalogIn {}
+pub struct CatalogIn {
+    /// The hash the caller already has.
+    ///
+    /// A matching hash means "nothing to send", which is the point of the
+    /// catalog being cacheable at all: a phone reconnecting on a train should
+    /// not pull two hundred schemas to learn that none of them changed
+    /// ([03 §3.5.1](../../../docs/architecture/03-capability-catalog.md)).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_hash: Option<omt_catalog::CatalogHash>,
+}
 
 /// One entry of the catalog.
 #[derive(Serialize, schemars::JsonSchema)]
@@ -74,12 +83,28 @@ pub struct CatalogEntry {
     pub effects: Effects,
     /// One line about it.
     pub doc: String,
+    /// Which tier it belongs to.
+    ///
+    /// Declared rather than hidden, per 03 §3.6: a core capability was checked
+    /// by the macro and appears in every generated artifact; a plugin's
+    /// registers at run time and can appear in none of them. A client that
+    /// could not tell them apart would have no way to explain why one of them
+    /// is missing from its generated union.
+    pub origin: omt_catalog::Origin,
 }
 
 /// What `instance.catalog` reports.
 #[derive(Serialize, schemars::JsonSchema)]
 pub struct CatalogOut {
-    /// Every capability, in name order.
+    /// What identifies this catalog.
+    pub hash: omt_catalog::CatalogHash,
+    /// Whether the caller's cached copy is still current.
+    ///
+    /// When true, `entries` is empty because there was nothing to say — not
+    /// because there are no capabilities. Two different facts, and a client
+    /// that conflated them would render an empty instance.
+    pub unchanged: bool,
+    /// Every capability, in name order. Omitted when `unchanged`.
     pub entries: Vec<CatalogEntry>,
 }
 
@@ -109,18 +134,37 @@ capability! {
 struct InstanceCatalogHandler;
 
 impl CapabilityHandler<InstanceCatalog> for InstanceCatalogHandler {
-    fn call(&self, _ctx: &CallContext, _input: CatalogIn) -> Result<CatalogOut, CapabilityError> {
+    fn call(&self, _ctx: &CallContext, input: CatalogIn) -> Result<CatalogOut, CapabilityError> {
+        let entries: Vec<CatalogEntry> = omt_catalog::linked_decls()
+            .into_iter()
+            .map(|d| CatalogEntry {
+                name: d.name.to_owned(),
+                route: d.route(),
+                role: d.role,
+                effects: d.effects,
+                doc: d.doc.to_owned(),
+                // Everything in `DECLS` is core by construction: a plugin's
+                // capability cannot be there, because it registers after this
+                // binary was linked.
+                origin: omt_catalog::Origin::Core,
+            })
+            .collect();
+        // From what a client would render differently, not from the binary's
+        // version: two builds at the same version with a different plugin
+        // enabled are different catalogs.
+        let hash = omt_catalog::CatalogHash::of(
+            entries
+                .iter()
+                .map(|e| format!("{} {:?} {:?}", e.name, e.role, e.effects))
+                .collect::<Vec<_>>()
+                .iter()
+                .map(String::as_str),
+        );
+        let unchanged = input.known_hash.as_ref() == Some(&hash);
         Ok(CatalogOut {
-            entries: omt_catalog::linked_decls()
-                .into_iter()
-                .map(|d| CatalogEntry {
-                    name: d.name.to_owned(),
-                    route: d.route(),
-                    role: d.role,
-                    effects: d.effects,
-                    doc: d.doc.to_owned(),
-                })
-                .collect(),
+            unchanged,
+            entries: if unchanged { Vec::new() } else { entries },
+            hash,
         })
     }
 }

@@ -109,8 +109,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Built once. Rebuilding it twice a second per pane would be the most
     // expensive thing in this loop by an order of magnitude.
     let adapter_set = omt_agent_adapters::builtin();
+    let mut branch = BranchCache::default();
 
-    loop {
+    // Labelled, because the input drain below is itself a loop: an unlabelled
+    // `break` on detach would leave the drain and carry straight on drawing
+    // frames, and omt would refuse to exit.
+    'session: loop {
         for pane in &mut panes {
             // Whether anything came off the pty is the floor's only signal, so
             // it is recorded here rather than asked for later: by the time the
@@ -165,7 +169,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             focus = focus.min(panes.len().saturating_sub(1));
         }
         if panes.is_empty() {
-            break;
+            break 'session;
         }
 
         let rects = omt_tui::tile(
@@ -235,11 +239,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             workspace: std::path::Path::new(&cwd)
                 .file_name()
                 .map_or_else(|| cwd.clone(), |n| n.to_string_lossy().into_owned()),
-            // Read once per frame from what git says, not cached: a branch
-            // shown after a checkout that changed it is worse than none.
-            branch: omt_workspace_fs::git::status(std::path::Path::new(&cwd))
-                .ok()
-                .and_then(|s| s.branch),
+            // Cached for a second. This ran twice per frame — `git status`
+            // spawns two processes — at up to 125 frames a second, which made
+            // pasting a paragraph arrive character by character and kept a
+            // laptop's fan on. A branch is stale for at most a second after a
+            // checkout, which nobody can perceive; two process spawns per
+            // keystroke is what everybody perceives.
+            branch: branch.get(&cwd, monotonic_ms()),
             tabs: panes
                 .iter()
                 .enumerate()
@@ -324,7 +330,19 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         }
         out.flush().context("flushing")?;
 
-        if crossterm::event::poll(TICK).context("polling for input")? {
+        // Every event that is already waiting, not one per frame. A paste is
+        // delivered as a burst — one event per character on a terminal with no
+        // bracketed-paste support — and reading a single one per frame meant a
+        // 400-character paste took 400 frames to appear. `TICK` is only waited
+        // for when nothing is pending at all.
+        let mut first = true;
+        while if first {
+            first = false;
+            crossterm::event::poll(TICK).context("polling for input")?
+        } else {
+            crossterm::event::poll(std::time::Duration::ZERO)
+                .context("polling for input")?
+        } {
             let event = crossterm::event::read().context("reading input")?;
             // An open overlay takes every key: it is a list somebody is
             // choosing from, and letting a keystroke reach the shell underneath
@@ -458,7 +476,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         instance.remove_pane(workspace, pane);
                     }
                     if panes.is_empty() {
-                        break;
+                        break 'session;
                     }
                     focus = focus.min(panes.len() - 1);
                     layout_dirty = true;
@@ -470,7 +488,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     shown_bar = None;
                     shown_bottom = None;
                 }
-                Input::Detach => break,
+                Input::Detach => break 'session,
                 Input::Ignore => {}
             }
         }
@@ -560,6 +578,61 @@ impl LocalPane {
 ///
 /// A vertical rule rather than a blank column: two shells side by side with
 /// nothing between them read as one shell with very strange output.
+/// The branch, remembered for a moment.
+///
+/// `git status` spawns two processes. Asking it per frame — which is what
+/// "read once per frame, not cached" turned into at up to 125 frames a second
+/// — is 250 process spawns a second to answer a question whose answer changes
+/// when somebody types `git checkout`. It was the single largest cost in the
+/// loop, and it is why a pasted paragraph arrived a character at a time.
+///
+/// A second of staleness after a checkout is imperceptible. A quarter of a
+/// second of latency per keystroke is not.
+#[derive(Default)]
+struct BranchCache {
+    /// Which directory the answer is for, so a `cd` is not answered with the
+    /// previous workspace's branch.
+    dir: String,
+    branch: Option<String>,
+    at: Option<u64>,
+}
+
+impl BranchCache {
+    /// How long an answer is reused.
+    const FRESH_MS: u64 = 1_000;
+
+    fn get(&mut self, dir: &str, now: u64) -> Option<String> {
+        self.get_with(dir, now, |dir| {
+            omt_workspace_fs::git::status(std::path::Path::new(dir))
+                .ok()
+                .and_then(|s| s.branch)
+        })
+    }
+
+    /// The caching itself, with the lookup passed in.
+    ///
+    /// Split out so what this type is *for* — asking rarely — is testable
+    /// without a repository and without counting process spawns, which is a
+    /// measurement that passes by luck whichever way the code goes.
+    fn get_with(
+        &mut self,
+        dir: &str,
+        now: u64,
+        lookup: impl FnOnce(&str) -> Option<String>,
+    ) -> Option<String> {
+        let fresh = self.dir == dir
+            && self
+                .at
+                .is_some_and(|at| now.saturating_sub(at) < Self::FRESH_MS);
+        if !fresh {
+            self.dir = dir.to_owned();
+            self.at = Some(now);
+            self.branch = lookup(dir);
+        }
+        self.branch.clone()
+    }
+}
+
 /// The rows behind the agents list.
 ///
 /// Built from what the probe saw in each pane, not only from thread rosters.
@@ -788,6 +861,45 @@ fn monotonic_ms() -> u64 {
 #[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_branch_is_asked_for_at_most_once_a_second() {
+        // `git status` spawns two processes and this ran per frame, at up to
+        // 125 frames a second. It was the single largest cost in the loop and
+        // the reason a pasted paragraph arrived a character at a time.
+        let mut cache = BranchCache::default();
+        let mut asked = 0;
+        for now in 0..500 {
+            let got = cache.get_with("/repo", now, |_| {
+                asked += 1;
+                Some("main".to_owned())
+            });
+            assert_eq!(got.as_deref(), Some("main"));
+        }
+        assert_eq!(asked, 1, "asked git {asked} times in half a second");
+    }
+
+    #[test]
+    fn a_stale_answer_is_replaced_rather_than_kept() {
+        // A second of staleness after a checkout is imperceptible; never
+        // updating would show the wrong branch forever.
+        let mut cache = BranchCache::default();
+        cache.get_with("/repo", 0, |_| Some("main".to_owned()));
+        let after = cache.get_with("/repo", BranchCache::FRESH_MS, |_| {
+            Some("feature".to_owned())
+        });
+        assert_eq!(after.as_deref(), Some("feature"));
+    }
+
+    #[test]
+    fn a_different_directory_is_never_answered_from_the_previous_one() {
+        // The failure this prevents is a `cd` into another worktree showing
+        // the branch of the one just left, which is worse than showing none.
+        let mut cache = BranchCache::default();
+        cache.get_with("/one", 0, |_| Some("main".to_owned()));
+        let other = cache.get_with("/two", 1, |_| Some("release".to_owned()));
+        assert_eq!(other.as_deref(), Some("release"));
+    }
 
     #[test]
     fn the_cursor_lands_on_the_row_the_pane_was_drawn_at() {

@@ -333,6 +333,31 @@ class TestTheScreenIsNotCorrupted:
         assert last_row != 24, f"cursor left on the status row: {positions[-6:]}"
 
 
+class TestPasteArrivesAtOnce:
+    """A paste is a burst, and the loop used to read one event per frame.
+
+    With a frame costing two `git status` process spawns, a pasted paragraph
+    appeared a character at a time — which is what it looked like to a user.
+    """
+
+    def test_a_long_paste_appears_in_one_go(self, tui: Tui) -> None:
+        text = "".join(f"word{i} " for i in range(120))
+        tui.send("cat > /dev/null\r")
+        tui.read(1.0)
+        before = len(tui.seen)
+        # Bracketed, exactly as a terminal delivers a real paste.
+        tui.send("\x1b[200~" + text + "\x1b[201~")
+        # Half a second is far less than the seconds a
+        # one-event-per-frame loop needed, and far more than an echo needs.
+        painted = strip(tui.read(0.5)[before:])
+        assert "word0" in painted, painted[:300]
+        assert "word119" in painted, (
+            "the tail of the paste had not arrived within half a second: "
+            f"{painted[-300:]}"
+        )
+        tui.send("\x04")
+
+
 class TestTheKeymapIsDiscoverable:
     def test_the_help_shows_every_binding(self, tui: Tui) -> None:
         # `16 §7`. A binding nobody can find is a binding nobody uses, and the

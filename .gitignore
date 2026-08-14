@@ -31,3 +31,4 @@ mobile/ios/.build/
 web/test-results/
 web/playwright-report/
 .vite/
+.claude/settings.json
