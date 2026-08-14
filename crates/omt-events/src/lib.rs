@@ -6,8 +6,11 @@
 //! about what happened.
 
 mod agent;
+mod backpressure;
+mod bus;
 mod envelope;
 mod interaction;
+mod sink;
 
 pub use agent::{
     ActivityGuess, AgentEvent, AgentPayload, CompactionPhase, FileChange, MessageOrigin, PlanStep,
@@ -22,3 +25,11 @@ pub use interaction::{
     InteractionKind, InteractionResponse, InteractionState, NotDeliverableReason, PermissionOption,
     PermissionOptionKind, PlanDecision, UndeliveredReason,
 };
+pub use sink::{
+    ActivitySink, EventSink, SourceError, floor_for, payload_name, permitted,
+};
+pub use backpressure::{
+    Delivery, FLUSH_BYTES, FLUSH_MS, Policy, Subscription, ViewState, block_is_legal,
+    coalesce_paste, flush_after_ms, may_coalesce_input,
+};
+pub use bus::{EventBus, Fanout, SubscriberId};

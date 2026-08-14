@@ -94,32 +94,32 @@
 
 ## 5. `omt-events`
 
-- [ ] 5.1 The `Event` envelope with its scope rules, and the closed `EventKind`
+- [x] 5.1 The `Event` envelope with its scope rules, and the closed `EventKind`
       and `EventSourceTag` vocabularies
-- [ ] 5.2 Payload bodies for the four kinds this change owns — `terminal` (the
+- [x] 5.2 Payload bodies for the four kinds this change owns — `terminal` (the
       subset the frame path needs), `agent`, `interaction`, `instance` — and
       the stated rule that the remaining five kinds are frozen as *kinds* with
       their bodies added by the change that owns the types they name (D-7)
-- [ ] 5.3 `AgentEvent` envelope and the `AgentPayload` variants
+- [x] 5.3 `AgentEvent` envelope and the `AgentPayload` variants
       ([06 §8](../../../docs/architecture/06-agent-layer.md))
-- [ ] 5.3a `EventSink` and `ActivitySink` — the type-level tier gate of
+- [x] 5.3a `EventSink` and `ActivitySink` — the type-level tier gate of
       [06 §8.4](../../../docs/architecture/06-agent-layer.md), where a tier-0
       source gets a sink whose only method emits an activity guess, so "screen
       text became a tool call" is not a bug that can be written. Their shape
       follows the payload set this change owns, not any agent, so unlike
       `AgentAdapter` they cannot wait for the adapters change without leaving
       the spec's heuristic-source scenario unverifiable
-- [ ] 5.4 `Interaction`, `InteractionKind`, `InteractionState` (seven variants),
+- [x] 5.4 `Interaction`, `InteractionKind`, `InteractionState` (seven variants),
       `Deliverable`, `NotDeliverableReason`, `UndeliveredReason`,
       `InteractionResponse`, plus the types they name: `ChoiceQuestion`,
       `ChoiceOption`, `ChoiceAnswer`, `PermissionOption`, `PermissionOptionKind`,
       `PlanDecision`, `CancelReason` — 06 §5 is authoritative; `deliverable` on
       the struct per D-5, and `Resolving` carries the response
-- [ ] 5.5 `EventBus`: subscribe, filter by scope and kind, resume from a
+- [x] 5.5 `EventBus`: subscribe, filter by scope and kind, resume from a
       sequence position, and the per-subscriber backpressure policy
-- [ ] 5.6 Property test: resume from any position yields exactly the events after
+- [x] 5.6 Property test: resume from any position yields exactly the events after
       it, in order, with no duplication
-- [ ] 5.7 Property test: a lossless event is never dropped without a notice, and
+- [x] 5.7 Property test: a lossless event is never dropped without a notice, and
       a permanently-slow subscriber is disconnected with a stated reason rather
       than buffered without bound. Collapse-to-snapshot is *not* tested here —
       [07 §6.2](../../../docs/architecture/07-remote-protocol.md) routes it
