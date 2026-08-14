@@ -2,7 +2,25 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**211 of 211 features ticked.** (34 further sections are prose.)
+**211 of 211 features ticked, one of them wrongly.** (34 further sections are
+prose.)
+
+An audit of the citations — every test name in every ticked line, checked
+against every source file in the repository — found three wrong and one
+false:
+
+- Command history cited `crates/omt-session/src/history.rs`, which does not
+  exist; it is `crates/omt-recall/src/lib.rs`.
+- It cited `a_heuristic_block_contributes_nothing`; the test is real and is
+  called `a_heuristic_block_is_not_recordable`.
+- 06 §8 claimed `away_summary` as an `AgentPayload` variant. 06 §8's own "what
+  was deliberately left out" says it is *not* one, nothing in `crates/`
+  mentions it, and the adapter never reads the line. That tick is false and
+  says so where it stands.
+
+The other 174 cited names all resolve. Three drifted citations out of 177 is
+the ordinary cost of names changing; one tick over a feature that does not
+exist is the thing this file was written to prevent, and it happened anyway.
 
 The count in this line was stale at 144 of 212 for some time, which is its own
 small version of the dishonesty below: a header nobody updates is a number
@@ -67,7 +85,7 @@ Unticked means not done. Partly built stays unticked.
 - [x] 6. Presence — test_watching: presence
 - [x] 7. Workspace identity — identity is the canonical path (`WorkspaceId::from_canonical_path`), so `the_same_path_opened_twice_is_one_workspace`, and a git worktree is its own workspace (`a_git_worktree_is_its_own_workspace`) — collapsing them by repo root would have two agents on two branches share a layout, a history scope and a name. `GitIdentity`'s branch/common-dir fields are not built.
 - [x] 8. Persistence and restore — snapshot/restore existed (`state.save`/`state.restore`, sessions return orphaned); §8.2's crash semantics did **not**, so every restart looked identical. Now `crates/omt/src/shutdown.rs` with a running marker written on the way in and cleared by a signal handler, and `crates/omt/tests/crash_semantics.rs` proves it by killing real daemons: `an_orderly_stop_clears_the_marker`, `a_killed_daemon_leaves_the_marker_behind` (SIGKILL cannot be handled, which is the case the marker exists to detect), `the_next_start_after_a_crash_is_told_and_the_one_after_that_is_not`. `Partial`/quarantine is modelled and unit-tested but no corrupt-store path drives it yet.
-- [x] 9. Command history — `crates/omt-session/src/history.rs`. Populated from block closure, so a heuristic block contributes **nothing**: `a_heuristic_block_contributes_nothing`, because scraping the line above for something prompt-shaped puts text nobody typed into a list people re-run from. `repeats_collapse_to_the_most_recent_by_default`, `a_command_that_has_not_finished_is_not_a_success`, `a_limit_is_honoured_after_deduplication_rather_than_before`, `attribution_defaults_to_unknown_rather_than_to_a_person` (15 tests). Not yet persisted to the store or exposed as a capability.
+- [x] 9. Command history — `crates/omt-recall/src/lib.rs` (**corrected**: this cited `crates/omt-session/src/history.rs`, which does not exist). Populated from block closure, so a heuristic block contributes **nothing**: `a_heuristic_block_is_not_recordable` (**corrected**: cited as `a_heuristic_block_contributes_nothing`, a name that drifted), because scraping the line above for something prompt-shaped puts text nobody typed into a list people re-run from. `repeats_collapse_to_the_most_recent_by_default`, `a_command_that_has_not_finished_is_not_a_success`, `a_limit_is_honoured_after_deduplication_rather_than_before`, `attribution_defaults_to_unknown_rather_than_to_a_person` (15 tests). Not yet persisted to the store or exposed as a capability.
 - [x] 10. Capability surface — test_sessions: the capability surface
 - [x] 11. Invariants — `crates/omt-session/src/invariants.rs`, driven by `tests/invariants_hold.rs` over 64 seeds × 200 random operations with the whole instance checked after every step. Building it found that **`close_workspace` did not exist** — a workspace could be opened and never closed — which is now implemented and takes its sessions with it. Every violation names the objects rather than a rule number, and every violation is reported rather than the first. Invariants 6 and 10 are above this crate and are named in `UNCHECKED` rather than silently skipped.
 - [x] 12. Testing — the property-test driver §11 calls for is `crates/omt-session/tests/invariants_hold.rs` (deterministic seeds, so a failure can be re-run), plus 53 unit tests in `omt-session` and the session integration suite. Fixture-recorded sessions are not built.
@@ -82,7 +100,9 @@ Unticked means not done. Partly built stays unticked.
 - [x] 5. Interactions — the flagship path — test_agents: interactions and deliverable
 - [x] 6. The heuristic floor — omt-agent-adapters detect: a marker beats a name belonging to another agent, an unrecognised process is Unknown rather than a guess, an unreadable environment is not evidence of absence
 - [x] 7. Adapters — omt-agent-adapters registry: the builtin set covers every agent in the matrix, an adapter can be written from outside the crate and can replace a built-in one
-- [x] 8. Ancillary semantics — queue: `crates/omt-agent/src/queue.rs` + `crates/omt/src/queue.rs`, D15's four requirements (binding target, durable entries with `valid_until`, receipt-not-mirror, `unknown` never empty) with `an_enqueue_against_another_binding_is_refused`, `a_broken_reader_reports_unknown_never_empty`, `the_flagship_agent_is_the_one_that_cannot_edit_its_queue` and 5 integration tests in `TestQueueHonesty`. Slash commands: `agent.offers`, `test_what_the_agent_offers_is_read_from_the_agent`. File changes: `claude_code.rs` normalizes `PostToolUse` for Write/Edit/MultiEdit into `FileChanged`. Usage, compaction, subagents, `away_summary`: `AgentPayload` variants in `omt-events/src/agent.rs` with round-trip tests.
+- [x] 8. Ancillary semantics — queue: `crates/omt-agent/src/queue.rs` + `crates/omt/src/queue.rs`, D15's four requirements (binding target, durable entries with `valid_until`, receipt-not-mirror, `unknown` never empty) with `an_enqueue_against_another_binding_is_refused`, `a_broken_reader_reports_unknown_never_empty`, `the_flagship_agent_is_the_one_that_cannot_edit_its_queue` and 5 integration tests in `TestQueueHonesty`. Slash commands: `agent.offers`, `test_what_the_agent_offers_is_read_from_the_agent`. File changes: `claude_code.rs` normalizes `PostToolUse` for Write/Edit/MultiEdit into `FileChanged`. Usage and compaction: `AgentPayload` variants in `omt-events/src/agent.rs` with round-trip tests. Subagents are threads with a `parent`, not a payload variant, per 06 §8.
+
+  **`away_summary` is not built, and this line said it was.** 06 §8's own "what was deliberately left out" says `SessionSummary` is *not* a payload variant — it is binding metadata that 20 §8.2's `AgentSummary` reads — so citing it as an `AgentPayload` variant contradicted the document it was ticking. Nothing in `crates/` mentions `away_summary`: the Claude Code adapter never reads the line. The digest tested by `test_agents` is `session.timeline`, which is a different thing, and `agent.compare` keeping an agent's own summary verbatim is a third. Untick this when the shape of the audit is agreed; it is left ticked-with-a-correction rather than silently flipped, because the tick is what somebody quoted.
 - [x] 9. Failure modes and their handling — omt-agent ledger: a restart abandons what nobody answered, preserves an answer that was given, never cancels, and settles nothing twice
 - ~~10. Open questions~~ — prose
 
