@@ -58,6 +58,23 @@ interface WorktreeRow {
   workspace: string
 }
 
+/** What an agent has spent, as `usage.report` reports it. */
+interface SpendRow {
+  input: number
+  output: number
+  cache_read?: number
+  cache_write?: number
+  /** Only when the agent itself stated one. omt never computes a price. */
+  cost_usd?: number | null
+}
+
+interface UsageRow {
+  session?: SpendRow | null
+  /** `unknown` or `reported`. Distinct from a low number on purpose. */
+  headroom?: string
+  limit_status?: string | null
+}
+
 /** One setting, as `config.schema` reports it. */
 interface SettingRow {
   key: string
@@ -944,6 +961,47 @@ export class App {
   }
 
   /**
+   * What this agent has spent, under the title.
+   *
+   * On the session and never on the roster (08 §9.6): a number that changes
+   * every few seconds beside a row somebody is scanning competes with the one
+   * signal the roster carries, and cost has never been urgent *before*
+   * somebody could act on it.
+   *
+   * Cost appears only where the agent stated one. omt does not compute a
+   * price — plans differ and prices change, and a wrong number sitting beside
+   * counts that are right, with nothing to tell them apart, is worse than no
+   * number.
+   */
+  #usageLine(session: string): string | undefined {
+    const spend = this.#usage[session]?.session
+    if (spend === undefined || spend === null) {
+      return undefined
+    }
+    const tokens = t('usage.tokens', spend.input, spend.output)
+    return typeof spend.cost_usd === 'number'
+      ? `${tokens} \u00b7 $${spend.cost_usd.toFixed(2)}`
+      : tokens
+  }
+
+  #usage: Record<string, UsageRow | undefined> = {}
+
+  async #loadUsage(session: string): Promise<void> {
+    if (this.#usage[session] !== undefined) {
+      return
+    }
+    try {
+      this.#usage[session] = (await this.#store.call('usage.report', session)) as UsageRow
+      this.render()
+    } catch {
+      // An instance that cannot answer is not a reason to blank the screen
+      // the line sits on. Recorded as answered-with-nothing so it is not
+      // asked again on every frame.
+      this.#usage[session] = {}
+    }
+  }
+
+  /**
    * A sheet of choices, over whatever is on screen.
    *
    * A sheet rather than a menu because a phone's reach is the bottom third:
@@ -1104,14 +1162,20 @@ export class App {
    */
   #renderTranscript(session: string): void {
     const title = this.#store.state.sessions.find((s) => s.id === session)?.title
+    const spent = this.#usageLine(session)
     const bar = appBar({
       title: title ?? 'Conversation',
       onBack: () => this.#nav.back(),
+      // What this agent has spent, where the agent is. 08 §9.6 keeps it off
+      // the roster and puts it here, because this is the screen somebody is
+      // already reading when the question occurs to them.
+      ...(spent === undefined ? {} : { subtitle: spent }),
       action: {
         label: 'Search this session',
         onTap: () => this.go({ screen: 'search', session }),
       },
     })
+    void this.#loadUsage(session)
 
 
     const body = el('div', 'body transcript')
@@ -1220,12 +1284,18 @@ export class App {
     }
 
     for (const workspace of workspaces) {
+      // A workspace whose directory is gone is shown, disabled, with the
+      // reason. Omitting it would be a list that quietly shrinks, which reads
+      // as omt having lost the workspace rather than as the directory having
+      // moved.
+      const gone = this.#gone[workspace.id] === true
       body.append(
         row({
           title: workspace.name,
-          meta: workspace.root,
-          label: t('projects.openIn', workspace.name),
-          onTap: () => void this.newSession(workspace.id),
+          meta: gone ? `${workspace.root} — ${t('projects.gone')}` : workspace.root,
+          label: gone ? `${workspace.name} — ${t('projects.gone')}` : t('projects.openIn', workspace.name),
+          leadsSomewhere: !gone,
+          ...(gone ? {} : { onTap: () => void this.newSession(workspace.id) }),
         }),
         // The two things somebody does with a project that are not "type in
         // it". Indented under the workspace rather than given their own
@@ -1275,6 +1345,9 @@ export class App {
   /** Worktrees per workspace, loaded once a project list is on screen. */
   #worktrees: Record<string, WorktreeRow[]> = {}
 
+  /** Whether a workspace's root is gone. Checked, not assumed. */
+  #gone: Record<string, boolean> = {}
+
   async #loadWorktrees(): Promise<void> {
     for (const workspace of this.#store.state.workspaces) {
       if (this.#worktrees[workspace.id] !== undefined) {
@@ -1290,6 +1363,16 @@ export class App {
         // A workspace that is not a repository has no worktrees, which is not
         // a failure and must not blank the list it is in.
         this.#worktrees[workspace.id] = []
+      }
+      // Whether the directory is still there, asked rather than assumed: a
+      // workspace on an unmounted volume is the ordinary case and starting a
+      // session in it fails in a way that says nothing.
+      try {
+        await this.#store.call('fs.list', workspace.id, '')
+        this.#gone[workspace.id] = false
+      } catch {
+        this.#gone[workspace.id] = true
+        this.render()
       }
     }
   }

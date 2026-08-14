@@ -7,14 +7,14 @@
       them
 - [x] 1.2 A title and a back destination for each, so no screen is reachable
       and unnameable
-- [ ] 1.3 Deep links: each new route survives a reload, since a phone that
+- [x] 1.3 Deep links: each new route survives a reload, since a phone that
       backgrounds the browser and comes back must land where it was
 
 ## 2. Open a project
 
 - [x] 2.1 The picker: workspaces from `workspace.list`, worktrees from
       `worktree.list` beneath each
-- [ ] 2.2 A workspace whose root is gone is shown disabled with the reason,
+- [x] 2.2 A workspace whose root is gone is shown disabled with the reason,
       never omitted
 - [x] 2.3 One tap creates a session with the default kind and mode — no form
 - [x] 2.4 No path field, and a line saying that a new directory is opened by
@@ -59,10 +59,10 @@
 
 ## 7. Cost and context
 
-- [ ] 7.1 One line under an agent session's title: tokens in and out, context
+- [x] 7.1 One line under an agent session's title: tokens in and out, context
       used
-- [ ] 7.2 Cost only where the agent stated one; never computed
-- [ ] 7.3 Nothing on the roster
+- [x] 7.2 Cost only where the agent stated one; never computed
+- [x] 7.3 Nothing on the roster
 
 ## 8. Language
 

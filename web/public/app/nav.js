@@ -39,6 +39,26 @@ export function titleOf(route, context = {}) {
             return 'Settings';
     }
 }
+/**
+ * A route the browser handed back, or nothing.
+ *
+ * History state outlives the code that wrote it: a phone keeps a tab for weeks
+ * across two updates of this client, so an entry may name a screen this build
+ * has never heard of. That is not an error to report, it is a reason to land
+ * on the roster.
+ */
+function asRoute(state) {
+    if (state === null || typeof state !== 'object' || !('route' in state)) {
+        return undefined;
+    }
+    const route = state.route;
+    if (route === null || typeof route !== 'object' || !('screen' in route)) {
+        return undefined;
+    }
+    return typeof route.screen === 'string'
+        ? route
+        : undefined;
+}
 /** The last segment of a workspace-relative path. */
 function basename(path) {
     const last = path.split('/').filter(Boolean).pop();
@@ -99,10 +119,12 @@ export class Navigator {
      * loaded on, which is the roster.
      */
     restore(state) {
-        const route = state !== null && typeof state === 'object' && 'route' in state
-            ? state.route
-            : { screen: 'roster' };
-        this.#route = route;
+        // The *value* is checked, not the key's presence. `{ route: undefined }`
+        // satisfies `'route' in state` and then sets the current route to
+        // undefined, and every screen reads `route.screen` — so the client
+        // rendered nothing at all, with no error, on any history entry an older
+        // version of it had written.
+        this.#route = asRoute(state) ?? { screen: 'roster' };
         this.#emit();
     }
     #emit() {
