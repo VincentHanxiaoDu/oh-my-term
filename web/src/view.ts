@@ -202,3 +202,15 @@ export function renderState<T>(
     }
   }
 }
+
+/**
+ * A screen with nothing on it, and what to do about that.
+ *
+ * An empty state is an invitation, not a report. "Nothing here" tells somebody
+ * what they can already see; the second line is the part that earns the space.
+ */
+export function empty(title: string, detail: string): HTMLElement {
+  const box = el('div', 'empty')
+  box.append(el('h2', 'empty-title', title), el('p', 'empty-detail', detail))
+  return box
+}

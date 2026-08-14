@@ -10,6 +10,7 @@
 import { App } from './app.js'
 import { Navigator } from './nav.js'
 import { STYLES } from './tokens.js'
+import { chooseLanguage, setLanguage } from './messages.js'
 import { Store } from './store.js'
 import { connect } from './connect.js'
 import { canPush } from './push.js'
@@ -107,6 +108,17 @@ async function main(): Promise<void> {
   const style = document.createElement('style')
   style.textContent = STYLES
   document.head.append(style)
+
+  // Before anything renders, and from the browser: that is what somebody
+  // already told their device. Not from the instance — language is a property
+  // of the reader, and two people on two phones looking at one instance may
+  // legitimately want different ones.
+  const chosen = chooseLanguage(
+    window.localStorage.getItem('omt.language'),
+    window.navigator.languages,
+  )
+  setLanguage(chosen)
+  document.documentElement.lang = chosen === 'zh-Hans' ? 'zh-Hans' : 'en' 
 
   let instance = takeInvite(window.location, window.localStorage)
 

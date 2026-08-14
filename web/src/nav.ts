@@ -16,6 +16,15 @@ export type Route =
   | { screen: 'blocks'; session: string }
   | { screen: 'transcript'; session: string }
   | { screen: 'search'; session: string }
+  // The surfaces this client's own documents specify and had no route to.
+  // Added to the union rather than reached ad hoc, because TypeScript's
+  // exhaustiveness is what stops a new screen shipping with no title, no back
+  // destination and no place in the deep-link table.
+  | { screen: 'projects' }
+  | { screen: 'files'; workspace: string; path: string }
+  | { screen: 'changes'; workspace: string }
+  | { screen: 'diff'; workspace: string; path: string }
+  | { screen: 'settings' }
 
 /** What a route is called, for the bar. */
 export function titleOf(route: Route, context: { title?: string } = {}): string {
@@ -36,7 +45,26 @@ export function titleOf(route: Route, context: { title?: string } = {}): string 
       return context.title ?? 'Conversation'
     case 'search':
       return 'Search'
+    case 'projects':
+      return 'Open a project'
+    case 'files':
+      // The directory being looked at, not the workspace: the workspace is
+      // named on the screen above and repeating it here costs the one thing a
+      // title has, which is the answer to "where am I now".
+      return route.path === '' ? (context.title ?? 'Files') : basename(route.path)
+    case 'changes':
+      return 'Changes'
+    case 'diff':
+      return basename(route.path)
+    case 'settings':
+      return 'Settings'
   }
+}
+
+/** The last segment of a workspace-relative path. */
+function basename(path: string): string {
+  const last = path.split('/').filter(Boolean).pop()
+  return last ?? path
 }
 
 /** Whether this screen has something to go back to. */

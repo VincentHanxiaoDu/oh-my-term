@@ -1318,4 +1318,96 @@ html, body {
   cursor: pointer;
 }
 
+
+/* A diff, read down one column.
+
+   15 §7.4: a phone cannot pan sideways to read the other half, so the two
+   sides are one sequence rather than two panes. Every line keeps its prefix,
+   because the prefix is the only thing that still says which side a line is on
+   once colour is gone — a screenshot, a colour-blind reader, greyscale.
+
+   The gutter is a coloured edge rather than a filled row: a wall of green and
+   red is unreadable at length, and what the eye needs is the boundary. */
+.diff-hunk {
+  margin: 0 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 1px 0 0 var(--lit);
+}
+
+.diff-header {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-family: var(--face-machine);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.diff-line {
+  padding: 1px var(--space-3);
+  border-left: 2px solid transparent;
+  font-family: var(--face-machine);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  /* Wrapped, not scrolled. A horizontal scroller per line is a diff nobody
+     reads to the end of on a phone; the indent keeps a wrapped continuation
+     visibly part of the line above it. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-indent: -2ch;
+  padding-left: calc(var(--space-3) + 2ch);
+}
+
+.diff-line.added {
+  border-left-color: var(--done);
+  background: color-mix(in srgb, var(--done) 8%, transparent);
+}
+.diff-line.removed {
+  border-left-color: var(--gone);
+  background: color-mix(in srgb, var(--gone) 8%, transparent);
+}
+.diff-line.context {
+  color: var(--fg-muted);
+}
+
+/* An empty screen is an invitation, not a report. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+  text-align: center;
+  padding: var(--space-8) var(--space-5);
+  max-width: 44ch;
+  margin-inline: auto;
+}
+.empty-title {
+  margin: 0;
+  font-family: var(--face-machine);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+.empty-detail {
+  margin: 0;
+  font-family: var(--face-human);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* The line that says a thing the interface cannot do, and where it is done
+   instead. Prose, because it is omt talking to a person in sentences. */
+.note {
+  margin: var(--space-5) 0 0;
+  padding: 0 var(--space-1);
+  font-family: var(--face-human);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--fg-subtle);
+}
 `

@@ -24,7 +24,25 @@ export function titleOf(route, context = {}) {
             return context.title ?? 'Conversation';
         case 'search':
             return 'Search';
+        case 'projects':
+            return 'Open a project';
+        case 'files':
+            // The directory being looked at, not the workspace: the workspace is
+            // named on the screen above and repeating it here costs the one thing a
+            // title has, which is the answer to "where am I now".
+            return route.path === '' ? (context.title ?? 'Files') : basename(route.path);
+        case 'changes':
+            return 'Changes';
+        case 'diff':
+            return basename(route.path);
+        case 'settings':
+            return 'Settings';
     }
+}
+/** The last segment of a workspace-relative path. */
+function basename(path) {
+    const last = path.split('/').filter(Boolean).pop();
+    return last ?? path;
 }
 /** Whether this screen has something to go back to. */
 export function hasBack(route) {

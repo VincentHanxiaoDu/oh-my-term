@@ -20,7 +20,49 @@ import { keyToBytes } from './touch.js'
 import type { Snapshot } from './terminal.js'
 import { Navigator, hasBack, titleOf } from './nav.js'
 import type { Route } from './nav.js'
-import { appBar, el, renderState, row, stateOf } from './view.js'
+import { appBar, el, empty, renderState, row, stateOf } from './view.js'
+import { t } from './messages.js'
+
+/** One entry in a directory listing, as `fs.list` reports it. */
+interface FsEntryRow {
+  name: string
+  directory?: boolean
+}
+
+/** One changed file, as `git.diff` reports it. */
+interface ChangedFileRow {
+  path: string
+  kind: string
+  added: number
+  removed: number
+  binary?: boolean
+}
+
+/** One run of changed lines, as `git.hunks` reports it. */
+interface HunkRow {
+  old_start: number
+  old_lines: number
+  new_start: number
+  new_lines: number
+  lines: string[]
+}
+
+/** One worktree, as `worktree.list` reports it. */
+interface WorktreeRow {
+  path: string
+  branch: string
+  head: string
+  /** Whether this is the repository's own checkout rather than an added one. */
+  is_main: boolean
+  workspace: string
+}
+
+/** One setting, as `config.schema` reports it. */
+interface SettingRow {
+  key: string
+  type: string
+  default: unknown
+}
 import { choose, current, forget, list, readInvite, remember } from './instances.js'
 import { canScan, scanCode } from './scan.js'
 import { markElement, markFor } from './mark.js'
@@ -75,11 +117,21 @@ export function waiting(queued: number, base: string): string {
 }
 
 export function mountKey(route: Route): string {
-  return 'session' in route
-    ? `${route.screen}:${route.session}`
-    : 'interaction' in route
-      ? `${route.screen}:${route.interaction}`
-      : route.screen
+  if ('session' in route) {
+    return `${route.screen}:${route.session}`
+  }
+  if ('interaction' in route) {
+    return `${route.screen}:${route.interaction}`
+  }
+  // A workspace screen is keyed by what it is looking at, so navigating from
+  // one directory to the next remounts rather than reusing a scroll position
+  // that belonged to a different list.
+  if ('workspace' in route) {
+    return 'path' in route
+      ? `${route.screen}:${route.workspace}:${route.path}`
+      : `${route.screen}:${route.workspace}`
+  }
+  return route.screen
 }
 
 /** What each surface is called on the switcher. */
@@ -580,6 +632,21 @@ export class App {
       case 'search':
         this.#renderSearch(route.session)
         break
+      case 'projects':
+        this.#renderProjects()
+        break
+      case 'files':
+        this.#renderFiles(route.workspace, route.path)
+        break
+      case 'changes':
+        this.#renderChanges(route.workspace)
+        break
+      case 'diff':
+        this.#renderDiff(route.workspace, route.path)
+        break
+      case 'settings':
+        this.#renderSettings()
+        break
     }
   }
 
@@ -972,6 +1039,324 @@ export class App {
    * silently replaced the first — and a replaced token is shown once and cannot
    * be recovered. Somebody with a laptop and a desktop had to pick one.
    */
+  /**
+   * Open a project.
+   *
+   * Every other screen in this client assumes a session already exists, which
+   * made a phone a viewer: the moment somebody wanted to act on what they came
+   * to check, they needed a laptop.
+   *
+   * The workspaces the instance already knows, and nothing else. No path
+   * field: a phone cannot browse to check a path, cannot complete one, and
+   * learns it was wrong only after the typing — the whole cost paid before any
+   * of the benefit.
+   */
+  #renderProjects(): void {
+    const bar = appBar({ title: t('projects.title'), onBack: () => this.#nav.back() })
+    const body = el('div', 'body')
+
+    const workspaces = this.#store.state.workspaces
+    if (workspaces.length === 0) {
+      body.append(
+        empty(t('projects.emptyTitle'), t('projects.emptyDetail')),
+      )
+    }
+
+    for (const workspace of workspaces) {
+      body.append(
+        row({
+          title: workspace.name,
+          meta: workspace.root,
+          label: t('projects.openIn', workspace.name),
+          onTap: () => void this.newSession(workspace.id),
+        }),
+        // The two things somebody does with a project that are not "type in
+        // it". Indented under the workspace rather than given their own
+        // screen: they belong to it, and a separate list of workspaces to
+        // browse the files of would be the same list twice.
+        row({
+          title: `  ${t('files.title')}`,
+          label: `${workspace.name} — ${t('files.title')}`,
+          onTap: () => this.go({ screen: 'files', workspace: workspace.id, path: '' }),
+        }),
+        row({
+          title: `  ${t('changes.title')}`,
+          label: `${workspace.name} — ${t('changes.title')}`,
+          onTap: () => this.go({ screen: 'changes', workspace: workspace.id }),
+        }),
+      )
+      // A worktree is a directory somebody deliberately made, which makes it
+      // a better guess at "where do you want to work" than anything typed.
+      //
+      // The main checkout is skipped: it is the workspace itself, already the
+      // row above, and listing it twice under two names is how somebody comes
+      // to believe they have two projects.
+      for (const tree of this.#worktrees[workspace.id] ?? []) {
+        if (tree.is_main) {
+          continue
+        }
+        body.append(
+          row({
+            title: `  ${tree.branch}`,
+            meta: tree.path,
+            label: t('projects.openIn', tree.branch),
+            onTap: () => void this.newSession(tree.workspace),
+          }),
+        )
+      }
+    }
+
+    // Said, rather than left to be discovered by looking for a control that is
+    // not there. The laptop answer is one word and this screen cannot be it.
+    const note = el('p', 'note', t('projects.newDirectory'))
+    body.append(note)
+
+    this.#root.append(bar, body)
+    void this.#loadWorktrees()
+  }
+
+  /** Worktrees per workspace, loaded once a project list is on screen. */
+  #worktrees: Record<string, WorktreeRow[]> = {}
+
+  async #loadWorktrees(): Promise<void> {
+    for (const workspace of this.#store.state.workspaces) {
+      if (this.#worktrees[workspace.id] !== undefined) {
+        continue
+      }
+      try {
+        const out = (await this.#store.call('worktree.list', workspace.id)) as {
+          worktrees?: WorktreeRow[]
+        }
+        this.#worktrees[workspace.id] = out.worktrees ?? []
+        this.render()
+      } catch {
+        // A workspace that is not a repository has no worktrees, which is not
+        // a failure and must not blank the list it is in.
+        this.#worktrees[workspace.id] = []
+      }
+    }
+  }
+
+  /**
+   * The workspace tree, one directory at a time.
+   *
+   * Lazy per directory, per 15 §4.2: the tree of a real repository is not a
+   * thing to fetch whole, and a client that tried would stop on the first
+   * `node_modules` it met.
+   */
+  #renderFiles(workspace: string, path: string): void {
+    const bar = appBar({
+      title: path === '' ? t('files.title') : (path.split('/').filter(Boolean).pop() ?? path),
+      onBack: () => this.#nav.back(),
+    })
+    const body = el('div', 'body')
+    const state = stateOf(this.#listings[`${workspace}:${path}`], this.#errors['files'], {
+      headline: t('files.title'),
+      detail: t('files.empty'),
+    })
+
+    body.append(
+      renderState(state, (entries) => {
+        return entries.map((entry) =>
+          row({
+            title: entry.name,
+            label: entry.name,
+            leadsSomewhere: entry.directory === true,
+            ...(entry.directory === true
+              ? {
+                  onTap: () =>
+                    this.go({
+                      screen: 'files',
+                      workspace,
+                      path: path === '' ? entry.name : `${path}/${entry.name}`,
+                    }),
+                }
+              : {}),
+          }),
+        )
+      }),
+    )
+    this.#root.append(bar, body)
+    void this.#loadListing(workspace, path)
+  }
+
+  #listings: Record<string, FsEntryRow[] | undefined> = {}
+
+  async #loadListing(workspace: string, path: string): Promise<void> {
+    const key = `${workspace}:${path}`
+    if (this.#listings[key] !== undefined) {
+      return
+    }
+    try {
+      const out = (await this.#store.call('fs.list', workspace, path)) as {
+        entries?: FsEntryRow[]
+      }
+      this.#listings[key] = out.entries ?? []
+      this.render()
+    } catch (e) {
+      this.fail('files', e)
+    }
+  }
+
+  /**
+   * What changed, from git's own answer.
+   *
+   * Reading only: 15 §1.1 decided against stage, unstage and commit in v1, and
+   * this screen does not reopen it.
+   */
+  #renderChanges(workspace: string): void {
+    const bar = appBar({ title: t('changes.title'), onBack: () => this.#nav.back() })
+    const body = el('div', 'body')
+    const state = stateOf(this.#changes[workspace], this.#errors['changes'], {
+      headline: t('changes.title'),
+      detail: t('changes.clean'),
+    })
+
+    body.append(
+      renderState(state, (files) => {
+        return files.map((file) =>
+          row({
+            title: file.path,
+            meta: file.binary === true ? t('changes.binary') : `+${file.added} \u2212${file.removed}`,
+            label: `${file.path} \u2014 ${file.kind}`,
+            leadsSomewhere: file.binary !== true,
+            ...(file.binary === true
+              ? {}
+              : { onTap: () => this.go({ screen: 'diff', workspace, path: file.path }) }),
+          }),
+        )
+      }),
+    )
+    this.#root.append(bar, body)
+    void this.#loadChanges(workspace)
+  }
+
+  #changes: Record<string, ChangedFileRow[] | undefined> = {}
+
+  async #loadChanges(workspace: string): Promise<void> {
+    if (this.#changes[workspace] !== undefined) {
+      return
+    }
+    try {
+      const out = (await this.#store.call('git.diff', workspace)) as {
+        files?: ChangedFileRow[]
+      }
+      this.#changes[workspace] = out.files ?? []
+      this.render()
+    } catch (e) {
+      this.fail('changes', e)
+    }
+  }
+
+  /**
+   * One file's hunks, with line numbers.
+   *
+   * 15 §7.4: a diff on a phone is read down one column, so the two sides are
+   * one sequence rather than two panes \u2014 panning sideways to read the other
+   * half is the thing a phone cannot do.
+   */
+  #renderDiff(workspace: string, path: string): void {
+    const bar = appBar({
+      title: path.split('/').filter(Boolean).pop() ?? path,
+      onBack: () => this.#nav.back(),
+    })
+    const body = el('div', 'body')
+    const state = stateOf(this.#hunks[`${workspace}:${path}`], this.#errors['diff'], {
+      headline: path,
+      detail: t('changes.noDiff'),
+    })
+
+    body.append(
+      renderState(state, (hunks) => {
+        return hunks.map((hunk) => {
+          const block = el('div', 'diff-hunk')
+          block.append(
+            el(
+              'div',
+              'diff-header',
+              `@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@`,
+            ),
+          )
+          for (const line of hunk.lines) {
+            const kind = line.startsWith('+')
+              ? 'added'
+              : line.startsWith('-')
+                ? 'removed'
+                : 'context'
+            block.append(el('div', `diff-line ${kind}`, line))
+          }
+          return block
+        })
+      }),
+    )
+    this.#root.append(bar, body)
+    void this.#loadHunks(workspace, path)
+  }
+
+  #hunks: Record<string, HunkRow[] | undefined> = {}
+
+  async #loadHunks(workspace: string, path: string): Promise<void> {
+    const key = `${workspace}:${path}`
+    if (this.#hunks[key] !== undefined) {
+      return
+    }
+    try {
+      const out = (await this.#store.call('git.hunks', workspace, path)) as {
+        hunks?: HunkRow[]
+      }
+      this.#hunks[key] = out.hunks ?? []
+      this.render()
+    } catch (e) {
+      this.fail('diff', e)
+    }
+  }
+
+  /**
+   * Every setting, whether or not anyone set it.
+   *
+   * That is what `config.schema` answers, and it is why this is worth a
+   * screen: a list built from what is *set* teaches somebody that the things
+   * they can change are the things somebody already changed.
+   */
+  #renderSettings(): void {
+    const bar = appBar({ title: t('settings.title'), onBack: () => this.#nav.back() })
+    const body = el('div', 'body')
+    const state = stateOf(this.#settings, this.#errors['settings'], {
+      headline: t('settings.title'),
+      detail: 'This instance declares no settings.',
+    })
+
+    body.append(
+      renderState(state, (keys) =>
+        keys.map((setting) =>
+          row({
+            title: setting.key,
+            meta: `${setting.type} \u00b7 ${t('settings.default')} ${String(setting.default)}`,
+            label: setting.key,
+            leadsSomewhere: false,
+          }),
+        ),
+      ),
+    )
+    this.#root.append(bar, body)
+    void this.#loadSettings()
+  }
+
+  #settings: SettingRow[] | undefined
+
+  async #loadSettings(): Promise<void> {
+    if (this.#settings !== undefined) {
+      return
+    }
+    try {
+      const out = (await this.#store.call('config.schema')) as { settings?: SettingRow[] }
+      this.#settings = out.settings ?? []
+      this.render()
+    } catch (e) {
+      this.fail('settings', e)
+    }
+  }
+
   #renderInstances(): void {
     const bar = appBar({
       title: 'Instances',
@@ -1449,9 +1834,11 @@ export class App {
       // From the same rows the body renders, so the two cannot disagree — and
       // adding instances is exactly where that would happen again.
       ...(rows ? { subtitle: unifiedSubtitle(all, this.#peers.length + 1) } : {}),
-      ...(workspace
-        ? { action: { label: 'New session', onTap: () => void this.newSession(workspace.id) } }
-        : {}),
+      // Opens the picker rather than creating a session in whichever workspace
+      // happened to be first. With one workspace those are the same thing;
+      // with three, the old behaviour silently picked one, and the person who
+      // pressed it had no way to know which.
+      action: { label: t('projects.title'), onTap: () => this.go({ screen: 'projects' }) },
     })
 
     const body = el('div', 'body')
