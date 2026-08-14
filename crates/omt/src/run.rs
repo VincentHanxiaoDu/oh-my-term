@@ -117,6 +117,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let mut term_rows = rows;
     let mut term_cols = cols;
     let mut layout_dirty = true;
+    // Where the cursor was last put on the real screen, so a frame that did
+    // not move it writes nothing at all.
+    let mut placed: Option<(u16, u16)> = None;
     // Built once. Rebuilding it twice a second per pane would be the most
     // expensive thing in this loop by an order of magnitude.
     let adapter_set = omt_agent_adapters::builtin();
@@ -193,6 +196,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // Everything moved. Diffing against where a pane used to be paints
             // its old contents into its neighbour.
             write!(out, "\x1b[2J").context("clearing")?;
+            placed = None;
             for pane in &mut panes {
                 pane.screen.invalidate();
             }
@@ -396,7 +400,24 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         {
             let cursor = runtime.terminal().grid().cursor;
             let (row, col) = cursor_on_screen(rect, cursor.row, cursor.col);
-            write!(out, "\x1b[{row};{col}H").context("placing the cursor")?;
+            // Only when it moved. This frame runs at `TICK`, so writing the
+            // position unconditionally sent one escape sequence every 8 ms
+            // whether or not anything had changed — 619 bytes a second into a
+            // terminal where nobody was typing and nothing was running,
+            // measured on this machine.
+            //
+            // That is not free anywhere and it is expensive in the two places
+            // this product lives: over ssh it is a steady trickle on a link
+            // whose whole value is latency, and interleaved with an agent's
+            // own repaints it is the thing that makes a screen look like it is
+            // struggling to keep up.
+            //
+            // Cleared on a layout change, because the screen was wiped and the
+            // terminal's idea of where the cursor is went with it.
+            if placed != Some((row, col)) {
+                write!(out, "\x1b[{row};{col}H").context("placing the cursor")?;
+                placed = Some((row, col));
+            }
         }
         out.flush().context("flushing")?;
 

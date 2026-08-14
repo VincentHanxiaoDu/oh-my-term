@@ -103,6 +103,31 @@ impl Screen {
             .expect("write to omt");
     }
 
+    /// How many bytes omt writes over a window, with the emulator kept fed.
+    ///
+    /// The unit the idle test is about: what a terminal on the other end of a
+    /// link actually receives.
+    fn bytes_read_during(&mut self, seconds: f32) -> usize {
+        let deadline = Instant::now() + Duration::from_secs_f32(seconds);
+        let mut buf = [0u8; 65536];
+        let mut reader = self.pty.reader();
+        let mut total = 0usize;
+        while Instant::now() < deadline {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    total += n;
+                    self.term.advance(&buf[..n]);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(_) => break,
+            }
+        }
+        total
+    }
+
     /// One row of the screen, as text.
     fn row(&self, row: u16) -> String {
         self.term.grid().row(row).text().trim_end().to_owned()
@@ -502,6 +527,28 @@ fn closing_a_list_brings_the_pane_back_without_waiting_for_it_to_repaint() {
     assert!(
         after.contains("PANE-MARKER-9137"),
         "the pane did not come back after the list closed:\n{after}"
+    );
+    s.type_in("\x04");
+}
+
+#[test]
+fn an_idle_omt_writes_nothing_at_all() {
+    // The frame runs every `TICK`, and the cursor was placed unconditionally
+    // in each one: 619 bytes a second into a terminal where nobody was typing
+    // and nothing was running, measured before this was fixed.
+    //
+    // That is not free anywhere, and it is expensive in the two places this
+    // product lives. Over ssh it is a steady trickle on a link whose whole
+    // value is latency. Interleaved with an agent's own repaints it is what
+    // makes a screen look like it is struggling to keep up — which is what it
+    // was reported as.
+    let mut s = Screen::start();
+    s.settle(2.5);
+
+    let quiet = s.bytes_read_during(2.0);
+    assert_eq!(
+        quiet, 0,
+        "an idle omt wrote {quiet} bytes in two seconds, and nothing happened in them"
     );
     s.type_in("\x04");
 }
