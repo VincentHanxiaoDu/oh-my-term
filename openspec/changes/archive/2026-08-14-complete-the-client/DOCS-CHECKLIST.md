@@ -2,7 +2,11 @@
 
 Generated from the `## ` headings of every architecture document.
 
-**144 of 212 features ticked.** (34 further sections are prose.)
+**211 of 211 features ticked.** (34 further sections are prose.)
+
+The count in this line was stale at 144 of 212 for some time, which is its own
+small version of the dishonesty below: a header nobody updates is a number
+people quote. 245 sections in total — 211 tickable and ticked, 34 prose.
 
 A section is ticked only when a **named test** is written beside it. The first
 version of this file matched section headings by keyword and ticked "Zoom,
