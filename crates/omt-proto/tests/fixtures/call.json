@@ -1,0 +1,11 @@
+{
+  "t": "call",
+  "request": {
+    "device": "00000000-0000-0000-0000-000000000000",
+    "n": 7
+  },
+  "capability": "session.list",
+  "input": {
+    "workspace": "ws_1"
+  }
+}

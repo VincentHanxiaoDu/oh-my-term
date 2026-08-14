@@ -1,0 +1,5 @@
+{
+  "t": "goodbye",
+  "reason": "shutting_down",
+  "detail": "the instance is stopping"
+}

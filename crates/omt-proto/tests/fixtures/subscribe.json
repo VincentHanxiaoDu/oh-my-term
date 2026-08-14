@@ -1,0 +1,10 @@
+{
+  "t": "subscribe",
+  "filter": {
+    "kinds": [],
+    "sessions": []
+  },
+  "since": {
+    "instance": 12
+  }
+}

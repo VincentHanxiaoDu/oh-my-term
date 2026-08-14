@@ -1,0 +1,13 @@
+{
+  "t": "welcome",
+  "proto": 1,
+  "role": "operator",
+  "catalog_hash": "0123456789abcdef",
+  "capabilities": [
+    "instance.info",
+    "session.list"
+  ],
+  "auth_methods": [
+    "bearer"
+  ]
+}

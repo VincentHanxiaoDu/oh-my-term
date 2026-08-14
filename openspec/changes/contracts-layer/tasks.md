@@ -128,31 +128,31 @@
 
 ## 6. `omt-proto`
 
-- [ ] 6.1 Framing: length-prefixed text and binary frames. Per-transport size
+- [x] 6.1 Framing: length-prefixed text and binary frames. Per-transport size
       bounds belong to `omt-transport`; what freezes here is the header layout
       (6.4)
-- [ ] 6.2 The `ProtoMessage` catalogue: handshake, auth, capability call/result,
+- [x] 6.2 The `ProtoMessage` catalogue: handshake, auth, capability call/result,
       subscribe/resume/resync/lagged
-- [ ] 6.3 Handshake and capability negotiation, including the catalog hash and
+- [x] 6.3 Handshake and capability negotiation, including the catalog hash and
       the intersection rule for a version-skewed peer
-- [ ] 6.4 The 24-byte binary terminal frame header: `u64` `seq_or_off`, `u64`
+- [x] 6.4 The 24-byte binary terminal frame header: `u64` `seq_or_off`, `u64`
       `ack`, with the byte layout asserted by test (D-2)
-- [ ] 6.5 `HookEvent`/`HookAck` as `ProtoMessage` variants, with the verbatim
+- [x] 6.5 `HookEvent`/`HookAck` as `ProtoMessage` variants, with the verbatim
       payload field, the raw catch-all, the size bound and its truncation
       marker (D-4) — including the case
       [07 §3.8.3](../../../docs/architecture/07-remote-protocol.md) leaves open,
       where `tool_input` alone exceeds the limit and the marker must still
       identify what was cut
-- [ ] 6.6 The fail-open contract **in wire terms only**: the directive a hook can
+- [x] 6.6 The fail-open contract **in wire terms only**: the directive a hook can
       construct without a reply. The per-agent stdout rendering table lives in
       `omt-hook`, keyed by the `AgentKind` it was installed for
       ([07 §3.8.3](../../../docs/architecture/07-remote-protocol.md)) — putting
       it here would give `omt-proto` agent knowledge, against this change's own
       non-goal (E3)
-- [ ] 6.7 Round-trip property tests over every message, including chunk-boundary
+- [x] 6.7 Round-trip property tests over every message, including chunk-boundary
       resumption. The continuous fuzz target rides with `omt-transport`, whose
       change owns the byte path and where the message set has stopped growing
-- [ ] 6.8 A checked-in fixture per message with a compatibility test, per P5
+- [x] 6.8 A checked-in fixture per message with a compatibility test, per P5
 
 ## 7. Codegen and generated artifacts
 

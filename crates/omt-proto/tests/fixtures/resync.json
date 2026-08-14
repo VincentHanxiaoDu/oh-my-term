@@ -1,0 +1,7 @@
+{
+  "t": "resync",
+  "scope_key": "instance",
+  "reason": "window_exceeded",
+  "dropped": 3,
+  "from": 42
+}
