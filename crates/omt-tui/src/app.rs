@@ -69,7 +69,12 @@ pub enum Input {
         /// New height.
         rows: u16,
     },
-    /// Detach and leave the session running.
+    /// Leave omt.
+    ///
+    /// Named `Detach` for the key it is bound to. What it *does* is end this
+    /// process, and every pty it holds goes with it — so anything running in a
+    /// pane is asked about first (05 §4.1b). A real detach needs the sessions
+    /// to live somewhere this process is not, which they do not yet.
     Detach,
     /// Split: put a new session beside this one, side by side.
     Split,
@@ -194,7 +199,10 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
     // terminal is what somebody is most likely to have opened the strip to
     // find, which is why `waiting` and `agents` are above `panel` and
     // `palette` rather than in the order they were added.
-    ('d', "detach"),
+    // "quit", not "detach", until a session can actually outlive this
+    // process. The key ends every pty it is holding, and a word that promised
+    // otherwise cost somebody an agent mid-turn — see 05 §4.1b.
+    ('d', "quit"),
     ('c', "new"),
     ('s', "s/S split"),
     ('h', "hjkl/HJKL"),

@@ -181,6 +181,21 @@ pub enum TerminalEvent {
     /// thing a terminal program sends *deliberately* to get a human's
     /// attention, and a phone decides whether to buzz on it.
     Bell,
+    /// A program asked for a notification — `OSC 9`, or `OSC 777 ; notify`.
+    ///
+    /// Beside `Bell` and for the same reason: it is a program deliberately
+    /// asking for a human's attention, and every surface decides for itself
+    /// what to do about it. Carried as text because that is what the program
+    /// sent; whoever shows it is responsible for what a terminal must never be
+    /// handed, which is why nothing here is re-emitted as an escape sequence
+    /// unchecked.
+    Notified {
+        /// A short line, where the program sent one apart from the body.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// What it said.
+        body: String,
+    },
 }
 
 /// Something happened to the session tree.

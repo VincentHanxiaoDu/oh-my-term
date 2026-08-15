@@ -826,7 +826,8 @@ Priorities: **Must** = required for v1, a real terminal is wrong without it.
 | `10/11/12` fg/bg/cursor + `110/111/112` reset | Must | Needed for correct default colours and for 2031. **The `?` form is a question and is answered** — see §5.4.1 |
 | **`7` current working directory** | Must | Powers workspace identity, new-pane-in-same-dir, and block `cwd`. See [05](05-session-model.md) |
 | **`8` hyperlinks** | Must | `ls --hyperlink`, `delta`, `cargo`. Stored as `ExtraAttrs` runs |
-| `9` notification | Should | Maps to an `omt` notification event; **rate-limited** |
+| `9` notification | **Must** | A program asking for a human's attention — the long build that finished while its window was behind a browser. Becomes a `Notified` terminal event, which every surface decides what to do with; the terminal passes it on to the emulator omt is drawing on. A multiplexer that swallows these is why people run their builds outside one |
+| `777 ; notify` | Must | The same, with a title and a body kept apart. With omt's marker in the third field it is instead a **structured agent report** ([06 §3.6b](06-agent-layer.md)) — the payload is rejoined across the semicolons the parser splits on, which JSON is full of |
 | **`52` clipboard — write only** | Must (write) / **Never (read)** | Write is sanitized (strip C0 except TAB/LF/CR, cap at 1 MiB) and policy-gated. Read is refused unconditionally: an unprivileged remote process must never be able to exfiltrate the clipboard. iTerm2 reached the same conclusion |
 | **`133` semantic prompt A/B/C/D** | Must | The entire block model (§6) |
 | **`1337 ; CurrentDir=` / `RemoteHost=`** | Must | Cheap, widely emitted, complements OSC 7 |

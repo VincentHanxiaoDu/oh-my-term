@@ -630,6 +630,37 @@ If the seq is too old, the reply is `Resync`
 - leaves the session running. Always. A session is never killed by a client
   going away.
 
+### 4.1b What `omt` the terminal actually does today
+
+The rule above — *a session is never killed by a client going away* — is a rule
+about a **client and a daemon**. `omt` run as a terminal is not yet a client of
+anything: it owns the instance in its own process and holds every pty itself. So
+when it exits, the ptys close, the foreground process group of each gets its
+hangup, and everything running in a pane ends with it.
+
+That is a real gap between this document and the program, and it was worse than
+a gap: the key was labelled *detach*, which is a promise that the session
+survives. Somebody who reads a key that says "detach and leave it running" and
+loses an agent mid-turn has been told the wrong thing by omt, not by their
+agent.
+
+Until the sessions live somewhere this process is not, the honest behaviour is:
+
+- **The key says `quit`**, in the strip and in the help.
+- **It asks first when anything is running**, and the question is a list: every
+  live session, what its agent is doing, ordered by what needs a person first.
+  Enter ends them; anything else does not.
+- **Nothing is silently reworded.** `session.detach` and `instance.detach` still
+  mean what §4 says, because they are what a *client* does, and a client is
+  exactly the thing this terminal is not yet.
+
+Closing the gap means the terminal attaching to a daemon that owns the ptys —
+`omt serve` and the attach path both exist ([09](09-ssh-and-media.md),
+[07](07-remote-protocol.md)) and the terminal does not use them. That is a
+change of its own, and pretending otherwise in a keymap label was the part that
+had to stop today.
+
+
 **Multi-client viewing** of one session is the default and needs no mode. Every
 viewer receives the same event stream with the same `seq`, so all clients are
 eventually consistent and provably ordered

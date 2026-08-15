@@ -266,6 +266,13 @@ impl SessionRuntime {
                 EventSourceTag::Core,
                 EventPayload::Terminal(TerminalEvent::Bell),
             )),
+            HostAction::Notify { title, body } => Some((
+                EventSourceTag::Core,
+                EventPayload::Terminal(TerminalEvent::Notified {
+                    title: title.clone(),
+                    body: body.clone(),
+                }),
+            )),
             // Replies, clipboard and mode changes are the host's to act on.
             // Emitting them as events would invite a second actor to act on
             // them too.

@@ -35,6 +35,13 @@ const TICK: Duration = Duration::from_millis(8);
 /// document does not describe.
 pub(crate) const CHROME_ROWS: u16 = 0;
 
+/// The title of the one overlay whose answer is Enter itself.
+///
+/// Compared rather than remembered in a flag: an overlay takes every key while
+/// it is open, so the state that decides what Enter means has to be the
+/// overlay.
+const QUIT_TITLE: &str = "Quit — this ends what is running";
+
 /// Rows of chrome below the panes: the status bar, and only that.
 const STATUS_ROWS: u16 = 1;
 
@@ -225,6 +232,26 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             if !produced.is_empty() {
                 pane.last_output_ms = monotonic_ms();
                 anything_happened = true;
+            }
+            // A program in the pane asking for somebody's attention — the
+            // long build that finished while its window was behind a browser.
+            // Passed on rather than drawn: omt is the terminal it is talking
+            // to, and a terminal that swallowed these is why people run their
+            // builds outside the multiplexer.
+            for event in &produced {
+                if let omt_events::EventPayload::Terminal(omt_events::TerminalEvent::Notified {
+                    title,
+                    body,
+                }) = &event.payload
+                {
+                    let heading = title.clone().unwrap_or_else(|| body.clone());
+                    let _ = omt_notify::raise(
+                        &mut io::stdout(),
+                        &notify_env,
+                        &heading,
+                        title.as_ref().map(|_| body.as_str()),
+                    );
+                }
             }
         }
 
@@ -721,6 +748,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         crossterm::event::KeyCode::Up => open.move_by(-1),
                         crossterm::event::KeyCode::Down => open.move_by(1),
                         crossterm::event::KeyCode::Backspace => open.backspace(),
+                        crossterm::event::KeyCode::Enter if open.title == QUIT_TITLE => {
+                            // The one list whose answer is the list itself.
+                            // Handled here because an open overlay takes every
+                            // key — a confirmation that let its answer through
+                            // to the keymap could never be answered, which is
+                            // what happened.
+                            break 'session;
+                        }
                         crossterm::event::KeyCode::Enter => {
                             // Picking is closing. What a choice *does* depends
                             // on which list it came from, and that is decided
@@ -1074,7 +1109,19 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     shown_bar = None;
                     shown_bottom = None;
                 }
-                Input::Detach => break 'session,
+                Input::Detach => {
+                    // What this actually ends, before it ends it. The key is
+                    // bound where every multiplexer binds "detach", and in
+                    // omt it kills every pty this process holds — so the one
+                    // thing it must not do is take an agent mid-turn away
+                    // without saying so.
+                    let at_work = crate::terminal_bits::still_working(&mut instance, &panes, now);
+                    if at_work.is_empty() {
+                        break 'session;
+                    }
+                    overlay = Some(omt_tui::Overlay::new(QUIT_TITLE, at_work));
+                    layout_dirty = true;
+                }
                 Input::Ignore => {}
             }
         }
@@ -1161,6 +1208,15 @@ impl LocalPane {
                 env: vec![
                     ("OMT_SESSION".to_owned(), session.to_wire()),
                     ("OMT_SOCK".to_owned(), socket.to_owned()),
+                    // Said out loud, because an agent that has to guess whether
+                    // its host understands a sequence will either stay silent
+                    // or write JSON onto somebody's screen. The version is the
+                    // whole negotiation: a number an agent can compare, with no
+                    // round trip on a channel that has no replies.
+                    (
+                        "OMT_AGENT_EVENTS".to_owned(),
+                        omt_term::AGENT_EVENT_PROTOCOL.to_string(),
+                    ),
                 ],
                 ..PtyConfig::default()
             },

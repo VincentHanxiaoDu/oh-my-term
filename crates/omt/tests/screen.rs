@@ -474,7 +474,9 @@ fn the_leader_strip_lists_the_keys_after_a_pause() {
     s.type_in("\x02");
     s.settle(1.0);
     let screen = s.screen();
-    for label in ["detach", "split", "zoom", "waiting", "agents"] {
+    // `quit`, not `detach`: the key ends every pty this process holds, and
+    // the strip is where somebody reads what a key does (05 §4.1b).
+    for label in ["quit", "split", "zoom", "waiting", "agents"] {
         assert!(screen.contains(label), "`{label}` missing:\n{screen}");
     }
     // And when something is dropped it is said, because a menu that quietly
@@ -521,6 +523,9 @@ fn leaving_puts_the_shell_back_where_omt_started_it() {
     let mut s = Screen::start();
     s.settle(2.0);
     s.type_in("\x02d");
+    // The shell in the pane is a live session, so omt asks first now.
+    s.settle_until(10.0, |s| s.screen().contains("ends when omt does"));
+    s.type_in("\r");
     s.settle(1.5);
 
     let last = s.last_written_row();
@@ -1019,7 +1024,7 @@ fn a_screen_that_changes_on_a_timer_still_repaints() {
     s.settle(0.5);
 
     assert!(
-        strip.contains("detach"),
+        strip.contains("quit"),
         "the strip never appeared, so a timed repaint was skipped:\n{strip}"
     );
 
@@ -1340,5 +1345,90 @@ fn a_search_in_copy_mode_jumps_to_the_line_that_has_it() {
         s.screen().contains("marker-3"),
         "the search did not reach it:\n{}",
         s.screen()
+    );
+}
+
+#[test]
+fn a_program_in_a_pane_can_reach_somebody_who_left_the_window() {
+    let _serial = serially();
+    // The long build that finishes while its window is behind a browser. omt
+    // is the terminal it is talking to; a multiplexer that swallowed these is
+    // why people run their builds outside one.
+    let mut s = Screen::start_notifying();
+    s.settle(2.0);
+    // `\0ooo` octal, which is what POSIX printf takes — `\033` is printed
+    // literally by the shell this harness runs.
+    s.type_in("printf '\\033]9;omt-notify-probe\\007' | cat\n");
+    s.settle_until(15.0, |s| s.raw().contains("\u{1b}]9;omt-notify-probe"));
+    assert!(
+        s.raw().contains("\u{1b}]9;omt-notify-probe"),
+        "the notification never left omt"
+    );
+}
+
+#[test]
+fn quitting_says_what_it_is_about_to_end() {
+    let _serial = serially();
+    // The key is bound where every multiplexer binds "detach", and it was
+    // labelled that way — while ending every pty this process holds. An agent
+    // mid-turn is work somebody is waiting on, and a word that promised
+    // otherwise cost them that work with no warning. Until a session can
+    // outlive this process (05 §4.1b) the honest behaviour is to say so and
+    // ask.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    // The probe writes its own pid where the test can read it. Matching on a
+    // command line does not work: a shell running one command execs it and
+    // replaces its own arguments, so any marker put there is gone by the time
+    // anything looks.
+    let pidfile = s.dir.join("detach-probe.pid");
+    // In the *foreground* of the pane, which is where an agent runs. A
+    // backgrounded job is a different question: nobody signals it when the pty
+    // goes, so it would survive either way and prove nothing.
+    s.type_in(&format!(
+        "sh -c 'echo $$ > {}; exec sleep 300'\n",
+        pidfile.display()
+    ));
+    s.settle_until(15.0, |_| pidfile.exists());
+    let pid: i32 = std::fs::read_to_string(&pidfile)
+        .expect("the probe wrote no pid")
+        .trim()
+        .parse()
+        .expect("a pid");
+
+    let alive = |pid: i32| {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    };
+    assert!(alive(pid), "the probe never started");
+
+    s.type_in("\x02d");
+    s.settle_until(10.0, |s| s.screen().contains("ends when omt does"));
+    // The first press asks, because something is running.
+    assert!(
+        s.screen().contains("ends when omt does"),
+        "quitting took a running session with no warning:\n{}",
+        s.screen()
+    );
+    // Enter is the answer, and it is answered *in the list*: an open overlay
+    // takes every key, so a confirmation that let its answer through to the
+    // keymap could never be answered at all.
+    s.type_in("\r");
+    s.settle(3.0);
+
+    let survived = alive(pid);
+    // Tidy up whatever is left, either way.
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status();
+    // And then it does what it said: this process ends, and every pty it
+    // holds ends with it. Written down as the behaviour rather than left as a
+    // surprise — 05 §4.1b says what it would take for this to be otherwise.
+    assert!(
+        !survived,
+        "the session outlived omt, which would mean the warning is now wrong"
     );
 }

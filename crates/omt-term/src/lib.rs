@@ -11,9 +11,10 @@ pub mod cell;
 pub mod damage;
 pub mod grid;
 pub mod line;
+mod osc;
 pub mod scrollback;
 pub mod search;
-pub mod terminal;
+mod terminal;
 
 pub use action::{
     ActionQueue, Backpressure, BlockEvent, ClipboardSelection, ColorSlot, HostAction,
@@ -27,4 +28,6 @@ pub use scrollback::{
     Point, Position, Resolution, Scrollback, ScrollbackLimits, unwrap_lines, wrap_line,
     wrapped_rows,
 };
-pub use terminal::{Modes, ResizeReport, TermConfig, Terminal, Which};
+pub use terminal::{
+    AGENT_EVENT_MARKER, AGENT_EVENT_PROTOCOL, Modes, ResizeReport, TermConfig, Terminal, Which,
+};

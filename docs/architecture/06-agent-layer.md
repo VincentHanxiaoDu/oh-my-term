@@ -178,6 +178,48 @@ process name says what was *started* and a title says what is happening now.
 
 The probe remains, as a fallback, with all three handled.
 
+### 3.6b The OSC backchannel: a hook's words without a hook
+
+An agent CLI can already write to its own terminal, and some of them publish
+structured lifecycle events that way — `OSC 777 ; notify`, with JSON behind a
+marker, addressed to whatever host understands it. That is a source omt read as
+noise: a notification with JSON in it, shown to a person.
+
+It is worth having because it is the **only structured source that needs
+nothing installed**. Hooks are the flagship path and they require writing to a
+file the agent owns; a transcript tailer requires knowing where the file is;
+this requires the agent to have been started, and nothing else.
+
+The message is the same message a hook carries — the agent's own event name and
+the tool call verbatim — so it goes through **the same per-agent normalizer**
+(§7). One vocabulary, two doors.
+
+What differs is the tier, and it differs permanently:
+
+| | Hook | OSC backchannel |
+|---|---|---|
+| Arrives on | a socket whose peer the kernel vouched for | the pty, as bytes |
+| Could be written by | that agent's hook process | anything running in that pane |
+| Tier | `Hook` | `Marker` |
+
+`Marker` is the vocabulary's own word for an OSC backchannel, and it is the
+honest rung: evidence that something put this here deliberately, not proof of
+who. **Which agent a report belongs to is never taken from the report.** The
+message can name its own agent, and believing that name is how one pane's bytes
+put words into another agent's conversation; the agent is whichever one
+observation has already identified in that pane, or the report is dropped.
+
+**The channel is advertised, not negotiated.** omt puts a version number in the
+environment of every pty it spawns (`$OMT_AGENT_EVENTS`). There is no reply on
+this channel to ask with, and an agent left guessing whether its host
+understands the sequence does one of two bad things: stays silent, or writes
+JSON onto somebody's screen.
+
+Everything unusable is dropped in silence — not JSON, no event name, no
+identified agent. A pane full of escape sequences is a pane full of noise, and
+a log line per unrecognized one is a log nobody reads.
+
+
 ### 3.7 Screen rules: regions, not searches
 
 Below the marker tier and above the floor, omt reads what the agent drew — by

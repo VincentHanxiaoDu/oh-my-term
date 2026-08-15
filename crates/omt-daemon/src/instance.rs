@@ -679,7 +679,14 @@ impl Instance {
                 }),
             ));
         }
+        // An agent publishing about itself over the pty, which is how one with
+        // no hook installed is still legible. Collected here and normalized
+        // below, where the runtime borrow has ended.
+        let mut reported: Vec<String> = Vec::new();
         for action in &pumped.actions {
+            if let omt_term::HostAction::AgentEvent(json) = action {
+                reported.push(json.clone());
+            }
             pending.extend(runtime.event_for(action));
         }
         if let Some(status) = pumped.exited {
@@ -714,6 +721,10 @@ impl Instance {
             session.state = omt_session::SessionState::Running;
         }
 
+        for json in reported {
+            pending.extend(self.agent_report(id, &json));
+        }
+
         let mut out = Vec::new();
         for (source, payload) in pending {
             out.extend(self.emit(id, source, payload));
@@ -732,6 +743,76 @@ impl Instance {
             }
         }
         Ok(out)
+    }
+
+    /// Turn one report an agent wrote to its own pty into omt's vocabulary.
+    ///
+    /// Through the same normalizer a hook goes through, because it is the same
+    /// message: the agent's own event name and the tool call verbatim. What
+    /// differs is the **tier**, and it differs permanently — a hook arrives on
+    /// a socket whose peer the kernel vouched for, and this arrives as bytes
+    /// anything running in that pane could have written. Marker, therefore:
+    /// evidence that something put there deliberately, not proof of who.
+    ///
+    /// Silent about everything it cannot use. A pane full of escape sequences
+    /// is a pane full of noise, and a log line per unrecognized one is a log
+    /// nobody can read.
+    fn agent_report(&mut self, id: SessionId, json: &str) -> Vec<(EventSourceTag, EventPayload)> {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+            return Vec::new();
+        };
+        // The agent's own event name, exactly as a hook carries it.
+        let Some(event) = value
+            .get("event")
+            .or_else(|| value.get("hook_event_name"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            return Vec::new();
+        };
+        // Which agent: what observation decided is in this pane. Never the
+        // `agent` field of the message — a report that could name its own
+        // agent could name somebody else's, and then one agent's words appear
+        // in another's conversation.
+        let Some(detected) = self.observed.get(&id).map(|d| d.agent) else {
+            return Vec::new();
+        };
+        let adapters = omt_agent_adapters::builtin();
+        let Some(adapter) = adapters.get(detected) else {
+            return Vec::new();
+        };
+        let Ok(payloads) = adapter.normalize(event, &value) else {
+            return Vec::new();
+        };
+        let binding = self.binding_for(id);
+        let mut out = Vec::new();
+        for payload in payloads {
+            self.usage.observe(id, &payload);
+            let agent_event = omt_events::AgentEvent {
+                session: id,
+                binding,
+                agent: detected,
+                agent_version: None,
+                agent_session: value
+                    .get("session_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
+                thread: None,
+                seq: Seq::new(0),
+                ts: Timestamp::now(),
+                tier: omt_types::Tier::Marker,
+                payload,
+            };
+            self.observe_thread(id, &agent_event);
+            out.push((
+                // The vocabulary's own word for an OSC backchannel. `Core`
+                // would say omt caused this, and omt did not — the agent did.
+                EventSourceTag::Marker,
+                EventPayload::Agent {
+                    event: Box::new(agent_event),
+                },
+            ));
+        }
+        out
     }
 
     /// Move every attached session forward.
@@ -986,5 +1067,53 @@ mod tests {
             before,
             "reading is not a write"
         );
+    }
+    #[test]
+    fn an_agent_reporting_over_the_pty_is_read_at_the_weaker_tier() {
+        // How an agent with no hook installed stays legible. It is the same
+        // message a hook carries and it is *not* the same evidence: anything
+        // running in that pane could have written these bytes.
+        let (mut i, s) = instance();
+        i.observed.insert(
+            s,
+            omt_agent_adapters::Detection {
+                agent: omt_types::AgentKind::ClaudeCode,
+                tier: Tier::Marker,
+                evidence: "for the test".to_owned(),
+                agent_session: None,
+            },
+        );
+        let events = i.agent_report(
+            s,
+            r#"{"event":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}"#,
+        );
+        assert!(!events.is_empty(), "the report produced nothing");
+        for (tag, payload) in &events {
+            assert_eq!(*tag, EventSourceTag::Marker);
+            let EventPayload::Agent { event } = payload else {
+                panic!("expected an agent event");
+            };
+            assert_eq!(event.tier, Tier::Marker, "a pty report claimed hook tier");
+        }
+    }
+
+    #[test]
+    fn a_report_from_a_pane_with_no_identified_agent_is_dropped() {
+        // The message can name an agent, and believing that name would let one
+        // pane's bytes put words in another agent's conversation. Which agent
+        // this is comes from observation and nowhere else.
+        let (mut i, s) = instance();
+        assert!(
+            i.agent_report(s, r#"{"event":"PreToolUse","agent":"claude-code"}"#)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_report_that_is_not_json_changes_nothing() {
+        // A pane full of escape sequences is a pane full of noise. Silence is
+        // the only sane response to bytes omt cannot read.
+        let (mut i, s) = instance();
+        assert!(i.agent_report(s, "not json at all").is_empty());
     }
 }

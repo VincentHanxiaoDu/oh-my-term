@@ -106,11 +106,21 @@ fn runs_a_shell_and_types_into_it() {
         "the keystroke never reached a shell, or its output never came back:\n{seen}"
     );
 
-    // Ctrl-B d detaches. The prefix exists because every bare key belongs to
-    // the program underneath, and `Ctrl-B` is tmux's — the byte is written
-    // here rather than derived, so changing the default leader fails this
-    // test instead of silently shipping a key nobody is told about.
-    pty.writer().write_all(b"\x02d").expect("detach");
+    // Ctrl-B d quits. The prefix exists because every bare key belongs to the
+    // program underneath, and `Ctrl-B` is tmux's — the byte is written here
+    // rather than derived, so changing the default leader fails this test
+    // instead of silently shipping a key nobody is told about.
+    //
+    // Twice, with the answer between: a live shell is a running session, and
+    // quitting ends every pty this process holds, so omt asks first (05
+    // §4.1b). Enter is the answer, in the list itself.
+    pty.writer().write_all(b"\x02d").expect("quit");
+    let asked = read_until(&pty, "ends when omt does", Duration::from_secs(10));
+    assert!(
+        asked.contains("ends when omt does"),
+        "quitting took a running shell with no warning:\n{asked}"
+    );
+    pty.writer().write_all(b"\r").expect("confirm");
 
     // Keep draining while waiting. Leaving raw mode writes escape sequences,
     // and a reader that stopped reading would fill the pty's buffer and block
@@ -124,13 +134,13 @@ fn runs_a_shell_and_types_into_it() {
             assert_eq!(
                 status,
                 ExitStatus::Code(0),
-                "detaching should be a clean exit"
+                "quitting should be a clean exit"
             );
             return;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("omt did not exit after the detach chord");
+    panic!("omt did not exit after the quit chord was confirmed");
 }
 
 fn version_does_not_need_a_terminal() {

@@ -181,6 +181,25 @@ pub enum HostAction {
         /// The colour, or `None` to reset it.
         color: Option<Color>,
     },
+    /// A program asked for a notification — `OSC 9`, or `OSC 777 ; notify`.
+    ///
+    /// The thing a long build in a pane nobody is watching does when it
+    /// finishes. omt is the terminal it is talking to, so this is the terminal
+    /// that has to pass it on rather than drawing it as text.
+    Notify {
+        /// A short line, where the sequence carried one apart from the body.
+        title: Option<String>,
+        /// What happened.
+        body: String,
+    },
+    /// A structured event an agent published about itself.
+    ///
+    /// The same shape a hook reports (07 §3.8) arriving over the pty instead of
+    /// a socket, which is how an agent with no hook installed can still say
+    /// what it is doing. It is **weaker evidence** and stays weaker: anything
+    /// running in the pane can write these bytes, where a hook connected to a
+    /// socket whose peer the kernel vouched for.
+    AgentEvent(String),
     /// Something worth telling the user or the log.
     Warn(Warning),
 }

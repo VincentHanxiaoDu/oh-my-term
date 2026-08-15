@@ -285,3 +285,62 @@ pub(crate) fn reading_key(
     }
     Reading::Stay
 }
+
+/// What is still running, as rows somebody reads before ending it.
+///
+/// Every pane with a live session, with what its agent is doing where omt
+/// knows. Ordered by what needs a person first, for the same reason the agent
+/// list is: the row that changes somebody's mind is the one at the top.
+pub(crate) fn still_working(
+    instance: &mut omt_daemon::Instance,
+    panes: &[LocalPane],
+    now: u64,
+) -> Vec<omt_tui::Choice> {
+    let mut rows: Vec<(u8, omt_tui::Choice)> = Vec::new();
+    for pane in panes {
+        let Some(session) = instance.session(pane.session) else {
+            continue;
+        };
+        // An exited session has nothing left to lose, and listing it would
+        // make the warning look like noise.
+        if matches!(session.state, omt_session::SessionState::Exited { .. }) {
+            continue;
+        }
+        let title = session.title.clone();
+        let state = instance.agent_state(pane.binding, now);
+        let (rank, detail) = state.as_ref().map_or_else(
+            || (3, "running".to_owned()),
+            |state| {
+                (
+                    omt_tui::attention(state, pane.seen),
+                    omt_tui::state_word(state, pane.seen).to_owned(),
+                )
+            },
+        );
+        rows.push((
+            rank,
+            omt_tui::Choice {
+                label: title,
+                detail: format!("{detail} · ends when omt does"),
+                chord: None,
+                mark: state
+                    .as_ref()
+                    .map(|state| omt_tui::state_mark(state, pane.seen)),
+            },
+        ));
+    }
+    rows.sort_by_key(|(rank, _)| *rank);
+    let mut out: Vec<omt_tui::Choice> = rows.into_iter().map(|(_, choice)| choice).collect();
+    if !out.is_empty() {
+        // The instruction, in the list rather than beside it: this overlay is
+        // what somebody is looking at, and an instruction they have to find
+        // elsewhere is one they do not read.
+        out.push(omt_tui::Choice {
+            label: "press it again to quit anyway".to_owned(),
+            detail: "Esc keeps them".to_owned(),
+            chord: None,
+            mark: None,
+        });
+    }
+    out
+}

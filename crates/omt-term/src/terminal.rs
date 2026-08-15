@@ -2,10 +2,7 @@
 
 use vte::{Params, Perform};
 
-use crate::action::{
-    ActionQueue, Backpressure, BlockEvent, ClipboardSelection, ColorSlot, HostAction,
-    HyperlinkEvent, TermMode, Warning, WindowOp,
-};
+use crate::action::{ActionQueue, Backpressure, HostAction, TermMode, Warning, WindowOp};
 use crate::cell::{Cell, Color, Flags, Underline};
 use crate::grid::{EraseExtent, Grid, GridSize};
 use crate::line::{HyperlinkId, Line};
@@ -48,6 +45,22 @@ impl Default for TermConfig {
     }
 }
 
+/// What marks an `OSC 777 ; notify` as a structured agent event rather than
+/// something to show a person.
+///
+/// A URL-shaped marker rather than a number: numbers in this space are
+/// allocated by whoever gets there first, and a collision would have omt
+/// reading somebody else's notification as an agent's report.
+pub const AGENT_EVENT_MARKER: &str = "omt://agent-event";
+
+/// Which version of that channel this build reads.
+///
+/// Advertised in the environment of every pty omt spawns. An agent that has to
+/// guess whether its host understands a sequence either stays silent or writes
+/// JSON onto somebody's screen, and there is no reply on this channel to ask
+/// with — so the answer is put where it can be read before the first byte.
+pub const AGENT_EVENT_PROTOCOL: u32 = 1;
+
 /// Which screen is being drawn on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Which {
@@ -79,22 +92,22 @@ pub struct Terminal {
 ///
 /// Split from [`Terminal`] because `vte` borrows the performer mutably while
 /// the parser drives it, and the parser cannot borrow itself.
-struct State {
+pub(crate) struct State {
     primary: Grid,
     alternate: Grid,
     active: Which,
     scrollback: Scrollback,
     actions: ActionQueue,
     modes: Modes,
-    hyperlinks: Vec<String>,
-    open_link: Option<(HyperlinkId, u16, u16)>,
+    pub(crate) hyperlinks: Vec<String>,
+    pub(crate) open_link: Option<(HyperlinkId, u16, u16)>,
     tab_stops: Vec<bool>,
-    title: Option<String>,
+    pub(crate) title: Option<String>,
     /// Set when the action queue refused an undroppable action, so the caller
     /// is told to drain before feeding more bytes.
     stalled: Option<HostAction>,
     /// Shell-integration transitions the terminal has not positioned yet.
-    pending_blocks: Vec<crate::action::BlockEvent>,
+    pub(crate) pending_blocks: Vec<crate::action::BlockEvent>,
     /// Set when a printable character was written since the last check.
     ///
     /// Only printables: an escape sequence that moves the cursor is not a
@@ -102,7 +115,7 @@ struct State {
     /// every time something repainted its status line.
     wrote_output: bool,
     /// What to answer a program that asks what colour things are.
-    colours: (Option<String>, Option<String>),
+    pub(crate) colours: (Option<String>, Option<String>),
 }
 
 /// The DEC private modes that are on.
@@ -433,7 +446,7 @@ fn default_tab_stops(cols: u16) -> Vec<bool> {
 }
 
 impl State {
-    fn grid(&self) -> &Grid {
+    pub(crate) fn grid(&self) -> &Grid {
         match self.active {
             Which::Primary => &self.primary,
             Which::Alternate => &self.alternate,
@@ -447,7 +460,7 @@ impl State {
         }
     }
 
-    fn emit(&mut self, action: HostAction) {
+    pub(crate) fn emit(&mut self, action: HostAction) {
         if let Backpressure::Stop(a) = self.actions.push(action) {
             self.stalled = Some(a);
         }
@@ -617,6 +630,13 @@ fn arg0(params: &Params, i: usize) -> u16 {
 }
 
 impl Perform for State {
+    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+        // The whole body lives in `osc.rs`: it is the widest surface in the
+        // emulator and the file it was in went over the length this repository
+        // allows. The trait stays here, where the parser is driven.
+        State::osc_dispatch(self, params, bell_terminated);
+    }
+
     fn print(&mut self, c: char) {
         // A program produced something. Only printables count: a cursor move
         // is not output, and treating it as one would open a block every time
@@ -882,140 +902,6 @@ impl Perform for State {
             _ => {}
         }
     }
-
-    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        let Some(&code) = params.first() else { return };
-        let text = |i: usize| -> String {
-            params
-                .get(i)
-                .map(|b| String::from_utf8_lossy(b).into_owned())
-                .unwrap_or_default()
-        };
-        match code {
-            b"0" | b"2" => {
-                let t = text(1);
-                self.title = Some(t.clone());
-                self.emit(HostAction::SetTitle(t));
-            }
-            b"1" => self.emit(HostAction::SetIconName(text(1))),
-            b"7" => self.emit(HostAction::SetCwd { url: text(1) }),
-            b"8" => {
-                // OSC 8 ; params ; uri
-                let uri = text(2);
-                if uri.is_empty() {
-                    self.open_link = None;
-                    self.emit(HostAction::Hyperlink(HyperlinkEvent::Closed));
-                } else {
-                    let id = HyperlinkId(u32::try_from(self.hyperlinks.len()).unwrap_or(0));
-                    self.hyperlinks.push(uri.clone());
-                    let g = self.grid();
-                    self.open_link = Some((id, g.cursor.row, g.cursor.col));
-                    let explicit = text(1);
-                    self.emit(HostAction::Hyperlink(HyperlinkEvent::Opened {
-                        id: explicit
-                            .strip_prefix("id=")
-                            .map(std::borrow::ToOwned::to_owned),
-                        uri,
-                    }));
-                }
-            }
-            b"52" => {
-                let selection = if text(1).starts_with('p') {
-                    ClipboardSelection::Primary
-                } else {
-                    ClipboardSelection::Clipboard
-                };
-                let payload = text(2);
-                if payload == "?" {
-                    self.emit(HostAction::ClipboardRead { selection });
-                } else {
-                    // Decoded here, honoured by policy elsewhere: a program
-                    // must not be able to set the clipboard unobserved.
-                    let data = decode_base64(payload.as_bytes());
-                    self.emit(HostAction::ClipboardWrite { selection, data });
-                }
-            }
-            b"133" => {
-                let event = match text(1).as_bytes().first() {
-                    Some(b'A') => Some(BlockEvent::PromptStart),
-                    Some(b'B') => Some(BlockEvent::CommandStart),
-                    Some(b'C') => Some(BlockEvent::OutputStart),
-                    Some(b'D') => Some(BlockEvent::CommandEnd {
-                        exit_code: params
-                            .get(2)
-                            .and_then(|b| std::str::from_utf8(b).ok())
-                            .and_then(|s| s.parse().ok()),
-                    }),
-                    _ => None,
-                };
-                if let Some(e) = event {
-                    self.pending_blocks.push(e);
-                    self.emit(HostAction::Block(e));
-                }
-            }
-            b"1337" => {
-                let body = text(1);
-                if let Some(rest) = body.strip_prefix("SetUserVar=")
-                    && let Some((key, value)) = rest.split_once('=')
-                {
-                    self.emit(HostAction::SetUserVar {
-                        key: key.to_owned(),
-                        value: String::from_utf8_lossy(&decode_base64(value.as_bytes()))
-                            .into_owned(),
-                    });
-                }
-            }
-            b"4" => {
-                if let Ok(i) = text(1).parse::<u8>() {
-                    self.emit(HostAction::SetColor {
-                        slot: ColorSlot::Indexed(i),
-                        color: parse_x_color(&text(2)),
-                    });
-                }
-            }
-            b"10" | b"11" | b"12" => {
-                let slot = match code {
-                    b"10" => ColorSlot::Foreground,
-                    b"11" => ColorSlot::Background,
-                    _ => ColorSlot::Cursor,
-                };
-                // `?` asks; anything else sets. Programs ask this to decide
-                // whether they are on a light or a dark terminal — an agent
-                // CLI is one of the programs that does — and a terminal that
-                // stays silent leaves them to guess, which is wrong about half
-                // the time and looks like *their* bug.
-                if text(1).trim() == "?" {
-                    let known = match slot {
-                        ColorSlot::Foreground => self.colours.0.clone(),
-                        ColorSlot::Background => self.colours.1.clone(),
-                        // The cursor's colour is omt's to draw and not
-                        // something it has been told, so there is nothing
-                        // honest to answer.
-                        _ => None,
-                    };
-                    // Silence when omt does not know. Inventing a colour is
-                    // worse: a program told the background is black on a white
-                    // terminal renders unreadably, and has been told to.
-                    if let Some(colour) = known {
-                        let code = String::from_utf8_lossy(code).into_owned();
-                        // Terminated with ST rather than BEL — both are
-                        // accepted, and a bell that reaches a program
-                        // expecting a string terminator is a beep somebody
-                        // hears for no reason.
-                        self.emit(HostAction::Reply(
-                            format!("\x1b]{code};{colour}\x1b\\").into_bytes(),
-                        ));
-                    }
-                    return;
-                }
-                self.emit(HostAction::SetColor {
-                    slot,
-                    color: parse_x_color(&text(1)),
-                });
-            }
-            _ => {}
-        }
-    }
 }
 
 impl State {
@@ -1059,63 +945,6 @@ impl State {
             _ => {}
         }
     }
-}
-
-/// Decode the base64 an OSC 52 carries.
-///
-/// Written out rather than pulled in: it is twenty lines, and a dependency in
-/// the terminal core is a dependency in everything.
-fn decode_base64(input: &[u8]) -> Vec<u8> {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut acc = 0u32;
-    let mut bits = 0u32;
-    let mut out = Vec::new();
-    for b in input {
-        if *b == b'=' {
-            break;
-        }
-        let Some(v) = TABLE.iter().position(|t| t == b) else {
-            continue;
-        };
-        acc = (acc << 6) | v as u32;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(((acc >> bits) & 0xff) as u8);
-        }
-    }
-    out
-}
-
-/// Parse the `rgb:RRRR/GGGG/BBBB` and `#RRGGBB` spellings X uses.
-fn parse_x_color(s: &str) -> Option<Color> {
-    if let Some(rest) = s.strip_prefix("rgb:") {
-        let mut parts = rest.split('/');
-        let mut take = || -> Option<u8> {
-            let p = parts.next()?;
-            let v = u32::from_str_radix(p, 16).ok()?;
-            // Components may be 1 to 4 hex digits wide; scale to eight bits.
-            let scaled = match p.len() {
-                1 => v * 17,
-                2 => v,
-                3 => v >> 4,
-                _ => v >> 8,
-            };
-            u8::try_from(scaled).ok()
-        };
-        return Some(Color::rgb(take()?, take()?, take()?));
-    }
-    if let Some(hex) = s.strip_prefix('#')
-        && hex.len() == 6
-    {
-        let v = u32::from_str_radix(hex, 16).ok()?;
-        return Some(Color::rgb(
-            ((v >> 16) & 0xff) as u8,
-            ((v >> 8) & 0xff) as u8,
-            (v & 0xff) as u8,
-        ));
-    }
-    None
 }
 
 #[cfg(test)]
@@ -1193,6 +1022,9 @@ mod alt_screen_tests {
     reason = "in a test, expect() is the assertion"
 )]
 mod tests {
+    use super::*;
+    use crate::action::{BlockEvent, ClipboardSelection};
+    use crate::osc::{decode_base64, parse_x_color};
 
     #[test]
     fn real_shell_integration_bytes_produce_a_block() {
@@ -1262,8 +1094,6 @@ mod tests {
         t.advance(b"\x1b]133;A\x07\x1b]133;C\x07");
         assert!(t.active_block().is_some(), "nothing was running");
     }
-
-    use super::*;
 
     fn term(cols: u16, rows: u16) -> Terminal {
         Terminal::new(TermConfig {
@@ -1883,6 +1713,63 @@ mod tests {
             !t.drain_actions()
                 .iter()
                 .any(|a| matches!(a, HostAction::Reply(_)))
+        );
+    }
+    #[test]
+    fn a_program_can_ask_for_a_notification() {
+        // A long build in a pane nobody is watching. omt is the terminal it is
+        // talking to, so omt is what has to pass it on rather than draw it.
+        let mut t = term(10, 2);
+        feed(&mut t, "\x1b]9;build finished\x07");
+        assert!(t.drain_actions().iter().any(|a| matches!(
+            a,
+            HostAction::Notify { title: None, body } if body == "build finished"
+        )));
+    }
+
+    #[test]
+    fn a_notification_with_a_title_keeps_them_apart() {
+        let mut t = term(10, 2);
+        feed(&mut t, "\x1b]777;notify;tests;42 passed\x07");
+        assert!(t.drain_actions().iter().any(|a| matches!(
+            a,
+            HostAction::Notify { title: Some(title), body } if title == "tests" && body == "42 passed"
+        )));
+    }
+
+    #[test]
+    fn an_agent_can_report_over_the_pty_when_it_has_no_hook() {
+        // The same shape a hook reports, arriving on the pty instead of a
+        // socket. Weaker evidence, and the tier says so — but legible, where
+        // before it was a notification with JSON in it shown to a person.
+        let mut t = term(10, 2);
+        feed(
+            &mut t,
+            "\x1b]777;notify;omt://agent-event;{\"event\":\"PreToolUse\";\"tool_name\":\"Bash\"}\x07",
+        );
+        let reported = t.drain_actions().into_iter().find_map(|a| match a {
+            HostAction::AgentEvent(json) => Some(json),
+            _ => None,
+        });
+        // Rejoined across the semicolons the parser splits on, which JSON is
+        // full of — split naively, every such report arrives truncated at the
+        // first field.
+        assert_eq!(
+            reported.as_deref(),
+            Some("{\"event\":\"PreToolUse\";\"tool_name\":\"Bash\"}")
+        );
+    }
+
+    #[test]
+    fn an_empty_notification_is_not_raised() {
+        // A sequence with nothing in it is a program clearing a notification
+        // or getting it wrong; either way there is nothing to say.
+        let mut t = term(10, 2);
+        feed(&mut t, "\x1b]9;\x07");
+        assert!(
+            !t.drain_actions()
+                .iter()
+                .any(|a| matches!(a, HostAction::Notify { .. }))
         );
     }
 }
