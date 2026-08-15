@@ -33,8 +33,13 @@ use crate::workspace_root;
 /// has not finished.
 pub(crate) fn install() -> Result<()> {
     let root = workspace_root()?;
+    // Both, always. `agent.hooks_install` writes `omt-hook` into an agent's own
+    // configuration by absolute path, and a path pointing at a binary nobody
+    // installed is a hook that never runs — which looks exactly like a hook
+    // that was never installed, from every surface. That was the state of this
+    // machine: the settings file named it and it was not there.
     let status = Command::new("cargo")
-        .args(["build", "--release", "-p", "omt"])
+        .args(["build", "--release", "-p", "omt", "-p", "omt-hook"])
         .current_dir(&root)
         .status()
         .context("running cargo build")?;
@@ -42,14 +47,25 @@ pub(crate) fn install() -> Result<()> {
         bail!("the release build failed");
     }
 
-    let built = root.join("target/release/omt");
     let home = std::env::var("HOME").context("HOME is not set")?;
     let dir = PathBuf::from(home).join(".local/bin");
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    let target = dir.join("omt");
-    let staged = dir.join(".omt.incoming");
+    for binary in ["omt", "omt-hook"] {
+        install_one(&root.join("target/release").join(binary), &dir, binary)?;
+    }
+    Ok(())
+}
 
-    std::fs::copy(&built, &staged)
+/// Put one built binary in place and prove it runs.
+fn install_one(built: &std::path::Path, dir: &std::path::Path, name: &str) -> Result<()> {
+    let target = dir.join(name);
+    let staged = dir.join(format!(".{name}.incoming"));
+
+    // Copied beside and renamed, never written over: macOS caches a code
+    // signature per inode, and an in-place overwrite leaves the kernel
+    // refusing to run what it thinks it already knows — which it reports as
+    // signal 9 and nothing else.
+    std::fs::copy(built, &staged)
         .with_context(|| format!("copying {} to {}", built.display(), staged.display()))?;
     std::fs::rename(&staged, &target)
         .with_context(|| format!("renaming {} into place", staged.display()))?;
@@ -68,11 +84,16 @@ pub(crate) fn install() -> Result<()> {
             out.status
         );
     }
-    println!(
-        "installed {} — {}",
-        target.display(),
-        String::from_utf8_lossy(&out.stdout).trim()
-    );
+    // The hook binary answers every invocation, `--version` included, with its
+    // agent's empty document — that is the fail-open contract and not a fault.
+    // So the line says what was proved: that the kernel runs it.
+    let said = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let note = if said.is_empty() || said == "{}" {
+        "runs".to_owned()
+    } else {
+        said
+    };
+    println!("installed {} — {note}", target.display());
     Ok(())
 }
 

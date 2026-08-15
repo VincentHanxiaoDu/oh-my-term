@@ -34,6 +34,14 @@ pub enum Who {
     /// The agent's reasoning, which is a different kind of claim from its
     /// speech and is marked as one.
     Thinking,
+    /// A question waiting for a person.
+    ///
+    /// Not part of the transcript proper — an open card is state a client
+    /// reads from the ledger, and duplicating it into the record would give
+    /// two answers to one question. It is shown *with* the conversation
+    /// because that is where somebody is reading, and a question they cannot
+    /// see is a question nobody answers.
+    Asking,
     /// A tool it ran.
     Tool,
     /// A file that changed.
@@ -56,6 +64,7 @@ impl Who {
             // human one is omt putting words in somebody's mouth.
             Self::Onward => "\u{2192}",
             Self::Agent => "\u{25cf}",
+            Self::Asking => "\u{25c9}",
             Self::Thinking => "\u{2022}",
             Self::Tool => "\u{2318}",
             Self::File => "\u{270e}",

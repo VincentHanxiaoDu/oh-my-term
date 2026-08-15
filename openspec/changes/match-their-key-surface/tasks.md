@@ -42,6 +42,6 @@
 
 ## 6. Close-out
 
-- [ ] 6.1 clippy, workspace tests, layering, codegen, test-isolation
-- [ ] 6.2 `npm run check`
-- [ ] 6.3 Through omt's own emulator: zoom, swap, jump
+- [x] 6.1 clippy, workspace tests, layering, codegen, test-isolation
+- [x] 6.2 `npm run check`
+- [x] 6.3 Through omt's own emulator: zoom, swap, jump

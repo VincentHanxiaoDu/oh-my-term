@@ -141,6 +141,28 @@ fn raise_card(
         opened_at: Timestamp::now(),
         expires_at: None,
     };
+    // The strongest possible statement that somebody is being waited for: the
+    // agent said so itself. Without this the pane's state comes from whatever
+    // the screen rules made of the box it painted, and a question read as
+    // "working" is the difference between noticing an agent needs you and
+    // finding out twenty minutes later.
+    instance.observe_agent(
+        binding,
+        omt_agent::SourceReading {
+            tier: Tier::Hook,
+            state: omt_types::AgentState::Blocked {
+                reason: omt_types::BlockReason::Question,
+                interaction: Some(interaction.id),
+            },
+            at: crate::run::monotonic_ms(),
+            // Not authoritative: a hook reports events, not a lifecycle. It
+            // cannot say when the question was answered, so suspending the
+            // other sources would leave a pane blocked forever on a card
+            // somebody dealt with in the pane itself.
+            authoritative: false,
+        },
+    );
+
     let announced = interaction.clone();
     instance.ledger.open(interaction, Some(call.clone()));
     instance.emit(
@@ -310,7 +332,7 @@ mod tests {
         // question recorded in a transcript and not on the ledger is one only
         // the person at the keyboard ever learns about.
         let (state, session) = instance_with_session();
-        ingest(&state, &ask(Some(session)));
+        let _ = ingest(&state, &ask(Some(session)));
         let instance = state.lock().expect("lock");
         let open = instance.ledger.open_interactions();
         assert_eq!(open.len(), 1, "the question raised no card");
@@ -324,12 +346,30 @@ mod tests {
         // choice anyway means somebody presses it, believes the agent heard,
         // and finds out when the wrong option was taken.
         let (state, session) = instance_with_session();
-        ingest(&state, &ask(Some(session)));
+        let _ = ingest(&state, &ask(Some(session)));
         let instance = state.lock().expect("lock");
         let open = instance.ledger.open_interactions();
         assert!(
             !open[0].deliverable.is_answerable(),
             "a pty card was offered as answerable"
+        );
+    }
+    #[test]
+    fn a_question_makes_the_agent_blocked_rather_than_working() {
+        // The complaint this answers: an agent plainly waiting for a person
+        // while every surface said it was busy. A hook is the agent saying so
+        // itself, which outranks anything read off a screen.
+        let (state, session) = instance_with_session();
+        let _ = ingest(&state, &ask(Some(session)));
+        let mut instance = state.lock().expect("lock");
+        let binding = instance.binding_for(session);
+        let now = crate::run::monotonic_ms();
+        assert!(
+            matches!(
+                instance.agent_state(binding, now),
+                Some(omt_types::AgentState::Blocked { .. })
+            ),
+            "the pane did not report that somebody is being waited for"
         );
     }
 }

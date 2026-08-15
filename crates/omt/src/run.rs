@@ -512,7 +512,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 // conversation open on screen is one somebody is watching an
                 // agent write into.
                 "Conversation" => {
-                    open.set_choices(conversation_of(&state, panes[focus].session, term_cols));
+                    open.set_choices(conversation_of(
+                        &instance,
+                        &state,
+                        panes[focus].session,
+                        term_cols,
+                    ));
                 }
                 // The palette is the catalog, which does not change while a
                 // process is running.
@@ -749,7 +754,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 Input::Conversation => {
                     overlay = Some(omt_tui::Overlay::new(
                         "Conversation",
-                        conversation_of(&state, panes[focus].session, term_cols),
+                        conversation_of(&instance, &state, panes[focus].session, term_cols),
                     ));
                     layout_dirty = true;
                 }

@@ -1157,3 +1157,43 @@ fn the_conversation_view_opens_and_says_when_there_is_nothing_in_it() {
         "an empty transcript was shown as an empty list:\n{screen}"
     );
 }
+
+#[test]
+fn a_hook_fired_from_inside_a_pane_reaches_the_conversation() {
+    let _serial = serially();
+    // The whole path, on a real terminal: omt spawns a pane, an agent in that
+    // pane runs its hook, and what the agent said appears in the transcript
+    // this terminal can show. Every piece of this passed its own test while
+    // the path itself reached nothing, because nothing bound a socket for the
+    // pane to report to.
+    let mut s = Screen::start();
+    s.settle(2.0);
+
+    // target/debug/deps/<test> → target/debug/omt-hook
+    let hook = std::env::current_exe()
+        .expect("test exe")
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("target dir")
+        .join("omt-hook");
+    assert!(hook.exists(), "{} was not built", hook.display());
+
+    // Run from *inside* the pane, so `$OMT_SOCK` and `$OMT_SESSION` are
+    // whatever omt actually put there — which is the thing under test. A hook
+    // with no socket exits at its guard clause and looks exactly like a hook
+    // that was never installed.
+    let payload = "{\\\"tool_name\\\":\\\"AskUserQuestion\\\",\\\"tool_input\\\":{\\\"questions\\\":[{\\\"question\\\":\\\"Which database?\\\",\\\"header\\\":\\\"Database\\\",\\\"multiSelect\\\":false,\\\"options\\\":[{\\\"label\\\":\\\"Postgres\\\"},{\\\"label\\\":\\\"SQLite\\\"}]}]}}";
+    s.type_in(&format!(
+        "printf '{payload}' | OMT_HOOK_EVENT=PreToolUse {} --agent claude-code >/dev/null\n",
+        hook.display()
+    ));
+    s.settle(2.0);
+
+    s.type_in("\x02t"); // leader, transcript
+    s.settle(1.0);
+    let screen = s.screen();
+    assert!(
+        screen.contains("Which database?"),
+        "the hook ran in the pane and the question never arrived:\n{screen}"
+    );
+}

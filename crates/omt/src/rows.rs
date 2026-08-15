@@ -330,9 +330,10 @@ fn panel_choice_path() -> Option<std::path::PathBuf> {
 /// list that came up blank would read as omt having lost one.
 pub(crate) fn conversation_rows(
     entries: &[crate::transcript::Entry],
+    asking: &[omt_events::Interaction],
     cols: u16,
 ) -> Vec<omt_tui::Choice> {
-    if entries.is_empty() {
+    if entries.is_empty() && asking.is_empty() {
         return vec![omt_tui::Choice {
             label: "nothing said yet".to_owned(),
             detail: "this pane has no agent transcript — a shell has no conversation".to_owned(),
@@ -340,7 +341,12 @@ pub(crate) fn conversation_rows(
             mark: None,
         }];
     }
-    let said: Vec<omt_tui::Said> = entries.iter().map(said_of).collect();
+    let mut said: Vec<omt_tui::Said> = entries.iter().map(said_of).collect();
+    // Last, because it is the thing to deal with and the eye lands at the
+    // bottom of a conversation. Read from the ledger rather than the record:
+    // an open card is state, and a transcript that carried a copy would
+    // disagree with the card list the moment somebody answered.
+    said.extend(asking.iter().filter_map(question_of));
     omt_tui::conversation_lines(&said, cols)
         .into_iter()
         .map(|line| omt_tui::Choice {
@@ -350,6 +356,34 @@ pub(crate) fn conversation_rows(
             mark: None,
         })
         .collect()
+}
+
+/// An open question, as a line somebody reads.
+///
+/// Only the kinds that are questions. A permission card and a plan review are
+/// their own surfaces with their own words, and flattening them into one line
+/// of prose would ask somebody to approve a command they cannot see.
+fn question_of(interaction: &omt_events::Interaction) -> Option<omt_tui::Said> {
+    let omt_events::InteractionKind::Choice { questions } = &interaction.kind else {
+        return None;
+    };
+    let text = questions
+        .iter()
+        .map(|q| {
+            let options = q
+                .options
+                .iter()
+                .map(|o| o.label.clone())
+                .collect::<Vec<_>>()
+                .join(" / ");
+            format!("{} [{options}]", q.question)
+        })
+        .collect::<Vec<_>>()
+        .join("  ");
+    Some(omt_tui::Said {
+        who: omt_tui::Who::Asking,
+        text,
+    })
 }
 
 /// One transcript entry, as a line somebody reads.
@@ -430,16 +464,28 @@ fn one_line(input: &serde_json::Value) -> String {
 /// answers with words rather than an empty list when there is nothing — a
 /// blank overlay reads as a conversation omt lost.
 pub(crate) fn conversation_of(
+    instance: &Instance,
     state: &crate::state::State,
     session: omt_types::SessionId,
     cols: u16,
 ) -> Vec<omt_tui::Choice> {
+    // Read from the instance the caller already holds, never locked again
+    // here: the frame loop holds that guard for the whole iteration, and a
+    // second acquisition on the same thread is a deadlock rather than a wait —
+    // the terminal simply stops, with no error anywhere to say why.
+    let asking: Vec<omt_events::Interaction> = instance
+        .ledger
+        .open_interactions()
+        .into_iter()
+        .filter(|i| i.session == session)
+        .cloned()
+        .collect();
     let Ok(transcripts) = state.transcripts() else {
-        return conversation_rows(&[], cols);
+        return conversation_rows(&[], &asking, cols);
     };
     let entries = transcripts
         .get(session)
         .map(|t| t.entries().to_vec())
         .unwrap_or_default();
-    conversation_rows(&entries, cols)
+    conversation_rows(&entries, &asking, cols)
 }
