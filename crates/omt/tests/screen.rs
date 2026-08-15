@@ -547,6 +547,11 @@ fn the_agent_list_finds_the_real_claude_that_the_bar_already_found() {
         .trim()
         .trim_end_matches('\u{2502}')
         .trim()
+        // The state mark leads the row, then the name. A mark is a shape
+        // rather than a colour because a colour is the first thing a terminal
+        // theme takes away.
+        .trim_start_matches(['\u{25cf}', '\u{25cb}', '\u{b7}'])
+        .trim()
         .to_owned();
     assert!(
         row.to_lowercase().starts_with("claude"),

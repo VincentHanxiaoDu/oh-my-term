@@ -573,6 +573,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                                 label: a.capability.to_owned(),
                                 detail: String::new(),
                                 chord: a.binding.map(str::to_owned),
+                                mark: None,
                             })
                             .collect(),
                     ));
@@ -910,6 +911,9 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
                         probed.detection.evidence
                     ),
                     chord: None,
+                    // What this row wants, as a shape. A colour is the first
+                    // thing a terminal theme takes away.
+                    mark: Some(omt_tui::state_mark(&state, pane.seen)),
                 },
             ));
         }
@@ -923,6 +927,7 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
                     label: title.clone(),
                     detail: format!("{:?}", thread.state).to_lowercase(),
                     chord: None,
+                    mark: Some(omt_tui::state_mark(&thread.state, true)),
                 },
             ));
         }
@@ -946,6 +951,9 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
                     crate::probe::PROBE_EVERY_MS
                 ),
                 chord: None,
+                // No mark: this row is not a thing with a state, it is omt
+                // reporting on itself.
+                mark: None,
             },
         ));
     }
@@ -1007,7 +1015,7 @@ fn agent_name(kind: omt_types::AgentKind) -> String {
 /// it" is the answer somebody is looking for, and omitting it looks like the
 /// session is gone.
 fn session_rows(instance: &Instance, panes: &[LocalPane]) -> Vec<omt_tui::Choice> {
-    let mut rows: Vec<omt_tui::Choice> = Vec::new();
+    let mut rows: Vec<(u8, omt_tui::Choice)> = Vec::new();
     for session in instance.sessions() {
         let workspace = instance
             .workspaces()
@@ -1026,14 +1034,50 @@ fn session_rows(instance: &Instance, panes: &[LocalPane]) -> Vec<omt_tui::Choice
         if !panes.iter().any(|p| p.session == session.id) {
             parts.push("not on screen".to_owned());
         }
-        rows.push(omt_tui::Choice {
-            label: session.title.clone(),
-            detail: parts.join(" · "),
-            chord: None,
-        });
+        // What the session wants, from what its agent is doing where there is
+        // one, and from its own lifecycle where there is not. A shape rather
+        // than a colour: a colour is the first thing a terminal theme takes
+        // away.
+        let wants = instance
+            .threads(session.id)
+            .filter(|roster| !roster.awaiting_human().is_empty())
+            .map_or_else(
+                || match session.state {
+                    omt_session::SessionState::Orphaned
+                    | omt_session::SessionState::Exited { .. } => (
+                        u8::MAX,
+                        omt_tui::state_mark(&omt_types::AgentState::Unknown, true),
+                    ),
+                    _ => (3, omt_tui::state_mark(&omt_types::AgentState::Idle, true)),
+                },
+                |_| {
+                    (
+                        0,
+                        omt_tui::state_mark(
+                            &omt_types::AgentState::Blocked {
+                                reason: omt_types::BlockReason::Unspecified,
+                                interaction: None,
+                            },
+                            true,
+                        ),
+                    )
+                },
+            );
+        rows.push((
+            wants.0,
+            omt_tui::Choice {
+                label: session.title.clone(),
+                detail: parts.join(" · "),
+                chord: None,
+                mark: Some(wants.1),
+            },
+        ));
     }
-    // Anything waiting on a human first — that is why this list gets opened.
-    rows.sort_by_key(|c| usize::from(!c.detail.contains("waiting on you")));
+    // By what each row wants, not by whether its text happens to contain a
+    // word: anything waiting on a human first, because that is why this list
+    // gets opened.
+    rows.sort_by_key(|(rank, _)| *rank);
+    let rows: Vec<omt_tui::Choice> = rows.into_iter().map(|(_, choice)| choice).collect();
     rows
 }
 

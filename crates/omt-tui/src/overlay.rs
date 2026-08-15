@@ -17,6 +17,14 @@ pub struct Choice {
     pub detail: String,
     /// The chord that reaches it directly, where it has one.
     pub chord: Option<String>,
+    /// A mark for what this row wants, where the row has a state.
+    ///
+    /// Shape rather than colour: a colour is the first thing a terminal theme
+    /// takes away, and somebody reading a list in a theme they did not choose
+    /// still has to be able to see which row wants them. A filled mark is
+    /// something to attend to; a hollow one is at rest; a point is a state omt
+    /// cannot report.
+    pub mark: Option<&'static str>,
 }
 
 /// A list over the screen.
@@ -179,8 +187,9 @@ pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
         // follows the label rather than being pushed away from it: they are
         // one row about one thing.
         let mut line = format!(
-            "{}{}",
+            "{}{} {}",
             if picked { "\u{276f} " } else { "  " },
+            choice.mark.unwrap_or(" "),
             choice.label
         );
         if !choice.detail.is_empty() {
@@ -236,6 +245,7 @@ mod tests {
             label: label.to_owned(),
             detail: detail.to_owned(),
             chord: None,
+            mark: None,
         }
     }
 
