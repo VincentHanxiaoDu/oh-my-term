@@ -277,6 +277,14 @@ mod tests {
 /// Returns the lines to write at the left edge, already the panel's width. The
 /// caller places them; this decides what they say.
 ///
+/// **Grouped by workspace**, because a list of agents with no directories in it
+/// answers "who wants me" and not "where". Six rows called `claude` across
+/// three checkouts is six rows nobody can act on.
+///
+/// The heading appears only when there is more than one workspace. Repeating a
+/// directory above every row when there is only one is structure that adds
+/// nothing, and the row it costs is a row of the list.
+///
 /// Truncation is by *width*, not by length: a CJK session name is one character
 /// and two columns, and cutting by length paints into the pane beside it.
 #[must_use]
@@ -290,31 +298,61 @@ pub fn render(entries: &[Entry], rows: u16) -> Vec<String> {
         // and "nothing is running" is a fact worth a line.
         out.push(fit_columns("", inner));
         out.push(fit_columns("nothing running", inner));
+        while out.len() < usize::from(rows) {
+            out.push(fit_columns("", inner));
+        }
+        out.truncate(usize::from(rows));
+        return out;
     }
 
-    // Two rows per entry: what it is, then where and how it is. One row cannot
-    // hold a name, a place and a state in twenty-three columns without cutting
-    // all three to uselessness.
+    // In the order attention put them, but with each workspace's rows kept
+    // together — otherwise the heading would repeat down the column.
+    let mut places: Vec<&str> = Vec::new();
     for entry in entries {
-        if out.len() + 2 > usize::from(rows) {
-            let hidden = entries.len() - (out.len().saturating_sub(1)) / 2;
-            if hidden > 0 {
-                out.push(fit_columns(&format!("{hidden} more"), inner));
-            }
-            break;
+        if !places.contains(&entry.place.as_str()) {
+            places.push(&entry.place);
         }
-        out.push(fit_columns(
-            &format!("{} {}", entry.mark, entry.label),
-            inner,
-        ));
-        let where_and_how = if entry.on_screen {
-            format!("  {}", entry.state)
-        } else {
-            // Not on screen is worth saying: it is the answer to "where did it
-            // go", and omitting the row entirely looks like the session ended.
-            format!("  {} · elsewhere", entry.state)
-        };
-        out.push(fit_columns(&where_and_how, inner));
+    }
+    let grouped = places.len() > 1;
+
+    let mut hidden = 0usize;
+    for place in &places {
+        let of_place: Vec<&Entry> = entries.iter().filter(|e| e.place == *place).collect();
+        // A heading, its rows, and the blank line that separates it from the
+        // next: three rows before this group says anything.
+        if grouped {
+            if out.len() + 3 > usize::from(rows) {
+                hidden += of_place.len();
+                continue;
+            }
+            out.push(fit_columns("", inner));
+            out.push(fit_columns(place, inner));
+        }
+        for entry in of_place {
+            if out.len() + 2 > usize::from(rows) {
+                hidden += 1;
+                continue;
+            }
+            let indent = if grouped { " " } else { "" };
+            out.push(fit_columns(
+                &format!("{indent}{} {}", entry.mark, entry.label),
+                inner,
+            ));
+            let how = if entry.on_screen {
+                format!("{indent}   {}", entry.state)
+            } else {
+                // Not on screen is worth saying: it is the answer to "where
+                // did it go", and omitting the row looks like it ended.
+                format!("{indent}   {} \u{b7} elsewhere", entry.state)
+            };
+            out.push(fit_columns(&how, inner));
+        }
+    }
+
+    if hidden > 0 && out.len() < usize::from(rows) {
+        // Never silently truncated: a panel showing three of nine is one
+        // somebody believes is all of them.
+        out.push(fit_columns(&format!("{hidden} more"), inner));
     }
 
     while out.len() < usize::from(rows) {
@@ -435,6 +473,48 @@ mod render_tests {
         away.on_screen = false;
         let drawn = render(&[away], 8).join("\n");
         assert!(drawn.contains("elsewhere"), "{drawn}");
+    }
+
+    #[test]
+    fn rows_are_grouped_under_the_directory_they_are_in() {
+        // A list of agents with no directories in it answers "who wants me"
+        // and not "where". Six rows called `claude` across three checkouts is
+        // six rows nobody can act on.
+        let mut a = entry("claude", "waiting", "\u{25cf}");
+        a.place = "omt \u{b7} main".to_owned();
+        let mut b = entry("claude", "working", "\u{25cf}");
+        b.place = "notes \u{b7} draft".to_owned();
+        let drawn = render(&[a, b], 20).join("\n");
+        assert!(drawn.contains("omt"), "{drawn}");
+        assert!(drawn.contains("notes"), "{drawn}");
+    }
+
+    #[test]
+    fn one_directory_is_not_repeated_above_every_row() {
+        // Structure that adds nothing costs a row of the list. Their rule,
+        // and it is right: a sub-label appears only when it disambiguates.
+        let a = entry("claude", "waiting", "\u{25cf}");
+        let b = entry("codex", "working", "\u{25cf}");
+        let drawn = render(&[a, b], 20);
+        let headings = drawn
+            .iter()
+            .filter(|l| l.contains("omt \u{b7} main"))
+            .count();
+        assert_eq!(headings, 0, "the only directory was written as a heading");
+    }
+
+    #[test]
+    fn a_group_that_does_not_fit_is_counted_rather_than_half_drawn() {
+        // Half a group is a heading with nothing under it, which reads as a
+        // directory that has no agents in it.
+        let mut rows: Vec<Entry> = Vec::new();
+        for i in 0..6 {
+            let mut e = entry(&format!("agent{i}"), "idle", "\u{25cb}");
+            e.place = format!("project{i}");
+            rows.push(e);
+        }
+        let drawn = render(&rows, 10).join("\n");
+        assert!(drawn.contains("more"), "{drawn}");
     }
 
     #[test]

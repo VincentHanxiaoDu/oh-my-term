@@ -1229,6 +1229,41 @@ Two consequences worth stating:
  degraded tier-4 source reported by `agent.explain` — not an agent that
  stutters on every tool call.
 
+#### 3.8.5 Who listens — every process that owns sessions, not only a daemon
+
+The ingress is a property of **whoever is running the sessions**, not of a
+particular binary mode. A terminal drawing panes on somebody's screen owns
+ptys, so agents started in those panes fire hooks at it; if only `omt serve`
+listened, the most common way anybody runs omt — typing `omt` and then starting
+an agent in a pane — would be the one configuration where hooks reach nothing,
+and every agent's questions, tool calls and plans would be invisible to every
+other surface. That is what shipped, and it is why this section exists.
+
+So a socket is bound in both cases, with the same dispatch behind it and one
+difference in ownership:
+
+| Process | Binds a socket | Pumps sessions, restores, autosaves |
+|---|---|---|
+| `omt serve` | yes | yes — it *is* the instance |
+| `omt` drawing a terminal | yes | its own frame loop already does; the listener must not |
+
+A second pump reading the same ptys, or a second autosave writing the same
+snapshot, is a race between a process and itself. The listener beside a
+terminal therefore serves connections and owns nothing.
+
+Two consequences worth stating, because both were bugs:
+
+- **The spawn environment is part of the ingress.** A hook with no `$OMT_SOCK`
+  exits at its guard clause without connecting (§3.8.3), which is
+  indistinguishable from a hook that is not installed. Every pty omt spawns
+  carries `$OMT_SESSION` *and* `$OMT_SOCK`, or the rest of this section
+  describes a path nothing walks.
+- **An unattributed report is dropped, never attributed.** A hook that cannot
+  name its session is a hook whose observation has no owner; guessing one puts
+  one agent's question into another agent's conversation, and nothing
+  downstream can detect it afterwards. The same rule covers a session id this
+  instance has never seen — that is another omt on the same machine.
+
 ---
 
 ## 4. Terminal streaming

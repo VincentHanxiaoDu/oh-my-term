@@ -143,8 +143,15 @@ fn the_real_settings_file_on_this_machine_keeps_its_hooks() {
     )
     .expect("a plan for the real file");
 
-    let before = commands(&existing);
     let after = commands(&plan.after);
+    // Somebody *else's* hooks. omt's own previous entries are meant to be
+    // replaced — that is what makes an install an upgrade rather than a
+    // second copy — and a machine that has run `agent.hooks_install` before
+    // has one in this file pointing at wherever the binary lived then.
+    let before: Vec<String> = commands(&existing)
+        .into_iter()
+        .filter(|c| !c.contains("omt-hook"))
+        .collect();
     assert!(!before.is_empty(), "the fixture has no hooks to lose");
     for command in &before {
         assert!(

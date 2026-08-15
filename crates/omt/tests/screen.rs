@@ -1135,3 +1135,25 @@ fn a_pane_can_be_moved_rather_than_the_focus() {
         "focus did not follow the pane it moved:\n{screen}"
     );
 }
+
+#[test]
+fn the_conversation_view_opens_and_says_when_there_is_nothing_in_it() {
+    let _serial = serially();
+    // Until this key existed, the transcript an agent produces was readable
+    // from a phone and not from the keyboard the agent was started at. A shell
+    // has no conversation, and the honest answer is a sentence — an empty
+    // overlay reads as a conversation omt lost.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("\x02t"); // leader, transcript
+    s.settle(1.0);
+    let screen = s.screen();
+    assert!(
+        screen.contains("Conversation"),
+        "the conversation view did not open:\n{screen}"
+    );
+    assert!(
+        screen.contains("nothing said yet"),
+        "an empty transcript was shown as an empty list:\n{screen}"
+    );
+}

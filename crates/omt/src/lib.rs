@@ -36,6 +36,7 @@ pub mod state;
 pub mod surfaces;
 pub mod transcript;
 
+pub mod hooks;
 pub mod serve;
 
 pub mod remote;

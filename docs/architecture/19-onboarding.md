@@ -280,6 +280,38 @@ directory". The order is
 and last anything omt cannot describe.
 
 
+### 2.1c `⟨leader⟩ t` — what the agent said, not what it painted
+
+The pane shows the agent's own interface: a box it redraws in place and scrolls
+away. That is the right thing to look at while it works and the wrong thing to
+read afterwards — the reasoning, the tool call and the file it touched have all
+been overwritten by the next frame.
+
+The transcript is the record, and until this key it was readable from a phone
+and not from the keyboard the agent was started at. `⟨leader⟩ t` opens it as an
+overlay, on the same terms as the other lists ([16 §4.2](16-input-and-keymap.md#42-focus-and-exclusivity)):
+rebuilt every frame, because a conversation somebody is watching an agent write
+into is precisely the case a snapshot cannot serve.
+
+Rules, all of them about not overstating what omt knows:
+
+- **A speaker is a mark, not a colour** — a colour is the first thing a terminal
+  theme takes away, and the marks are distinct from each other so a column of
+  them reads as a conversation rather than a wall of text.
+- **A turn omt sent on somebody's behalf is marked apart from a turn they
+  typed.** Rendering a synthetic turn as a human one is omt putting words in
+  their mouth.
+- **Reasoning is marked apart from speech.** It is a different kind of claim,
+  and reasoning rendered as speech reads as the agent telling you things it has
+  not decided ([06 §8](06-agent-layer.md)).
+- **Empty is a sentence, not an empty list.** A shell has no conversation. A
+  blank overlay reads as one omt lost.
+
+The transcript is only as complete as the tier the session reached: on a
+pty-only agent with no hooks installed there is nothing to show, and that is
+the honest answer rather than a screen-scraped approximation of one.
+
+
 ### 2.2 `⟨leader⟩ ?` — the help overlay
 
 `⟨leader⟩ ?` (`ui.open_keymap_help`, [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace))

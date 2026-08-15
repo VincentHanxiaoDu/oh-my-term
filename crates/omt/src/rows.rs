@@ -249,7 +249,9 @@ pub(crate) fn panel_sessions(
     instance: &mut Instance,
     panes: &[LocalPane],
     now: u64,
+    branch: Option<&str>,
 ) -> Vec<omt_tui::PanelSession> {
+    let branch = branch.map(str::to_owned);
     let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
     let mut out = Vec::new();
     for id in ids {
@@ -276,10 +278,11 @@ pub(crate) fn panel_sessions(
             agent,
             state,
             workspace,
-            // The branch is the pane's, and only a pane on screen has one
-            // cheaply — asking git per session per frame is what the branch
-            // cache exists to prevent.
-            branch: None,
+            // The branch, from the cache the status bar already fills. Asking
+            // git per session per frame is what that cache exists to prevent,
+            // and a panel that made omt shell out sixty times a second would
+            // be a panel somebody turns off.
+            branch: branch.clone(),
             seen: pane.is_none_or(|p| p.seen),
             on_screen: pane.is_some(),
         });
@@ -315,4 +318,128 @@ fn panel_choice_path() -> Option<std::path::PathBuf> {
         })
         .ok()?;
     Some(base.join("omt").join("agent-panel"))
+}
+
+/// The rows behind the agent conversation.
+///
+/// The terminal grid shows what an agent *painted* — a box it redraws and
+/// scrolls away. This is what it said and did, which is the thing a phone has
+/// been able to read since the web client shipped and a keyboard could not.
+///
+/// Empty is a real answer with words on it: a shell has no conversation, and a
+/// list that came up blank would read as omt having lost one.
+pub(crate) fn conversation_rows(
+    entries: &[crate::transcript::Entry],
+    cols: u16,
+) -> Vec<omt_tui::Choice> {
+    if entries.is_empty() {
+        return vec![omt_tui::Choice {
+            label: "nothing said yet".to_owned(),
+            detail: "this pane has no agent transcript — a shell has no conversation".to_owned(),
+            chord: None,
+            mark: None,
+        }];
+    }
+    let said: Vec<omt_tui::Said> = entries.iter().map(said_of).collect();
+    omt_tui::conversation_lines(&said, cols)
+        .into_iter()
+        .map(|line| omt_tui::Choice {
+            label: line,
+            detail: String::new(),
+            chord: None,
+            mark: None,
+        })
+        .collect()
+}
+
+/// One transcript entry, as a line somebody reads.
+fn said_of(entry: &crate::transcript::Entry) -> omt_tui::Said {
+    use crate::transcript::Entry;
+    let (who, text) = match entry {
+        Entry::User { text, synthetic } => (
+            // A turn omt sent on somebody's behalf is marked as one. Shown as
+            // a person's turn, it is omt putting words in their mouth.
+            if *synthetic {
+                omt_tui::Who::Onward
+            } else {
+                omt_tui::Who::You
+            },
+            text.clone(),
+        ),
+        Entry::Assistant { text } => (omt_tui::Who::Agent, text.clone()),
+        Entry::Reasoning { text } => (omt_tui::Who::Thinking, text.clone()),
+        Entry::ToolCall { name, input, .. } => {
+            (omt_tui::Who::Tool, format!("{name} {}", one_line(input)))
+        }
+        Entry::ToolResult { error, .. } => (
+            omt_tui::Who::Tool,
+            error
+                .clone()
+                .map_or_else(|| "done".to_owned(), |e| format!("failed: {e}")),
+        ),
+        Entry::Plan { steps } => (
+            omt_tui::Who::Agent,
+            format!(
+                "plan: {}",
+                steps
+                    .iter()
+                    .map(|s| s.title.clone())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+        ),
+        Entry::FileChanged { path, change, .. } => (omt_tui::Who::File, format!("{change} {path}")),
+        Entry::Other { category, text } => (omt_tui::Who::Other, format!("{category}: {text}")),
+    };
+    omt_tui::Said { who, text }
+}
+
+/// A tool's arguments on one line.
+///
+/// Summarized rather than pretty-printed: a `Write` call carries a whole file,
+/// and a conversation view that unrolled it would be a file viewer with a
+/// conversation lost somewhere inside it.
+fn one_line(input: &serde_json::Value) -> String {
+    let text = match input {
+        serde_json::Value::Object(fields) => fields
+            .iter()
+            .map(|(k, v)| match v {
+                serde_json::Value::String(s) => format!("{k}={s}"),
+                other => format!("{k}={other}"),
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+        other => other.to_string(),
+    };
+    let flat: String = text
+        .chars()
+        .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
+        .collect();
+    // Cut on a character boundary, and said so: a line ending in `…` is
+    // visibly shortened, where a silent cut reads as the whole argument.
+    if flat.chars().count() > 120 {
+        flat.chars().take(119).collect::<String>() + "\u{2026}"
+    } else {
+        flat
+    }
+}
+
+/// The focused pane's conversation, as rows.
+///
+/// Reads the transcript through the same lock every other surface uses, and
+/// answers with words rather than an empty list when there is nothing — a
+/// blank overlay reads as a conversation omt lost.
+pub(crate) fn conversation_of(
+    state: &crate::state::State,
+    session: omt_types::SessionId,
+    cols: u16,
+) -> Vec<omt_tui::Choice> {
+    let Ok(transcripts) = state.transcripts() else {
+        return conversation_rows(&[], cols);
+    };
+    let entries = transcripts
+        .get(session)
+        .map(|t| t.entries().to_vec())
+        .unwrap_or_default();
+    conversation_rows(&entries, cols)
 }

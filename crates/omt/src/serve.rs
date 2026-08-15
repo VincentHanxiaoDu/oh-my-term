@@ -151,6 +151,41 @@ pub fn serve(path: &Path, state: State) -> Result<()> {
     }
 }
 
+/// Serve beside a terminal that is drawing its own sessions.
+///
+/// The same connections [`serve`] takes — capability calls, subscriptions and
+/// hook reports — with none of the ownership: no pump, no restore, no
+/// autosave. Those belong to whoever *runs* the instance, and this process
+/// already does; a second pump reading the same ptys, or a second autosave
+/// writing the same snapshot, would race the terminal that started it.
+///
+/// It listens at all so that agents in these panes have somewhere to report,
+/// and so that `omt ls` in another window sees the sessions on this screen
+/// rather than nothing at all.
+///
+/// # Errors
+/// Fails if the socket cannot be created.
+pub fn serve_beside(path: &Path, state: State) -> Result<()> {
+    guard_runtime_dir(path)?;
+    let _ = std::fs::remove_file(path);
+    let listener = omt_transport::SocketListener::bind(path)
+        .with_context(|| format!("binding {}", path.display()))?;
+    loop {
+        let Ok((stream, credentials)) = listener.accept() else {
+            continue;
+        };
+        // Same rule as the daemon's: another account's process on this machine
+        // gets nothing, and there is no setting that changes it.
+        if !credentials.is_same_user() {
+            continue;
+        }
+        let state = state.clone();
+        std::thread::spawn(move || {
+            let _ = serve_connection(stream, &state);
+        });
+    }
+}
+
 fn serve_connection(mut stream: std::os::unix::net::UnixStream, state: &State) -> io::Result<()> {
     let registry = crate::capabilities::registry(state.clone())
         .map_err(|e| io::Error::other(e.to_string()))?;
@@ -171,6 +206,19 @@ fn serve_connection(mut stream: std::os::unix::net::UnixStream, state: &State) -
             // bad client corrupts another's replies.
             return Ok(());
         };
+        // Answered before dispatch, and without a handshake. A hook is a
+        // short-lived process reporting an observation, not an actor asking
+        // for a mutation — dispatch would refuse it as ungreeted, and making
+        // it greet would spend two round trips of an agent's deadline on a
+        // negotiation with nothing to negotiate.
+        if let ProtoMessage::HookEvent(hook) = message {
+            let ack = ProtoMessage::HookAck(crate::hooks::ingest(state, &hook));
+            let bytes = serde_json::to_vec(&ack).map_err(io::Error::other)?;
+            if omt_transport::write_frame(&mut stream, FrameKind::Text, &bytes).is_err() {
+                return Ok(());
+            }
+            continue;
+        }
         if let Some(reply) = handle(&registry, &mut peer, message) {
             let bytes = serde_json::to_vec(&reply).map_err(io::Error::other)?;
             if omt_transport::write_frame(&mut stream, FrameKind::Text, &bytes).is_err() {

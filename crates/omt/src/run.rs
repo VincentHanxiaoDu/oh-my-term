@@ -16,7 +16,7 @@ use omt_session::{WriterPolicy, WriterState};
 use omt_term::TermMode;
 use omt_tui::{Input, RawGuard, Screen};
 
-use crate::rows::{agent_rows, agent_short_name, session_rows};
+use crate::rows::{agent_rows, agent_short_name, conversation_of, session_rows};
 
 /// How long to wait for input before checking the session again.
 ///
@@ -74,7 +74,23 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // question is a step, and a step is where people stop.
     first_run_summary();
 
-    let mut instance = Instance::new();
+    // Held behind a `State` rather than owned outright, because something
+    // else now needs to reach it: the agents in these panes fire hooks, and a
+    // hook talks to a socket. A terminal with no socket is a terminal whose
+    // agents can report nothing, which is what every one of them was doing.
+    let state = crate::state::State::new(Instance::new());
+    let hook_socket = crate::serve::default_socket_path();
+    {
+        let served = state.clone();
+        let path = hook_socket.clone();
+        // Serving, but not owning: this process pumps its own sessions and
+        // persists nothing, so the listener does neither.
+        std::thread::spawn(move || {
+            let _ = crate::serve::serve_beside(&path, served);
+        });
+    }
+    let socket_text = hook_socket.display().to_string();
+    let mut instance = state.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
     let cwd = crate::state::canonical_root(
         &std::env::current_dir()
             .map(|p| p.display().to_string())
@@ -107,6 +123,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         &cwd,
         PtySize::new(cols, usable_rows),
         first_tile,
+        &socket_text,
     )?];
     let mut focus = 0usize;
 
@@ -157,7 +174,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Labelled, because the input drain below is itself a loop: an unlabelled
     // `break` on detach would leave the drain and carry straight on drawing
     // frames, and omt would refuse to exit.
+    // Released before the frame loop and taken again per iteration, so the
+    // hook listener gets the instance between frames rather than never.
+    drop(instance);
+
     'session: loop {
+        let mut instance = state.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
         // Whether this iteration has anything to draw.
         //
         // The loop runs at `TICK` and drew every time, which is 125 walks of
@@ -380,7 +402,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // The panel, in the column the panes were moved over for. Drawn before
         // the status bar and after the panes, so nothing paints over it.
         if panel_cols > 0 {
-            let sessions = crate::rows::panel_sessions(&mut instance, &panes, now);
+            // The branch from the cache the status bar already fills, so the
+            // panel costs no extra process spawns.
+            let on_branch = branch.get(&cwd, monotonic_ms());
+            let sessions =
+                crate::rows::panel_sessions(&mut instance, &panes, now, on_branch.as_deref());
             let rows_for_panel = term_rows.saturating_sub(STATUS_ROWS).max(1);
             let lines = omt_tui::panel::render(&omt_tui::entries(&sessions), rows_for_panel);
             // Only when it changed. Forcing a draw every tick because the
@@ -482,6 +508,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             match open.title.as_str() {
                 "Agents" => open.set_choices(agent_rows(&mut instance, &panes, monotonic_ms())),
                 "Sessions" => open.set_choices(session_rows(&instance, &panes)),
+                // Rebuilt like the others, and for a stronger reason: a
+                // conversation open on screen is one somebody is watching an
+                // agent write into.
+                "Conversation" => {
+                    open.set_choices(conversation_of(&state, panes[focus].session, term_cols));
+                }
                 // The palette is the catalog, which does not change while a
                 // process is running.
                 _ => {}
@@ -714,6 +746,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     ));
                     layout_dirty = true;
                 }
+                Input::Conversation => {
+                    overlay = Some(omt_tui::Overlay::new(
+                        "Conversation",
+                        conversation_of(&state, panes[focus].session, term_cols),
+                    ));
+                    layout_dirty = true;
+                }
                 Input::Sessions => {
                     // Every session this instance holds, not only the ones with
                     // a pane on screen. A session that is running somewhere
@@ -770,6 +809,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                                 &cwd,
                                 size,
                                 new_tile,
+                                &socket_text,
                             ) {
                                 layout = proposed;
                                 panes.push(pane);
@@ -1001,6 +1041,7 @@ impl LocalPane {
         cwd: &str,
         size: PtySize,
         tile: omt_tui::PaneId,
+        socket: &str,
     ) -> Result<Self> {
         let session = instance
             .create_session(workspace, SessionKind::Shell, SessionMode::Pty)
@@ -1012,7 +1053,14 @@ impl LocalPane {
                 args: Vec::new(),
                 cwd: Some(cwd.into()),
                 size,
-                env: vec![("OMT_SESSION".to_owned(), session.to_wire())],
+                // What a hook needs to know before it has read a byte:
+                // which session it belongs to and where to report. Without
+                // the socket a hook gives up on its first line — which is
+                // why every agent run inside omt was reporting nothing.
+                env: vec![
+                    ("OMT_SESSION".to_owned(), session.to_wire()),
+                    ("OMT_SOCK".to_owned(), socket.to_owned()),
+                ],
                 ..PtyConfig::default()
             },
             omt_term::ScrollbackLimits::default(),

@@ -81,6 +81,12 @@ pub enum Input {
     SplitDown,
     /// Show or hide the agent panel.
     Panel,
+    /// Read the focused agent's conversation.
+    ///
+    /// What it *said and did*, not what it painted. The grid is a box an agent
+    /// redraws and scrolls away; the transcript is the record, and it was
+    /// readable from a phone months before it was readable from a keyboard.
+    Conversation,
     /// Fill the screen with the focused pane, or put it back.
     Zoom,
     /// Move focus to the pane it was in before this one.
@@ -193,6 +199,7 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
     ('z', "zoom"),
     ('!', "waiting"),
     ('a', "agents"),
+    ('t', "transcript"),
     ('w', "sessions"),
     ('g', "panel"),
     ('x', "close"),
@@ -238,6 +245,7 @@ pub fn leader_action(key: char) -> Option<Input> {
         '?' => Input::Help,
         'p' => Input::Palette,
         'a' => Input::Agents,
+        't' => Input::Conversation,
         'w' => Input::Sessions,
         _ => return None,
     })
