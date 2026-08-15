@@ -98,7 +98,12 @@ export function attention(state, seen = true) {
     if (state === 'idle' && !seen) {
         return 1;
     }
-    if (state === 'working' || state === 'running') {
+    if (state === 'working' || state === 'running' || state === 'starting') {
+        // Starting sits with working, not with the unaccountable. It is a session
+        // on its way up and it will be working in a moment — putting it last meant
+        // a session somebody had just opened sat below every finished one, which
+        // the terminal never did. Found by the generated table, which is what that
+        // table is for.
         return 2;
     }
     if (state === 'idle') {

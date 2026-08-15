@@ -21,12 +21,17 @@
 
 ## 4. Both surfaces
 
-- [ ] 4.1 The web client renders the same entries
-- [ ] 4.2 A test that the two agree about one session
+- [x] 4.1 The web client renders the same entries
+- [x] 4.2 A test that the two agree — a table generated from the Rust source
+      by `cargo xtask vocabulary`, asserted by the client's own tests, the same
+      shape as the capability parity gate. It found a real disagreement on its
+      first run: the terminal ranked a starting session with the working ones
+      and the client ranked it last, so a session somebody had just opened sat
+      below every finished one on the phone.
 
 ## 5. Close-out
 
-- [ ] 5.1 clippy, workspace tests, layering, codegen, test-isolation
-- [ ] 5.2 `npm run check`
-- [ ] 5.3 Through omt's own emulator: it appears where it fits, refuses where it
+- [x] 5.1 clippy, workspace tests, layering, codegen, test-isolation
+- [x] 5.2 `npm run check`
+- [x] 5.3 Through omt's own emulator: it appears where it fits, refuses where it
       does not, and toggles
