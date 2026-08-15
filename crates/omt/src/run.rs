@@ -88,12 +88,23 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // before this, which made a multiplexer indistinguishable from the shell it
     // wraps.
     let usable_rows = rows.saturating_sub(STATUS_ROWS).max(1);
+    // The arrangement, as a tree. One pane to begin with; every split adds a
+    // node rather than another equal share of the width, which is what makes
+    // an editor beside two stacked shells expressible at all.
+    let mut next_tile = 0u32;
+    let mut tile_id = || {
+        next_tile += 1;
+        omt_tui::PaneId(next_tile)
+    };
+    let first_tile = tile_id();
+    let mut layout = omt_tui::Node::leaf(first_tile);
     let mut panes = vec![LocalPane::open(
         &mut instance,
         workspace,
         &shell,
         &cwd,
         PtySize::new(cols, usable_rows),
+        first_tile,
     )?];
     let mut focus = 0usize;
 
@@ -206,12 +217,30 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             break 'session;
         }
 
-        let rects = omt_tui::tile(
-            term_cols,
-            term_rows.saturating_sub(STATUS_ROWS).max(1),
-            omt_tui::Split::Vertical,
-            panes.len(),
-        );
+        // Where each pane goes, from the tree rather than from a count. Panes
+        // whose leaf is gone are not drawn, which cannot happen — the tree and
+        // the list are changed together — but is cheaper to handle than to
+        // prove.
+        let arrangement = layout.place(omt_tui::Rect {
+            col: 0,
+            row: 0,
+            cols: term_cols,
+            rows: term_rows.saturating_sub(STATUS_ROWS).max(1),
+        });
+        let rects: Vec<omt_tui::Rect> = panes
+            .iter()
+            .map(|pane| {
+                arrangement.iter().find(|p| p.pane == pane.tile).map_or(
+                    omt_tui::Rect {
+                        col: 0,
+                        row: 0,
+                        cols: 0,
+                        rows: 0,
+                    },
+                    |p| p.rect,
+                )
+            })
+            .collect();
         // One frame, presented whole. A terminal is free to show the screen
         // between any two writes, and a frame here is dozens of them — the
         // panes, the separators, the status bar, an overlay, the cursor. What
@@ -396,7 +425,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // *over the pane's last row* and restores the row afterwards, rather
         // than reserving one: a row kept for a hint that is absent almost
         // always is a row spent on nothing.
-        let hint = omt_tui::hint_for(&situation);
+        // Within the width, because the leader strip is a menu: built too wide
+        // it is truncated, and what is lost is the end of it.
+        let hint = omt_tui::hint_for_within(&situation, term_cols);
         let over = hint.map(|text| omt_tui::render_hint(Some(&text), term_cols));
         if shown_bottom != over {
             match &over {
@@ -574,22 +605,69 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     shown_bar = None;
                     shown_bottom = None;
                 }
-                Input::Split => {
-                    // Refused rather than attempted when there is no room. Two
-                    // unusable panes are worse than one usable one, and the
-                    // user cannot see why nothing is legible.
-                    let wanted = panes.len() + 1;
-                    if omt_tui::how_many_fit(term_cols, term_rows, omt_tui::Split::Vertical, wanted)
-                        == wanted
-                    {
-                        let size = PtySize::new(term_cols, term_rows.saturating_sub(1).max(1));
-                        if let Ok(pane) =
-                            LocalPane::open(&mut instance, workspace, &shell, &cwd, size)
-                        {
-                            panes.push(pane);
-                            focus = panes.len() - 1;
-                            layout_dirty = true;
+                Input::Split | Input::SplitDown => {
+                    // Which way the space is cut is the whole difference
+                    // between the two keys; everything after it is the same.
+                    let split = if matches!(input, Input::SplitDown) {
+                        omt_tui::Split::Horizontal
+                    } else {
+                        omt_tui::Split::Vertical
+                    };
+                    // Asked of the tree, not of a count: whether there is room
+                    // depends on how the space is already divided, and only
+                    // the tree knows that. Refused rather than attempted when
+                    // there is none — two unusable panes are worse than one
+                    // usable one, and nobody can see why nothing is legible.
+                    let here = panes[focus].tile;
+                    let new_tile = tile_id();
+                    let mut proposed = layout.clone();
+                    if proposed.split(here, new_tile, split) {
+                        let area = omt_tui::Rect {
+                            col: 0,
+                            row: 0,
+                            cols: term_cols,
+                            rows: term_rows.saturating_sub(STATUS_ROWS).max(1),
+                        };
+                        // It splits only if the arrangement it produces
+                        // actually contains the new pane. `place` declines to
+                        // divide space it does not have, so this is the whole
+                        // check.
+                        if proposed.place(area).iter().any(|p| p.pane == new_tile) {
+                            let size = PtySize::new(term_cols, term_rows.saturating_sub(1).max(1));
+                            if let Ok(pane) = LocalPane::open(
+                                &mut instance,
+                                workspace,
+                                &shell,
+                                &cwd,
+                                size,
+                                new_tile,
+                            ) {
+                                layout = proposed;
+                                panes.push(pane);
+                                focus = panes.len() - 1;
+                                layout_dirty = true;
+                            }
                         }
+                    }
+                }
+                Input::Focus(towards) => {
+                    // Where a finger would land, not the next one in a list:
+                    // with more than two panes, cycling is a guessing game.
+                    let area = omt_tui::Rect {
+                        col: 0,
+                        row: 0,
+                        cols: term_cols,
+                        rows: term_rows.saturating_sub(STATUS_ROWS).max(1),
+                    };
+                    let arrangement = layout.place(area);
+                    if let Some(landed) =
+                        omt_tui::neighbour(&arrangement, panes[focus].tile, towards)
+                        && let Some(index) = panes.iter().position(|p| p.tile == landed)
+                    {
+                        focus = index;
+                        shown_hint = None;
+                        shown_bar = None;
+                        shown_bottom = None;
                     }
                 }
                 Input::NextPane => {
@@ -604,6 +682,16 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     let closed = panes.remove(focus);
                     if let Some(pane) = closed.pane {
                         instance.remove_pane(workspace, pane);
+                    }
+                    // The tree collapses the split that held it, so the
+                    // sibling takes the space. Without this the arrangement
+                    // keeps a leaf for a pane that is gone and everything
+                    // below it shifts.
+                    match layout.clone().close(closed.tile) {
+                        Some(rest) => layout = rest,
+                        // The last pane. An empty tree is not representable,
+                        // and closing the last pane is closing the window.
+                        None => break 'session,
                     }
                     if panes.is_empty() {
                         break 'session;
@@ -652,6 +740,13 @@ struct LocalPane {
     /// When this pane last produced anything, which is the entirety of what
     /// the heuristic floor has to go on.
     last_output_ms: u64,
+    /// Which leaf of the layout tree this pane is.
+    ///
+    /// The tree holds the arrangement and knows nothing about sessions; this
+    /// is the join. Kept on the pane rather than in a map because a pane and
+    /// its place are created and destroyed together, and two structures that
+    /// have to be kept in step are two structures that will not be.
+    tile: omt_tui::PaneId,
     /// Whether anybody has looked at this pane since its agent stopped
     /// working.
     ///
@@ -671,6 +766,7 @@ impl LocalPane {
         program: &str,
         cwd: &str,
         size: PtySize,
+        tile: omt_tui::PaneId,
     ) -> Result<Self> {
         let session = instance
             .create_session(workspace, SessionKind::Shell, SessionMode::Pty)
@@ -709,6 +805,7 @@ impl LocalPane {
             agent: None,
             probed_at: 0,
             last_output_ms: 0,
+            tile,
             // A pane somebody just opened is one they are looking at.
             seen: true,
         })

@@ -71,8 +71,20 @@ pub enum Input {
     },
     /// Detach and leave the session running.
     Detach,
-    /// Split: put a new session beside this one.
+    /// Split: put a new session beside this one, side by side.
     Split,
+    /// Split the other way: put a new session below this one.
+    ///
+    /// Two keys rather than one that guesses, because which way somebody wants
+    /// a screen cut depends on what they are about to put in it, and a wrong
+    /// guess costs a close and a re-split.
+    SplitDown,
+    /// Move focus in a direction.
+    ///
+    /// Geometric, not "the next one in a list": with more than two panes,
+    /// cycling is a guessing game and the arrow keys are what everybody
+    /// already knows.
+    Focus(crate::tree::Towards),
     /// Move focus to the next pane.
     NextPane,
     /// Close the focused pane, leaving its session running.
@@ -149,15 +161,26 @@ pub fn translate(event: &Event, armed: bool, mode: EncodeMode) -> (Input, bool) 
 /// The order is the order the strip lists them in: leaving, then making, then
 /// moving, then finding.
 pub const LEADER_KEYS: &[(char, &str)] = &[
+    // Short labels, and the shortness is load-bearing: this is one row, and at
+    // 100 columns the longer wording did not fit — so `sessions` and `agents`
+    // were dropped off the end, which are the two keys somebody is most likely
+    // to have opened the strip to find.
+    //
+    // The order is a priority order. A narrow terminal drops from the end.
     ('d', "detach"),
     ('c', "new"),
     ('s', "split"),
-    ('o', "next"),
-    ('x', "close"),
+    ('S', "split \u{2193}"),
+    ('h', "hjkl move"),
     ('w', "sessions"),
     ('a', "agents"),
+    ('x', "close"),
     ('p', "palette"),
-    ('?', "all keys"),
+    // Bound and deliberately not listed: `o` cycles panes, which is what
+    // `hjkl` does less precisely; `j`, `k` and `l` are the other three
+    // directions; and `?` opens the full list, which is a strange thing to
+    // advertise *on* the list of keys — the overflow marker points at it when
+    // there is more to see.
 ];
 
 /// What one leader key does.
@@ -168,6 +191,11 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
 pub fn leader_action(key: char) -> Option<Input> {
     Some(match key {
         'd' => Input::Detach,
+        'S' => Input::SplitDown,
+        'h' => Input::Focus(crate::tree::Towards::Left),
+        'j' => Input::Focus(crate::tree::Towards::Down),
+        'k' => Input::Focus(crate::tree::Towards::Up),
+        'l' => Input::Focus(crate::tree::Towards::Right),
         // The four tmux users already have in their fingers, spelled the same
         // way: making, splitting, cycling and closing.
         'c' | 's' => Input::Split,

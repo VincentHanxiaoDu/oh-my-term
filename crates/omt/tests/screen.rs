@@ -744,3 +744,75 @@ fn a_found_agent_is_never_described_as_unknown() {
         "a found agent is described as unknown:\n{listed}"
     );
 }
+
+#[test]
+fn a_split_puts_two_panes_on_the_screen_and_a_second_split_nests() {
+    let _serial = serially();
+    // What `tile` could not express: an arrangement that is not N equal
+    // shares. Split once side by side, then split the right-hand pane
+    // downwards, and there are three panes in two columns — which is a tree,
+    // not a row.
+    let mut s = Screen::start();
+    s.settle(2.0);
+
+    // Something identifiable in the first pane, so the panes can be told apart
+    // on the screen rather than by counting separators.
+    s.type_in("printf 'PANE-ONE\\n'\r");
+    s.settle(1.0);
+
+    s.type_in("\x02s");
+    s.settle(2.0);
+    let two = s.screen();
+    assert!(
+        two.contains('\u{2502}'),
+        "no separator after a split — the screen is still one pane:\n{two}"
+    );
+    // The first pane's output is still there, in its own column.
+    assert!(
+        two.contains("PANE-ONE"),
+        "the original pane was lost:\n{two}"
+    );
+
+    // And a second split, downwards, inside the pane the focus is in.
+    s.type_in("\x02S");
+    s.settle(2.0);
+    let three = s.screen();
+    s.type_in("\x02x");
+    s.settle(1.0);
+    s.type_in("\x02x");
+    s.settle(1.0);
+    s.type_in("\x04");
+
+    assert!(
+        three.contains("PANE-ONE"),
+        "a nested split lost the first pane:\n{three}"
+    );
+}
+
+#[test]
+fn the_leader_strip_fits_the_terminal_it_is_drawn_in() {
+    let _serial = serially();
+    // It is a menu, and a menu that is built too wide is truncated — losing
+    // its *last* entries, which are the ones added most recently. Adding
+    // direction keys silently removed `sessions` and `agents` from the only
+    // place they are advertised, and nothing failed.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("\x02");
+    s.settle(1.0);
+
+    let screen = s.screen();
+    s.type_in("\x1b");
+    s.settle(0.3);
+    s.type_in("\x04");
+
+    let strip = screen
+        .lines()
+        .find(|line| line.contains('\u{25b8}'))
+        .unwrap_or_default();
+    assert!(
+        strip.chars().count() <= usize::from(COLS),
+        "the strip is {} columns wide in a {COLS}-column terminal: {strip:?}",
+        strip.chars().count()
+    );
+}

@@ -36,6 +36,15 @@ pub struct Situation {
 /// something in it is a status line that is never read.
 #[must_use]
 pub fn hint_for(s: &Situation) -> Option<String> {
+    hint_for_within(s, u16::MAX)
+}
+
+/// The same, kept inside a width.
+///
+/// The width matters for exactly one hint — the leader strip, which is a menu
+/// and loses entries off the end when it does not fit.
+#[must_use]
+pub fn hint_for_within(s: &Situation, cols: u16) -> Option<String> {
     // The *resolved* leader, never the literal `^A` these strings used to
     // carry. A hint naming a key the user has not got is worse than no hint:
     // they press it, something else happens, and they stop trusting the row.
@@ -43,7 +52,7 @@ pub fn hint_for(s: &Situation) -> Option<String> {
     // Ordered by urgency, and the order is the design: whatever is most likely
     // to be the reason you are looking at the screen wins the single slot.
     if s.prefix_armed {
-        return Some(pending_strip());
+        return Some(pending_strip_within(cols));
     }
     if s.blocked > 1 {
         return Some(format!("agents are waiting on you — {p} a to answer"));
@@ -77,10 +86,48 @@ pub fn hint_for(s: &Situation) -> Option<String> {
 /// The delay is the caller's — this only says what the strip reads.
 #[must_use]
 pub fn pending_strip() -> String {
-    let mut out = format!("{} ▸ ", leader());
-    for (key, label) in crate::app::LEADER_KEYS {
-        out.push_str(&format!("  {key} {label}"));
+    pending_strip_within(u16::MAX)
+}
+
+/// The same, kept inside a width.
+///
+/// Built to fit rather than built and then cut. `render_hint` truncates, so a
+/// strip wider than the terminal loses its *last* entries — and the last
+/// entries are the ones added most recently, which is how adding four
+/// direction keys silently removed `sessions` and `agents` from the only place
+/// they are ever advertised.
+///
+/// Dropping is from the end, so the order of `LEADER_KEYS` is a priority
+/// order: what a person reaches for most often is listed first and survives a
+/// narrow terminal. When something is dropped the strip says so, because a
+/// menu that quietly shows less than it has is worse than one that admits it.
+#[must_use]
+pub fn pending_strip_within(cols: u16) -> String {
+    let head = format!("{} ▸ ", leader());
+    let cols = cols as usize;
+    let entries: Vec<String> = crate::app::LEADER_KEYS
+        .iter()
+        .map(|(key, label)| format!("  {key} {label}"))
+        .collect();
+
+    let full: String = std::iter::once(head.clone())
+        .chain(entries.iter().cloned())
+        .collect();
+    if full.chars().count() <= cols {
+        return full;
     }
+
+    // The overflow marker has to fit too, or dropping an entry to make room
+    // for it drops another.
+    const MORE: &str = "  … ^B ?";
+    let mut out = head;
+    for entry in &entries {
+        if out.chars().count() + entry.chars().count() + MORE.chars().count() > cols {
+            break;
+        }
+        out.push_str(entry);
+    }
+    out.push_str(MORE);
     out
 }
 
@@ -249,7 +296,13 @@ mod tests {
                     // The aliases tmux users arrive with. They do the same
                     // thing as a listed key and listing both would double the
                     // strip's width to say one thing twice.
-                    || matches!(key, 'n' | 's' | 'c'),
+                    || matches!(key, 'n' | 's' | 'c' | 'o' | '?')
+                    // The other three directions, advertised as `hjkl focus`
+                    // by the entry for `h`. Four separate entries spent the
+                    // strip's entire width and pushed `sessions` off the end
+                    // of the screen — a key somebody reaches for far more
+                    // often than any single arrow.
+                    || matches!(key, 'j' | 'k' | 'l'),
                 "`{key}` is bound and never advertised"
             );
         }
@@ -300,5 +353,56 @@ mod tests {
         let line = render_hint(None, 8);
         let visible = line.replace("\x1b[2m", "").replace("\x1b[0m", "");
         assert_eq!(visible, "        ");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
+mod strip_width_tests {
+    use super::*;
+
+    #[test]
+    fn a_narrow_strip_keeps_the_first_keys_and_says_there_are_more() {
+        // Built to fit rather than built and then cut. `render_hint`
+        // truncates, so a strip wider than the terminal loses its *last*
+        // entries — which is how adding four direction keys silently removed
+        // `sessions` and `agents` from the only place they are advertised.
+        let narrow = pending_strip_within(40);
+        assert!(narrow.chars().count() <= 40, "{narrow:?}");
+        assert!(narrow.contains("detach"), "{narrow:?}");
+        assert!(
+            narrow.contains('…'),
+            "it dropped keys and did not say so: {narrow:?}"
+        );
+    }
+
+    #[test]
+    fn a_wide_strip_says_everything_and_adds_no_marker() {
+        let wide = pending_strip_within(u16::MAX);
+        for (_, label) in crate::app::LEADER_KEYS {
+            assert!(wide.contains(label), "`{label}` missing from {wide:?}");
+        }
+        assert!(!wide.contains('…'), "{wide:?}");
+    }
+
+    #[test]
+    fn the_order_of_the_table_is_the_order_things_survive() {
+        // Dropping is from the end, so `LEADER_KEYS` is a priority order and
+        // what a person reaches for most often is listed first.
+        let first = crate::app::LEADER_KEYS.first().expect("a key").1;
+        for cols in [30u16, 40, 60, 80] {
+            let strip = pending_strip_within(cols);
+            assert!(
+                strip.contains(first) || strip.chars().count() <= 12,
+                "at {cols} columns the first key is gone: {strip:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_strip_with_no_room_at_all_still_says_where_the_keys_are() {
+        // Nothing fits, and the answer is still not a blank row.
+        let tiny = pending_strip_within(1);
+        assert!(tiny.contains('?') || tiny.contains('▸'), "{tiny:?}");
     }
 }
