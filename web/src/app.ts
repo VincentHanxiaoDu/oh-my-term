@@ -554,7 +554,7 @@ export class App {
         sessions: peer.store.state.sessions,
       })),
     ]
-    return unify(rosters)
+    return unify(rosters, this.#seen)
   }
 
   /** Be told when the grid needs re-measuring. */

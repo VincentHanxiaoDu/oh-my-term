@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isOrphaned, stateWord, waitingLine } from '../src/federation.js'
+import { attention, isOrphaned, stateWord, waitingLine } from '../src/federation.js'
 import { rowMeta } from '../src/app.js'
 import { en, zhHans } from '../src/messages.js'
 
@@ -166,5 +166,33 @@ describe('what this device has looked at', () => {
 
   it('says what is waiting whether or not anybody looked', () => {
     expect(rowMeta({ state: 'blocked' }, true, undefined, [])).toContain('waiting on you')
+  })
+})
+
+describe('what the roster puts first', () => {
+  it('puts a finished result above something still running', () => {
+    // Reads backwards until you ask what each row wants. A session still
+    // working wants nothing from anybody; a finished one is the whole reason
+    // somebody opened the list. Sorting by "is it moving" puts the rows that
+    // need nothing at the top.
+    expect(attention('idle', false)).toBeLessThan(attention('working'))
+  })
+
+  it('puts what cannot continue without you above everything', () => {
+    for (const other of ['working', 'running', 'idle', 'orphaned', 'exited']) {
+      expect(attention('blocked')).toBeLessThan(attention(other))
+    }
+    expect(attention('blocked')).toBeLessThan(attention('idle', false))
+  })
+
+  it('puts a seen idle session below a working one', () => {
+    // Once you have looked at it, it is the least urgent thing on the screen.
+    expect(attention('idle', true)).toBeGreaterThan(attention('working'))
+  })
+
+  it('puts a state it cannot describe last rather than first', () => {
+    // A row omt cannot account for must not be the first thing a person
+    // reads, and must not be hidden either.
+    expect(attention('quiescing')).toBeGreaterThan(attention('idle', true))
   })
 })

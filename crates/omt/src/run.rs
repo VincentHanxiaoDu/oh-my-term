@@ -781,7 +781,10 @@ impl BranchCache {
 /// which is why this said "nothing matches" with an agent plainly running in
 /// the pane.
 fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt_tui::Choice> {
-    let mut rows: Vec<omt_tui::Choice> = Vec::new();
+    // Each row with what it wants, so the sort is over states rather than over
+    // whether a row's text happens to contain a word. Two agents can be called
+    // the same thing, so this is positional and never keyed by label.
+    let mut rows: Vec<(u8, omt_tui::Choice)> = Vec::new();
     for pane in panes {
         let title = instance
             .session(pane.session)
@@ -790,35 +793,41 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
             let state = instance
                 .agent_state(pane.binding, now)
                 .unwrap_or(omt_types::AgentState::Unknown);
-            rows.push(omt_tui::Choice {
-                // The agent's name in the column the eye lands on. This was
-                // the session title — "shell" — with the agent buried mid-line
-                // after it, so a list opened *to find out whether omt knows
-                // about Claude Code* answered with the word "shell". Somebody
-                // reading that concludes it does not, and they are reading it
-                // correctly: the first column is the answer.
-                label: agent_name(probed.detection.agent).to_owned(),
-                // Then where it is and what it is doing, and last the
-                // evidence — somebody looking at a wrong detection needs to
-                // see what was matched, not be told a name again.
-                detail: format!(
-                    "{} · {} · {}",
-                    title,
-                    omt_tui::state_word(&state, pane.seen),
-                    probed.detection.evidence
-                ),
-                chord: None,
-            });
+            rows.push((
+                omt_tui::attention(&state, pane.seen),
+                omt_tui::Choice {
+                    // The agent's name in the column the eye lands on. This was
+                    // the session title — "shell" — with the agent buried mid-line
+                    // after it, so a list opened *to find out whether omt knows
+                    // about Claude Code* answered with the word "shell". Somebody
+                    // reading that concludes it does not, and they are reading it
+                    // correctly: the first column is the answer.
+                    label: agent_name(probed.detection.agent).to_owned(),
+                    // Then where it is and what it is doing, and last the
+                    // evidence — somebody looking at a wrong detection needs to
+                    // see what was matched, not be told a name again.
+                    detail: format!(
+                        "{} · {} · {}",
+                        title,
+                        omt_tui::state_word(&state, pane.seen),
+                        probed.detection.evidence
+                    ),
+                    chord: None,
+                },
+            ));
         }
         let Some(roster) = instance.threads(pane.session) else {
             continue;
         };
         for thread in roster.threads() {
-            rows.push(omt_tui::Choice {
-                label: title.clone(),
-                detail: format!("{:?}", thread.state).to_lowercase(),
-                chord: None,
-            });
+            rows.push((
+                omt_tui::attention(&thread.state, true),
+                omt_tui::Choice {
+                    label: title.clone(),
+                    detail: format!("{:?}", thread.state).to_lowercase(),
+                    chord: None,
+                },
+            ));
         }
     }
     if rows.is_empty() {
@@ -830,19 +839,24 @@ fn agent_rows(instance: &mut Instance, panes: &[LocalPane], now: u64) -> Vec<omt
         // agent's own interface is on the screen behind it, and it makes omt
         // look like it is lying rather than like it has not found something
         // yet — which is what it was read as, twice.
-        rows.push(omt_tui::Choice {
-            label: "omt has not identified an agent in any pane".to_owned(),
-            detail: format!(
-                "it looks every {}ms at what each pane is running; \
+        rows.push((
+            u8::MAX,
+            omt_tui::Choice {
+                label: "omt has not identified an agent in any pane".to_owned(),
+                detail: format!(
+                    "it looks every {}ms at what each pane is running; \
                  a pane started moments ago may not have been seen yet",
-                crate::probe::PROBE_EVERY_MS
-            ),
-            chord: None,
-        });
+                    crate::probe::PROBE_EVERY_MS
+                ),
+                chord: None,
+            },
+        ));
     }
-    // Waiting first, because that is the reason anybody opens it.
-    rows.sort_by_key(|c| usize::from(!c.detail.contains("waiting")));
-    rows
+    // By what each row wants, not by whether its text happens to contain a
+    // word. Waiting first, then a result nobody has seen, then what is busy —
+    // see `omt_tui::attention` for why "done" outranks "working".
+    rows.sort_by_key(|(rank, _)| *rank);
+    rows.into_iter().map(|(_, choice)| choice).collect()
 }
 
 /// An agent's name in as few columns as it can be told apart in.

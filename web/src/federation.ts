@@ -19,6 +19,13 @@ export interface UnifiedSession {
   id: string
   title: string
   state: string
+  /** Whether this device has looked at it since its agent last worked.
+   *
+   * Not on the wire and not the agent's business: an agent is idle either
+   * way, and whether *you* have seen it is a fact about you and about this
+   * device. Absent means seen, so a client that does not track it sorts the
+   * way it always did. */
+  seen?: boolean
   /** Which workspace it belongs to, so a row can say where it is.
    *
    * Carried through the merge rather than looked up afterwards: a roster is
@@ -118,6 +125,38 @@ export function waitingLine(
 }
 
 /**
+ * How much a row wants a person, lowest first.
+ *
+ * The order is a product judgment and not an implementation detail:
+ *
+ * 1. waiting on you — it cannot continue without you
+ * 2. **done and unseen** — it finished while you were elsewhere
+ * 3. working — it is busy and needs nothing
+ * 4. idle and seen — you have looked at it
+ * 5. anything omt cannot describe
+ *
+ * Done outranks working, which reads backwards until you ask what each row
+ * wants: a session still working wants nothing from anybody, and a finished
+ * one is the whole reason somebody opened the list. Sorting by "is it moving"
+ * puts the rows that need nothing at the top.
+ */
+export function attention(state: string, seen = true): number {
+  if (state === 'blocked') {
+    return 0
+  }
+  if (state === 'idle' && !seen) {
+    return 1
+  }
+  if (state === 'working' || state === 'running') {
+    return 2
+  }
+  if (state === 'idle') {
+    return 3
+  }
+  return 4
+}
+
+/**
  * What to call a session's state to somebody reading a list.
  *
  * The same words the TUI uses, from the same rules, because a person looking
@@ -165,7 +204,10 @@ export function stateWord(state: string, seen = true): string {
  * between glances. Never grouped by instance — grouping by instance is the
  * per-instance drill-down again, with extra scrolling.
  */
-export function unify(rosters: readonly InstanceRoster[]): UnifiedSession[] {
+export function unify(
+  rosters: readonly InstanceRoster[],
+  seen: ReadonlySet<string> = new Set(),
+): UnifiedSession[] {
   const rows: UnifiedSession[] = []
   for (const roster of rosters) {
     for (const session of roster.sessions) {
@@ -179,12 +221,16 @@ export function unify(rosters: readonly InstanceRoster[]): UnifiedSession[] {
         ...(session.cwd === undefined ? {} : { cwd: session.cwd }),
         threads: roster.threads?.[session.id] ?? 0,
         reachable: roster.reachable,
+        // Per device. A session read on a laptop is not one seen on a phone,
+        // and a flag shared through the instance would get that wrong in the
+        // direction that loses things: the phone would rank an agent's result
+        // below a working session because somebody else had looked at it.
+        seen: seen.size === 0 || seen.has(session.id),
       })
     }
   }
 
-  const rank = (row: UnifiedSession) =>
-    needsSomebody(row.state) ? 0 : row.state === 'working' || row.state === 'running' ? 1 : 2
+  const rank = (row: UnifiedSession) => attention(row.state, row.seen !== false)
 
   return rows.sort(
     (a, b) =>

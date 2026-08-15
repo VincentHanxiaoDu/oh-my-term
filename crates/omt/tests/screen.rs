@@ -21,7 +21,31 @@
 )]
 
 use std::io::{Read, Write};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+/// One test at a time.
+///
+/// Every test here starts a real `omt` on a real pty: a shell, a terminal
+/// emulator, a pump loop and an observation pass, per test. Sixteen of those
+/// at once on one machine is not a test of omt, it is a test of the machine —
+/// and it fails as one, on the assertions with a settle window in them, in a
+/// pattern that changes with the load.
+///
+/// The web suite runs its browser cases with one worker for the same reason
+/// and says so in its config. Here it belongs in the file, because a harness
+/// that is only correct when somebody remembers a flag is one that will be run
+/// without it.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// Take the lock, ignoring poisoning.
+///
+/// A test that panicked already failed and reported why; refusing to run the
+/// rest because of it turns one failure into sixteen and hides which was
+/// first.
+fn serially() -> MutexGuard<'static, ()> {
+    ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 use omt_pty::{Pty, PtyConfig, PtySize};
 use omt_term::{GridSize, ScrollbackLimits, TermConfig, Terminal};
@@ -198,6 +222,7 @@ impl Drop for Screen {
 
 #[test]
 fn the_cursor_sits_where_the_shell_is_typing() {
+    let _serial = serially();
     // The bug: panes were drawn one row below their rect, to leave the tab bar
     // its row, and the cursor was placed without that offset — so it sat a row
     // above the line being typed on. Invisible to a byte-level test, obvious to
@@ -223,6 +248,7 @@ fn the_cursor_sits_where_the_shell_is_typing() {
 
 #[test]
 fn the_cursor_is_never_left_on_omts_own_status_row() {
+    let _serial = serially();
     // Where it ended up once every piece of chrome had written: the chrome is
     // drawn after the panes, each piece writes an absolute position, and the
     // last one to write was the status row.
@@ -241,6 +267,7 @@ fn the_cursor_is_never_left_on_omts_own_status_row() {
 
 #[test]
 fn omt_takes_exactly_one_row_and_it_is_the_bottom_one() {
+    let _serial = serially();
     // 19 §2.1: "One row. Always present. Never more than one row, in any
     // configuration." What shipped was two — a tab bar across the top and a
     // hint along the bottom — which on a 24-row terminal is 8% of the screen
@@ -280,6 +307,7 @@ fn omt_takes_exactly_one_row_and_it_is_the_bottom_one() {
 
 #[test]
 fn the_bar_says_which_agent_is_in_the_pane() {
+    let _serial = serially();
     // Reported from real use: start omt, start Claude Code in it, and the bar
     // went on saying "shell". The probe found the agent — `⟨leader⟩ a` listed
     // it — but cell B was built from the thread roster, which is filled by
@@ -314,6 +342,7 @@ fn the_bar_says_which_agent_is_in_the_pane() {
 
 #[test]
 fn the_status_bar_names_the_sessions_rather_than_counting_them() {
+    let _serial = serially();
     // Cell B is "the fastest possible answer to which agent needs me — one
     // glance, no navigation". A count is not that.
     let mut s = Screen::start();
@@ -328,6 +357,7 @@ fn the_status_bar_names_the_sessions_rather_than_counting_them() {
 
 #[test]
 fn an_open_list_is_still_on_screen_after_the_pane_repaints() {
+    let _serial = serially();
     // The overlay redrew only when its text changed, while the panes redraw
     // every frame from their own damage — so the list was painted over within
     // milliseconds and what was left was half a list interleaved with a shell.
@@ -346,6 +376,7 @@ fn an_open_list_is_still_on_screen_after_the_pane_repaints() {
 
 #[test]
 fn the_leader_strip_lists_the_keys_after_a_pause() {
+    let _serial = serially();
     // 16 §3.3: after 250 ms, not instantly, and every key rather than four of
     // nine.
     let mut s = Screen::start();
@@ -362,6 +393,7 @@ fn the_leader_strip_lists_the_keys_after_a_pause() {
 
 #[test]
 fn a_paste_lands_in_one_piece() {
+    let _serial = serially();
     // The loop read one input event per frame, and a frame cost two `git`
     // process spawns — so a pasted paragraph arrived a character at a time.
     let mut s = Screen::start();
@@ -381,6 +413,7 @@ fn a_paste_lands_in_one_piece() {
 
 #[test]
 fn leaving_puts_the_shell_back_where_omt_started_it() {
+    let _serial = serially();
     // Reported from real use: after detaching, the next prompt appears far
     // down the screen. omt prints its first-run summary on the primary screen
     // and then enters the alternate one; whatever it leaves behind on the way
@@ -407,6 +440,7 @@ fn leaving_puts_the_shell_back_where_omt_started_it() {
 
 #[test]
 fn the_bar_names_the_real_claude_and_not_only_a_binary_called_claude() {
+    let _serial = serially();
     // The test above copies omt's own binary to a file named `claude`, which
     // exercises the exe-name half of the fingerprint and nothing else. The
     // report was about the actual agent, and the actual agent differs in every
@@ -458,6 +492,7 @@ fn which(program: &str) -> Option<std::path::PathBuf> {
 
 #[test]
 fn the_agent_list_finds_the_real_claude_that_the_bar_already_found() {
+    let _serial = serially();
     // Reported from real use, and in this exact order: start omt, start Claude
     // Code, press the leader and `a`. The list said there was no agent while
     // the bar in the same frame said `claude`. Two readers of one fact
@@ -521,6 +556,7 @@ fn the_agent_list_finds_the_real_claude_that_the_bar_already_found() {
 
 #[test]
 fn closing_a_list_brings_the_pane_back_without_waiting_for_it_to_repaint() {
+    let _serial = serially();
     // Reported from real use: open `⟨leader⟩ a` over Claude Code, press Esc,
     // and the list stays on the screen for a long time — until the agent
     // happens to paint again, which for one sitting at a prompt is never.
@@ -565,6 +601,7 @@ fn closing_a_list_brings_the_pane_back_without_waiting_for_it_to_repaint() {
 
 #[test]
 fn an_idle_omt_writes_nothing_at_all() {
+    let _serial = serially();
     // The frame runs every `TICK`, and the cursor was placed unconditionally
     // in each one: 619 bytes a second into a terminal where nobody was typing
     // and nothing was running, measured before this was fixed.
@@ -587,6 +624,7 @@ fn an_idle_omt_writes_nothing_at_all() {
 
 #[test]
 fn the_state_comes_from_what_the_agent_says_about_itself() {
+    let _serial = serially();
     // The pane's program sets its own title, and Claude Code puts its state in
     // the first glyph of it: a braille spinner frame while it works, `✳` at
     // rest. That is the agent telling its host what it is doing, through a
@@ -642,6 +680,7 @@ fn the_state_comes_from_what_the_agent_says_about_itself() {
 
 #[test]
 fn a_question_on_the_agents_own_screen_is_somebody_being_waited_for() {
+    let _serial = serially();
     // The state no amount of watching a pty can see. An agent sitting at a
     // permission prompt produces no output and rings no bell: to everything
     // below this it is indistinguishable from an agent that finished. It is
@@ -675,6 +714,7 @@ fn a_question_on_the_agents_own_screen_is_somebody_being_waited_for() {
 
 #[test]
 fn a_found_agent_is_never_described_as_unknown() {
+    let _serial = serially();
     // The word describes omt's knowledge rather than the agent, and beside an
     // agent omt has just found it reads as "omt has no idea what this is" —
     // which is how it was read, twice, by the person it was shown to.

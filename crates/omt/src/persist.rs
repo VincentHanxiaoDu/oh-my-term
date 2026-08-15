@@ -120,6 +120,21 @@ pub fn snapshot_path_for(socket: Option<&std::path::Path>) -> Option<std::path::
     if let Ok(explicit) = std::env::var("OMT_STATE_FILE") {
         return Some(std::path::PathBuf::from(explicit));
     }
+    derived_snapshot_path(socket)
+}
+
+/// The path a socket derives, ignoring any override.
+///
+/// Split out so the derivation can be tested at all. With the override folded
+/// in, a machine that happens to have `OMT_STATE_FILE` set — which is every
+/// machine running omt's own end-to-end suite — makes every derived path
+/// identical, and the test that two instances do not share a snapshot passes
+/// or fails on the environment it was run in rather than on the code.
+///
+/// That is the third time in one session that an inherited environment
+/// variable decided what a test proved.
+#[must_use]
+pub fn derived_snapshot_path(socket: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
     let base = std::env::var("XDG_STATE_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|_| {
@@ -165,8 +180,11 @@ mod tests {
         // running two omts lost one of them silently — and omt's own tests,
         // which spawn instances, restored the user's live sessions into a test
         // and then saved the test's state over theirs.
-        let a = snapshot_path_for(Some(std::path::Path::new("/run/user/1000/omt-a.sock")));
-        let b = snapshot_path_for(Some(std::path::Path::new("/run/user/1000/omt-b.sock")));
+        // The derivation, not the override: `OMT_STATE_FILE` names one file
+        // for everything by design, and a machine with it set would otherwise
+        // make this test pass or fail on its environment.
+        let a = derived_snapshot_path(Some(std::path::Path::new("/run/user/1000/omt-a.sock")));
+        let b = derived_snapshot_path(Some(std::path::Path::new("/run/user/1000/omt-b.sock")));
         assert!(
             a.is_some() && b.is_some(),
             "no state directory to test with"
@@ -186,7 +204,7 @@ mod tests {
     fn a_snapshot_is_named_something_a_person_can_read_in_a_listing() {
         // The socket path is not filename-safe and is long. A directory full
         // of `-var-folders-2x-...-T-omt-502.sock.json` is one nobody can use.
-        let path = snapshot_path_for(Some(std::path::Path::new(
+        let path = derived_snapshot_path(Some(std::path::Path::new(
             "/var/folders/2x/hqbz74zs/T/omt-502.sock",
         )))
         .expect("a path");

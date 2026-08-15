@@ -531,3 +531,91 @@ mod state_word_tests {
         );
     }
 }
+
+/// How much a row wants a person, lowest first.
+///
+/// The order is a product judgment and not an implementation detail:
+///
+/// 1. waiting on you — it cannot continue without you
+/// 2. **done and unseen** — it finished while you were elsewhere
+/// 3. working — it is busy and needs nothing
+/// 4. idle and seen — you have looked at it
+/// 5. anything omt cannot describe
+///
+/// Done outranks working, which reads backwards until you ask what each row
+/// wants. A session still working wants nothing from anybody; a finished one
+/// is the whole reason somebody opened the list. Sorting by "is it moving"
+/// puts the rows that need nothing at the top.
+#[must_use]
+pub fn attention(state: &omt_types::AgentState, seen: bool) -> u8 {
+    match state {
+        omt_types::AgentState::Blocked { .. } => 0,
+        omt_types::AgentState::Idle if !seen => 1,
+        omt_types::AgentState::Working { .. } | omt_types::AgentState::Starting => 2,
+        omt_types::AgentState::Idle => 3,
+        omt_types::AgentState::Exited { .. } | omt_types::AgentState::Unknown => 4,
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod attention_tests {
+    use super::attention;
+    use omt_types::AgentState;
+
+    fn blocked() -> AgentState {
+        AgentState::Blocked {
+            reason: omt_types::BlockReason::Unspecified,
+            interaction: None,
+        }
+    }
+
+    #[test]
+    fn a_finished_result_outranks_something_still_running() {
+        // A session still working wants nothing from anybody. A finished one
+        // is the whole reason somebody opened the list.
+        assert!(
+            attention(&AgentState::Idle, false)
+                < attention(&AgentState::Working { detail: None }, true)
+        );
+    }
+
+    #[test]
+    fn what_cannot_continue_without_you_outranks_everything() {
+        for other in [
+            AgentState::Working { detail: None },
+            AgentState::Idle,
+            AgentState::Starting,
+            AgentState::Unknown,
+        ] {
+            assert!(
+                attention(&blocked(), true) < attention(&other, true),
+                "{other:?}"
+            );
+        }
+        assert!(attention(&blocked(), true) < attention(&AgentState::Idle, false));
+    }
+
+    #[test]
+    fn looking_at_it_moves_it_down() {
+        // The only thing that changes here is whether somebody looked, and it
+        // is the difference between the second row and the fourth.
+        assert!(attention(&AgentState::Idle, false) < attention(&AgentState::Idle, true));
+    }
+
+    #[test]
+    fn the_two_surfaces_order_by_the_same_rule() {
+        // The web client's `attention` has the same five ranks in the same
+        // order. This is the half that can be checked from Rust; the other
+        // half is a unit test over there with the same names in it.
+        assert_eq!(attention(&blocked(), true), 0);
+        assert_eq!(attention(&AgentState::Idle, false), 1);
+        assert_eq!(attention(&AgentState::Working { detail: None }, true), 2);
+        assert_eq!(attention(&AgentState::Idle, true), 3);
+        assert_eq!(attention(&AgentState::Unknown, true), 4);
+    }
+}

@@ -63,7 +63,7 @@
 
 - [x] 6.1 The web client shows the same state, from the same readings
 - [x] 6.2 Done-and-unseen reaches the phone
-- [ ] 6.3 A test that drives both against one instance and compares
+- [x] 6.3 A test that drives both against one instance and compares
 
 ## 6b. Where observation lives
 
@@ -79,7 +79,8 @@
 
 ## 7. Close-out
 
-- [ ] 7.1 clippy, workspace tests, layering, codegen
-- [ ] 7.2 `npm run check`
-- [ ] 7.3 The reported sequence, end to end: omt, then the real agent, then ask
-      omt what is running — in a harness with no inherited agent environment
+- [x] 7.1 clippy, workspace tests, layering, codegen
+- [x] 7.2 `npm run check`
+- [x] 7.3 The reported sequence, end to end: omt, then the real agent, then ask
+      omt what is running — in a harness with no inherited agent environment.
+      It names the agent, and the "not identified" line does not appear.
