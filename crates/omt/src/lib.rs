@@ -36,9 +36,11 @@ pub mod state;
 pub mod surfaces;
 pub mod transcript;
 
+mod backing;
 pub mod client;
 mod firstrun;
 pub mod hooks;
+pub mod lifecycle;
 pub mod serve;
 pub mod stream;
 mod terminal_bits;

@@ -16,6 +16,7 @@ use omt_session::{WriterPolicy, WriterState};
 use omt_term::TermMode;
 use omt_tui::{Input, RawGuard, Screen};
 
+use crate::backing::{Attached, backing};
 use crate::rows::{agent_rows, agent_short_name, conversation_of, session_rows};
 use crate::terminal_bits::{announce, host_colours, setting, sound_file};
 
@@ -97,6 +98,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             let _ = crate::serve::serve_beside(&path, served);
         });
     }
+    // Nothing yet: this terminal owns its sessions until it is told to attach
+    // to an instance instead. The seam reads this to decide which it is.
+    let mut attached: Option<Attached> = None;
     let socket_text = hook_socket.display().to_string();
     let mut instance = state.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
     let cwd = crate::state::canonical_root(
@@ -202,6 +206,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
     'session: loop {
         let mut instance = state.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
+
         // Whether this iteration has anything to draw.
         //
         // The loop runs at `TICK` and drew every time, which is 125 walks of
@@ -226,9 +231,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // Whether anything came off the pty is the floor's only signal, so
             // it is recorded here rather than asked for later: by the time the
             // probe runs, the pump that saw the bytes has returned.
-            let produced = instance
-                .pump_session(pane.session)
-                .context("pumping the session")?;
+            let produced = backing(&mut instance, &mut attached).pump(pane.session)?;
             if !produced.is_empty() {
                 pane.last_output_ms = monotonic_ms();
                 anything_happened = true;
@@ -425,9 +428,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 pane.screen.invalidate();
             }
             for (pane, rect) in panes.iter().zip(&rects) {
-                if let Some(rt) = instance.runtime_mut(pane.session) {
-                    rt.resize(rect.cols, rect.rows).context("resizing")?;
-                }
+                backing(&mut instance, &mut attached).resize(pane.session, rect.cols, rect.rows)?;
             }
             draw_separators(&mut out, &rects).context("drawing separators")?;
             layout_dirty = false;
@@ -435,25 +436,18 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
         let mut mode = EncodeMode::default();
         for (i, (pane, rect)) in panes.iter_mut().zip(&rects).enumerate() {
-            let Some(runtime) = instance.runtime(pane.session) else {
+            let seam = backing(&mut instance, &mut attached);
+            let Some(terminal) = seam.terminal(pane.session) else {
                 continue;
             };
             if i == focus {
                 mode = EncodeMode {
-                    application_cursor: runtime
-                        .terminal()
-                        .modes()
-                        .contains(TermMode::ApplicationCursor),
+                    application_cursor: terminal.modes().contains(TermMode::ApplicationCursor),
                 };
             }
             pane.screen
                 // Offset by the tab bar, which owns the first row.
-                .draw_at(
-                    &mut out,
-                    runtime.terminal().grid(),
-                    rect.col,
-                    rect.row + CHROME_ROWS,
-                )
+                .draw_at(&mut out, terminal.grid(), rect.col, rect.row + CHROME_ROWS)
                 .context("drawing")?;
         }
 

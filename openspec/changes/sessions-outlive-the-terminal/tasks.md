@@ -25,11 +25,11 @@
 
 ## 4. The client
 
-- [ ] 4.1 Connect, subscribe, feed a local emulator per session
-- [ ] 4.2 Input over the socket, with the writer epoch
+- [x] 4.1 Connect, subscribe, feed a local emulator per session
+- [x] 4.2 Input over the socket, with the writer epoch
 - [ ] 4.3 Agent state, rosters and cards from the event stream rather than a
       local instance
-- [ ] 4.4 Resize
+- [x] 4.4 Resize
 
 ## 5. The seam in the frame loop
 
@@ -40,7 +40,7 @@
 
 ## 6. Lifecycle
 
-- [ ] 6.1 Discover an instance; start one when there is none
+- [x] 6.1 Discover an instance; start one when there is none
 - [ ] 6.2 Quitting detaches, and the sessions keep running
 - [ ] 6.3 Starting again finds them and repaints
 - [ ] 6.4 The key says `detach` again, and the confirmation keeps the case it
