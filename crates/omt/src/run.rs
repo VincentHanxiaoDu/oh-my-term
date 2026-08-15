@@ -146,6 +146,26 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // `break` on detach would leave the drain and carry straight on drawing
     // frames, and omt would refuse to exit.
     'session: loop {
+        // Whether this iteration has anything to draw.
+        //
+        // The loop runs at `TICK` and drew every time, which is 125 walks of
+        // every pane's grid per second on a screen where nothing is happening
+        // — measured at 1% of a core per pane, idle, which is a laptop on
+        // battery being asked to do nothing at a steady rate.
+        //
+        // The pump still runs every tick: it is what *reads* the pty, and a
+        // read skipped is output delayed. What is gated is the drawing, and
+        // the signals below are deliberately generous — a missed repaint is a
+        // stale screen, which is far worse than a wasted one.
+        // The leader being armed counts, and it is the interesting case: the
+        // which-key strip appears 250 ms *after* the key, on a timer rather
+        // than on an event. A gate that only knows about events skips the
+        // frame that would draw it, and the strip never appears — which is
+        // exactly what happened, and is the shape of every bug this kind of
+        // optimisation causes. Anything that changes with time and not with
+        // input has to say so here.
+        let mut anything_happened = layout_dirty || overlay.is_some() || armed;
+
         for pane in &mut panes {
             // Whether anything came off the pty is the floor's only signal, so
             // it is recorded here rather than asked for later: by the time the
@@ -155,6 +175,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 .context("pumping the session")?;
             if !produced.is_empty() {
                 pane.last_output_ms = monotonic_ms();
+                anything_happened = true;
             }
         }
 
@@ -180,10 +201,19 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // probed at all — two surfaces, one of which could see agents and
             // one of which structurally could not.
             let detection = instance.observe_session(pane.session, pane.binding, &refs, now);
+            let before = pane.agent.as_ref().map(|p| p.detection.agent);
             pane.agent = detection.map(|detection| crate::probe::Probed {
                 activity: crate::probe::activity(quiet_ms < 1_000, false, quiet_ms / 1_000),
                 detection,
             });
+            // Observation runs on its own timer, so what it finds arrives
+            // without any event to hang a repaint on. The status bar names the
+            // agent in a pane; without this the pane keeps saying "shell"
+            // until something else happens to redraw it, which for a shell
+            // sitting at a prompt is until somebody types.
+            if before != pane.agent.as_ref().map(|p| p.detection.agent) {
+                anything_happened = true;
+            }
             if pane.agent.is_some() {
                 // The floor, which is this surface's own contribution: it is
                 // the one that knows whether bytes arrived on *this* pty.
@@ -221,6 +251,21 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         }
         if panes.is_empty() {
             break 'session;
+        }
+        if panes.len() != before {
+            // A pane went. Everything moves.
+            anything_happened = true;
+        }
+
+        // Nothing changed and nothing is waiting to be typed. Wait out the
+        // tick here and go round again without drawing.
+        //
+        // `poll` does not consume, so the input loop at the bottom of the
+        // frame still reads whatever arrives — this only decides whether the
+        // walk over every pane's grid is worth doing, and the pump above has
+        // already run, so output is never delayed by it.
+        if !anything_happened && !crossterm::event::poll(TICK).context("polling for input")? {
+            continue 'session;
         }
 
         // Where each pane goes, from the tree rather than from a count. Panes

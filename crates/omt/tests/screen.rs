@@ -917,3 +917,45 @@ fn the_cursor_leaves_the_pane_while_a_list_is_over_it() {
     assert!(!over, "the cursor stayed in the pane under an open list");
     assert!(back, "the cursor did not come back when the list closed");
 }
+
+#[test]
+fn a_screen_that_changes_on_a_timer_still_repaints() {
+    let _serial = serially();
+    // The frame is only drawn when something happened, which is what keeps an
+    // idle omt off the processor. The danger in that is everything that
+    // changes *with time* rather than with input: it has no event to hang a
+    // repaint on, and a gate that only knows about events skips the frame that
+    // would show it.
+    //
+    // Two of those shipped broken within minutes of the gate being added — the
+    // which-key strip, which appears 250 ms after the leader, and the status
+    // bar naming an agent found by a probe on its own timer. This is the guard
+    // for the next one.
+    let mut s = Screen::start();
+    s.settle(2.0);
+
+    // Nothing is typed after the leader. The strip has to appear anyway.
+    s.type_in("\x02");
+    s.settle(1.5);
+    let strip = s.screen();
+    s.type_in("\x1b");
+    s.settle(0.5);
+
+    assert!(
+        strip.contains("detach"),
+        "the strip never appeared, so a timed repaint was skipped:\n{strip}"
+    );
+
+    // And a program that identifies itself is named without anything else
+    // happening: the title is parsed by the pump, the probe reads it on its
+    // own interval, and no keystroke is involved.
+    s.type_in("printf '\\e]0;\u{2733} Claude Code\\a'\r");
+    s.settle(3.0);
+    let bar = s.row(ROWS - 1);
+    s.type_in("\x04");
+
+    assert!(
+        bar.to_lowercase().contains("claude"),
+        "the bar did not repaint when the probe found an agent: {bar:?}"
+    );
+}
