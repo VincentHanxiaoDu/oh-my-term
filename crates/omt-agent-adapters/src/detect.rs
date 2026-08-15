@@ -430,6 +430,47 @@ mod title_tests {
     }
 
     #[test]
+    fn the_spinner_is_the_one_the_shipped_binary_actually_draws() {
+        // Captured from Claude Code while it worked: `◐ Claude Code`, then
+        // `◑`, cycling. The rule said braille, taken from somebody else's
+        // manifest and never checked against the thing it describes — so a
+        // working agent read as idle, which is the report that found it.
+        let set = adapters();
+        for title in ["\u{25d0} Claude Code", "\u{25d1} Claude Code"] {
+            let read = detect_from_title(&set.all(), title).expect("a reading");
+            assert_eq!(
+                read.activity,
+                Some(TitleActivity::Working),
+                "{title:?} read as {:?}",
+                read.activity
+            );
+        }
+    }
+
+    #[test]
+    fn the_state_is_read_even_when_the_title_stops_naming_the_agent() {
+        // While it works, the title becomes the *question* — `◐ Count from 1
+        // to 20 slowly` — and the agent's name is gone from it entirely. The
+        // name is what identity matches on, so state has to be asked of the
+        // agent already identified rather than of the title's text.
+        let set = adapters();
+        let all = set.all();
+        assert!(
+            detect_from_title(&all, "\u{25d0} Count from 1 to 20 slowly").is_none(),
+            "a title with no agent name must not identify one"
+        );
+        let marks = all
+            .iter()
+            .find(|a| a.kind() == AgentKind::ClaudeCode)
+            .and_then(|a| a.fingerprint().title)
+            .expect("title marks");
+        assert_eq!(
+            activity_from_title(&marks, "\u{25d0} Count from 1 to 20 slowly"),
+            Some(TitleActivity::Working)
+        );
+    }
+
+    #[test]
     fn a_working_agent_is_a_spinner_frame_not_a_list_of_them() {
         // A spinner is an animation, and enumerating its frames is a list that
         // goes stale on the next frame they add. The whole braille block is

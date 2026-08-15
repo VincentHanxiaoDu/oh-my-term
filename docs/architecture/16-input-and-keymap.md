@@ -525,6 +525,45 @@ Design points, each for a reason:
 - **The inner program is not told anything.** No bytes are written while
   pending. The pane is visually unchanged apart from the strip.
 
+### 3.3b What the strip lists, and why it cannot list everything
+
+The bindings, in the order the strip drops them:
+
+| Key | Action |
+|---|---|
+| `d` | detach |
+| `c` | new session |
+| `s` / `S` | split beside / below |
+| `h` `j` `k` `l` | move focus by direction |
+| `H` `J` `K` `L` | move the *pane* by direction |
+| `z` | zoom the focused pane, and back |
+| `!` | focus the next agent waiting for a person |
+| `a` | the agent list |
+| `w` | the session list |
+| `g` | the agent panel ([19 §2.1b](19-terminal-ux.md#21b-the-agent-panel-chrome-that-takes-columns)) |
+| `x` | close the pane |
+| `p` | the palette |
+| `1`–`9` | focus the pane with that number in the status bar |
+| `;` | back to the pane focus was in before |
+| `o` | cycle panes |
+| `?` | every key |
+
+**There are more actions than a row can hold, and there always will be.** That
+is not a failure of the table; it is what a one-row strip means. So the order
+above is a **priority order**: the strip is built to the terminal's width,
+drops from the end, and puts a marker pointing at `?` when it has dropped
+anything.
+
+What must survive an ordinary terminal is what somebody opened the strip to
+find — how to leave, how to arrange, and which agent wants them. `palette` and
+the numbers fall off a 100-column screen and are reached through `?`, which is
+the escape hatch that makes a short strip honest rather than lossy.
+
+The failure this replaced: the strip was built at whatever width its labels
+came to and then *truncated* to the terminal, so it silently lost its last
+entries. Three keys were added over one session and each pushed another off the
+end, with nothing to notice it — which is why the width is now a test.
+
 ### 3.4 Timeout and escape hatches
 
 | Event while pending | Behaviour |

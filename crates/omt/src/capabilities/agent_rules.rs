@@ -545,6 +545,23 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_name_is_refused_rather_than_accepted() {
+        // A row with nothing in it is worse than one saying `shell`, because
+        // at least `shell` is true.
+        for name in ["", "   ", "\t"] {
+            let refused = <AgentRulesHandler as CapabilityHandler<SessionRename>>::call(
+                &handler(),
+                &ctx(),
+                RenameIn {
+                    session: "sess_0123456789abcdef0123456789abcdef".to_owned(),
+                    title: name.to_owned(),
+                },
+            );
+            assert!(refused.is_err(), "`{name:?}` was accepted as a name");
+        }
+    }
+
+    #[test]
     fn importing_refuses_exactly_what_inspecting_refuses() {
         // One path, so what was shown cannot differ from what was installed.
         let bad = r#"
@@ -565,4 +582,254 @@ mod tests {
         );
         assert!(refused.is_err(), "import accepted what inspect refused");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Naming a session
+// ---------------------------------------------------------------------------
+
+/// Input to `session.rename`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RenameIn {
+    /// Which session.
+    pub session: String,
+    /// What to call it.
+    pub title: String,
+}
+
+/// What `session.rename` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct RenameOut {
+    /// The name it now has.
+    pub title: String,
+}
+
+capability! {
+    /// Give a session a name.
+    pub struct SessionRename;
+    input  = RenameIn,
+    output = RenameOut,
+    decl = Decl {
+        name: "session.rename",
+        group: "session",
+        verb: "rename",
+        title: "Rename a session",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::empty(),
+        // LwwFreeText: it is a name somebody typed, and the last one typed is
+        // the one they meant. Two people renaming the same session is not a
+        // conflict worth a merge.
+        intent: Some(Intent::LwwFreeText),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "A roster of six things called `shell` is what omt shows without this. Detection answers it for agents; for everything else the answer is letting somebody say what a thing is.",
+    },
+}
+
+impl CapabilityHandler<SessionRename> for AgentRulesHandler {
+    fn call(&self, _ctx: &CallContext, input: RenameIn) -> Result<RenameOut, CapabilityError> {
+        let title = input.title.trim().to_owned();
+        if title.is_empty() {
+            // Refused rather than accepted: a row with nothing in it is worse
+            // than one saying `shell`, because at least `shell` is true.
+            return Err(CapabilityError::invalid_input(
+                "a session's name cannot be empty",
+            ));
+        }
+        let id = omt_types::SessionId::from_wire(&input.session).ok_or_else(|| {
+            CapabilityError::invalid_input(format!("`{}` is not a session id", input.session))
+        })?;
+        let mut instance = self.0.lock()?;
+        let session = instance
+            .session_mut(id)
+            .ok_or_else(|| CapabilityError::not_found("no such session"))?;
+        session.title.clone_from(&title);
+        Ok(RenameOut { title })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
+/// Where an agent keeps the settings its hooks live in.
+///
+/// One agent for now, because one agent has hooks omt knows how to write. A
+/// list keyed by agent is what this becomes when a second one does.
+fn hook_settings_for(agent: omt_types::AgentKind) -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    match agent {
+        omt_types::AgentKind::ClaudeCode => {
+            Some(std::path::PathBuf::from(home).join(".claude/settings.json"))
+        }
+        _ => None,
+    }
+}
+
+/// Input to `agent.hooks_plan`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HooksPlanIn {
+    /// Which agent's settings to plan against.
+    pub agent: String,
+}
+
+/// What `agent.hooks_plan` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct HooksPlanOut {
+    /// The file that would change.
+    pub path: String,
+    /// Whether anything would change.
+    pub changes: bool,
+    /// The change, as a diff somebody can read before agreeing to it.
+    pub diff: String,
+    /// Whether the hooks are installed and current.
+    pub installed: bool,
+}
+
+capability! {
+    /// Say what installing omt's hooks would change.
+    pub struct AgentHooksPlan;
+    input  = HooksPlanIn,
+    output = HooksPlanOut,
+    decl = Decl {
+        name: "agent.hooks_plan",
+        group: "agent",
+        verb: "hooks_plan",
+        title: "Plan a hook install",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Operator,
+        effects: Effects::READS_FS,
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "The diff, before the write. omt edits a file the agent owns and somebody else may have written their own hooks into, so what changes is shown first.",
+    },
+}
+
+impl CapabilityHandler<AgentHooksPlan> for AgentRulesHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: HooksPlanIn,
+    ) -> Result<HooksPlanOut, CapabilityError> {
+        let (path, plan) = hook_plan(&input.agent)?;
+        Ok(HooksPlanOut {
+            path: path.display().to_string(),
+            changes: plan.changes,
+            diff: plan.diff(),
+            installed: !plan.changes,
+        })
+    }
+}
+
+/// Input to `agent.hooks_install`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HooksInstallIn {
+    /// Which agent.
+    pub agent: String,
+}
+
+/// What `agent.hooks_install` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct HooksInstallOut {
+    /// The file that was written.
+    pub path: String,
+    /// Whether it needed writing.
+    pub changed: bool,
+}
+
+capability! {
+    /// Install omt's hooks into an agent's settings.
+    pub struct AgentHooksInstall;
+    input  = HooksInstallIn,
+    output = HooksInstallOut,
+    decl = Decl {
+        name: "agent.hooks_install",
+        group: "agent",
+        verb: "hooks_install",
+        title: "Install omt's hooks",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Command,
+        role: Role::Operator,
+        effects: Effects::WRITES_FS,
+        // Cas: installing twice replaces omt's own entry rather than adding a
+        // second one that also fires.
+        intent: Some(Intent::Cas),
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "Without these, an agent's structured question — the tool call that offers options — never reaches omt, and a card that could have been answered on a phone is a prompt only the terminal can see.",
+    },
+}
+
+impl CapabilityHandler<AgentHooksInstall> for AgentRulesHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: HooksInstallIn,
+    ) -> Result<HooksInstallOut, CapabilityError> {
+        let (path, plan) = hook_plan(&input.agent)?;
+        if !plan.changes {
+            return Ok(HooksInstallOut {
+                path: path.display().to_string(),
+                changed: false,
+            });
+        }
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| {
+                CapabilityError::internal(format!("creating the settings directory: {e}"))
+            })?;
+        }
+        std::fs::write(&path, &plan.after)
+            .map_err(|e| CapabilityError::internal(format!("writing the settings: {e}")))?;
+        Ok(HooksInstallOut {
+            path: path.display().to_string(),
+            changed: true,
+        })
+    }
+}
+
+/// The plan for one agent, and where it would go.
+fn hook_plan(
+    agent: &str,
+) -> Result<(std::path::PathBuf, omt_agent_adapters::install::Plan), CapabilityError> {
+    let kind = match agent.to_lowercase().as_str() {
+        "claudecode" | "claude" | "claude_code" => omt_types::AgentKind::ClaudeCode,
+        other => {
+            return Err(CapabilityError::invalid_input(format!(
+                "omt does not know where `{other}` keeps its hooks"
+            )));
+        }
+    };
+    let path = hook_settings_for(kind).ok_or_else(|| {
+        CapabilityError::precondition_failed("HOME is not set, so there is no settings file")
+    })?;
+    // A missing file is an empty one: the first install creates it, which is
+    // the ordinary case on a machine where the agent has never been
+    // configured.
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    // The hook binary beside this one, not whatever is on PATH: a PATH that
+    // changes between installing and firing is a hook that silently stops
+    // working.
+    let command = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("omt-hook")))
+        .map_or_else(|| "omt-hook".to_owned(), |p| p.display().to_string());
+
+    omt_agent_adapters::install::plan_install(
+        &path.display().to_string(),
+        &existing,
+        kind,
+        &command,
+    )
+    .map(|plan| (path, plan))
+    .map_err(|e| CapabilityError::precondition_failed(e.to_string()))
 }

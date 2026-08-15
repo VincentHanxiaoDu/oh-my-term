@@ -297,6 +297,15 @@ mod tests {
                     // thing as a listed key and listing both would double the
                     // strip's width to say one thing twice.
                     || matches!(key, 'n' | 's' | 'c' | 'o' | '?' | 'S')
+                    // Advertised by the entry above them: `hjkl` covers the
+                    // four directions and `HJKL` moves the pane the same way,
+                    // and `;` is the pair of `hjkl` rather than an eleventh
+                    // entry on a row that has none to spare.
+                    || matches!(key, 'H' | 'J' | 'K' | 'L' | ';')
+                    // `2` through `9`, advertised by the entry for `1` as
+                    // `1-9 pane`. Nine entries for nine digits would be the
+                    // whole row.
+                    || key.is_ascii_digit()
                     // The other three directions, advertised as `hjkl focus`
                     // by the entry for `h`. Four separate entries spent the
                     // strip's entire width and pushed `sessions` off the end
@@ -412,40 +421,56 @@ mod strip_width_tests {
 mod strip_budget_tests {
     use super::*;
 
-    /// The narrowest terminal the whole strip must still fit in.
+    /// The narrowest terminal the *important* keys must still be advertised in.
     ///
-    /// Not a guess: it is the width the screen tests drive, and a common
-    /// terminal. Below it the strip drops entries and says so, which is the
-    /// designed behaviour; at it and above, every key is advertised.
-    const BUDGET: usize = 100;
+    /// Not "everything fits": there are more actions than one row can hold,
+    /// and there always will be. The strip drops from the end and says so,
+    /// which is designed — what this pins is that the ones people open the
+    /// strip to find survive it.
+    const ORDINARY: u16 = 100;
+
+    /// How many entries have to be there at that width.
+    ///
+    /// The first seven, which is detach through agents: leaving, making,
+    /// arranging, and the two that answer "which agent wants me". Everything
+    /// after is reachable through `^B ?`.
+    const MUST_SURVIVE: usize = 7;
 
     #[test]
-    fn every_key_fits_in_an_ordinary_terminal() {
+    fn the_keys_people_open_it_for_survive_an_ordinary_terminal() {
         // Three times in one session a key was added and pushed another off
-        // the end of the screen — `sessions`, then `agents`, then `palette` —
-        // and each time nothing failed, because no test knew the row had a
-        // budget. Adding an entry has to come from somewhere, and this is
-        // where that shows up.
-        let strip = pending_strip_within(u16::try_from(BUDGET).expect("a width"));
+        // the end — `sessions`, then `agents`, then `palette` — and each time
+        // nothing failed, because no test knew the row had a budget.
+        let strip = pending_strip_within(ORDINARY);
         assert!(
-            !strip.contains('…'),
-            "the strip does not fit {BUDGET} columns and dropped keys: {strip:?}"
+            strip.chars().count() <= usize::from(ORDINARY),
+            "the strip overran its width: {strip:?}"
         );
-        for (_, label) in crate::app::LEADER_KEYS {
-            assert!(strip.contains(label), "`{label}` was dropped: {strip:?}");
+        for (_, label) in crate::app::LEADER_KEYS.iter().take(MUST_SURVIVE) {
+            assert!(
+                strip.contains(label),
+                "`{label}` is in the first {MUST_SURVIVE} and was dropped: {strip:?}"
+            );
         }
     }
 
     #[test]
-    fn it_is_not_merely_fitting_by_a_character() {
-        // A row exactly at the budget is a row the next label breaks. Some
-        // slack, so the next key added fails this test rather than a user's
-        // screen.
-        let strip = pending_strip_within(u16::MAX);
+    fn dropping_anything_is_said_rather_than_silent() {
+        // A menu that quietly shows less than it has is worse than one that
+        // admits it.
+        let narrow = pending_strip_within(40);
         assert!(
-            strip.chars().count() <= BUDGET,
-            "the strip is {} columns and the budget is {BUDGET}: {strip:?}",
-            strip.chars().count()
+            narrow.contains('…'),
+            "keys were dropped in silence: {narrow:?}"
         );
+    }
+
+    #[test]
+    fn a_wide_terminal_advertises_every_key_in_the_table() {
+        let wide = pending_strip_within(u16::MAX);
+        for (_, label) in crate::app::LEADER_KEYS {
+            assert!(wide.contains(label), "`{label}` missing from {wide:?}");
+        }
+        assert!(!wide.contains('…'), "{wide:?}");
     }
 }

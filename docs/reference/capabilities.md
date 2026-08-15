@@ -12,6 +12,8 @@ vanishing.
 | `agent.attention` | query | viewer | Baselines are per binding and learned from its own history: thirty seconds is an eternity for a linter and a blink for a test suite, so a fixed threshold is wrong for everybody. |
 | `agent.compare` | query | viewer | Presents comparable facts; never ranks, scores or recommends. Judging requires understanding the code, and a plausible wrong recommendation about which branch to keep costs somebody real work. |
 | `agent.connect` | command | operator | Run an agent's own protocol server and fold its notifications into the session's event stream. Anything the adapter cannot map is reported by name rather than dropped. |
+| `agent.hooks_install` | command | operator | Without these, an agent's structured question — the tool call that offers options — never reaches omt, and a card that could have been answered on a phone is a prompt only the terminal can see. |
+| `agent.hooks_plan` | query | operator | The diff, before the write. omt edits a file the agent owns and somebody else may have written their own hooks into, so what changes is shown first. |
 | `agent.interrupt` | command | operator | Stop an agent. For an agent with no protocol of its own this is the entire remote control surface. |
 | `agent.offers` | query | viewer | Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none. |
 | `agent.threads` | query | viewer | Every thread in a session — the main one and each subagent — with what it is doing and any card it raised. |
@@ -121,6 +123,7 @@ vanishing.
 | `session.list` | query | viewer | Every session this instance holds, optionally filtered to one workspace. |
 | `session.read` | query | viewer | The visible screen as text, optionally with scrollback. |
 | `session.release` | command | operator | Give up the writer token. Idempotent: releasing one you do not hold is not an error. |
+| `session.rename` | command | operator | A roster of six things called `shell` is what omt shows without this. Detection answers it for agents; for everything else the answer is letting somebody say what a thing is. |
 | `session.resize` | command | operator | Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with. |
 | `session.restart` | command | operator | Respawn the command behind a session restored from a snapshot, keeping the old output above a separator. |
 | `session.scrollback` | query | viewer | History as styled lines, by absolute row. Structured rather than raw bytes, so a browser needs no second terminal emulator to show what scrolled past. |
@@ -155,7 +158,7 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-145 capabilities.
+148 capabilities.
 
 ## Parity exemptions
 

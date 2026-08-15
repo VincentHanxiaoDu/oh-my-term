@@ -81,6 +81,20 @@ pub enum Input {
     SplitDown,
     /// Show or hide the agent panel.
     Panel,
+    /// Fill the screen with the focused pane, or put it back.
+    Zoom,
+    /// Move focus to the pane it was in before this one.
+    LastPane,
+    /// Move the focused pane in a direction, rather than the focus.
+    Swap(crate::tree::Towards),
+    /// Focus the next agent that needs a person.
+    NextWaiting,
+    /// Focus a pane by the number the status bar gives it.
+    ///
+    /// One-based, because the bar reads `1:zsh 2:claude` and a key that
+    /// disagreed with what is written on the screen would be worse than no
+    /// key at all.
+    Goto(usize),
     /// Move focus in a direction.
     ///
     /// Geometric, not "the next one in a list": with more than two panes,
@@ -163,29 +177,31 @@ pub fn translate(event: &Event, armed: bool, mode: EncodeMode) -> (Input, bool) 
 /// The order is the order the strip lists them in: leaving, then making, then
 /// moving, then finding.
 pub const LEADER_KEYS: &[(char, &str)] = &[
-    // Short labels, and the shortness is load-bearing: this is one row, and at
-    // 100 columns the longer wording did not fit — so `sessions` and `agents`
-    // were dropped off the end, which are the two keys somebody is most likely
-    // to have opened the strip to find.
+    // Short labels, and the shortness is load-bearing: this is one row.
     //
-    // The order is a priority order. A narrow terminal drops from the end.
+    // **The order is a priority order**, and it is the whole design of this
+    // table. There are more actions than a row can hold — that was true at ten
+    // and is truer at fourteen — so the strip drops from the end and says so
+    // with a marker pointing at the full list. What must survive a narrow
+    // terminal is what somebody is most likely to have opened the strip to
+    // find, which is why `waiting` and `agents` are above `panel` and
+    // `palette` rather than in the order they were added.
     ('d', "detach"),
     ('c', "new"),
-    // One entry for both directions, and one for all four arrows. The row has
-    // a hard width and every entry added has to come from somewhere: listing
-    // `S` and each arrow separately pushed `palette` off the end of the
-    // screen, which is a key somebody reaches for far more often than any one
-    // of them.
     ('s', "s/S split"),
-    ('h', "hjkl move"),
-    ('w', "sessions"),
+    ('h', "hjkl/HJKL"),
+    ('z', "zoom"),
+    ('!', "waiting"),
     ('a', "agents"),
+    ('w', "sessions"),
     ('g', "panel"),
     ('x', "close"),
     ('p', "palette"),
+    ('1', "1-9 pane"),
     // Bound and deliberately not listed: `o` cycles panes, which is what
     // `hjkl` does less precisely; `j`, `k` and `l` are the other three
-    // directions; and `?` opens the full list, which is a strange thing to
+    // directions and `HJKL` moves the pane the same way; `;` returns to the
+    // last pane; and `?` opens the full list, which is a strange thing to
     // advertise *on* the list of keys — the overflow marker points at it when
     // there is more to see.
 ];
@@ -200,6 +216,16 @@ pub fn leader_action(key: char) -> Option<Input> {
         'd' => Input::Detach,
         'S' => Input::SplitDown,
         'g' => Input::Panel,
+        'z' => Input::Zoom,
+        ';' => Input::LastPane,
+        'H' => Input::Swap(crate::tree::Towards::Left),
+        'J' => Input::Swap(crate::tree::Towards::Down),
+        'K' => Input::Swap(crate::tree::Towards::Up),
+        'L' => Input::Swap(crate::tree::Towards::Right),
+        '!' => Input::NextWaiting,
+        // The numbers the status bar already writes. Everybody's fingers do
+        // this before they read any documentation.
+        digit @ '1'..='9' => Input::Goto(digit.to_digit(10).unwrap_or(1) as usize),
         'h' => Input::Focus(crate::tree::Towards::Left),
         'j' => Input::Focus(crate::tree::Towards::Down),
         'k' => Input::Focus(crate::tree::Towards::Up),
@@ -454,7 +480,7 @@ mod tests {
     fn an_unrecognized_command_does_nothing_rather_than_reaching_the_program() {
         // A mistyped chord that silently ran something is worse than one that
         // did not.
-        let (input, armed) = translate(&plain('z'), true, EncodeMode::default());
+        let (input, armed) = translate(&plain('~'), true, EncodeMode::default());
         assert_eq!(input, Input::Ignore);
         assert!(!armed);
     }

@@ -220,6 +220,73 @@ impl Node {
     }
 }
 
+impl Node {
+    /// Exchange two panes, wherever they are in the tree.
+    ///
+    /// Moving the pane rather than the focus. The alternative — focus staying
+    /// where it was, so the pane just moved is no longer the one being typed
+    /// in — is what every multiplexer that does it that way gets reports
+    /// about.
+    ///
+    /// Returns whether anything moved, so a caller can tell "there was nothing
+    /// that way" from "done".
+    pub fn swap(&mut self, one: PaneId, other: PaneId) -> bool {
+        if one == other {
+            return false;
+        }
+        // Both, before either. Exchanging as they are found applies half a
+        // swap when the second pane is not in the tree: the first becomes the
+        // second's id, which is a pane that does not exist, and the pane that
+        // was there is gone.
+        let panes = self.panes();
+        if !panes.contains(&one) || !panes.contains(&other) {
+            return false;
+        }
+        let mut a = false;
+        let mut b = false;
+        self.exchange(one, other, &mut a, &mut b);
+        true
+    }
+
+    fn exchange(&mut self, one: PaneId, other: PaneId, a: &mut bool, b: &mut bool) {
+        match self {
+            Self::Pane(pane) if *pane == one => {
+                *pane = other;
+                *a = true;
+            }
+            Self::Pane(pane) if *pane == other => {
+                *pane = one;
+                *b = true;
+            }
+            Self::Pane(_) => {}
+            Self::Split { first, second, .. } => {
+                first.exchange(one, other, a, b);
+                second.exchange(one, other, a, b);
+            }
+        }
+    }
+}
+
+/// Where every pane goes, with one of them filling the area.
+///
+/// A view, not a rearrangement. The tree is untouched, so zooming out restores
+/// the arrangement exactly — ratios included — and a split made while zoomed
+/// lands where it would have. Rearranging and restoring would be a second
+/// implementation of this tree that has to agree with the first, and the way
+/// they disagree is that somebody's ratios come back rounded.
+///
+/// `None` for the zoomed pane is the ordinary arrangement, so a caller holds
+/// one `Option` rather than two code paths.
+#[must_use]
+pub fn place_with_zoom(tree: &Node, area: Rect, zoomed: Option<PaneId>) -> Vec<Placed> {
+    match zoomed {
+        // Only if it is still there: a zoomed pane whose session ended must
+        // not blank the screen.
+        Some(pane) if tree.panes().contains(&pane) => vec![Placed { pane, rect: area }],
+        _ => tree.place(area),
+    }
+}
+
 /// The pane in a direction from another, by where they are on screen.
 ///
 /// Geometric rather than structural: "the pane to the right" means the one a
@@ -622,5 +689,181 @@ mod tests {
         tree.split(p(1), p(3), Split::Horizontal);
         assert_eq!(tree.panes(), vec![p(1), p(3), p(2)]);
         assert_eq!(tree.count(), 3);
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "in a test, expect() is the assertion"
+)]
+mod swap_tests {
+    use super::*;
+
+    const SCREEN: Rect = Rect {
+        col: 0,
+        row: 0,
+        cols: 200,
+        rows: 50,
+    };
+
+    fn p(n: u32) -> PaneId {
+        PaneId(n)
+    }
+
+    fn two_by_two() -> Node {
+        let mut tree = Node::leaf(p(1));
+        tree.split(p(1), p(2), Split::Vertical);
+        tree.split(p(1), p(3), Split::Horizontal);
+        tree.split(p(2), p(4), Split::Horizontal);
+        tree
+    }
+
+    #[test]
+    fn swapping_exchanges_where_two_panes_are_drawn() {
+        let mut tree = two_by_two();
+        let before: Vec<Rect> = tree.place(SCREEN).iter().map(|x| x.rect).collect();
+        let one = tree
+            .place(SCREEN)
+            .iter()
+            .find(|x| x.pane == p(1))
+            .expect("pane 1")
+            .rect;
+        let two = tree
+            .place(SCREEN)
+            .iter()
+            .find(|x| x.pane == p(2))
+            .expect("pane 2")
+            .rect;
+
+        assert!(tree.swap(p(1), p(2)));
+        let after = tree.place(SCREEN);
+        assert_eq!(
+            after.iter().find(|x| x.pane == p(1)).expect("pane 1").rect,
+            two
+        );
+        assert_eq!(
+            after.iter().find(|x| x.pane == p(2)).expect("pane 2").rect,
+            one
+        );
+        // The shape is untouched: the same rectangles, differently occupied.
+        let rects: Vec<Rect> = after.iter().map(|x| x.rect).collect();
+        assert_eq!(rects, before);
+    }
+
+    #[test]
+    fn a_swap_never_loses_or_duplicates_a_pane() {
+        // The invariant every tree operation has to keep, and the one a
+        // hand-written exchange gets wrong by assigning both leaves the same
+        // id.
+        let mut tree = two_by_two();
+        let before = tree.panes();
+        tree.swap(p(1), p(4));
+        let mut after = tree.panes();
+        after.sort_unstable();
+        let mut expected = before;
+        expected.sort_unstable();
+        assert_eq!(after, expected);
+    }
+
+    #[test]
+    fn swapping_a_pane_with_itself_does_nothing() {
+        let mut tree = two_by_two();
+        let before = tree.clone();
+        assert!(!tree.swap(p(1), p(1)));
+        assert_eq!(tree, before);
+    }
+
+    #[test]
+    fn swapping_with_a_pane_that_is_not_there_changes_nothing() {
+        // Half a swap would put one pane in two places and lose the other.
+        let mut tree = two_by_two();
+        let before = tree.clone();
+        assert!(!tree.swap(p(1), p(99)));
+        assert_eq!(tree, before, "a partial swap was applied");
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "in a test, expect() is the assertion"
+)]
+mod zoom_tests {
+    use super::*;
+
+    const SCREEN: Rect = Rect {
+        col: 0,
+        row: 0,
+        cols: 200,
+        rows: 50,
+    };
+
+    fn p(n: u32) -> PaneId {
+        PaneId(n)
+    }
+
+    fn split_three() -> Node {
+        let mut tree = Node::leaf(p(1));
+        tree.split(p(1), p(2), Split::Vertical);
+        tree.split(p(2), p(3), Split::Horizontal);
+        tree
+    }
+
+    #[test]
+    fn a_zoomed_pane_has_the_whole_area_and_the_others_are_not_drawn() {
+        let tree = split_three();
+        let zoomed = place_with_zoom(&tree, SCREEN, Some(p(2)));
+        assert_eq!(zoomed.len(), 1);
+        assert_eq!(zoomed[0].pane, p(2));
+        assert_eq!(zoomed[0].rect, SCREEN);
+    }
+
+    #[test]
+    fn zooming_out_restores_the_arrangement_exactly() {
+        // Including the ratios. This is why zoom is a view: rearranging and
+        // restoring is a second implementation of the tree, and the way the
+        // two disagree is that somebody's dragged divider comes back rounded.
+        let mut tree = split_three();
+        tree.resize(p(1), Split::Vertical, 0.15);
+        let before = tree.place(SCREEN);
+
+        let _ = place_with_zoom(&tree, SCREEN, Some(p(3)));
+        let after = place_with_zoom(&tree, SCREEN, None);
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn a_zoomed_pane_that_has_gone_falls_back_rather_than_blanking_the_screen() {
+        // Its session ended while it was zoomed. Drawing nothing would be a
+        // black screen with no way to find out why.
+        let tree = split_three();
+        let placed = place_with_zoom(&tree, SCREEN, Some(p(99)));
+        assert_eq!(placed.len(), 3);
+    }
+
+    #[test]
+    fn zooming_with_one_pane_changes_nothing() {
+        let tree = Node::leaf(p(1));
+        assert_eq!(
+            place_with_zoom(&tree, SCREEN, Some(p(1))),
+            tree.place(SCREEN)
+        );
+    }
+
+    #[test]
+    fn a_split_made_while_zoomed_lands_where_it_would_have() {
+        // The case that breaks implementations which rearrange: the tree never
+        // changed, so the split is over the real arrangement and zoom is
+        // simply dropped.
+        let mut tree = split_three();
+        let _ = place_with_zoom(&tree, SCREEN, Some(p(1)));
+        assert!(tree.split(p(1), p(4), Split::Horizontal));
+        let out = place_with_zoom(&tree, SCREEN, None);
+        assert_eq!(out.len(), 4);
     }
 }

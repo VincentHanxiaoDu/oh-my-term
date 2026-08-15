@@ -143,6 +143,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let mut panel_on = crate::rows::panel_enabled();
     // What the panel last showed, so an unchanged list costs nothing.
     let mut shown_panel: Option<Vec<String>> = None;
+    // Which pane fills the screen, where one does. A view over the tree rather
+    // than a rearrangement of it, so zooming out restores the ratios exactly.
+    let mut zoomed: Option<omt_tui::PaneId> = None;
+    // Where focus was before this pane, for going back without thinking about
+    // which direction that is.
+    let mut previous_focus: Option<omt_tui::PaneId> = None;
     // Built once. Rebuilding it twice a second per pane would be the most
     // expensive thing in this loop by an order of magnitude.
     let adapter_set = omt_agent_adapters::builtin();
@@ -294,12 +300,16 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         } else {
             0
         };
-        let arrangement = layout.place(omt_tui::Rect {
-            col: panel_cols,
-            row: 0,
-            cols: term_cols.saturating_sub(panel_cols),
-            rows: term_rows.saturating_sub(STATUS_ROWS).max(1),
-        });
+        let arrangement = omt_tui::place_with_zoom(
+            &layout,
+            omt_tui::Rect {
+                col: panel_cols,
+                row: 0,
+                cols: term_cols.saturating_sub(panel_cols),
+                rows: term_rows.saturating_sub(STATUS_ROWS).max(1),
+            },
+            zoomed,
+        );
         let rects: Vec<omt_tui::Rect> = panes
             .iter()
             .map(|pane| {
@@ -783,6 +793,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         omt_tui::neighbour(&arrangement, panes[focus].tile, towards)
                         && let Some(index) = panes.iter().position(|p| p.tile == landed)
                     {
+                        previous_focus = Some(panes[focus].tile);
                         focus = index;
                         shown_hint = None;
                         shown_bar = None;
@@ -796,7 +807,95 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     crate::rows::remember_panel(panel_on);
                     layout_dirty = true;
                 }
+                Input::Zoom => {
+                    // A view, not a rearrangement: the tree is untouched, so
+                    // this comes back to exactly what it was.
+                    zoomed = if zoomed.is_some() {
+                        None
+                    } else {
+                        Some(panes[focus].tile)
+                    };
+                    layout_dirty = true;
+                }
+                Input::LastPane => {
+                    if let Some(back) = previous_focus
+                        && let Some(index) = panes.iter().position(|p| p.tile == back)
+                    {
+                        previous_focus = Some(panes[focus].tile);
+                        focus = index;
+                        shown_hint = None;
+                        shown_bar = None;
+                        shown_bottom = None;
+                    }
+                }
+                Input::Swap(towards) => {
+                    // The pane moves and the focus follows it. Focus staying
+                    // put means the pane just moved is no longer the one being
+                    // typed in, which is what every implementation that does
+                    // it that way gets reports about.
+                    let area = omt_tui::Rect {
+                        col: panel_cols,
+                        row: 0,
+                        cols: term_cols.saturating_sub(panel_cols),
+                        rows: term_rows.saturating_sub(STATUS_ROWS).max(1),
+                    };
+                    let here = panes[focus].tile;
+                    if let Some(there) = omt_tui::neighbour(&layout.place(area), here, towards)
+                        && layout.swap(here, there)
+                    {
+                        layout_dirty = true;
+                    }
+                }
+                Input::NextWaiting => {
+                    // The product's own subject, in one key. Needing a list and
+                    // a choice to reach the agent that is waiting is two steps
+                    // for the thing omt exists to make one.
+                    let waiting: Vec<usize> = panes
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, pane)| {
+                            matches!(
+                                instance.agent_state(pane.binding, now),
+                                Some(omt_types::AgentState::Blocked { .. })
+                            )
+                        })
+                        .map(|(i, _)| i)
+                        .collect();
+                    match waiting
+                        .iter()
+                        .find(|i| **i > focus)
+                        .or_else(|| waiting.first())
+                    {
+                        Some(&landed) => {
+                            previous_focus = Some(panes[focus].tile);
+                            focus = landed;
+                            // Zoom follows: jumping to a waiting agent while
+                            // zoomed on another shows the one you jumped to.
+                            if zoomed.is_some() {
+                                zoomed = Some(panes[focus].tile);
+                            }
+                            layout_dirty = true;
+                        }
+                        // Said rather than nothing happening. A key that
+                        // silently does nothing is one people press again.
+                        None => shown_hint = None,
+                    }
+                }
+                Input::Goto(n) => {
+                    // One-based, matching the numbers the status bar writes.
+                    // A key that disagreed with what is on the screen would be
+                    // worse than no key.
+                    if let Some(index) = n.checked_sub(1).filter(|i| *i < panes.len()) {
+                        previous_focus = Some(panes[focus].tile);
+                        focus = index;
+                        if zoomed.is_some() {
+                            zoomed = Some(panes[focus].tile);
+                        }
+                        layout_dirty = true;
+                    }
+                }
                 Input::NextPane => {
+                    previous_focus = Some(panes[focus].tile);
                     focus = (focus + 1) % panes.len();
                     shown_hint = None;
                     shown_bar = None;
@@ -813,6 +912,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     // sibling takes the space. Without this the arrangement
                     // keeps a leaf for a pane that is gone and everything
                     // below it shifts.
+                    // The zoom goes with it. `place_with_zoom` already falls
+                    // back rather than blanking the screen, but leaving a
+                    // stale id means the next zoom toggles nothing.
+                    if zoomed == Some(closed.tile) {
+                        zoomed = None;
+                    }
+                    if previous_focus == Some(closed.tile) {
+                        previous_focus = None;
+                    }
                     match layout.clone().close(closed.tile) {
                         Some(rest) => layout = rest,
                         // The last pane. An empty tree is not representable,

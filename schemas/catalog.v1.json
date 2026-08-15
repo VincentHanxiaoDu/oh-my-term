@@ -3272,6 +3272,78 @@
       ],
       "type": "object"
     },
+    "HooksInstallIn": {
+      "description": "Input to `agent.hooks_install`.",
+      "properties": {
+        "agent": {
+          "description": "Which agent.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent"
+      ],
+      "type": "object"
+    },
+    "HooksInstallOut": {
+      "description": "What `agent.hooks_install` reports.",
+      "properties": {
+        "changed": {
+          "description": "Whether it needed writing.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The file that was written.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "changed"
+      ],
+      "type": "object"
+    },
+    "HooksPlanIn": {
+      "description": "Input to `agent.hooks_plan`.",
+      "properties": {
+        "agent": {
+          "description": "Which agent's settings to plan against.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent"
+      ],
+      "type": "object"
+    },
+    "HooksPlanOut": {
+      "description": "What `agent.hooks_plan` reports.",
+      "properties": {
+        "changes": {
+          "description": "Whether anything would change.",
+          "type": "boolean"
+        },
+        "diff": {
+          "description": "The change, as a diff somebody can read before agreeing to it.",
+          "type": "string"
+        },
+        "installed": {
+          "description": "Whether the hooks are installed and current.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The file that would change.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "changes",
+        "diff",
+        "installed"
+      ],
+      "type": "object"
+    },
     "HunkSummary": {
       "description": "One run of changed lines.",
       "properties": {
@@ -6123,6 +6195,37 @@
       },
       "required": [
         "removed"
+      ],
+      "type": "object"
+    },
+    "RenameIn": {
+      "description": "Input to `session.rename`.",
+      "properties": {
+        "session": {
+          "description": "Which session.",
+          "type": "string"
+        },
+        "title": {
+          "description": "What to call it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "title"
+      ],
+      "type": "object"
+    },
+    "RenameOut": {
+      "description": "What `session.rename` reports.",
+      "properties": {
+        "title": {
+          "description": "The name it now has.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
       ],
       "type": "object"
     },
@@ -9254,6 +9357,48 @@
       "verb": "connect"
     },
     {
+      "aliases": [],
+      "doc": "Without these, an agent's structured question — the tool call that offers options — never reaches omt, and a card that could have been answered on a phone is a prompt only the terminal can see.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "agent",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "agent.hooks_install",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent/hooks_install",
+      "since": "0.1.0",
+      "title": "Install omt's hooks",
+      "verb": "hooks_install"
+    },
+    {
+      "aliases": [],
+      "doc": "The diff, before the write. omt edits a file the agent owns and somebody else may have written their own hooks into, so what changes is shown first.",
+      "effects": [
+        "reads_fs"
+      ],
+      "group": "agent",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent.hooks_plan",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent/hooks_plan",
+      "since": "0.1.0",
+      "title": "Plan a hook install",
+      "verb": "hooks_plan"
+    },
+    {
       "aliases": [
         "stop"
       ],
@@ -11394,6 +11539,26 @@
     },
     {
       "aliases": [],
+      "doc": "A roster of six things called `shell` is what omt shows without this. Detection answers it for agents; for everything else the answer is letting somebody say what a thing is.",
+      "effects": [],
+      "group": "session",
+      "hidden": false,
+      "intent": {
+        "class": "lww_free_text"
+      },
+      "kind": "command",
+      "name": "session.rename",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/session/rename",
+      "since": "0.1.0",
+      "title": "Rename a session",
+      "verb": "rename"
+    },
+    {
+      "aliases": [],
       "doc": "Resize a session. The grid and the kernel are told together, so a program is never handed a size the kernel disagrees with.",
       "effects": [
         "writes_pty"
@@ -12056,6 +12221,18 @@
     "agent.connect.output": {
       "$ref": "#/$defs/AgentConnectOut"
     },
+    "agent.hooks_install.input": {
+      "$ref": "#/$defs/HooksInstallIn"
+    },
+    "agent.hooks_install.output": {
+      "$ref": "#/$defs/HooksInstallOut"
+    },
+    "agent.hooks_plan.input": {
+      "$ref": "#/$defs/HooksPlanIn"
+    },
+    "agent.hooks_plan.output": {
+      "$ref": "#/$defs/HooksPlanOut"
+    },
     "agent.interrupt.input": {
       "$ref": "#/$defs/AgentInterruptIn"
     },
@@ -12709,6 +12886,12 @@
     },
     "session.release.output": {
       "$ref": "#/$defs/SessionReleaseOut"
+    },
+    "session.rename.input": {
+      "$ref": "#/$defs/RenameIn"
+    },
+    "session.rename.output": {
+      "$ref": "#/$defs/RenameOut"
     },
     "session.resize.input": {
       "$ref": "#/$defs/SessionResizeIn"

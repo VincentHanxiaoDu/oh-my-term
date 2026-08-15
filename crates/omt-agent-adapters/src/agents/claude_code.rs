@@ -110,7 +110,17 @@ impl AgentAdapter for ClaudeCode {
                 names: vec!["claude code", "claude"],
                 // The braille block. Claude Code animates a spinner there
                 // while it works, and the frames are the whole block.
-                working_prefix: vec!['\u{2800}'..='\u{28FF}'],
+                // Observed from the shipped binary while it worked:
+                // `◐ Claude Code`, then `◑`, cycling. The quadrant circles at
+                // U+25D0..=U+25D3 — not the braille block, which was taken
+                // from somebody else's rule set and never checked against the
+                // thing it describes. That is the mistake this whole file
+                // warns about, and it cost a working agent reading as idle.
+                //
+                // The braille range is kept beside it: a version that spins
+                // that way is one this still handles, and neither range is
+                // anything but a spinner.
+                working_prefix: vec!['\u{25d0}'..='\u{25d3}', '\u{2800}'..='\u{28FF}'],
                 // The eight-spoked asterisk it rests at.
                 idle_prefix: vec!['\u{2733}'],
             }),

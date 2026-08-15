@@ -47,6 +47,32 @@
       "unmapped"
     ]
   },
+  "agent.hooks_install": {
+    "required_input": [
+      "agent"
+    ],
+    "input": [
+      "agent"
+    ],
+    "output": [
+      "changed",
+      "path"
+    ]
+  },
+  "agent.hooks_plan": {
+    "required_input": [
+      "agent"
+    ],
+    "input": [
+      "agent"
+    ],
+    "output": [
+      "changes",
+      "diff",
+      "installed",
+      "path"
+    ]
+  },
   "agent.interrupt": {
     "required_input": [
       "session"
@@ -1450,6 +1476,19 @@
     ],
     "output": [
       "released"
+    ]
+  },
+  "session.rename": {
+    "required_input": [
+      "session",
+      "title"
+    ],
+    "input": [
+      "session",
+      "title"
+    ],
+    "output": [
+      "title"
     ]
   },
   "session.resize": {

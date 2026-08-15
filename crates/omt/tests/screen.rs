@@ -415,16 +415,32 @@ fn an_open_list_is_still_on_screen_after_the_pane_repaints() {
 #[test]
 fn the_leader_strip_lists_the_keys_after_a_pause() {
     let _serial = serially();
-    // 16 §3.3: after 250 ms, not instantly, and every key rather than four of
-    // nine.
+    // 16 §3.3: after 250 ms, not instantly.
+    //
+    // What it lists is a priority order, not the whole table: there are more
+    // actions than a row can hold — that was true at nine and is truer at
+    // twelve — so the strip drops from the end and points at `⟨leader⟩ ?` for
+    // the rest. What has to survive an ordinary terminal is what somebody
+    // opened the strip to find: how to leave, how to arrange, and which agent
+    // wants them.
     let mut s = Screen::start();
     s.settle(2.0);
     s.type_in("\x02");
     s.settle(1.0);
     let screen = s.screen();
-    for label in ["detach", "sessions", "agents", "palette"] {
+    for label in ["detach", "split", "zoom", "waiting", "agents"] {
         assert!(screen.contains(label), "`{label}` missing:\n{screen}");
     }
+    // And when something is dropped it is said, because a menu that quietly
+    // shows less than it has is worse than one that admits it.
+    let strip = screen
+        .lines()
+        .find(|line| line.contains('\u{25b8}'))
+        .unwrap_or_default();
+    assert!(
+        !strip.contains('\u{2026}') || strip.contains('?'),
+        "keys were dropped without pointing at the full list: {strip:?}"
+    );
     // Spend the leader so the shell is not left with one armed.
     s.type_in("\x1b");
 }
@@ -1002,5 +1018,120 @@ fn the_agent_panel_appears_where_it_fits_and_refuses_where_it_does_not() {
     assert!(
         !without.contains("agents"),
         "the panel did not go away when it was turned off:\n{without}"
+    );
+}
+
+#[test]
+fn zoom_fills_the_screen_and_gives_the_arrangement_back() {
+    let _serial = serially();
+    // The most-used key in every multiplexer, because splitting is for
+    // comparing and zooming is for working, and both happen in the same
+    // minute. omt had no answer at all until the inventory was counted.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("printf 'LEFT-PANE\\n'\r");
+    s.settle(1.0);
+    s.type_in("\x02s");
+    s.settle(2.0);
+
+    let split = s.screen();
+    assert!(
+        split.contains('\u{2502}'),
+        "there is no split to zoom out of:\n{split}"
+    );
+
+    s.type_in("\x02z");
+    s.settle(1.5);
+    let zoomed = s.screen();
+
+    s.type_in("\x02z");
+    s.settle(1.5);
+    let back = s.screen();
+    s.type_in("\x02x");
+    s.settle(1.0);
+    s.type_in("\x04");
+
+    assert!(
+        !zoomed.contains('\u{2502}'),
+        "zooming left the separator on screen:\n{zoomed}"
+    );
+    assert!(
+        back.contains('\u{2502}'),
+        "the arrangement did not come back:\n{back}"
+    );
+    assert!(
+        back.contains("LEFT-PANE"),
+        "the first pane's output was lost:\n{back}"
+    );
+}
+
+#[test]
+fn a_pane_can_be_reached_by_the_number_the_bar_gives_it() {
+    let _serial = serially();
+    // The status bar writes `1:zsh 2:claude`, and everybody's fingers reach
+    // for those numbers before they read any documentation. A key that
+    // disagreed with what is written on the screen would be worse than none.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("printf 'PANE-A\\n'\r");
+    s.settle(1.0);
+    s.type_in("\x02s");
+    s.settle(2.0);
+    s.type_in("printf 'PANE-B\\n'\r");
+    s.settle(1.5);
+
+    // Back to the first by its number, and type something only it can show.
+    s.type_in("\x021");
+    s.settle(1.0);
+    s.type_in("printf 'BACK-IN-A\\n'\r");
+    s.settle(1.5);
+
+    let screen = s.screen();
+    s.type_in("\x02x");
+    s.settle(0.8);
+    s.type_in("\x04");
+
+    assert!(
+        screen.contains("BACK-IN-A"),
+        "typing after `⟨leader⟩ 1` did not land in the first pane:\n{screen}"
+    );
+    assert!(
+        screen.contains("PANE-B"),
+        "the second pane's output was lost:\n{screen}"
+    );
+}
+
+#[test]
+fn a_pane_can_be_moved_rather_than_the_focus() {
+    let _serial = serially();
+    // The pane moves and the focus follows it. Focus staying put means the
+    // pane just moved is no longer the one being typed in, which is what every
+    // implementation that does it that way gets reports about.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("printf 'ORIGINAL-LEFT\\n'\r");
+    s.settle(1.0);
+    s.type_in("\x02s");
+    s.settle(2.0);
+
+    // The focused pane is the right one. Move it left.
+    s.type_in("\x02H");
+    s.settle(1.5);
+    s.type_in("printf 'MOVED-HERE\\n'\r");
+    s.settle(1.5);
+
+    let screen = s.screen();
+    s.type_in("\x02x");
+    s.settle(0.8);
+    s.type_in("\x04");
+
+    // Both panes are still there, and typing still reaches the pane that moved.
+    assert!(
+        screen.contains("ORIGINAL-LEFT"),
+        "a pane was lost in the swap:\n{screen}"
+    );
+    assert!(
+        screen.contains("MOVED-HERE"),
+        "focus did not follow the pane it moved:\n{screen}"
     );
 }

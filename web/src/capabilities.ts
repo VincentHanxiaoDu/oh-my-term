@@ -540,6 +540,21 @@ export const HANDLERS = {
   'agent_rules.explain': (request: RequestId, session: string) =>
     call(request, 'agent_rules.explain', { session }),
 
+  // A roster of six things called `shell` is what omt shows without this, and
+  // a phone is where somebody most needs to tell them apart.
+  'session.rename': (request: RequestId, session: string, title: string) =>
+    call(request, 'session.rename', { session, title }),
+
+  // Without these an agent's structured question never reaches omt, so a card
+  // that could have been answered on a phone is a prompt only the terminal can
+  // see. Reachable from here because the phone is where somebody notices that
+  // the cards never arrive.
+  'agent.hooks_plan': (request: RequestId, agent: string) =>
+    call(request, 'agent.hooks_plan', { agent }),
+
+  'agent.hooks_install': (request: RequestId, agent: string) =>
+    call(request, 'agent.hooks_install', { agent }),
+
   'media.materialize': (request: RequestId, digest: string, name?: string) =>
     call(request, 'media.materialize', {
       digest,
