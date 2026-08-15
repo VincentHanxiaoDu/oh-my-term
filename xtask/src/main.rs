@@ -15,10 +15,12 @@ fn main() -> Result<()> {
         Some("codegen") => codegen(false).and_then(|()| handlers()),
         Some("codegen-check") => codegen(true),
         Some("install") => install(),
+        Some("test-isolation") => test_isolation(),
         Some(other) => bail!("unknown task `{other}`"),
         None => {
             eprintln!(
-                "usage: cargo xtask <layering|licensing|handlers|codegen|codegen-check|install>"
+                "usage: cargo xtask \
+                 <layering|licensing|handlers|codegen|codegen-check|install|test-isolation>"
             );
             Ok(())
         }
@@ -1044,4 +1046,101 @@ fn install() -> Result<()> {
         String::from_utf8_lossy(&out.stdout).trim()
     );
     Ok(())
+}
+
+/// The variables that decide *where omt keeps things*.
+///
+/// Deliberately short, and not derived from the source. omt reads a dozen
+/// variables and most of them cannot make a test lie: `OMT_HOOK_EVENT` changes
+/// what a hook reports about itself, and a daemon test that inherits it is
+/// unaffected. These four redirect state — a socket, a snapshot, a rules
+/// directory, a blob directory — so a test that inherits one is a test sharing
+/// that state with whatever else is running on the machine.
+///
+/// A gate that reports twenty-seven things is a gate somebody turns off. This
+/// reports the ones that have actually gone wrong.
+const REDIRECTS_STATE: [&str; 4] = [
+    "OMT_SOCK",
+    "OMT_STATE_FILE",
+    "OMT_AGENT_RULES",
+    "OMT_MEDIA_DIR",
+];
+
+/// A test that starts omt must not inherit omt's own state.
+///
+/// Four separate defects in one session came from this, each a test that
+/// passed or failed on the machine it ran on rather than on the code:
+///
+/// - the agent probe matched the *harness's* environment, because the suite
+///   runs inside an agent session, and reported an agent for a plain shell —
+///   three tests green over a feature that did not work at all
+/// - `two_instances_on_one_machine_do_not_share_a_snapshot` compared two paths
+///   that `OMT_STATE_FILE` had already collapsed into one
+/// - the crash tests isolated `XDG_STATE_HOME` and not the variable that
+///   overrides it, so four daemons that each took a directory shared a file
+/// - the screen suite started sixteen omts at once and failed as a test of the
+///   machine rather than of omt
+///
+/// Four is a pattern rather than four accidents, so it is a check.
+fn test_isolation() -> Result<()> {
+    let root = workspace_root()?;
+    let mut wrong: Vec<String> = Vec::new();
+
+    for entry in walk(&root.join("crates"))? {
+        let name = entry.to_string_lossy().to_string();
+        if !name.contains("/tests/") || entry.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&entry).unwrap_or_default();
+        // Only files that actually start the binary: a unit test that never
+        // spawns omt cannot inherit anything omt would read.
+        if !text.contains("CARGO_BIN_EXE_omt") {
+            continue;
+        }
+        for variable in REDIRECTS_STATE {
+            // Named anywhere in a file that also removes variables. Loose on
+            // purpose: a harness may strip a list rather than call
+            // `env_remove` per name, and this is a warning — a false positive
+            // is a warning somebody learns to scroll past, which costs more
+            // than the occasional miss.
+            let controlled = text.contains(&format!("\"{variable}\""))
+                && (text.contains("env_remove") || text.contains("env("));
+            if !controlled {
+                wrong.push(format!("{}: inherits {variable}", entry.display()));
+            }
+        }
+    }
+
+    if wrong.is_empty() {
+        println!("test isolation ok — every test that starts omt controls where its state goes");
+        return Ok(());
+    }
+    for line in &wrong {
+        eprintln!("warning: {line}");
+    }
+    println!(
+        "test isolation: {} place(s) where a test that starts omt shares state with the machine",
+        wrong.len()
+    );
+    Ok(())
+}
+
+/// Every file under a directory.
+fn walk(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    Ok(out)
 }

@@ -72,6 +72,9 @@ omt-daemon = { path = "crates/omt-daemon" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Manifests are TOML because omt's configuration is TOML, and one
+# hand-written format is one format to learn.
+toml = "0.9"
 schemars = { version = "1", features = ["uuid1"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }

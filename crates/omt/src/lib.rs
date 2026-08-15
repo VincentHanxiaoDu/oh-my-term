@@ -23,6 +23,7 @@ pub mod persist;
 pub mod probe;
 pub mod queue;
 pub mod reach;
+pub mod rows;
 pub mod run;
 pub mod scheduler;
 pub mod setup;

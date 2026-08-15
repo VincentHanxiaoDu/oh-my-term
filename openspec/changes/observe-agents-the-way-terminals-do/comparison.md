@@ -28,13 +28,18 @@ between — and the middle is where every agent on a plain pty lives.
 | Combinators | `contains`, `regex`, `line_regex`, `any`, `all`, `not` | `Contains`, `LineStartsWith`, `Any`, `All`, `Not` |
 | Priorities | explicit, 250–1100 | explicit |
 | "Say nothing about now" | `skip_state_update`, for an agent showing its own history | `ScreenState::Hold` |
-| Where the rules live | versioned TOML, updatable without a release | Rust values |
+| Where the rules live | versioned TOML, updatable without a release | versioned TOML, with the Rust values as the floor |
 | Coverage | 19 agents | Claude Code and Gemini, from captured screens |
 
-Rules as data is the one structural difference left. It is worth having when a
-rule needs changing faster than a release; the regions, the priorities and the
-combinators — which is the part that decides whether a rule is *right* — are
-here already.
+Rules as data is built. A file per agent under the config directory replaces
+the shipped set for that agent; anything wrong with it — missing, malformed,
+too new, describing another agent, or containing a rule with no test at all —
+leaves the shipped rules in place and says why, because the shipped rules are
+better than nothing in each of those cases.
+
+The remaining difference is remote update. They fetch rule sets; omt does not,
+and should not without deciding what it means to run somebody else's matcher
+against your screen.
 
 Coverage is deliberately short. Rules for an agent nobody watched would be the
 "a wrong rule is confident" failure this whole change exists to avoid.
@@ -48,16 +53,24 @@ Coverage is deliberately short. Rules for an agent nobody watched would be the
 | The word "unknown" | never shown; renders as "idle" with a dim mark | printed next to a found agent | never shown |
 | Ordering | blocked 4, done 3, working 2, idle 1, unknown 0 | blocked, then working, then everything | the same five ranks, on both surfaces |
 | Marks | shape *and* colour | colour only, in places | shape and colour |
-| Agent panel | a persistent sidebar, 2848 lines, shared with their phone layout | a list behind a key | still a list behind a key |
+| Agent panel | a persistent sidebar, 2848 lines, shared with their phone layout | a list behind a key | a bounded, bordered, counted panel behind a key |
 
-The persistent panel is the largest thing not built. It is the honest answer to
-"the interface is bare", and it is a change of its own.
+The persistent panel is the largest thing not built, and it is not an oversight:
+19 §2.1 gives omt **one row** of chrome and says so twice. A sidebar would
+contradict a document whose reasoning holds — every cell of that row has to
+justify its columns, and a panel that is always present has to justify a good
+deal more. What the document does sanction is a modal list, so that list was
+made worth looking at instead.
+
+If a persistent panel is wanted, it is a change to 19 rather than a change
+around it.
 
 ## How a frame is drawn
 
 | | them (B) | omt before | omt now |
 |---|---|---|---|
 | Buffering | one buffer, diffed once | per-pane diff, with chrome and overlays written over the result | per-pane diff, whole frame buffered and written once |
+| Splits | a BSP tree with ratios and directional movement | N equal shares in one direction | a BSP tree with ratios and directional movement |
 | Synchronized output | DEC 2026 around every frame | none — every frame could show this frame's status bar above the last frame's pane | DEC 2026, and a frame that drew nothing writes nothing |
 | Cursor | frame state, emitted by the diff | written unconditionally every tick — 619 bytes a second into an idle terminal | only when it moved |
 | When to draw | only when something changed, rate-limited | every 8 ms | every 8 ms, but an unchanged frame costs no bytes |

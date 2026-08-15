@@ -12,6 +12,7 @@ pub mod agents;
 pub mod bounded;
 pub mod detect;
 pub mod install;
+pub mod manifest;
 pub mod regions;
 pub mod registry;
 pub mod rules;
@@ -37,6 +38,7 @@ pub use install::{
     INSTALL_VERSION, InstallError, Plan, STAMP_KEY, events_for, is_stale, plan_install,
     plan_uninstall,
 };
+pub use manifest::{ENGINE, Manifest, ManifestError};
 pub use regions::{Region, is_rule};
 pub use rules::{Rule, ScreenState, Test, Verdict, read as read_screen};
 pub mod appserver;

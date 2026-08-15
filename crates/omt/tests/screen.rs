@@ -121,7 +121,25 @@ impl Screen {
                 ("PS1".to_owned(), "$ ".to_owned()),
                 ("SHELL".to_owned(), shell.to_owned()),
             ],
-            env_remove: inherited_agent_environment(),
+            env_remove: {
+                // The agent markers, and everything that redirects where omt
+                // keeps state. A harness that starts a real omt and lets it
+                // find the machine's socket, snapshot, rules and blobs is a
+                // harness sharing state with whatever else is running — which
+                // is how a suite starts failing in an order that depends on
+                // the load.
+                let mut stripped = inherited_agent_environment();
+                stripped.extend(
+                    [
+                        "OMT_SOCK",
+                        "OMT_STATE_FILE",
+                        "OMT_AGENT_RULES",
+                        "OMT_MEDIA_DIR",
+                    ]
+                    .map(str::to_owned),
+                );
+                stripped
+            },
         })
         .expect("spawn omt");
         pty.set_nonblocking(true).expect("nonblocking");

@@ -218,7 +218,9 @@ impl Instance {
         // permission produces no output and rings no bell: to everything else
         // it is indistinguishable from one that finished.
         if let Some(adapter) = adapters.iter().find(|a| a.kind() == detection.agent) {
-            let rules = adapter.screen_rules();
+            // The rules in use, which is a loaded set where somebody has
+            // written one and the shipped set otherwise.
+            let rules = adapter.rules_in_use();
             if !rules.is_empty()
                 && let Some(verdict) = omt_agent_adapters::read_screen(&rules, &screen)
                 && let Some(reading) = crate::observe::screen_reading(verdict.state, now_ms)

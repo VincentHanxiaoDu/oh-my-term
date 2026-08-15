@@ -145,6 +145,74 @@ Sources are registered, not hard-coded (principle P2). A plugin can add one.
 
 ---
 
+### 3.6 The marker tier in practice: what the agent already says
+
+Two sources sit at `Marker`, and both are the agent telling its host something
+rather than omt inferring it.
+
+**The terminal title.** Claude Code writes `OSC 0 ; ✳ Claude Code`: its name,
+and its state in the leading glyph — the eight-spoked asterisk at rest, a
+braille spinner frame while it works. Gemini writes `◇ Ready (dir)`: a state
+glyph and the directory, with nothing that says which agent it is.
+
+That difference decides the design. Identity is taken from a title only when
+the title names the agent; the *state* glyph is asked of whichever agent omt
+has already identified, from any source. Requiring the name for both would
+throw away the state Gemini does report.
+
+A title carries no permission requirement, survives ssh, and does not depend on
+how the binary was launched, signed or wrapped — which is the entire list of
+things that make the `Process` tier unreliable. It is above `Process` because a
+process name says what was *started* and a title says what is happening now.
+
+**Why not the process table alone.** It was, and it did not work:
+
+- Reading another process's arguments and environment is refused for a signed,
+  hardened binary. The shipped Claude Code binary is one.
+- A self-updating agent runs from a versioned path. Claude Code's executable is
+  `.../claude/versions/2.1.233`, so its base name is a version number and its
+  name appears only in `argv[0]`.
+- `tcgetpgrp` answers with the *caller's* process group in the window before a
+  child takes the terminal, so a probe run too early reads its own argv and
+  environment and reports whatever is in them.
+
+The probe remains, as a fallback, with all three handled.
+
+### 3.7 Screen rules: regions, not searches
+
+Below the marker tier and above the floor, omt reads what the agent drew — by
+**region**, never by searching the screen.
+
+"Does this screen contain *esc to cancel*" is true of scrollback, of a diff, of
+a file the agent is displaying, and of the question answered ten minutes ago.
+"Does the text after the last horizontal rule contain it" is true when an agent
+is asking now. The regions are the whole engineering:
+
+| Region | What it is |
+|---|---|
+| `after_last_rule` | the thing being asked now — agent CLIs draw a rule above what they want an answer to |
+| `prompt_box` | between the two rules an input box is drawn with |
+| `bottom_non_empty(n)` | the last *n* lines with anything on them, so padding cannot push a status line out of view |
+| `whole` | everything, and the weakest — it is what makes a rule fire on scrollback |
+
+Rules carry a priority and combine with `any` / `not`. A rule may conclude
+`hold`, meaning *this screen says nothing about now*: an agent showing its own
+transcript has yesterday's question on the screen and is not asking it. Nothing
+matching is a different answer again — the screen is not one the set describes,
+and the floor applies.
+
+A screen-derived block carries `BlockReason::Unspecified` and no interaction. A
+rule knows somebody is wanted and never what for, and building an answerable
+card out of matched text is how a locale change becomes a wrong "Allow".
+
+Rules are **data**. A file per agent under the config directory, carrying a
+version and a minimum engine version, replaces the shipped set for that agent —
+because an agent's interface changes on its own schedule and a release of omt
+is a bad unit of response. Anything wrong with the file leaves the shipped
+rules in place and says why: missing, malformed, too new, describing a
+different agent, or containing a rule with no test, which would match every
+screen and be confidently wrong forever.
+
 ## 4. Merging: confidence tiers, not voting
 
 One state machine per binding consumes all sources.

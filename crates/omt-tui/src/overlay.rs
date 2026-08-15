@@ -177,6 +177,11 @@ pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
         return out;
     }
 
+    // A column for the marks, only when something has one. The palette is a
+    // list of capabilities and none of them has a state, so reserving the
+    // column there would indent every row for something that never appears.
+    let marked = visible.iter().any(|choice| choice.mark.is_some());
+
     // The border rows, the filter row and a possible "more" row.
     let room = (rows as usize).saturating_sub(5).max(1);
     let first = overlay.cursor.saturating_sub(room - 1);
@@ -187,9 +192,13 @@ pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
         // follows the label rather than being pushed away from it: they are
         // one row about one thing.
         let mut line = format!(
-            "{}{} {}",
+            "{}{}{}",
             if picked { "\u{276f} " } else { "  " },
-            choice.mark.unwrap_or(" "),
+            if marked {
+                format!("{} ", choice.mark.unwrap_or(" "))
+            } else {
+                String::new()
+            },
             choice.label
         );
         if !choice.detail.is_empty() {

@@ -194,6 +194,20 @@ pub trait AgentAdapter: Send + Sync {
         Vec::new()
     }
 
+    /// The rules actually used: a loaded set where there is one, and the
+    /// shipped set otherwise.
+    ///
+    /// An agent CLI moves a line on its own schedule, which is not omt's, and
+    /// a release is a bad unit of response to that. A file replaces the
+    /// shipped rules for one agent; anything wrong with it — missing,
+    /// malformed, too new, describing a different agent — leaves them in
+    /// place, because the shipped rules are better than nothing in every one
+    /// of those cases.
+    fn rules_in_use(&self) -> Vec<crate::rules::Rule> {
+        crate::manifest::load(&format!("{:?}", self.kind()).to_lowercase())
+            .unwrap_or_else(|| self.screen_rules())
+    }
+
     /// Environment to inject when omt spawns it.
     ///
     /// This is what removes the entire class of "match the transcript to the

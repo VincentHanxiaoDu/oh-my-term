@@ -37,10 +37,14 @@
 - [x] 4.3 `any` / `all` / `not` combinators
 - [x] 4.4 A rule that suppresses state updates while an agent shows its own
       history
-- [ ] 4.5 Rules are data with a version, not code — they are values in Rust
-      today, which gets the regions, the priorities and the combinators without
-      a parser. Making them a file the instance loads is a second step and is
-      only worth it once a rule needs changing faster than a release.
+- [x] 4.5 Rules are data with a version, not code. A TOML file per agent under
+      the config directory, carrying a version and a minimum engine, replaces
+      the shipped set for that agent. Every kind of wrong — missing,
+      malformed, too new, describing another agent, or a rule with no test at
+      all — leaves the shipped rules in place and says why, because the
+      shipped rules are better than nothing in each case. TOML because omt's
+      configuration is TOML and one hand-written format is one format to
+      learn.
 - [x] 4.6 Claude Code's rule set, from its observed interface
 - [x] 4.7 A rule set for each other adapter omt already declares — **only for
       what could be watched.** Gemini is installed here, so its trust dialog

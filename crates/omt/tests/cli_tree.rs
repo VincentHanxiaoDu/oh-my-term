@@ -51,6 +51,12 @@ impl Daemon {
         Command::new(binary())
             .args(args)
             .env("OMT_SOCK", self.socket())
+            // And everything else that says where omt keeps things. A test
+            // that pins the socket and lets the snapshot, the rules and the
+            // blobs come from the machine has pinned the one it thought of.
+            .env_remove("OMT_STATE_FILE")
+            .env_remove("OMT_AGENT_RULES")
+            .env_remove("OMT_MEDIA_DIR")
             .output()
             .expect("run omt")
     }
@@ -60,6 +66,9 @@ fn run_without_a_daemon(args: &[&str], runtime: &Path) -> std::process::Output {
     Command::new(binary())
         .args(args)
         .env_remove("OMT_SOCK")
+        .env_remove("OMT_STATE_FILE")
+        .env_remove("OMT_AGENT_RULES")
+        .env_remove("OMT_MEDIA_DIR")
         // Point discovery at a directory with nothing in it, so this cannot
         // find a daemon the developer happens to be running.
         .env("XDG_RUNTIME_DIR", runtime)

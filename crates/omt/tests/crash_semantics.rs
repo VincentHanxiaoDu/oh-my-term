@@ -16,13 +16,59 @@ fn binary() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_omt"))
 }
 
+/// A daemon that is killed when it goes out of scope, however it goes.
+///
+/// `std::process::Child` deliberately does not kill on drop, so any panic
+/// between spawning a daemon and killing it leaks one — and `start` waits up
+/// to ten seconds for a marker, which is exactly where a failing test panics.
+/// Two daemons from a failed run were still alive thirty-five minutes later,
+/// holding their sockets, on a machine also running the rest of this suite.
+struct Daemon(std::process::Child);
+
+impl Daemon {
+    fn id(&self) -> u32 {
+        self.0.id()
+    }
+
+    fn kill(&mut self) -> std::io::Result<()> {
+        self.0.kill()
+    }
+
+    fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.0.wait()
+    }
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        // Already dead is the ordinary case and not an error.
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// Start a daemon with its own state and runtime directories.
-fn start(state: &Path, runtime: &Path) -> std::process::Child {
+fn start(state: &Path, runtime: &Path) -> Daemon {
     let child = Command::new(binary())
         .arg("serve")
         .env("XDG_STATE_HOME", state)
         .env("XDG_RUNTIME_DIR", runtime)
         .env_remove("OMT_SOCK")
+        // And the snapshot override, which outranks `XDG_STATE_HOME`. Set in
+        // the environment — which it is on any machine running omt's own
+        // end-to-end suite — it points every daemon these tests start at one
+        // file, so four tests that carefully take a directory each share their
+        // state anyway and fail in whatever order they happen to run.
+        //
+        // The fourth time in one session that an inherited variable decided
+        // what a test proved. A test that isolates one path and not the one
+        // that overrides it has isolated nothing.
+        .env_remove("OMT_STATE_FILE")
+        // And the other two that redirect where omt keeps things, for the same
+        // reason: a test that isolates one path and not the others has
+        // isolated the one it thought of.
+        .env_remove("OMT_AGENT_RULES")
+        .env_remove("OMT_MEDIA_DIR")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -31,6 +77,7 @@ fn start(state: &Path, runtime: &Path) -> std::process::Child {
     // Wait for the marker to carry *this* daemon's pid. Waiting for the file
     // to exist would return immediately when a previous run crashed and left
     // one behind, which is precisely the case these tests set up.
+    let child = Daemon(child);
     let marker = state.join("omt").join("running.marker");
     let wanted = child.id().to_string();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
