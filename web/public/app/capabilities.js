@@ -178,6 +178,14 @@ export const HANDLERS = {
     // splitting them invites a client that offers only the nuclear option.
     'onboarding.dismiss_hints': (request, hint) => call(request, 'onboarding.dismiss_hints', hint === undefined ? {} : { hint }),
     'media.put': (request, content, origin) => call(request, 'media.put', { content, origin }),
+    // Rules for reading an agent's screen. Reachable from here because 03's
+    // parity contract says a capability the instance offers is one every client
+    // can call — and because somebody whose agent changed its wording is as
+    // likely to be holding a phone as a keyboard.
+    'agent_rules.capture': (request, session) => call(request, 'agent_rules.capture', { session }),
+    'agent_rules.inspect': (request, rules, agent) => call(request, 'agent_rules.inspect', { rules, agent }),
+    'agent_rules.import': (request, rules, agent) => call(request, 'agent_rules.import', { rules, agent }),
+    'agent_rules.explain': (request, session) => call(request, 'agent_rules.explain', { session }),
     'media.materialize': (request, digest, name) => call(request, 'media.materialize', {
         digest,
         ...(name === undefined ? {} : { name }),

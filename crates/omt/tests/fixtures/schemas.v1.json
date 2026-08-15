@@ -103,6 +103,63 @@
       "waited_ms"
     ]
   },
+  "agent_rules.capture": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "agent",
+      "regions",
+      "screen"
+    ]
+  },
+  "agent_rules.explain": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "agent",
+      "rule",
+      "state",
+      "summary"
+    ]
+  },
+  "agent_rules.import": {
+    "required_input": [
+      "agent",
+      "rules"
+    ],
+    "input": [
+      "agent",
+      "rules"
+    ],
+    "output": [
+      "path",
+      "rules"
+    ]
+  },
+  "agent_rules.inspect": {
+    "required_input": [
+      "agent",
+      "rules"
+    ],
+    "input": [
+      "agent",
+      "rules"
+    ],
+    "output": [
+      "refused",
+      "rules",
+      "shipped",
+      "usable"
+    ]
+  },
   "audit.list": {
     "required_input": [],
     "input": [

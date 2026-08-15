@@ -815,6 +815,19 @@
       "type": "object"
     },
     "CaptureIn": {
+      "description": "Input to `agent_rules.capture`.",
+      "properties": {
+        "session": {
+          "description": "Which session's screen to write down.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "CaptureIn2": {
       "description": "Input to `session.capture`.",
       "properties": {
         "format": {
@@ -843,6 +856,34 @@
       "type": "object"
     },
     "CaptureOut": {
+      "description": "What `agent_rules.capture` reports.",
+      "properties": {
+        "agent": {
+          "description": "The agent omt believes is there, where it believes anything.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "regions": {
+          "description": "What each named region of it contains.\n\nThe screen alone is what somebody already has. What they cannot see is\nwhere `after_last_rule` starts, which is the single thing that decides\nwhether their rule fires on the question or on the scrollback above it.",
+          "items": {
+            "$ref": "#/$defs/CapturedRegion"
+          },
+          "type": "array"
+        },
+        "screen": {
+          "description": "The visible screen.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "screen",
+        "regions"
+      ],
+      "type": "object"
+    },
+    "CaptureOut2": {
       "description": "What `session.capture` reports.",
       "properties": {
         "content": {
@@ -871,6 +912,24 @@
         "lines",
         "format",
         "total"
+      ],
+      "type": "object"
+    },
+    "CapturedRegion": {
+      "description": "One region, and what is in it.",
+      "properties": {
+        "name": {
+          "description": "Its name, as a rule would write it.",
+          "type": "string"
+        },
+        "text": {
+          "description": "What it contains right now.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "text"
       ],
       "type": "object"
     },
@@ -2149,6 +2208,19 @@
       ]
     },
     "ExplainIn": {
+      "description": "Input to `agent_rules.explain`.",
+      "properties": {
+        "session": {
+          "description": "Which session.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "ExplainIn2": {
       "description": "Input to `keys.explain`.",
       "properties": {
         "chord": {
@@ -2162,6 +2234,40 @@
       "type": "object"
     },
     "ExplainOut": {
+      "description": "What `agent_rules.explain` reports.",
+      "properties": {
+        "agent": {
+          "description": "Which agent's rules were applied.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rule": {
+          "description": "The rule that decided, where one did.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "What it concluded.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "description": "In words, for somebody looking at a wrong answer.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "type": "object"
+    },
+    "ExplainOut2": {
       "description": "What `keys.explain` reports.",
       "properties": {
         "action": {
@@ -3329,6 +3435,44 @@
       ],
       "type": "object"
     },
+    "ImportIn": {
+      "description": "Input to `agent_rules.import`.",
+      "properties": {
+        "agent": {
+          "description": "Which agent to install it for.",
+          "type": "string"
+        },
+        "rules": {
+          "description": "The rule set, as text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rules",
+        "agent"
+      ],
+      "type": "object"
+    },
+    "ImportOut": {
+      "description": "What `agent_rules.import` reports.",
+      "properties": {
+        "path": {
+          "description": "Where it was written.",
+          "type": "string"
+        },
+        "rules": {
+          "description": "How many rules it has.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "rules"
+      ],
+      "type": "object"
+    },
     "InfoIn": {
       "description": "Input to `instance.info`.",
       "type": "object"
@@ -3351,6 +3495,90 @@
       "required": [
         "version",
         "proto"
+      ],
+      "type": "object"
+    },
+    "InspectIn": {
+      "description": "Input to `agent_rules.inspect`.",
+      "properties": {
+        "agent": {
+          "description": "Which agent it is being considered for.",
+          "type": "string"
+        },
+        "rules": {
+          "description": "The rule set, as text.\n\nText rather than a path, so the caller decides where it came from and\nomt never reads a file it was not handed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rules",
+        "agent"
+      ],
+      "type": "object"
+    },
+    "InspectOut": {
+      "description": "What `agent_rules.inspect` reports.",
+      "properties": {
+        "refused": {
+          "description": "Why not, where not.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rules": {
+          "description": "What each rule concludes and where it looks, in the order they decide.",
+          "items": {
+            "$ref": "#/$defs/InspectedRule"
+          },
+          "type": "array"
+        },
+        "shipped": {
+          "description": "How many rules the shipped set has, for comparison.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usable": {
+          "description": "Whether it would be accepted.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "usable",
+        "rules",
+        "shipped"
+      ],
+      "type": "object"
+    },
+    "InspectedRule": {
+      "description": "One rule, as a person reads it.",
+      "properties": {
+        "id": {
+          "description": "Its id.",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Which rule wins when two match.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "region": {
+          "description": "Where it looks.",
+          "type": "string"
+        },
+        "state": {
+          "description": "What it concludes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "region",
+        "priority"
       ],
       "type": "object"
     },
@@ -9107,6 +9335,82 @@
     },
     {
       "aliases": [],
+      "doc": "The screen and each named region of it. Rules written from memory are wrong in ways only a real screen finds: omt's own rule for Claude Code's permission prompt was written from memory and was wrong about the first screen anybody sees.",
+      "effects": [],
+      "group": "agent_rules",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent_rules.capture",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent_rules/capture",
+      "since": "0.1.0",
+      "title": "Capture a screen for writing rules",
+      "verb": "capture"
+    },
+    {
+      "aliases": [],
+      "doc": "Which rule won, where it looked, and what it concluded. A wrong answer that cannot be traced to a rule is one people argue about.",
+      "effects": [],
+      "group": "agent_rules",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent_rules.explain",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent_rules/explain",
+      "since": "0.1.0",
+      "title": "Explain a screen verdict",
+      "verb": "explain"
+    },
+    {
+      "aliases": [],
+      "doc": "Only when asked, and only after the checks. omt never fetches, updates or applies a rule set on a timer or at startup: a matcher that runs against somebody's screen arrives because they decided, or not at all.",
+      "effects": [
+        "writes_fs"
+      ],
+      "group": "agent_rules",
+      "hidden": false,
+      "intent": {
+        "class": "cas"
+      },
+      "kind": "command",
+      "name": "agent_rules.import",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent_rules/import",
+      "since": "0.1.0",
+      "title": "Install a rule set",
+      "verb": "import"
+    },
+    {
+      "aliases": [],
+      "doc": "What it would change, before anything changes. A rule set is a matcher that runs against whatever is on the screen, so installing one is an act rather than an update.",
+      "effects": [],
+      "group": "agent_rules",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent_rules.inspect",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "operator",
+      "route": "/v1/agent_rules/inspect",
+      "since": "0.1.0",
+      "title": "Inspect a rule set",
+      "verb": "inspect"
+    },
+    {
+      "aliases": [],
       "doc": "Every call, with who made it and whether it worked. Refusals included: a log of only what succeeded answers the wrong question, because who *tried* to do what is most of what an audit is for.",
       "effects": [],
       "group": "audit",
@@ -11776,6 +12080,30 @@
     "agent.wait.output": {
       "$ref": "#/$defs/WaitOut"
     },
+    "agent_rules.capture.input": {
+      "$ref": "#/$defs/CaptureIn"
+    },
+    "agent_rules.capture.output": {
+      "$ref": "#/$defs/CaptureOut"
+    },
+    "agent_rules.explain.input": {
+      "$ref": "#/$defs/ExplainIn"
+    },
+    "agent_rules.explain.output": {
+      "$ref": "#/$defs/ExplainOut"
+    },
+    "agent_rules.import.input": {
+      "$ref": "#/$defs/ImportIn"
+    },
+    "agent_rules.import.output": {
+      "$ref": "#/$defs/ImportOut"
+    },
+    "agent_rules.inspect.input": {
+      "$ref": "#/$defs/InspectIn"
+    },
+    "agent_rules.inspect.output": {
+      "$ref": "#/$defs/InspectOut"
+    },
     "audit.list.input": {
       "$ref": "#/$defs/AuditIn"
     },
@@ -12035,10 +12363,10 @@
       "$ref": "#/$defs/ConflictsOut"
     },
     "keys.explain.input": {
-      "$ref": "#/$defs/ExplainIn"
+      "$ref": "#/$defs/ExplainIn2"
     },
     "keys.explain.output": {
-      "$ref": "#/$defs/ExplainOut"
+      "$ref": "#/$defs/ExplainOut2"
     },
     "keys.flavour.input": {
       "$ref": "#/$defs/FlavourIn"
@@ -12347,10 +12675,10 @@
       "$ref": "#/$defs/SessionBlocksOut"
     },
     "session.capture.input": {
-      "$ref": "#/$defs/CaptureIn"
+      "$ref": "#/$defs/CaptureIn2"
     },
     "session.capture.output": {
-      "$ref": "#/$defs/CaptureOut"
+      "$ref": "#/$defs/CaptureOut2"
     },
     "session.close.input": {
       "$ref": "#/$defs/SessionCloseIn"

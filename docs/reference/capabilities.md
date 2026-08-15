@@ -16,6 +16,10 @@ vanishing.
 | `agent.offers` | query | viewer | Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none. |
 | `agent.threads` | query | viewer | Every thread in a session — the main one and each subagent — with what it is doing and any card it raised. |
 | `agent.wait` | query | viewer | The primitive that stops every script being a sleep loop. `blocked` is a state and matches at once; `interaction` is an edge and matches only a card that opens after the wait began. |
+| `agent_rules.capture` | query | operator | The screen and each named region of it. Rules written from memory are wrong in ways only a real screen finds: omt's own rule for Claude Code's permission prompt was written from memory and was wrong about the first screen anybody sees. |
+| `agent_rules.explain` | query | operator | Which rule won, where it looked, and what it concluded. A wrong answer that cannot be traced to a rule is one people argue about. |
+| `agent_rules.import` | command | operator | Only when asked, and only after the checks. omt never fetches, updates or applies a rule set on a timer or at startup: a matcher that runs against somebody's screen arrives because they decided, or not at all. |
+| `agent_rules.inspect` | query | operator | What it would change, before anything changes. A rule set is a matcher that runs against whatever is on the screen, so installing one is an act rather than an update. |
 | `audit.list` | query | admin | Every call, with who made it and whether it worked. Refusals included: a log of only what succeeded answers the wrong question, because who *tried* to do what is most of what an audit is for. |
 | `block.body` | query | viewer | The output of one command block, as styled lines. Paged, because a block can hold a whole test run and a phone asking for one over a slow link stalls. |
 | `block.rerun` | command | operator | Send a block's command to its session again. Refused for a block omt never saw the command of, because the alternative is scraping the screen for something that looks like a prompt. |
@@ -151,7 +155,7 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-141 capabilities.
+145 capabilities.
 
 ## Parity exemptions
 

@@ -221,6 +221,7 @@ impl CapabilityHandler<EventsSubscribe> for EventsSubscribeHandler {
     }
 }
 
+mod agent_rules;
 mod dictation;
 mod file_transfer;
 mod history;
@@ -302,6 +303,13 @@ pub fn registry_full(
     r.register::<crate::media::MediaClipboard, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::MediaAttach, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::MediaMaterialize, _>(crate::media::MediaHandler(blobs.clone()))?;
+
+    // Rules for reading an agent's screen: captured from a real one, imported
+    // only when asked, and traceable when they get it wrong.
+    r.register::<agent_rules::AgentRulesCapture, _>(agent_rules::AgentRulesHandler(state.clone()))?;
+    r.register::<agent_rules::AgentRulesInspect, _>(agent_rules::AgentRulesHandler(state.clone()))?;
+    r.register::<agent_rules::AgentRulesImport, _>(agent_rules::AgentRulesHandler(state.clone()))?;
+    r.register::<agent_rules::AgentRulesExplain, _>(agent_rules::AgentRulesHandler(state.clone()))?;
     r.register::<crate::media::PasteTier, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::SshPlan, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::OpenResolve, _>(crate::media::MediaHandler(blobs.clone()))?;

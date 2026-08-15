@@ -110,6 +110,50 @@ carries no answerable card, because building one out of matched text is how a
 change of wording, or of language, becomes a wrong "Allow" in front of
 somebody.
 
+## Getting a screen to write against
+
+Do not retype what you see. omt has the screen:
+
+```
+omt agent_rules capture --session <id>
+```
+
+It writes the visible screen **and each named region of it**, which is the part
+you cannot see by looking: where `after_last_rule` starts is the single thing
+that decides whether your rule fires on the question or on the scrollback above
+it. It also says which agent omt believes is there, so a rule written for the
+wrong one fails early.
+
+## Handing one to somebody else
+
+```
+omt agent_rules inspect --rules "$(cat theirs.toml)" --agent claudecode
+omt agent_rules import  --rules "$(cat theirs.toml)" --agent claudecode
+```
+
+`inspect` says what the set would do — every rule, what it concludes, where it
+looks — and changes nothing. `import` applies the same checks and installs.
+
+**omt never fetches a rule set.** Not at startup, not on a timer, not "check
+weekly". A rule set is a matcher that runs against whatever is on your screen,
+including your work; that is a different act from updating a library, and it
+happens because you decided or it does not happen.
+
+What a hostile set can do is make omt report the wrong state. What it cannot do
+is execute anything, read a file, or reach the network: the matcher has four
+operations, they each take a string and return a bool, and the format has no
+escape hatch. That is the containment, and it is why there is no field for
+running a command.
+
+## When a rule gets it wrong
+
+```
+omt agent_rules explain --session <id>
+```
+
+Which rule won, which region it looked at, what it concluded, and out of how
+many. A wrong answer that cannot be traced to a rule is one people argue about.
+
 ## Getting the wording right
 
 Write rules against a screen you captured, not one you remember. omt's own rule

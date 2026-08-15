@@ -118,6 +118,20 @@ pub enum ManifestError {
 }
 
 impl Manifest {
+    /// Read one from text.
+    ///
+    /// Here rather than at the call site so the format stays this crate's
+    /// business: a caller that had to reach for a TOML parser would be a
+    /// caller that could be handed JSON tomorrow and would not compile.
+    ///
+    /// # Errors
+    /// Fails when the text is not a rule set, with the parser's own message —
+    /// which names the line, and is more use than anything this could say
+    /// about it.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        toml::from_str(text).map_err(|e| e.to_string())
+    }
+
     /// Turn it into rules, or say why not.
     ///
     /// # Errors
