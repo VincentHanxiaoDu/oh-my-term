@@ -534,14 +534,18 @@ fn the_agent_list_finds_the_real_claude_that_the_bar_already_found() {
     // "unknown" beside an agent omt has found. The row that shipped read
     // `shell   Claude Code · unknown · ...`, so a list opened to find out
     // whether omt knows about Claude Code answered with "shell" and "unknown".
-    // The selected row of the overlay, not the echoed command line above it:
+    // The selected row of the panel, not the echoed command line above it:
     // the shell printed the path that was typed, and it starts with a `/`.
+    // The row is inside the panel's borders and carries the selection mark.
     let row = listed
         .lines()
-        .find(|l| l.trim_start().starts_with('>'))
+        .find(|l| l.contains('\u{276f}'))
         .unwrap_or_default()
-        .trim_start()
-        .trim_start_matches('>')
+        .split('\u{276f}')
+        .nth(1)
+        .unwrap_or_default()
+        .trim()
+        .trim_end_matches('\u{2502}')
         .trim()
         .to_owned();
     assert!(
@@ -814,5 +818,47 @@ fn the_leader_strip_fits_the_terminal_it_is_drawn_in() {
         strip.chars().count() <= usize::from(COLS),
         "the strip is {} columns wide in a {COLS}-column terminal: {strip:?}",
         strip.chars().count()
+    );
+}
+
+#[test]
+fn a_list_is_a_bounded_panel_and_not_the_whole_screen() {
+    let _serial = serially();
+    // What it looked like before: full-width inverted rows jammed against the
+    // program underneath, with a label at one edge and its detail at the
+    // other. Nothing said where the list stopped and the pane began, and on a
+    // wide terminal the two halves of a row could not be read as one row.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("\x02p");
+    s.settle(1.5);
+
+    let screen = s.screen();
+    s.type_in("\x1b");
+    s.settle(0.3);
+    s.type_in("\x04");
+
+    let top = screen
+        .lines()
+        .find(|line| line.contains('\u{250c}'))
+        .unwrap_or_else(|| panic!("no panel border:\n{screen}"));
+    let chars: Vec<char> = top.chars().collect();
+    let left = chars
+        .iter()
+        .position(|c| *c == '\u{250c}')
+        .expect("a corner");
+    let right = chars
+        .iter()
+        .rposition(|c| *c == '\u{2510}')
+        .expect("a corner");
+
+    assert!(left > 0, "the panel starts at the screen edge:\n{screen}");
+    assert!(
+        right < usize::from(COLS) - 1,
+        "the panel runs to the screen edge:\n{screen}"
+    );
+    assert!(
+        screen.lines().any(|line| line.contains('\u{2514}')),
+        "the panel has no bottom:\n{screen}"
     );
 }

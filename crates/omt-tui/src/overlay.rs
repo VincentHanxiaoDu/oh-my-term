@@ -120,44 +120,102 @@ impl Overlay {
 #[must_use]
 pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
     let width = cols as usize;
-    let mut out = vec![fit(&format!(" {} ", overlay.title), width)];
-
-    let typed = if overlay.filter.is_empty() {
-        " type to filter".to_owned()
-    } else {
-        format!(" {}", overlay.filter)
-    };
-    out.push(fit(&typed, width));
+    // A bounded panel rather than the whole width. Full width put the label at
+    // one edge of a 170-column terminal and its detail at the other, with a
+    // hundred columns of nothing between them — the eye cannot join those, and
+    // what is left does not read as a list. It also made a list drawn over an
+    // agent's screen look like part of the agent's screen, because nothing
+    // said where one stopped and the other began.
+    let inner = width.saturating_sub(6).min(MEASURE);
+    let margin = (width.saturating_sub(inner + 2)) / 2;
+    let pad = " ".repeat(margin);
 
     let visible = overlay.visible();
+    // The count in the title, because "how many are there" is the question a
+    // list is opened to answer and counting rows is not an answer.
+    let heading = if visible.len() == overlay.choices.len() {
+        format!("{} ({})", overlay.title, overlay.choices.len())
+    } else {
+        format!(
+            "{} ({} of {})",
+            overlay.title,
+            visible.len(),
+            overlay.choices.len()
+        )
+    };
+
+    let mut out = vec![format!(
+        "{pad}\u{250c}\u{2500}{}\u{2500}{}\u{2510}",
+        heading,
+        "\u{2500}".repeat(inner.saturating_sub(heading.chars().count() + 2))
+    )];
+
+    let typed = if overlay.filter.is_empty() {
+        "type to filter".to_owned()
+    } else {
+        overlay.filter.clone()
+    };
+    out.push(boxed(&pad, &typed, inner));
+
     if visible.is_empty() {
         // Said, rather than an empty box: an empty list looks like a broken
         // one, and the useful information is that the filter matched nothing.
-        out.push(fit(&format!("  nothing matches {}", overlay.filter), width));
+        out.push(boxed(
+            &pad,
+            &format!("nothing matches {}", overlay.filter),
+            inner,
+        ));
+        out.push(format!("{pad}\u{2514}{}\u{2518}", "\u{2500}".repeat(inner)));
         return out;
     }
 
-    // Two rows are the title and the filter; one more is left for a hint.
-    let room = (rows as usize).saturating_sub(3).max(1);
+    // The border rows, the filter row and a possible "more" row.
+    let room = (rows as usize).saturating_sub(5).max(1);
     let first = overlay.cursor.saturating_sub(room - 1);
     for (offset, choice) in visible.iter().skip(first).take(room).enumerate() {
         let picked = first + offset == overlay.cursor;
         let chord = choice.chord.clone().unwrap_or_default();
-        let left = format!("{}{}", if picked { "> " } else { "  " }, choice.label);
-        let right = if chord.is_empty() {
-            choice.detail.clone()
-        } else {
-            format!("{}  {chord}", choice.detail)
-        };
-        let gap = width.saturating_sub(left.chars().count() + right.chars().count() + 2);
-        out.push(fit(&format!("{left}{}{right} ", " ".repeat(gap)), width));
+        // Label, then detail, then the chord at the right edge. The detail
+        // follows the label rather than being pushed away from it: they are
+        // one row about one thing.
+        let mut line = format!(
+            "{}{}",
+            if picked { "\u{276f} " } else { "  " },
+            choice.label
+        );
+        if !choice.detail.is_empty() {
+            line.push_str("   ");
+            line.push_str(&choice.detail);
+        }
+        if !chord.is_empty() {
+            let room_left = inner.saturating_sub(line.chars().count() + chord.chars().count() + 1);
+            line.push_str(&" ".repeat(room_left));
+            line.push_str(&chord);
+        }
+        out.push(boxed(&pad, &line, inner));
     }
     if visible.len() > room {
         // Never silently truncated: a list showing eight of forty is one
         // somebody believes is all of them.
-        out.push(fit(&format!("  {} more", visible.len() - room), width));
+        out.push(boxed(
+            &pad,
+            &format!("{} more", visible.len() - room),
+            inner,
+        ));
     }
+    out.push(format!("{pad}\u{2514}{}\u{2518}", "\u{2500}".repeat(inner)));
     out
+}
+
+/// The widest a list is allowed to get.
+///
+/// Wide enough for a session name, where it is and what it is doing; narrow
+/// enough that the three stay in one glance.
+const MEASURE: usize = 88;
+
+/// One row inside the panel's borders.
+fn boxed(pad: &str, text: &str, inner: usize) -> String {
+    format!("{pad}\u{2502}{}\u{2502}", fit(&format!(" {text}"), inner))
 }
 
 fn fit(text: &str, width: usize) -> String {
@@ -259,13 +317,71 @@ mod tests {
     }
 
     #[test]
-    fn every_line_is_the_width_it_was_given() {
+    fn no_line_is_wider_than_the_terminal() {
+        // It used to be exactly the width, because the panel was the whole
+        // screen. That put a label at one edge of a 170-column terminal and
+        // its detail at the other — the eye cannot join those — so the panel
+        // is bounded and centred now, and the invariant that is left is the
+        // one that matters: nothing overruns the screen.
         let p = palette();
-        for cols in [20u16, 40, 100] {
+        for cols in [20u16, 40, 100, 200] {
             for line in render(&p, cols, 20) {
-                assert_eq!(line.chars().count(), cols as usize);
+                assert!(
+                    line.chars().count() <= cols as usize,
+                    "{} columns of line in a {cols}-column terminal: {line:?}",
+                    line.chars().count()
+                );
             }
         }
+    }
+
+    #[test]
+    fn the_panel_is_bounded_so_a_list_reads_as_one_thing() {
+        // On a wide terminal it stops well short of the edges, and it has a
+        // border — without one, a list drawn over an agent's screen looks like
+        // part of the agent's screen.
+        let drawn = render(&palette(), 200, 20);
+        // The panel itself, not the line: the line carries the left margin
+        // that centres it.
+        let top = drawn.first().expect("a top border");
+        // By character, not by byte: the borders are multi-byte and slicing a
+        // string by a byte index found with `find` lands inside one.
+        let chars: Vec<char> = top.chars().collect();
+        let left = chars
+            .iter()
+            .position(|c| *c == '\u{250c}')
+            .expect("a left corner");
+        let right = chars
+            .iter()
+            .rposition(|c| *c == '\u{2510}')
+            .expect("a right corner");
+        let panel = right - left + 1;
+        assert!(panel < 100, "the panel spread to {panel} columns");
+        assert!(left > 10, "it is not centred: {left} columns of margin");
+        assert!(
+            drawn.first().is_some_and(|l| l.contains('\u{250c}')),
+            "no top border"
+        );
+        assert!(
+            drawn.last().is_some_and(|l| l.contains('\u{2514}')),
+            "no bottom border"
+        );
+    }
+
+    #[test]
+    fn the_title_says_how_many_there_are() {
+        // "How many are there" is the question a list is opened to answer, and
+        // counting rows is not an answer.
+        let drawn = render(&palette(), 100, 20).join("\n");
+        assert!(drawn.contains("(3)"), "{drawn}");
+    }
+
+    #[test]
+    fn filtering_says_how_many_of_how_many() {
+        let mut p = palette();
+        p.push('s');
+        let drawn = render(&p, 100, 20).join("\n");
+        assert!(drawn.contains(" of 3"), "{drawn}");
     }
 
     #[test]
@@ -290,6 +406,25 @@ mod tests {
     #[test]
     fn the_selected_row_is_marked() {
         let drawn = render(&palette(), 60, 20).join("\n");
-        assert!(drawn.contains("> session.create"), "{drawn}");
+        assert!(drawn.contains("\u{276f} session.create"), "{drawn}");
+    }
+
+    #[test]
+    fn a_row_keeps_its_detail_next_to_its_label() {
+        // Not pushed to the far edge. They are one row about one thing, and
+        // the whole reason the panel is bounded is that separating them made
+        // the list unreadable on a wide screen.
+        let drawn = render(&palette(), 200, 20).join("\n");
+        let row = drawn
+            .lines()
+            .find(|l| l.contains("session.create"))
+            .expect("the row");
+        let label = row.find("session.create").expect("label");
+        let detail = row.find("Start a session").expect("detail");
+        assert!(
+            detail - label < 40,
+            "the detail is {} columns away: {row:?}",
+            detail - label
+        );
     }
 }
