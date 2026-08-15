@@ -14,6 +14,7 @@ pub mod line;
 mod osc;
 pub mod scrollback;
 pub mod search;
+pub mod seed;
 mod terminal;
 
 pub use action::{
@@ -28,6 +29,7 @@ pub use scrollback::{
     Point, Position, Resolution, Scrollback, ScrollbackLimits, unwrap_lines, wrap_line,
     wrapped_rows,
 };
+pub use seed::seed;
 pub use terminal::{
     AGENT_EVENT_MARKER, AGENT_EVENT_PROTOCOL, Modes, ResizeReport, TermConfig, Terminal, Which,
 };

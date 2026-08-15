@@ -194,6 +194,17 @@ fn serve_connection(mut stream: std::os::unix::net::UnixStream, state: &State) -
     // account that owns it, which is what it already was.
     let mut peer = Peer::new(Actor::Local, Role::Operator);
 
+    // The write half, shared with a pusher once one is started. Locked around
+    // a whole frame: a reply written into the middle of a pushed frame would
+    // corrupt both, and the client would read a length prefix that is not one.
+    let writer: crate::stream::Writer =
+        std::sync::Arc::new(std::sync::Mutex::new(stream.try_clone()?));
+    // How the pusher learns this connection is over. A thread that outlived
+    // its connection would hold the instance lock every few milliseconds
+    // forever, for a client that is gone.
+    let live = std::sync::Arc::new(std::sync::Mutex::new(true));
+    let _hangup = Hangup(std::sync::Arc::clone(&live));
+
     loop {
         let (_, payload) = match omt_transport::read_frame(&mut stream) {
             Ok(frame) => frame,
@@ -214,17 +225,53 @@ fn serve_connection(mut stream: std::os::unix::net::UnixStream, state: &State) -
         if let ProtoMessage::HookEvent(hook) = message {
             let ack = ProtoMessage::HookAck(crate::hooks::ingest(state, &hook));
             let bytes = serde_json::to_vec(&ack).map_err(io::Error::other)?;
-            if omt_transport::write_frame(&mut stream, FrameKind::Text, &bytes).is_err() {
+            let mut out = writer
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if omt_transport::write_frame(&mut *out, FrameKind::Text, &bytes).is_err() {
                 return Ok(());
             }
             continue;
         }
+        // A subscription turns this connection from request-and-answer into
+        // something that also speaks unprompted. Dispatch answers `Subscribe`
+        // with nothing, which is why it never reached anywhere until now.
+        if let ProtoMessage::Subscribe(ref wanted) = message {
+            let sessions = wanted.filter.sessions.clone();
+            let state = state.clone();
+            let writer = std::sync::Arc::clone(&writer);
+            let live = std::sync::Arc::clone(&live);
+            std::thread::spawn(move || {
+                crate::stream::push_loop(&state, &writer, sessions, &live);
+            });
+            continue;
+        }
+
         if let Some(reply) = handle(&registry, &mut peer, message) {
             let bytes = serde_json::to_vec(&reply).map_err(io::Error::other)?;
-            if omt_transport::write_frame(&mut stream, FrameKind::Text, &bytes).is_err() {
+            let mut out = writer
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if omt_transport::write_frame(&mut *out, FrameKind::Text, &bytes).is_err() {
                 return Ok(());
             }
         }
+    }
+}
+
+/// Tells a pusher its connection is over.
+///
+/// A guard rather than a flag somebody remembers to clear: this function
+/// returns from a dozen places, and the one that forgot would leave a thread
+/// taking the instance lock every few milliseconds for a client that is gone.
+struct Hangup(std::sync::Arc<std::sync::Mutex<bool>>);
+
+impl Drop for Hangup {
+    fn drop(&mut self) {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
     }
 }
 

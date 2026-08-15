@@ -68,6 +68,8 @@ pub struct SessionRuntime {
     pty: Pty,
     terminal: Terminal,
     exited: Option<ExitStatus>,
+    /// The most recent output, for a subscriber that is not in this process.
+    tail: crate::tail::Tail,
 }
 
 impl SessionRuntime {
@@ -100,6 +102,7 @@ impl SessionRuntime {
             pty,
             terminal,
             exited: None,
+            tail: crate::tail::Tail::default(),
         })
     }
 
@@ -124,6 +127,12 @@ impl SessionRuntime {
     #[must_use]
     pub const fn exit_status(&self) -> Option<ExitStatus> {
         self.exited
+    }
+
+    /// Recent output, for a client catching up.
+    #[must_use]
+    pub const fn tail(&self) -> &crate::tail::Tail {
+        &self.tail
     }
 
     /// Tell this session's emulator what colours the far terminal uses, so a
@@ -166,6 +175,9 @@ impl SessionRuntime {
                 }
                 offset += consumed;
             }
+            // Kept for whoever is not in this process. The emulator has the
+            // result; a subscriber that blinked needs the bytes.
+            self.tail.push(&buf[..offset]);
             out.bytes = offset;
             out.dirty = offset > 0;
         }

@@ -39,6 +39,7 @@ pub mod transcript;
 mod firstrun;
 pub mod hooks;
 pub mod serve;
+pub mod stream;
 mod terminal_bits;
 
 pub mod remote;
