@@ -133,6 +133,10 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Where the cursor was last put on the real screen, so a frame that did
     // not move it writes nothing at all.
     let mut placed: Option<(u16, u16)> = None;
+    // Whether the terminal is currently showing one. `RawGuard` hides it on
+    // the way in, so this starts false and the first frame that wants one asks
+    // for it.
+    let mut cursor_shown = false;
     // Built once. Rebuilding it twice a second per pane would be the most
     // expensive thing in this loop by an order of magnitude.
     let adapter_set = omt_agent_adapters::builtin();
@@ -460,9 +464,33 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // and does not line up" was. The save/restore on the status row was an
         // attempt at the same thing and could not work: it saved a position
         // the tab bar had already moved.
-        if let (Some(pane), Some(rect)) = (panes.get(focus), rects.get(focus))
+        // Whether the pane's cursor belongs on the screen at all. Derived
+        // rather than assumed: a list is open *over* the pane, and a cursor
+        // blinking in the program behind it says the program is where the
+        // typing goes — which it is not, because the list takes every key.
+        // Somebody typing to filter watches a cursor sit still somewhere else.
+        //
+        // The program's own choice is honoured too: a pager that hid the
+        // cursor meant it, and drawing one over its output is omt overriding a
+        // decision it has no part in.
+        let show_cursor = overlay.is_none()
+            && panes
+                .get(focus)
+                .and_then(|pane| instance.runtime(pane.session))
+                .is_some_and(|runtime| runtime.terminal().grid().cursor.visible);
+        if !show_cursor && cursor_shown {
+            write!(out, "\x1b[?25l").context("hiding the cursor")?;
+            cursor_shown = false;
+            placed = None;
+        }
+        if show_cursor
+            && let (Some(pane), Some(rect)) = (panes.get(focus), rects.get(focus))
             && let Some(runtime) = instance.runtime(pane.session)
         {
+            if !cursor_shown {
+                write!(out, "\x1b[?25h").context("showing the cursor")?;
+                cursor_shown = true;
+            }
             let cursor = runtime.terminal().grid().cursor;
             let (row, col) = cursor_on_screen(rect, cursor.row, cursor.col);
             // Only when it moved. This frame runs at `TICK`, so writing the

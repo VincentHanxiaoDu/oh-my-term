@@ -216,6 +216,11 @@ impl Screen {
         self.rows().join("\n")
     }
 
+    /// Whether the terminal is showing a cursor at all.
+    fn cursor_visible(&self) -> bool {
+        self.term.grid().cursor.visible
+    }
+
     fn cursor(&self) -> (u16, u16) {
         let c = self.term.grid().cursor;
         (c.row, c.col)
@@ -884,4 +889,31 @@ fn a_list_is_a_bounded_panel_and_not_the_whole_screen() {
         screen.lines().any(|line| line.contains('\u{2514}')),
         "the panel has no bottom:\n{screen}"
     );
+}
+
+#[test]
+fn the_cursor_leaves_the_pane_while_a_list_is_over_it() {
+    let _serial = serially();
+    // A list takes every key, so a cursor blinking in the program behind it
+    // says the typing goes there — and it does not. Somebody typing to filter
+    // watches a cursor sit still somewhere else, which is the single clearest
+    // way to look broken.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    assert!(
+        s.cursor_visible(),
+        "the cursor is not in the pane to begin with"
+    );
+
+    s.type_in("\x02p");
+    s.settle(1.5);
+    let over = s.cursor_visible();
+
+    s.type_in("\x1b");
+    s.settle(1.0);
+    let back = s.cursor_visible();
+    s.type_in("\x04");
+
+    assert!(!over, "the cursor stayed in the pane under an open list");
+    assert!(back, "the cursor did not come back when the list closed");
 }

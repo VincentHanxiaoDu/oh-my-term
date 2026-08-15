@@ -134,17 +134,17 @@ impl Screen {
             )?;
             self.cursor = Some(cursor);
         }
-        // Only when it changed. Re-asserting visibility every frame costs six
-        // bytes on a screen where nothing happened, which is exactly the frame
-        // that has to be free.
-        if self.visible != Some(grid.cursor.visible) {
-            if grid.cursor.visible {
-                write!(buf, "\x1b[?25h")?;
-            } else {
-                write!(buf, "\x1b[?25l")?;
-            }
-            self.visible = Some(grid.cursor.visible);
-        }
+        // Cursor visibility is deliberately *not* written here.
+        //
+        // It was, and then two things owned it: this, from the pane's own
+        // grid, and the frame loop, which knows something the pane cannot —
+        // that a list is open over it and takes every key. The two disagreed
+        // in the direction that loses: the loop hid the cursor, this showed it
+        // again on the next repaint, and somebody typing into a filter watched
+        // a cursor sit still in the program behind it.
+        //
+        // One owner. The loop decides, from the pane's own `cursor.visible`
+        // and from whether anything is over it.
 
         if !buf.is_empty() {
             out.write_all(&buf)?;
@@ -341,16 +341,22 @@ mod tests {
         let mut s = Screen::new();
         let t = terminal(20, 5, "\x1b[3;7Hx");
         let (bytes, _) = draw(&mut s, &t);
-        assert!(bytes.ends_with("\u{1b}[?25h"), "{bytes:?}");
         assert!(bytes.contains("\u{1b}[3;8H"), "{bytes:?}");
     }
 
     #[test]
-    fn a_hidden_cursor_is_hidden() {
+    fn visibility_is_left_to_whoever_owns_the_screen() {
+        // This draws a pane. Whether a cursor belongs on the screen depends on
+        // something a pane cannot know — that a list is open over it and takes
+        // every key — so the frame loop decides and this writes neither
+        // sequence. Two owners disagreed in the direction that loses: the loop
+        // hid the cursor and the next repaint here showed it again.
         let mut s = Screen::new();
-        let t = terminal(20, 3, "\x1b[?25lx");
-        let (bytes, _) = draw(&mut s, &t);
-        assert!(bytes.contains("\u{1b}[?25l"), "{bytes:?}");
+        for source in ["\x1b[?25lx", "\x1b[?25hx"] {
+            let t = terminal(20, 3, source);
+            let (bytes, _) = draw(&mut s, &t);
+            assert!(!bytes.contains("\u{1b}[?25"), "{bytes:?}");
+        }
     }
 
     #[test]
