@@ -126,6 +126,12 @@ impl SessionRuntime {
         self.exited
     }
 
+    /// Tell this session's emulator what colours the far terminal uses, so a
+    /// program that asks gets an answer instead of silence.
+    pub fn tell_colours(&mut self, foreground: Option<String>, background: Option<String>) {
+        self.terminal.tell_colours(foreground, background);
+    }
+
     /// Move whatever is waiting, once.
     ///
     /// Reads at most [`READ_CHUNK`] bytes, feeds them to the parser, and drains

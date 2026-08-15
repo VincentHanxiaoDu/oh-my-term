@@ -823,7 +823,7 @@ Priorities: **Must** = required for v1, a real terminal is wrong without it.
 |---|---|---|
 | `0/1/2` title | Must | Tab titles; feeds `session.title` |
 | `4` set palette entry, `104` reset | Must | Colour schemes; `vim` sets palette entries |
-| `10/11/12` fg/bg/cursor + `110/111/112` reset | Must | Needed for correct default colours and for 2031 |
+| `10/11/12` fg/bg/cursor + `110/111/112` reset | Must | Needed for correct default colours and for 2031. **The `?` form is a question and is answered** — see §5.4.1 |
 | **`7` current working directory** | Must | Powers workspace identity, new-pane-in-same-dir, and block `cwd`. See [05](05-session-model.md) |
 | **`8` hyperlinks** | Must | `ls --hyperlink`, `delta`, `cargo`. Stored as `ExtraAttrs` runs |
 | `9` notification | Should | Maps to an `omt` notification event; **rate-limited** |
@@ -840,6 +840,36 @@ Priorities: **Must** = required for v1, a real terminal is wrong without it.
 | `22` pointer shape | Later | Cosmetic |
 | `6`, `17/19`, `21337` | Later | iTerm2-specific |
 | **omt backchannel** | Must | See §7.3. Uses `OSC 133` + `OSC 1337;SetUserVar=` rather than a new number |
+
+#### 5.4.1 Answering "what colour are you"
+
+`OSC 10 ; ?` and `OSC 11 ; ?` are questions, and a terminal that never answers
+them is not merely incomplete — it makes the programs inside it look broken.
+Agent CLIs ask this to decide whether they are on a light or a dark terminal.
+Unanswered, they guess, and the guess is wrong about half the time; what
+somebody sees is *the agent* rendering unreadably inside omt and correctly
+everywhere else.
+
+Three rules:
+
+- **Only `?` is a question.** Any other payload sets the colour, and answering
+  a set sends bytes to a program that is not reading a reply.
+- **Silence when omt does not know.** Inventing a colour is worse than saying
+  nothing: a program told the background is black on a white terminal renders
+  unreadably *because it was told to*. The cursor's colour is omt's own to
+  draw rather than something it was told, so `OSC 12 ; ?` is never answered.
+- **omt learns the answer, it does not query for it.** Configuration first,
+  then `$COLORFGBG`. omt does **not** query the terminal it is running in: the
+  reply would arrive in the same stream as everything the user types, and an
+  answer mistaken for keystrokes puts escape text into their shell — a worse
+  failure than not knowing. `$COLORFGBG` names palette indexes, and only the
+  two ends are turned into an answer; an index in between names a colour from
+  a palette omt has not been told.
+
+The reply is terminated with `ST`, not `BEL`: both are accepted everywhere, and
+a bell that reaches a program expecting a string terminator is a beep somebody
+hears for no reason.
+
 
 ### 5.5 Keyboard, graphics, misc
 

@@ -41,6 +41,9 @@ Generated from `omt-config`'s schema. Every setting has a default, because a fea
 | `media.quota.ttl` | integer | `24` | immediately | The media quota ttl. |
 | `media.quota.ttl_referenced` | integer | `7` | immediately | Ttl referenced. |
 | `media.reverse_socket.hosts` | list | `[]` | immediately | The media reverse socket hosts. |
+| `notifications.sound` | bool | `true` | immediately | Whether a notification also makes a noise. omt ships no audio and plays whatever this machine already has. |
+| `notifications.sound.finished` | text | `""` | immediately | A sound file to play when an agent finishes while nobody is watching. Empty means the system's own. |
+| `notifications.sound.needs_you` | text | `""` | immediately | A sound file to play when an agent starts waiting for a person. Empty means the system's own. |
 | `notifications.when` | needs-you \| any-change \| off | `"needs-you"` | immediately | When to notify. `needs-you` is a card waiting on a human, which is the only one worth a buzz by default. |
 | `server.bind` | text | `"127.0.0.1:7717"` | on listener restart | Where the web surface listens. Loopback by default, deliberately. |
 | `shell.auto_install` | bool | `true` | immediately | Auto install. |
@@ -49,6 +52,7 @@ Generated from `omt-config`'s schema. Every setting has a default, because a fea
 | `shell.osc133` | emit \| consume \| both | `"both"` | immediately | The shell osc133. |
 | `shell.propagate_over_ssh` | bool | `false` | immediately | Propagate over ssh. |
 | `shell.shells` | text | `""` | immediately | The shell shells. Default: auto-detected. |
+| `terminal.background` | text | `""` | immediately | The same for the background — the one agent CLIs read to decide whether they are on a light or a dark terminal. |
 | `terminal.bell` | off \| visual \| audible \| both | `"visual"` | immediately | The terminal bell. |
 | `terminal.blocks` | bool | `true` | immediately | Track command blocks. On for every shell; a shell that emits no marks still gets blocks, with less known about each. |
 | `terminal.blocks.enabled` | bool | `true` | immediately | The terminal blocks enabled. |
@@ -58,6 +62,7 @@ Generated from `omt-config`'s schema. Every setting has a default, because a fea
 | `terminal.default_cwd` | home \| last \| workspace | `"workspace"` | immediately | Default cwd. |
 | `terminal.default_shell` | text | `""` | immediately | The shell new sessions start. Empty means omt uses $SHELL. |
 | `terminal.env_passthrough` | list | `["TERM_PROGRAM","COLORTERM","LANG"]` | immediately | Env passthrough. |
+| `terminal.foreground` | text | `""` | immediately | What to answer a program that asks what colour the text is, as `rgb:rrrr/gggg/bbbb`. Empty means omt says nothing rather than guessing. |
 | `terminal.highlight` | bool | `true` | immediately | Colour the command line by token. |
 | `terminal.mouse_reporting` | bool | `true` | immediately | Mouse reporting. |
 | `terminal.paste_confirm_lines` | integer | `10` | immediately | Paste confirm lines. |

@@ -312,6 +312,57 @@ pty-only agent with no hooks installed there is nothing to show, and that is
 the honest answer rather than a screen-scraped approximation of one.
 
 
+### 2.1d Reaching somebody who is not looking at the screen
+
+Everything in §2.1 through §2.1c answers "who needs me" **to a person already
+looking at omt**, which is the one case where the answer did not need finding.
+The premise of the product is the other case: agents work while you do
+something else. A person in a browser, in an editor, in another window learns
+nothing from a status bar.
+
+Two channels, both of which cost nothing where they are unavailable:
+
+| Channel | How | When there is none |
+|---|---|---|
+| A notification the terminal emulator raises with the operating system | an escape sequence, so it survives ssh and a multiplexer — which is where agents actually run | silent; there is no query for "can you notify", and a sequence an emulator does not understand is *drawn as text* in the middle of somebody's work, so the rule is recognized or nothing |
+| A sound | whatever the machine already plays audio with | silent |
+
+**omt ships no audio.** A repository that carries media carries its licence,
+its attribution and an argument about taste; every system this runs on already
+has sounds somebody chose, and `notifications.sound.*` names a file for anyone
+who wants their own.
+
+The decision of *when* is the feature, and the escape sequence is plumbing — a
+tool that buzzes for everything is one people turn off, and then it does not
+buzz for the thing that mattered. Three rules, in order:
+
+1. **A report is not a change.** Every source that reads a screen re-answers on
+   a timer; firing on the state rather than on the transition is a buzz every
+   few hundred milliseconds. `Working` is compared by kind and not by value,
+   because its description moves with the work and every step of one task would
+   otherwise be its own event.
+2. **Being waited for always counts**, including while somebody is looking
+   straight at the pane. It is a decision to make, not news: a question you can
+   see is still a question that has stopped the work until you answer it.
+3. **Finishing counts only when nobody was watching** — and only from work. "It
+   finished while you were elsewhere" is the notification; "it finished while
+   you watched it finish" is the noise, and an agent that was already idle has
+   not finished anything, so the first reading of a session never announces
+   itself.
+
+`notifications.when` decides which of 2 and 3 apply. It defaults to `needs-you`
+— the one that stops the work — with `any-change` for people who want the
+completions too. **An unrecognized value reads as the default rather than as
+`off`**: a typo that silences notifications is a typo nobody discovers, because
+its only symptom is the absence of something.
+
+The text is an agent's own words, and it travels inside an escape sequence, so
+`ESC`, `BEL` and `ST` are stripped before it is sent. That is not tidiness — an
+unescaped `ESC` in that position ends the sequence early and leaves the rest to
+be interpreted as commands, which is one program writing control sequences into
+another's terminal.
+
+
 ### 2.2 `⟨leader⟩ ?` — the help overlay
 
 `⟨leader⟩ ?` (`ui.open_keymap_help`, [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace))

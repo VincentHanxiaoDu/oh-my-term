@@ -58,6 +58,15 @@ impl AgentAdapter for Cursor {
         Tier::Hook
     }
 
+    fn resume_argv(&self, agent_session: &str) -> Option<Vec<String>> {
+        // The binary is not called what the agent is called.
+        Some(vec![
+            "cursor-agent".to_owned(),
+            "--resume".to_owned(),
+            agent_session.to_owned(),
+        ])
+    }
+
     fn interrupt(&self) -> Interrupt {
         Interrupt::ControlC
     }

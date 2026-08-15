@@ -1450,6 +1450,7 @@ dependencies = [
  "omt-identity",
  "omt-input",
  "omt-media",
+ "omt-notify",
  "omt-open",
  "omt-plugin-host",
  "omt-proto",
@@ -1617,6 +1618,13 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "omt-notify"
+version = "0.1.0"
+dependencies = [
+ "omt-types",
 ]
 
 [[package]]

@@ -24,6 +24,7 @@ omt-catalog = { workspace = true }
 omt-events = { workspace = true }
 omt-proto = { workspace = true }
 omt-transport = { workspace = true }
+omt-notify = { path = "../omt-notify" }
 omt-tui = { path = "../omt-tui" }
 omt-server = { path = "../omt-server" }
 omt-auth = { workspace = true }

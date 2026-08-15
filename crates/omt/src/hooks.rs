@@ -59,6 +59,12 @@ fn absorb(state: &State, event: &HookEvent) -> Option<()> {
     // would put its agent's words in this one's conversation.
     instance.session(session)?;
     let binding = instance.binding_for(session);
+    // What the agent calls this conversation. The only thing that can be
+    // handed back to it to *continue* rather than to start again, and it
+    // arrives here or nowhere: nothing else omt can see knows it.
+    if let Some(agent_session) = &event.agent_session {
+        instance.observe_agent_session(session, agent_session.clone());
+    }
 
     let mode = instance.session(session).map(|s| s.mode);
 
@@ -371,5 +377,17 @@ mod tests {
             ),
             "the pane did not report that somebody is being waited for"
         );
+    }
+    #[test]
+    fn the_agents_own_name_for_its_conversation_is_remembered() {
+        // The one thing that can be handed back to an agent to *continue*
+        // rather than start again, and it arrives here or nowhere: nothing
+        // else omt can see knows it.
+        let (state, session) = instance_with_session();
+        let mut event = ask(Some(session));
+        event.agent_session = Some("c-42".to_owned());
+        let _ = ingest(&state, &event);
+        let instance = state.lock().expect("lock");
+        assert_eq!(instance.agent_session(session), Some("c-42"));
     }
 }

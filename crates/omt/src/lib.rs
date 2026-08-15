@@ -36,8 +36,10 @@ pub mod state;
 pub mod surfaces;
 pub mod transcript;
 
+mod firstrun;
 pub mod hooks;
 pub mod serve;
+mod terminal_bits;
 
 pub mod remote;
 

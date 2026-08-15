@@ -6,6 +6,7 @@
   "agent.hooks_plan",
   "agent.interrupt",
   "agent.offers",
+  "agent.resume_plan",
   "agent.threads",
   "agent.wait",
   "agent_rules.capture",

@@ -12,7 +12,7 @@ use crate::line::{HyperlinkId, Line};
 use crate::scrollback::{Scrollback, ScrollbackLimits};
 
 /// How the terminal is configured.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TermConfig {
     /// The starting size.
     pub size: GridSize,
@@ -20,6 +20,16 @@ pub struct TermConfig {
     pub scrollback: ScrollbackLimits,
     /// Most host actions queued per `advance`.
     pub max_host_actions: usize,
+    /// What to answer when a program asks what colour the text is, as
+    /// `rgb:rrrr/gggg/bbbb`.
+    ///
+    /// Programs ask this to decide whether they are on a light or a dark
+    /// terminal, and an agent CLI is one of the programs that does. A terminal
+    /// that stays silent leaves them to guess, and the guess is wrong about
+    /// half the time — which looks like the *agent* has a bug.
+    pub foreground: Option<String>,
+    /// The same for the background, which is the one almost everything reads.
+    pub background: Option<String>,
 }
 
 impl Default for TermConfig {
@@ -28,6 +38,12 @@ impl Default for TermConfig {
             size: GridSize::new(80, 24),
             scrollback: ScrollbackLimits::default(),
             max_host_actions: 256,
+            // No claim by default. omt only knows these when the terminal it
+            // is itself running in has answered, and inventing a colour is
+            // worse than silence: a program told the background is black on a
+            // white terminal renders unreadably and has been *told* to.
+            foreground: None,
+            background: None,
         }
     }
 }
@@ -85,6 +101,8 @@ struct State {
     /// program producing output, and treating it as one would open a block
     /// every time something repainted its status line.
     wrote_output: bool,
+    /// What to answer a program that asks what colour things are.
+    colours: (Option<String>, Option<String>),
 }
 
 /// The DEC private modes that are on.
@@ -107,6 +125,16 @@ impl Modes {
 }
 
 impl Terminal {
+    /// Tell it what colours the terminal on the other end actually uses.
+    ///
+    /// Separate from construction because omt learns this later than it
+    /// creates the emulator: the answer comes from the terminal omt is itself
+    /// drawing on, or from configuration, and a session can be created before
+    /// either is known.
+    pub fn tell_colours(&mut self, foreground: Option<String>, background: Option<String>) {
+        self.state.colours = (foreground, background);
+    }
+
     /// A fresh terminal.
     #[must_use]
     pub fn new(config: TermConfig) -> Self {
@@ -127,6 +155,7 @@ impl Terminal {
                 stalled: None,
                 pending_blocks: Vec::new(),
                 wrote_output: false,
+                colours: (config.foreground.clone(), config.background.clone()),
             },
             blocks: crate::block::BlockTracker::new(),
             damage: crate::damage::Tracker::new(size.rows),
@@ -950,6 +979,35 @@ impl Perform for State {
                     b"11" => ColorSlot::Background,
                     _ => ColorSlot::Cursor,
                 };
+                // `?` asks; anything else sets. Programs ask this to decide
+                // whether they are on a light or a dark terminal — an agent
+                // CLI is one of the programs that does — and a terminal that
+                // stays silent leaves them to guess, which is wrong about half
+                // the time and looks like *their* bug.
+                if text(1).trim() == "?" {
+                    let known = match slot {
+                        ColorSlot::Foreground => self.colours.0.clone(),
+                        ColorSlot::Background => self.colours.1.clone(),
+                        // The cursor's colour is omt's to draw and not
+                        // something it has been told, so there is nothing
+                        // honest to answer.
+                        _ => None,
+                    };
+                    // Silence when omt does not know. Inventing a colour is
+                    // worse: a program told the background is black on a white
+                    // terminal renders unreadably, and has been told to.
+                    if let Some(colour) = known {
+                        let code = String::from_utf8_lossy(code).into_owned();
+                        // Terminated with ST rather than BEL — both are
+                        // accepted, and a bell that reaches a program
+                        // expecting a string terminator is a beep somebody
+                        // hears for no reason.
+                        self.emit(HostAction::Reply(
+                            format!("\x1b]{code};{colour}\x1b\\").into_bytes(),
+                        ));
+                    }
+                    return;
+                }
                 self.emit(HostAction::SetColor {
                     slot,
                     color: parse_x_color(&text(1)),
@@ -1775,6 +1833,56 @@ mod tests {
                 crate::damage::DamageKind::Full | crate::damage::DamageKind::Rows(_)
             ),
             "{kind:?}"
+        );
+    }
+    #[test]
+    fn a_program_asking_what_colour_the_background_is_gets_an_answer() {
+        // Agent CLIs ask this to decide whether they are on a light or a dark
+        // terminal. A terminal that stays silent leaves them to guess, and the
+        // guess is wrong about half the time — which looks like the *agent*
+        // has the bug.
+        let mut t = Terminal::new(TermConfig {
+            size: GridSize::new(10, 2),
+            background: Some("rgb:1111/2222/3333".to_owned()),
+            foreground: Some("rgb:eeee/eeee/eeee".to_owned()),
+            ..TermConfig::default()
+        });
+        feed(&mut t, "\x1b]11;?\x1b\\");
+        let replied = t.drain_actions().into_iter().find_map(|a| match a {
+            HostAction::Reply(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+            _ => None,
+        });
+        assert_eq!(replied.as_deref(), Some("\x1b]11;rgb:1111/2222/3333\x1b\\"));
+    }
+
+    #[test]
+    fn a_terminal_that_does_not_know_its_colours_says_nothing() {
+        // Inventing one is worse than silence: a program told the background
+        // is black on a white terminal renders unreadably, and has been *told*
+        // to do it.
+        let mut t = term(10, 2);
+        feed(&mut t, "\x1b]11;?\x1b\\");
+        assert!(
+            !t.drain_actions()
+                .iter()
+                .any(|a| matches!(a, HostAction::Reply(_)))
+        );
+    }
+
+    #[test]
+    fn setting_a_colour_is_not_a_question_and_is_not_answered() {
+        // `OSC 11 ; <colour>` sets; only `?` asks. Answering a set would send
+        // bytes to a program that is not reading a reply.
+        let mut t = Terminal::new(TermConfig {
+            size: GridSize::new(10, 2),
+            background: Some("rgb:0000/0000/0000".to_owned()),
+            ..TermConfig::default()
+        });
+        feed(&mut t, "\x1b]11;rgb:ffff/ffff/ffff\x1b\\");
+        assert!(
+            !t.drain_actions()
+                .iter()
+                .any(|a| matches!(a, HostAction::Reply(_)))
         );
     }
 }

@@ -17,6 +17,7 @@ use omt_term::TermMode;
 use omt_tui::{Input, RawGuard, Screen};
 
 use crate::rows::{agent_rows, agent_short_name, conversation_of, session_rows};
+use crate::terminal_bits::{announce, host_colours, setting, sound_file};
 
 /// How long to wait for input before checking the session again.
 ///
@@ -32,7 +33,7 @@ const TICK: Duration = Duration::from_millis(8);
 /// shipped was two — a tab bar across the top and a hint along the bottom —
 /// which on a 24-row terminal is 8% of the screen given to chrome that the
 /// document does not describe.
-const CHROME_ROWS: u16 = 0;
+pub(crate) const CHROME_ROWS: u16 = 0;
 
 /// Rows of chrome below the panes: the status bar, and only that.
 const STATUS_ROWS: u16 = 1;
@@ -72,7 +73,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Printed before anything else, so it is above the session rather than
     // interleaved with it. Prints and continues — no question, no wait. Every
     // question is a step, and a step is where people stop.
-    first_run_summary();
+    crate::firstrun::first_run_summary();
 
     // Held behind a `State` rather than owned outright, because something
     // else now needs to reach it: the agents in these panes fire hooks, and a
@@ -169,11 +170,25 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Built once. Rebuilding it twice a second per pane would be the most
     // expensive thing in this loop by an order of magnitude.
     let adapter_set = omt_agent_adapters::builtin();
+    // Where somebody is reading, when they are reading rather than typing.
+    // `None` is the ordinary case: keys go to the pane.
+    let mut copying: Option<omt_tui::CopyMode> = None;
     let mut branch = BranchCache::default();
 
     // Labelled, because the input drain below is itself a loop: an unlabelled
     // `break` on detach would leave the drain and carry straight on drawing
     // frames, and omt would refuse to exit.
+    // Read once, before the loop. A setting re-read every frame is a file
+    // opened 125 times a second for an answer that changes at most when
+    // somebody edits it.
+    let when = omt_notify::When::parse(&setting(&state, "notifications.when"));
+    let notify_env = omt_notify::Environment::from_process();
+    let sounds = omt_notify::sound::Sounds {
+        needs_you: sound_file(&state, "notifications.sound.needs_you"),
+        finished: sound_file(&state, "notifications.sound.finished"),
+        muted: setting(&state, "notifications.sound").contains("false"),
+    };
+
     // Released before the frame loop and taken again per iteration, so the
     // hook listener gets the instance between frames rather than never.
     drop(instance);
@@ -218,7 +233,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // starting Claude Code in a pane and asking omt about it showed
         // "nothing matches", because nothing had ever looked.
         let now = monotonic_ms();
-        for pane in &mut panes {
+        for (index, pane) in panes.iter_mut().enumerate() {
             if now.saturating_sub(pane.probed_at) < crate::probe::PROBE_EVERY_MS {
                 continue;
             }
@@ -275,6 +290,27 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 ) {
                     pane.seen = false;
                 }
+            }
+            // The whole premise of this product is that agents work while you
+            // are doing something else — and everything omt draws answers "who
+            // needs me" only to somebody already looking at the screen, which
+            // is the one case where the answer did not need finding. This is
+            // the part that reaches somebody in a browser, in an editor, in
+            // another window.
+            //
+            // Outside the block above deliberately: that one asks whether omt
+            // has *identified* an agent in this pane, and a hook is an agent
+            // saying what it is doing whether or not the probe has named it
+            // yet. Gating on identification meant the strongest signal omt has
+            // could not raise a notification.
+            if let Some(now_state) = instance.agent_state(pane.binding, now) {
+                let watching = focus == index && overlay.is_none();
+                if let Some(moment) =
+                    omt_notify::worth_saying(when, pane.said.as_ref(), &now_state, watching)
+                {
+                    announce(moment, pane, &notify_env, &sounds);
+                }
+                pane.said = Some(now_state);
             }
         }
 
@@ -537,6 +573,19 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             }
         }
 
+        // History, over the pane it belongs to. Drawn after the panes and
+        // before the bar, so the pane's own renderer — which believes it owns
+        // those cells and is still drawing live output into them — cannot
+        // paint over what somebody is reading.
+        if let (Some(reading), Some(rect)) = (copying.as_ref(), rects.get(focus)) {
+            let terminal = panes
+                .get(focus)
+                .and_then(|pane| instance.runtime(pane.session))
+                .map(omt_daemon::SessionRuntime::terminal);
+            crate::terminal_bits::draw_history(&mut out, reading, *rect, terminal)
+                .context("drawing history")?;
+        }
+
         // One row, at the bottom, per 19 §2.1. The tab bar that used to sit
         // across the top is gone: the document gives omt one row of chrome and
         // says so twice, and cell B of this bar is the session list that bar
@@ -703,6 +752,37 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 continue;
             }
 
+            // Copy mode takes every key, like an overlay does and for the same
+            // reason: somebody is reading, and a keystroke that reached the
+            // shell would type into a program nobody is looking at. Checked
+            // before the leader so `[` twice does not re-enter it.
+            if let Some(reading) = copying.as_mut()
+                && !armed
+            {
+                if let crossterm::event::Event::Key(key) = &event {
+                    let terminal = panes
+                        .get(focus)
+                        .and_then(|p| instance.runtime(p.session))
+                        .map(omt_daemon::SessionRuntime::terminal);
+                    if crate::terminal_bits::reading_key(
+                        key,
+                        reading,
+                        rects.get(focus).copied().unwrap_or(omt_tui::Rect {
+                            col: 0,
+                            row: 0,
+                            cols: 0,
+                            rows: 0,
+                        }),
+                        terminal,
+                    ) == crate::terminal_bits::Reading::Leave
+                    {
+                        copying = None;
+                    }
+                }
+                layout_dirty = true;
+                continue;
+            }
+
             let (input, next) = omt_tui::translate(&event, armed, mode);
             // Recorded the moment it is first armed: somebody who has pressed
             // it knows it exists, and the introduction stops being useful.
@@ -749,6 +829,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         "Agents",
                         agent_rows(&mut instance, &panes, monotonic_ms()),
                     ));
+                    layout_dirty = true;
+                }
+                Input::CopyMode => {
+                    let total = panes
+                        .get(focus)
+                        .and_then(|p| instance.runtime(p.session))
+                        .map_or(0, |rt| rt.terminal().total_rows());
+                    let rows = rects.get(focus).map_or(1, |r| r.rows);
+                    copying = Some(omt_tui::CopyMode::entering(total, rows));
                     layout_dirty = true;
                 }
                 Input::Conversation => {
@@ -1035,6 +1124,13 @@ pub(crate) struct LocalPane {
     /// you were elsewhere" from "it is sitting there and you have been
     /// watching it", which is the distinction this whole product is for.
     pub(crate) seen: bool,
+    /// What this pane's agent was doing when it was last looked at.
+    ///
+    /// Kept so a *change* can be told from a report. Every source that reads a
+    /// screen re-answers on a timer, so a notification fired on the state
+    /// rather than on the transition would fire every few hundred
+    /// milliseconds — which is how a tool gets muted in its first hour.
+    pub(crate) said: Option<omt_types::AgentState>,
 }
 
 impl LocalPane {
@@ -1072,6 +1168,14 @@ impl LocalPane {
         )
         .context("starting the shell")?;
         instance.attach(runtime).context("attaching")?;
+        // What colour the terminal on the other end is. Programs in this pane
+        // ask, and an agent CLI is one of the programs that asks: silence
+        // leaves it to guess whether it is on a light or a dark terminal, and
+        // the guess is wrong about half the time.
+        let (foreground, background) = host_colours();
+        if let Some(rt) = instance.runtime_mut(session) {
+            rt.tell_colours(foreground, background);
+        }
         let pane = instance.add_pane(workspace, session);
 
         // The local terminal holds the token like any other actor rather than
@@ -1100,6 +1204,7 @@ impl LocalPane {
             tile,
             // A pane somebody just opened is one they are looking at.
             seen: true,
+            said: None,
         })
     }
 }
@@ -1171,83 +1276,6 @@ fn draw_separators(out: &mut impl Write, rects: &[omt_tui::Rect]) -> io::Result<
         }
     }
     Ok(())
-}
-
-/// Say what omt found, once, on a machine that has never run it.
-///
-/// The trigger is the absence of a configuration directory, because that is
-/// what "first run" means and it needs no state of its own. The directory is
-/// created here, so a second run says nothing — including a second run that
-/// changes nothing else.
-fn first_run_summary() {
-    let Some(home) = config_home() else {
-        return;
-    };
-    if home.exists() {
-        return;
-    }
-    // Created before printing. If creating it fails the summary is skipped
-    // rather than printed on every start, which would be worse than never.
-    if std::fs::create_dir_all(&home).is_err() {
-        return;
-    }
-
-    let shell = std::env::var("SHELL")
-        .ok()
-        .and_then(|p| {
-            std::path::Path::new(&p)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| "your shell".to_owned());
-
-    let agents = detected_agents();
-
-    println!("omt {}", env!("CARGO_PKG_VERSION"));
-    println!("  shell: {shell}");
-    if agents.is_empty() {
-        println!("  agents: none on PATH — omt runs anything, and detects these when present");
-    } else {
-        println!("  agents: {}", agents.join(", "));
-    }
-    let leader = omt_tui::leader();
-    println!("  {leader} ? for every key · {leader} d to detach · `omt web` for a phone");
-    println!();
-}
-
-/// Which agent CLIs are on PATH.
-///
-/// Named rather than counted: "3 agents detected" tells somebody nothing they
-/// can act on, and the list is what makes it obvious omt already knows about
-/// the one they use.
-fn detected_agents() -> Vec<String> {
-    [
-        "claude",
-        "codex",
-        "copilot",
-        "gemini",
-        "cursor-agent",
-        "opencode",
-    ]
-    .iter()
-    .filter(|name| which(name))
-    .map(|name| (*name).to_owned())
-    .collect()
-}
-
-/// Whether a program is on PATH.
-fn which(program: &str) -> bool {
-    std::env::var_os("PATH")
-        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
-}
-
-/// Where omt keeps its configuration.
-fn config_home() -> Option<std::path::PathBuf> {
-    std::env::var("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|_| std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
-        .ok()
-        .map(|base| base.join("omt"))
 }
 
 /// Milliseconds since the process started.
@@ -1332,5 +1360,23 @@ mod tests {
             cols: 40,
         };
         assert_eq!(cursor_on_screen(&rect, 0, 0), (6, 41));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
+mod colour_tests {
+    use crate::terminal_bits::ansi_end;
+
+    #[test]
+    fn only_the_two_ends_of_the_palette_are_named() {
+        // An index in between names a colour from a palette omt has not been
+        // told, and a guessed midtone is exactly the answer that renders
+        // somebody's agent unreadable.
+        assert_eq!(ansi_end("0").as_deref(), Some("rgb:0000/0000/0000"));
+        assert_eq!(ansi_end("15").as_deref(), Some("rgb:ffff/ffff/ffff"));
+        assert_eq!(ansi_end("7").as_deref(), Some("rgb:ffff/ffff/ffff"));
+        assert_eq!(ansi_end("4"), None);
+        assert_eq!(ansi_end("default"), None);
     }
 }

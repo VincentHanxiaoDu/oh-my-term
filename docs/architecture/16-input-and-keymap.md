@@ -1788,6 +1788,55 @@ pointer back to §6.1.
 - Golden diagnostics for `OMT-C420`–`OMT-C425`, so the output above is the
   fixture.
 
+### 6.8b Copy mode: what is built, and what is only specified
+
+This document has specified copy mode at length — registers, search, vim and
+emacs motions, `"+y` over ssh — for a state machine that nothing implemented.
+The keymap carried the bindings and `⌃b ?` advertised them, which is worse than
+not describing it at all: a key that is listed and does nothing reads as a
+broken program rather than an unbuilt one.
+
+What ships now, in the terminal:
+
+| Key | Does |
+|---|---|
+| `⟨leader⟩ [` | Enter, looking at the **end** of the history — somebody pressing this is looking for something that just happened |
+| `h` `j` `k` `l`, arrows | Move; the viewport follows the cursor, never the other way round |
+| `g` / `G`, `b` / `f`, PgUp / PgDn | Ends and pages |
+| `0` / `$`, Home / End | Line ends |
+| `v` or Space | Start a selection, or clear one |
+| `y` or Enter | Copy the selection and leave |
+| `/` then Enter | Search the history; case-insensitive, because somebody looking through their own scrollback is looking for a word and not for a spelling of it |
+| `n` / `N` | The next match, forwards or back |
+| `Esc` or `q` | Leave, copying nothing |
+
+Three rules the implementation is built on, each of them a way of being wrong
+that is invisible until somebody has lost text:
+
+1. **Positions are absolute row numbers**, counted from the first line the
+   session ever wrote. Screen-relative positions move underneath a reader as
+   output arrives, so a selection anchored at "row 4" covers different text a
+   second later — and what gets copied is not what was highlighted.
+2. **A row scrollback no longer holds is skipped, not blanked.** History is
+   bounded and a selection can outlive the lines it covers; a blank line
+   invented in its place puts something in the copy that was never on screen.
+3. **The padding a terminal adds is not copied.** Every row is padded to the
+   width of the screen, and an untrimmed copy carries hundreds of spaces
+   nobody typed — which reappear wherever it is pasted.
+
+The copy goes out over OSC 52, which is the only clipboard reachable from the
+far end of an ssh link — which is where these sessions actually run.
+
+A search that finds nothing says so and **does not move**: landing somewhere
+arbitrary loses the reader's place and gives them no way to tell that is what
+happened. An empty query is dropped rather than run — it matches every position
+on every line, which is a jump to where the cursor already was.
+
+Not built, and named here rather than left to be discovered: named registers
+and the emacs motion set. Their bindings are specified above
+and the honest state of each is "specified".
+
+
 ### 6.9 Parity: the web client and mobile
 
 **Web desktop is genuinely easy**, and this is one of the few places the browser

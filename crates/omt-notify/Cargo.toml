@@ -1,0 +1,13 @@
+[package]
+name = "omt-notify"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Telling somebody an agent needs them, when they are looking at something else."
+
+[dependencies]
+omt-types = { workspace = true }
+
+[lints]
+workspace = true

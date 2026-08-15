@@ -978,6 +978,43 @@ Gemini's settings, opencode's plugin directory. Rules learned from other termina
 - Guard clauses at the top of the hook: if `OMT_SOCK` is unset or the socket is
  gone, exit 0 immediately.
 
+### 7.1b Resuming a conversation, not starting one that looks like it
+
+A session that outlives its terminal is the premise of a multiplexer. For a
+shell that is the process surviving; for an agent it is not enough — an agent
+restarted in the same directory with the same command is a *fresh* agent with
+none of the context, and from the outside that is indistinguishable from the
+session having survived. Somebody types "carry on" and gets an answer from
+something that never had the conversation.
+
+Every agent CLI can be told to continue a conversation, and **each of them
+spells it differently**: a flag on one, a subcommand on another, `--resume=x`
+where a third takes `--resume x`, and at least one whose binary is not named
+after the agent. So this is `AgentAdapter::resume_argv` — per-agent, beside
+everything else omt knows about that agent — and not one template with a name
+substituted into it.
+
+Two rules:
+
+- **The id is the agent's own.** omt's session id means nothing to the agent;
+  what continues a conversation is the id the agent gave it, which arrives with
+  its hooks (07 §3.8) or in the environment omt spawned it with. Nowhere else
+  knows it, which is why an agent with no hooks installed can be identified,
+  watched and interrupted — and not resumed.
+- **`None` is a real answer and is said out loud.** For most agents omt does
+  not know the flag, and `agent.resume_plan` reports *why* rather than an empty
+  list: "omt cannot resume this agent" and "this agent has not said what it
+  calls its conversation yet" lead somebody to do different things. A guessed
+  flag is worse than either, because the failure is silent — it starts a new
+  conversation while claiming to continue one, and the person finds out from
+  the agent's answer.
+
+The capability is a **query**. It says what would be run; it does not run it.
+Restarting somebody's agent is a decision with a cost — the conversation that
+is actually resumed is whichever one that id names — and the surfaces show the
+command rather than taking it.
+
+
 ### 7.2 Correlation
 
 omt injects `OMT_INSTANCE`, `OMT_SESSION`, `OMT_SOCK` into every spawned PTY.

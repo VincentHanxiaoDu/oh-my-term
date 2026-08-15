@@ -52,6 +52,13 @@ pub struct Instance {
     bindings: BTreeMap<SessionId, BindingId>,
     /// The last thing observation decided is running in each session.
     observed: BTreeMap<SessionId, omt_agent_adapters::Detection>,
+    /// The agent's *own* id for the conversation in each session.
+    ///
+    /// Never one omt minted: this is what the agent calls its own session, and
+    /// it is the only thing that can be handed back to the agent to continue
+    /// the conversation rather than start a new one. Reported by hooks, which
+    /// is why it appears for agents that have them and not for the rest.
+    agent_sessions: BTreeMap<SessionId, String>,
     /// Which foreground process that decision was about.
     ///
     /// Reading another process's arguments and environment copies the whole
@@ -90,6 +97,7 @@ impl Instance {
             rosters: BTreeMap::new(),
             bindings: BTreeMap::new(),
             observed: BTreeMap::new(),
+            agent_sessions: BTreeMap::new(),
             observed_for: BTreeMap::new(),
             orphans: BTreeMap::new(),
             usage: omt_agent::UsageLedger::new(),
@@ -132,6 +140,21 @@ impl Instance {
     /// the same binding the observer used, without being told.
     pub fn binding_for(&mut self, id: SessionId) -> BindingId {
         *self.bindings.entry(id).or_default()
+    }
+
+    /// Remember what an agent calls its own conversation in this session.
+    ///
+    /// Last one wins: an agent that starts a new conversation in the same pane
+    /// reports a new id, and resuming the previous one would reopen work the
+    /// person deliberately left.
+    pub fn observe_agent_session(&mut self, id: SessionId, agent_session: String) {
+        self.agent_sessions.insert(id, agent_session);
+    }
+
+    /// What the agent in a session calls that conversation, if it said.
+    #[must_use]
+    pub fn agent_session(&self, id: SessionId) -> Option<&str> {
+        self.agent_sessions.get(&id).map(String::as_str)
     }
 
     /// What omt has decided is running in a session, if anything.

@@ -78,6 +78,16 @@ impl AgentAdapter for Codex {
         Tier::Protocol
     }
 
+    fn resume_argv(&self, agent_session: &str) -> Option<Vec<String>> {
+        // A subcommand rather than a flag, which is why this is per-agent
+        // rather than one string with the name substituted into it.
+        Some(vec![
+            "codex".to_owned(),
+            "resume".to_owned(),
+            agent_session.to_owned(),
+        ])
+    }
+
     fn interrupt(&self) -> Interrupt {
         Interrupt::ControlC
     }

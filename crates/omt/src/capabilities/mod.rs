@@ -312,6 +312,7 @@ pub fn registry_full(
     r.register::<agent_rules::AgentRulesExplain, _>(agent_rules::AgentRulesHandler(state.clone()))?;
     r.register::<agent_rules::SessionRename, _>(agent_rules::AgentRulesHandler(state.clone()))?;
     r.register::<agent_rules::AgentHooksPlan, _>(agent_rules::AgentRulesHandler(state.clone()))?;
+    r.register::<agent_rules::AgentResumePlan, _>(agent_rules::AgentRulesHandler(state.clone()))?;
     r.register::<agent_rules::AgentHooksInstall, _>(agent_rules::AgentRulesHandler(state.clone()))?;
     r.register::<crate::media::PasteTier, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::SshPlan, _>(crate::media::MediaHandler(blobs.clone()))?;

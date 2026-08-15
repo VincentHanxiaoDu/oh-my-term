@@ -6448,6 +6448,49 @@
       ],
       "type": "object"
     },
+    "ResumePlanIn": {
+      "description": "Input to `agent.resume_plan`.",
+      "properties": {
+        "session": {
+          "description": "Which session's agent.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "ResumePlanOut": {
+      "description": "What `agent.resume_plan` reports.",
+      "properties": {
+        "agent_session": {
+          "description": "The agent's own id for that conversation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "argv": {
+          "description": "The command that would continue the conversation, where omt knows one.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "because": {
+          "description": "Why there is no command, when there is none.\n\nA reason rather than an empty list: \"omt cannot resume this agent\" and\n\"this agent has not said what it calls its conversation yet\" are\ndifferent situations and lead somebody to do different things.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "argv"
+      ],
+      "type": "object"
+    },
     "RetentionIn": {
       "description": "Input to `store.retention`.",
       "properties": {
@@ -9441,6 +9484,24 @@
       "verb": "offers"
     },
     {
+      "aliases": [],
+      "doc": "What would be run to continue an agent's conversation rather than start a new one. Reports why not, when omt cannot — a wrong flag starts a fresh conversation while claiming to continue one.",
+      "effects": [],
+      "group": "agent",
+      "hidden": false,
+      "intent": null,
+      "kind": "query",
+      "name": "agent.resume_plan",
+      "parity": {
+        "parity": "full"
+      },
+      "role": "viewer",
+      "route": "/v1/agent/resume_plan",
+      "since": "0.1.0",
+      "title": "Plan an agent resume",
+      "verb": "resume_plan"
+    },
+    {
       "aliases": [
         "subagents"
       ],
@@ -12244,6 +12305,12 @@
     },
     "agent.offers.output": {
       "$ref": "#/$defs/OffersOut"
+    },
+    "agent.resume_plan.input": {
+      "$ref": "#/$defs/ResumePlanIn"
+    },
+    "agent.resume_plan.output": {
+      "$ref": "#/$defs/ResumePlanOut"
     },
     "agent.threads.input": {
       "$ref": "#/$defs/AgentThreadsIn"

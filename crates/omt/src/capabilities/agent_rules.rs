@@ -729,6 +729,112 @@ impl CapabilityHandler<AgentHooksPlan> for AgentRulesHandler {
     }
 }
 
+/// Input to `agent.resume_plan`.
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ResumePlanIn {
+    /// Which session's agent.
+    pub session: String,
+}
+
+/// What `agent.resume_plan` reports.
+#[derive(Serialize, schemars::JsonSchema)]
+pub struct ResumePlanOut {
+    /// The command that would continue the conversation, where omt knows one.
+    pub argv: Vec<String>,
+    /// The agent's own id for that conversation.
+    pub agent_session: Option<String>,
+    /// Why there is no command, when there is none.
+    ///
+    /// A reason rather than an empty list: "omt cannot resume this agent" and
+    /// "this agent has not said what it calls its conversation yet" are
+    /// different situations and lead somebody to do different things.
+    pub because: Option<String>,
+}
+
+capability! {
+    /// Say how a session's agent would be started again on the same conversation.
+    pub struct AgentResumePlan;
+    input  = ResumePlanIn,
+    output = ResumePlanOut,
+    decl = Decl {
+        name: "agent.resume_plan",
+        group: "agent",
+        verb: "resume_plan",
+        title: "Plan an agent resume",
+        aliases: &[],
+        hidden: false,
+        hidden_reason: None,
+        kind: Kind::Query,
+        role: Role::Viewer,
+        effects: Effects::empty(),
+        intent: None,
+        parity: Parity::Full,
+        since: "0.1.0",
+        doc: "What would be run to continue an agent's conversation rather than start a new one. Reports why not, when omt cannot — a wrong flag starts a fresh conversation while claiming to continue one.",
+    },
+}
+
+impl CapabilityHandler<AgentResumePlan> for AgentRulesHandler {
+    fn call(
+        &self,
+        _ctx: &CallContext,
+        input: ResumePlanIn,
+    ) -> Result<ResumePlanOut, CapabilityError> {
+        let id = crate::capabilities::session_id(&input.session)?;
+        let instance = self.0.lock()?;
+        if instance.session(id).is_none() {
+            return Err(CapabilityError::not_found(format!(
+                "no session {}",
+                input.session
+            )));
+        }
+        let Some(detected) = instance.observed_agent(id) else {
+            return Ok(ResumePlanOut {
+                argv: Vec::new(),
+                agent_session: None,
+                because: Some("omt has not identified an agent in this session".to_owned()),
+            });
+        };
+        // The hook's answer first, then whatever the spawn environment
+        // carried: a hook is the agent naming its own conversation, and the
+        // environment is what omt put there when it started it.
+        let agent_session = instance
+            .agent_session(id)
+            .map(str::to_owned)
+            .or_else(|| detected.agent_session.clone());
+        let Some(agent_session) = agent_session else {
+            return Ok(ResumePlanOut {
+                argv: Vec::new(),
+                agent_session: None,
+                because: Some(
+                    "this agent has not said what it calls its own conversation — \
+                     which arrives with its hooks, and nothing else can supply it"
+                        .to_owned(),
+                ),
+            });
+        };
+        let adapters = omt_agent_adapters::builtin();
+        let argv = adapters
+            .get(detected.agent)
+            .and_then(|adapter| adapter.resume_argv(&agent_session));
+        Ok(match argv {
+            Some(argv) => ResumePlanOut {
+                argv,
+                agent_session: Some(agent_session),
+                because: None,
+            },
+            None => ResumePlanOut {
+                argv: Vec::new(),
+                agent_session: Some(agent_session),
+                because: Some(format!(
+                    "omt does not know how to resume {:?}",
+                    detected.agent
+                )),
+            },
+        })
+    }
+}
+
 /// Input to `agent.hooks_install`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HooksInstallIn {

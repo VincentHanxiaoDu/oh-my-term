@@ -98,6 +98,19 @@
       "tools"
     ]
   },
+  "agent.resume_plan": {
+    "required_input": [
+      "session"
+    ],
+    "input": [
+      "session"
+    ],
+    "output": [
+      "agent_session",
+      "argv",
+      "because"
+    ]
+  },
   "agent.threads": {
     "required_input": [
       "session"

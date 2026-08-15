@@ -85,6 +85,15 @@ impl AgentAdapter for Copilot {
         Tier::Protocol
     }
 
+    fn resume_argv(&self, agent_session: &str) -> Option<Vec<String>> {
+        // Joined with `=`, which is not interchangeable with a separate
+        // argument on every parser.
+        Some(vec![
+            "copilot".to_owned(),
+            format!("--resume={agent_session}"),
+        ])
+    }
+
     fn interrupt(&self) -> Interrupt {
         Interrupt::ControlC
     }

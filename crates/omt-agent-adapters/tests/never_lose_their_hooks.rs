@@ -161,3 +161,41 @@ fn the_real_settings_file_on_this_machine_keeps_its_hooks() {
         );
     }
 }
+
+#[test]
+fn resuming_an_agent_uses_that_agents_own_spelling() {
+    // Each of these is spelled differently on purpose, and a shared template
+    // with the name substituted in would be wrong for three of the four: a
+    // subcommand is not a flag, `--resume=x` is not `--resume x` to every
+    // parser, and one of them is not invoked by the name of the agent.
+    let adapters = omt_agent_adapters::builtin();
+    let expected: &[(AgentKind, &[&str])] = &[
+        (AgentKind::ClaudeCode, &["claude", "--resume", "s1"]),
+        (AgentKind::Codex, &["codex", "resume", "s1"]),
+        (AgentKind::Cursor, &["cursor-agent", "--resume", "s1"]),
+        (AgentKind::Copilot, &["copilot", "--resume=s1"]),
+    ];
+    for (kind, argv) in expected {
+        let adapter = adapters.get(*kind).expect("an adapter");
+        assert_eq!(
+            adapter.resume_argv("s1").as_deref(),
+            Some(
+                argv.iter()
+                    .map(|s| (*s).to_owned())
+                    .collect::<Vec<_>>()
+                    .as_slice()
+            ),
+            "{kind:?}"
+        );
+    }
+}
+
+#[test]
+fn an_agent_omt_cannot_resume_says_so_rather_than_guessing() {
+    // A wrong flag starts a *new* conversation while claiming to continue one,
+    // and the person finds out from the agent's answer — which is the worst
+    // possible place to learn it.
+    let adapters = omt_agent_adapters::builtin();
+    let adapter = adapters.get(AgentKind::Aider).expect("an adapter");
+    assert!(adapter.resume_argv("s1").is_none());
+}

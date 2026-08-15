@@ -256,6 +256,24 @@ pub trait AgentAdapter: Send + Sync {
         Interrupt::ControlC
     }
 
+    /// How to start this agent again on the conversation it was having.
+    ///
+    /// A session that outlives its terminal is the premise of a multiplexer,
+    /// and an agent restarted without this is a fresh one sitting in the same
+    /// directory with none of the context — which looks like the session
+    /// survived and did not.
+    ///
+    /// `None` means omt does not know how to resume this agent, which is the
+    /// honest answer for most of them and is said out loud rather than
+    /// approximated: a wrong flag starts a *new* conversation while claiming
+    /// to continue one, and the person finds out from the agent's answer.
+    ///
+    /// The id is the agent's own, as its hooks report it — never one omt
+    /// minted.
+    fn resume_argv(&self, _agent_session: &str) -> Option<Vec<String>> {
+        None
+    }
+
     /// Its native file-reference syntax for a workspace-relative path.
     ///
     /// `None` means the agent has none, and the surface offers "insert path"

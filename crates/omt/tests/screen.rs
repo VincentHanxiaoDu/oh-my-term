@@ -92,12 +92,19 @@ struct Screen {
     /// Where this screen's session was started, for a test that needs to put
     /// a file where the shell can reach it.
     dir: std::path::PathBuf,
+    /// Every byte omt has written, uninterpreted.
+    raw: Vec<u8>,
 }
 
 impl Screen {
     /// Start `omt` on a pty of a known size.
     fn start() -> Self {
-        Self::start_with_shell("/bin/sh")
+        Self::start_with_shell_and_terminal("/bin/sh", None)
+    }
+
+    /// The same, claiming to be a terminal that can raise notifications.
+    fn start_notifying() -> Self {
+        Self::start_with_shell_and_terminal("/bin/sh", Some("ghostty"))
     }
 
     /// The same, under a named shell.
@@ -106,6 +113,11 @@ impl Screen {
     /// the foreground process group is, and that is the only thing the probe
     /// reads. A harness that always uses `/bin/sh` tests `/bin/sh`.
     fn start_with_shell(shell: &str) -> Self {
+        Self::start_with_shell_and_terminal(shell, None)
+    }
+
+    /// The same, with control over what omt thinks it is drawing on.
+    fn start_with_shell_and_terminal(shell: &str, term_program: Option<&str>) -> Self {
         // A state directory per screen, so what one test leaves behind cannot
         // decide what the next one starts with. The agent panel remembers
         // whether it is on; without this, the test that turns it on turns it
@@ -135,6 +147,13 @@ impl Screen {
                 ("PS1".to_owned(), "$ ".to_owned()),
                 ("SHELL".to_owned(), shell.to_owned()),
                 ("XDG_STATE_HOME".to_owned(), state.display().to_string()),
+                (
+                    "TERM_PROGRAM".to_owned(),
+                    term_program.unwrap_or_default().to_owned(),
+                ),
+                // No sound in a test: a suite that plays audio on somebody's
+                // machine is a suite they stop running.
+                ("OMT_NO_SOUND".to_owned(), "1".to_owned()),
             ],
             env_remove: {
                 // The agent markers, and everything that redirects where omt
@@ -161,6 +180,7 @@ impl Screen {
         Self {
             pty,
             dir,
+            raw: Vec::new(),
             term: Terminal::new(TermConfig {
                 size: GridSize::new(COLS, ROWS),
                 scrollback: ScrollbackLimits::default(),
@@ -178,11 +198,37 @@ impl Screen {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
+                    self.raw.extend_from_slice(&buf[..n]);
                     self.term.advance(&buf[..n]);
                 }
                 Err(_) => std::thread::sleep(Duration::from_millis(10)),
             }
         }
+    }
+
+    /// Read until the screen says something, or give up.
+    ///
+    /// Waiting for a *condition* rather than for a duration. A fixed sleep is
+    /// a guess about how fast this machine is, and under a full test run — a
+    /// dozen other suites competing for the same cores — the guess is wrong,
+    /// which is a test that passes alone and fails in CI.
+    fn settle_until(&mut self, seconds: f32, mut done: impl FnMut(&Self) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs_f32(seconds);
+        while Instant::now() < deadline {
+            self.settle(0.25);
+            if done(self) {
+                return;
+            }
+        }
+    }
+
+    /// Everything omt has written, before the emulator interpreted it.
+    ///
+    /// The screen cannot answer every question: a notification is a sequence
+    /// the emulator consumes and never draws, so a test that only looked at
+    /// the grid would pass whether or not it was ever sent.
+    fn raw(&self) -> String {
+        String::from_utf8_lossy(&self.raw).into_owned()
     }
 
     fn type_in(&mut self, text: &str) {
@@ -1187,13 +1233,112 @@ fn a_hook_fired_from_inside_a_pane_reaches_the_conversation() {
         "printf '{payload}' | OMT_HOOK_EVENT=PreToolUse {} --agent claude-code >/dev/null\n",
         hook.display()
     ));
+    // Until the hook has been through the socket and back, however long this
+    // machine takes about it.
     s.settle(2.0);
 
     s.type_in("\x02t"); // leader, transcript
-    s.settle(1.0);
+    s.settle_until(20.0, |s| s.screen().contains("Which database?"));
     let screen = s.screen();
     assert!(
         screen.contains("Which database?"),
         "the hook ran in the pane and the question never arrived:\n{screen}"
+    );
+}
+
+#[test]
+fn an_agent_that_starts_waiting_reaches_somebody_who_is_looking_elsewhere() {
+    let _serial = serially();
+    // The premise of the whole product is that agents work while you do
+    // something else — and every surface omt draws answers "who needs me"
+    // only to somebody already looking at the screen. This is the one channel
+    // that reaches a person in a browser, in another window, on another
+    // machine over ssh. It is a sequence the emulator consumes and never
+    // draws, so the grid cannot answer whether it was sent.
+    let mut s = Screen::start_notifying();
+    s.settle(2.0);
+
+    let hook = std::env::current_exe()
+        .expect("test exe")
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("target dir")
+        .join("omt-hook");
+    assert!(hook.exists(), "{} was not built", hook.display());
+    let payload = "{\\\"tool_name\\\":\\\"AskUserQuestion\\\",\\\"tool_input\\\":{\\\"questions\\\":[{\\\"question\\\":\\\"Which database?\\\",\\\"header\\\":\\\"Database\\\",\\\"multiSelect\\\":false,\\\"options\\\":[{\\\"label\\\":\\\"Postgres\\\"},{\\\"label\\\":\\\"SQLite\\\"}]}]}}";
+    s.type_in(&format!(
+        "printf '{payload}' | OMT_HOOK_EVENT=PreToolUse {} --agent claude-code >/dev/null\n",
+        hook.display()
+    ));
+    s.settle_until(20.0, |s| s.raw().contains("waiting for you"));
+
+    let raw = s.raw();
+    assert!(
+        raw.contains("\u{1b}]9;") && raw.contains("waiting for you"),
+        "no notification was raised for an agent that started waiting"
+    );
+}
+
+#[test]
+fn copy_mode_shows_what_has_already_scrolled_off_the_screen() {
+    let _serial = serially();
+    // The keymap has had these keys since the keymap existed and the help
+    // advertises them; nothing was underneath. A multiplexer that cannot
+    // scroll back is one people keep a second terminal beside.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    // More lines than the screen holds, so the early ones are only reachable
+    // through the history.
+    s.type_in("seq -f marker-%g 1 60\n");
+    s.settle(2.0);
+    assert!(
+        !s.screen().contains("marker-1\n") && !s.screen().contains("marker-2 "),
+        "the test did not actually scroll anything away"
+    );
+
+    s.type_in("\x02"); // leader
+    s.settle(0.3);
+    s.type_in("["); // copy mode
+    s.settle(0.5);
+    s.type_in("g"); // to the very top
+    s.settle_until(20.0, |s| s.screen().contains("marker-1"));
+    let screen = s.screen();
+    assert!(
+        screen.contains("marker-1"),
+        "the history was not reachable:\n{screen}"
+    );
+    assert!(
+        screen.contains("Esc leave"),
+        "a mode with no visible way out:\n{screen}"
+    );
+
+    // And it gives the pane back.
+    s.type_in("\x1b");
+    s.settle(1.0);
+    assert!(
+        !s.screen().contains("Esc leave"),
+        "copy mode did not end:\n{}",
+        s.screen()
+    );
+}
+
+#[test]
+fn a_search_in_copy_mode_jumps_to_the_line_that_has_it() {
+    let _serial = serially();
+    // The `/` this document has specified for as long as it has specified copy
+    // mode. Scrolling by hand through a thousand lines of an agent's output to
+    // find the error is the thing a scrollback is for.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("seq -f marker-%g 1 60\n");
+    s.settle(2.0);
+    s.type_in("\x02["); // leader, copy mode
+    s.settle(0.5);
+    s.type_in("/marker-3\n");
+    s.settle_until(20.0, |s| s.screen().contains("marker-3"));
+    assert!(
+        s.screen().contains("marker-3"),
+        "the search did not reach it:\n{}",
+        s.screen()
     );
 }

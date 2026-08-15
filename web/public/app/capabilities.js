@@ -195,6 +195,11 @@ export const HANDLERS = {
     // the cards never arrive.
     'agent.hooks_plan': (request, agent) => call(request, 'agent.hooks_plan', { agent }),
     'agent.hooks_install': (request, agent) => call(request, 'agent.hooks_install', { agent }),
+    // What would be run to continue an agent's conversation rather than start a
+    // new one. Reachable from a phone because that is where somebody is when
+    // they find out a session died — and the answer is a command they will type
+    // somewhere else, so it is worth being able to read it from here.
+    'agent.resume_plan': (request, session) => call(request, 'agent.resume_plan', { session }),
     'media.materialize': (request, digest, name) => call(request, 'media.materialize', {
         digest,
         ...(name === undefined ? {} : { name }),

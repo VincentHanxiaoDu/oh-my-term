@@ -16,6 +16,7 @@ vanishing.
 | `agent.hooks_plan` | query | operator | The diff, before the write. omt edits a file the agent owns and somebody else may have written their own hooks into, so what changes is shown first. |
 | `agent.interrupt` | command | operator | Stop an agent. For an agent with no protocol of its own this is the entire remote control surface. |
 | `agent.offers` | query | viewer | Slash commands, tools, models and the pending message queue, as the agent itself reported them. Never a list omt maintains: a completion popup offering a command the agent does not have is worse than none. |
+| `agent.resume_plan` | query | viewer | What would be run to continue an agent's conversation rather than start a new one. Reports why not, when omt cannot — a wrong flag starts a fresh conversation while claiming to continue one. |
 | `agent.threads` | query | viewer | Every thread in a session — the main one and each subagent — with what it is doing and any card it raised. |
 | `agent.wait` | query | viewer | The primitive that stops every script being a sleep loop. `blocked` is a state and matches at once; `interaction` is an edge and matches only a card that opens after the wait began. |
 | `agent_rules.capture` | query | operator | The screen and each named region of it. Rules written from memory are wrong in ways only a real screen finds: omt's own rule for Claude Code's permission prompt was written from memory and was wrong about the first screen anybody sees. |
@@ -158,7 +159,7 @@ vanishing.
 | `worktree.list` | query | viewer | Every worktree of a workspace's repository, with the workspace id each would open as. Read from git rather than from omt's own records, so it cannot disagree with reality. |
 | `worktree.remove` | command | operator | Remove a worktree. Refused when it has uncommitted changes unless force is given — an agent's output is usually why the worktree was wanted, and deleting it on a tap is unrecoverable. |
 
-148 capabilities.
+149 capabilities.
 
 ## Parity exemptions
 

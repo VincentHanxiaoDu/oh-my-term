@@ -555,6 +555,13 @@ export const HANDLERS = {
   'agent.hooks_install': (request: RequestId, agent: string) =>
     call(request, 'agent.hooks_install', { agent }),
 
+  // What would be run to continue an agent's conversation rather than start a
+  // new one. Reachable from a phone because that is where somebody is when
+  // they find out a session died — and the answer is a command they will type
+  // somewhere else, so it is worth being able to read it from here.
+  'agent.resume_plan': (request: RequestId, session: string) =>
+    call(request, 'agent.resume_plan', { session }),
+
   'media.materialize': (request: RequestId, digest: string, name?: string) =>
     call(request, 'media.materialize', {
       digest,

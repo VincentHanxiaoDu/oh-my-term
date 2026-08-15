@@ -81,6 +81,8 @@ pub enum Input {
     SplitDown,
     /// Show or hide the agent panel.
     Panel,
+    /// Read what has scrolled away, and take a copy of it.
+    CopyMode,
     /// Read the focused agent's conversation.
     ///
     /// What it *said and did*, not what it painted. The grid is a box an agent
@@ -200,6 +202,7 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
     ('!', "waiting"),
     ('a', "agents"),
     ('t', "transcript"),
+    ('[', "copy"),
     ('w', "sessions"),
     ('g', "panel"),
     ('x', "close"),
@@ -246,6 +249,8 @@ pub fn leader_action(key: char) -> Option<Input> {
         'p' => Input::Palette,
         'a' => Input::Agents,
         't' => Input::Conversation,
+        // The bracket tmux uses, so fingers that already know it are right.
+        '[' => Input::CopyMode,
         'w' => Input::Sessions,
         _ => return None,
     })

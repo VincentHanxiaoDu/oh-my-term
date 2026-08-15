@@ -149,6 +149,15 @@ impl AgentAdapter for ClaudeCode {
         Tier::Hook
     }
 
+    fn resume_argv(&self, agent_session: &str) -> Option<Vec<String>> {
+        // Its own flag, taking its own session id — the one its hooks report.
+        Some(vec![
+            "claude".to_owned(),
+            "--resume".to_owned(),
+            agent_session.to_owned(),
+        ])
+    }
+
     fn interrupt(&self) -> Interrupt {
         // Claude Code's own interrupt key. Ctrl-C would work too, but Esc is
         // what the agent itself documents, and mirroring the agent's own
