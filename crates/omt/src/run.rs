@@ -137,6 +137,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // the way in, so this starts false and the first frame that wants one asks
     // for it.
     let mut cursor_shown = false;
+    // Whether the agent panel is on. Off by default, per 19 §2.1b: somebody
+    // running omt in an eighty-column terminal must not have their panes
+    // narrowed by a change they did not ask for.
+    let mut panel_on = crate::rows::panel_enabled();
+    // What the panel last showed, so an unchanged list costs nothing.
+    let mut shown_panel: Option<Vec<String>> = None;
     // Built once. Rebuilding it twice a second per pane would be the most
     // expensive thing in this loop by an order of magnitude.
     let adapter_set = omt_agent_adapters::builtin();
@@ -214,6 +220,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             if before != pane.agent.as_ref().map(|p| p.detection.agent) {
                 anything_happened = true;
             }
+            // The panel shows what every agent is *doing*, which changes on
+            // this timer with no event behind it. While it is on, an
+            // observation pass is a reason to draw — and the draw itself is
+            // gated on the panel's own content changing, so a pass that found
+            // nothing new still costs nothing.
+            if panel_on {
+                anything_happened = true;
+            }
             if pane.agent.is_some() {
                 // The floor, which is this surface's own contribution: it is
                 // the one that knows whether bytes arrived on *this* pty.
@@ -272,10 +286,18 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // whose leaf is gone are not drawn, which cannot happen — the tree and
         // the list are changed together — but is cheaper to handle than to
         // prove.
+        // The panel takes a fixed column when it fits and nothing when it does
+        // not, against the same minimum a split is refused for — a panel may
+        // never do what splitting is not allowed to do (19 §2.1b).
+        let panel_cols = if panel_on && omt_tui::fits(term_cols, panes.len()) {
+            omt_tui::PANEL_COLS
+        } else {
+            0
+        };
         let arrangement = layout.place(omt_tui::Rect {
-            col: 0,
+            col: panel_cols,
             row: 0,
-            cols: term_cols,
+            cols: term_cols.saturating_sub(panel_cols),
             rows: term_rows.saturating_sub(STATUS_ROWS).max(1),
         });
         let rects: Vec<omt_tui::Rect> = panes
@@ -345,6 +367,27 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         if let Some(pane) = panes.get_mut(focus) {
             pane.seen = true;
         }
+        // The panel, in the column the panes were moved over for. Drawn before
+        // the status bar and after the panes, so nothing paints over it.
+        if panel_cols > 0 {
+            let sessions = crate::rows::panel_sessions(&mut instance, &panes, now);
+            let rows_for_panel = term_rows.saturating_sub(STATUS_ROWS).max(1);
+            let lines = omt_tui::panel::render(&omt_tui::entries(&sessions), rows_for_panel);
+            // Only when it changed. Forcing a draw every tick because the
+            // panel is on wrote 168 KB in two idle seconds — the whole of the
+            // saving this loop was just given, spent on redrawing a list of
+            // unchanged names sixty times a second.
+            if shown_panel.as_ref() != Some(&lines) {
+                for (i, line) in lines.iter().enumerate() {
+                    write!(out, "\x1b[{};1H\x1b[2m{line}\x1b[0m", i + 1)
+                        .context("drawing the agent panel")?;
+                }
+                shown_panel = Some(lines);
+            }
+        } else {
+            shown_panel = None;
+        }
+
         let focused_session = panes[focus].session;
         let situation = omt_tui::Situation {
             prefix_armed: armed
@@ -746,6 +789,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         shown_bottom = None;
                     }
                 }
+                Input::Panel => {
+                    // 19 §2.1b: a panel somebody has to re-open every session
+                    // is one they stop using, so the choice is remembered.
+                    panel_on = !panel_on;
+                    crate::rows::remember_panel(panel_on);
+                    layout_dirty = true;
+                }
                 Input::NextPane => {
                     focus = (focus + 1) % panes.len();
                     shown_hint = None;
@@ -877,7 +927,12 @@ impl LocalPane {
             screen: Screen::new(),
             writer,
             epoch,
-            binding: omt_types::BindingId::new(),
+            // The instance's binding for this session, never one minted here.
+            // A pane that mints its own is a second machine for the same
+            // agent: observation fed one and every reader asked the other, so
+            // a pane with Claude Code in it reported "state not reported yet"
+            // for as long as it ran.
+            binding: instance.binding_for(session),
             agent: None,
             probed_at: 0,
             last_output_ms: 0,

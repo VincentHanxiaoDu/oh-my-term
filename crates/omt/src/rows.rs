@@ -222,3 +222,97 @@ pub(crate) fn session_rows(instance: &Instance, panes: &[LocalPane]) -> Vec<omt_
     let rows: Vec<omt_tui::Choice> = rows.into_iter().map(|(_, choice)| choice).collect();
     rows
 }
+
+/// Whether the agent panel is on.
+///
+/// Off unless somebody asked for it, per 19 §2.1b. Read from the environment
+/// rather than from the config file for now: the setting belongs in
+/// `appearance`, and putting it there is a schema change with a generated
+/// artifact behind it — worth doing on its own rather than folded into the
+/// panel it configures.
+#[must_use]
+pub(crate) fn panel_enabled() -> bool {
+    if let Ok(explicit) = std::env::var("OMT_AGENT_PANEL") {
+        return explicit != "0" && !explicit.is_empty();
+    }
+    panel_choice_path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .is_some_and(|kept| kept.trim() == "1")
+}
+
+/// What the panel shows, from the instance.
+///
+/// The rows come from `omt_tui::entries`, which is the one computation both
+/// surfaces use. This only gathers what it needs — which agent, what state,
+/// where — and hands it over.
+pub(crate) fn panel_sessions(
+    instance: &mut Instance,
+    panes: &[LocalPane],
+    now: u64,
+) -> Vec<omt_tui::PanelSession> {
+    let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
+    let mut out = Vec::new();
+    for id in ids {
+        let Some(session) = instance.session(id) else {
+            continue;
+        };
+        let title = session.title.clone();
+        let workspace = instance
+            .workspaces()
+            .into_iter()
+            .find(|w| w.id == session.workspace)
+            .map_or_else(|| "?".to_owned(), |w| w.name.clone());
+        let pane = panes.iter().find(|p| p.session == id);
+        let binding = instance.binding_for(id);
+        let state = instance
+            .agent_state(binding, now)
+            .unwrap_or(omt_types::AgentState::Unknown);
+        let agent = instance
+            .observed_agent(id)
+            .map(|found| agent_short_name(found.agent));
+        out.push(omt_tui::PanelSession {
+            session: id.to_wire(),
+            title,
+            agent,
+            state,
+            workspace,
+            // The branch is the pane's, and only a pane on screen has one
+            // cheaply — asking git per session per frame is what the branch
+            // cache exists to prevent.
+            branch: None,
+            seen: pane.is_none_or(|p| p.seen),
+            on_screen: pane.is_some(),
+        });
+    }
+    out
+}
+
+/// Remember whether the panel is on.
+///
+/// A panel somebody has to turn on every session is one they stop using
+/// (19 §2.1b). Written beside the snapshot rather than into the config file:
+/// this is a per-machine view preference, like which pane is focused, and
+/// putting it in the file somebody edits by hand would have omt rewriting
+/// their comments.
+pub(crate) fn remember_panel(on: bool) {
+    let Some(path) = panel_choice_path() else {
+        return;
+    };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    // A failure here costs the setting on the next start and nothing else,
+    // which is not worth interrupting somebody's session for.
+    let _ = std::fs::write(&path, if on { "1" } else { "0" });
+}
+
+/// Where that choice is kept.
+fn panel_choice_path() -> Option<std::path::PathBuf> {
+    let base = std::env::var("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|_| {
+            std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })
+        .ok()?;
+    Some(base.join("omt").join("agent-panel"))
+}

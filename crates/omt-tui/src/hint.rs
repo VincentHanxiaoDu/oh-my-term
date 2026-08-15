@@ -296,7 +296,7 @@ mod tests {
                     // The aliases tmux users arrive with. They do the same
                     // thing as a listed key and listing both would double the
                     // strip's width to say one thing twice.
-                    || matches!(key, 'n' | 's' | 'c' | 'o' | '?')
+                    || matches!(key, 'n' | 's' | 'c' | 'o' | '?' | 'S')
                     // The other three directions, advertised as `hjkl focus`
                     // by the entry for `h`. Four separate entries spent the
                     // strip's entire width and pushed `sessions` off the end
@@ -404,5 +404,48 @@ mod strip_width_tests {
         // Nothing fits, and the answer is still not a blank row.
         let tiny = pending_strip_within(1);
         assert!(tiny.contains('?') || tiny.contains('▸'), "{tiny:?}");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
+mod strip_budget_tests {
+    use super::*;
+
+    /// The narrowest terminal the whole strip must still fit in.
+    ///
+    /// Not a guess: it is the width the screen tests drive, and a common
+    /// terminal. Below it the strip drops entries and says so, which is the
+    /// designed behaviour; at it and above, every key is advertised.
+    const BUDGET: usize = 100;
+
+    #[test]
+    fn every_key_fits_in_an_ordinary_terminal() {
+        // Three times in one session a key was added and pushed another off
+        // the end of the screen — `sessions`, then `agents`, then `palette` —
+        // and each time nothing failed, because no test knew the row had a
+        // budget. Adding an entry has to come from somewhere, and this is
+        // where that shows up.
+        let strip = pending_strip_within(u16::try_from(BUDGET).expect("a width"));
+        assert!(
+            !strip.contains('…'),
+            "the strip does not fit {BUDGET} columns and dropped keys: {strip:?}"
+        );
+        for (_, label) in crate::app::LEADER_KEYS {
+            assert!(strip.contains(label), "`{label}` was dropped: {strip:?}");
+        }
+    }
+
+    #[test]
+    fn it_is_not_merely_fitting_by_a_character() {
+        // A row exactly at the budget is a row the next label breaks. Some
+        // slack, so the next key added fails this test rather than a user's
+        // screen.
+        let strip = pending_strip_within(u16::MAX);
+        assert!(
+            strip.chars().count() <= BUDGET,
+            "the strip is {} columns and the budget is {BUDGET}: {strip:?}",
+            strip.chars().count()
+        );
     }
 }

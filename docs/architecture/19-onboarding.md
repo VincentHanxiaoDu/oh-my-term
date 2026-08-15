@@ -181,6 +181,12 @@ a question, not a certainty.)
 **One row. Always present unless `appearance.status_bar = "off"`. Never more
 than one row, in any configuration.**
 
+That rule is about **rows**, and it is absolute. A row of chrome on a 24-row
+terminal is 4% of the screen taken permanently, which is why every cell below
+has to justify its columns to earn a place in the one row there is.
+
+**Columns are a different trade, and §2.1b answers them separately.**
+
 ```
  omt 1:zsh 2:claude ● 3:build ✗ ~/code/app main* ⌃b ? help
  └┬┘ └──────────┬───────────┘ └────┬────┘ └─┬──┘ └───┬───┘
@@ -231,6 +237,48 @@ Rules:
  when its content changes, because a bar that redraws on a timer keeps a laptop
  awake and shows up in every `strace` a user runs while debugging something
  else.
+
+
+### 2.1b The agent panel: chrome that takes columns
+
+**Off by default. A fixed 24 columns when it fits, and nothing at all when it
+does not.**
+
+The status bar answers "what is happening here". It cannot answer "which of the
+six agents on this machine is waiting for me", because that is a list and a row
+is not a list. omt's answer to that was a modal list behind the leader key,
+which catches the moment an agent stops only if somebody happens to open it —
+and the whole premise of this product is that agents work while you are doing
+something else.
+
+A panel is chrome, so it faces the same test as every cell above: it must
+justify the space it takes. The answer differs by width, which is why this is a
+separate rule rather than a relaxation of §2.1:
+
+| Width | 24 columns is | Verdict |
+|---|---|---|
+| 170 | 14% of the screen | worth it — a list of every agent, always visible |
+| 120 | 20% | worth it |
+| 100 | 24%, leaving 76 for one pane | the edge; allowed |
+| 80 | 30%, leaving 56 for one pane | **refused** — below what a prompt and a diff need |
+
+The check is against the same minimum a split is refused for
+([16](16-keys-and-input.md)): a panel may never do what splitting is not
+allowed to do. Refusing is silent and reversible — a panel that vanished on a
+resize is not an error, and widening the window brings it back.
+
+**What the panel is not.** It is not a second status bar: the row at the bottom
+is unchanged, always present, still one row. It is not a tree — workspaces
+group its rows and do not fold them, because a fold is state to keep, a key to
+learn, and a place for the row somebody needed to hide.
+
+**Rows are ordered by what they want**, across the whole list rather than
+within a workspace: a blocked agent in the third project is above an idle one
+in the first, because the question is "who needs me" and not "what is in this
+directory". The order is
+[06](06-agent-layer.md)'s: waiting on you, finished and unseen, working, idle,
+and last anything omt cannot describe.
+
 
 ### 2.2 `⟨leader⟩ ?` — the help overlay
 

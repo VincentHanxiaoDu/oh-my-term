@@ -106,6 +106,20 @@ impl Screen {
     /// the foreground process group is, and that is the only thing the probe
     /// reads. A harness that always uses `/bin/sh` tests `/bin/sh`.
     fn start_with_shell(shell: &str) -> Self {
+        // A state directory per screen, so what one test leaves behind cannot
+        // decide what the next one starts with. The agent panel remembers
+        // whether it is on; without this, the test that turns it on turns it
+        // on for every test after it, in whatever order they happen to run.
+        //
+        // The same class as the four environment defects this suite already
+        // has a gate for — a file rather than a variable, which is why the
+        // gate did not catch it.
+        let state = std::env::temp_dir().join(format!(
+            "omt-screen-state-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&state).expect("state dir");
         let binary = std::path::Path::new(env!("CARGO_BIN_EXE_omt"));
         let dir = std::env::temp_dir().join(format!("omt-screen-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
@@ -120,6 +134,7 @@ impl Screen {
                 // paints cannot be mistaken for what omt paints.
                 ("PS1".to_owned(), "$ ".to_owned()),
                 ("SHELL".to_owned(), shell.to_owned()),
+                ("XDG_STATE_HOME".to_owned(), state.display().to_string()),
             ],
             env_remove: {
                 // The agent markers, and everything that redirects where omt
@@ -957,5 +972,35 @@ fn a_screen_that_changes_on_a_timer_still_repaints() {
     assert!(
         bar.to_lowercase().contains("claude"),
         "the bar did not repaint when the probe found an agent: {bar:?}"
+    );
+}
+
+#[test]
+fn the_agent_panel_appears_where_it_fits_and_refuses_where_it_does_not() {
+    let _serial = serially();
+    // 19 §2.1b: a panel is chrome that takes columns, and it faces the same
+    // test every status cell does — it must justify the space. Twenty-four
+    // columns of a hundred is worth a list of every agent; of sixty it is not,
+    // and the panes have the screen.
+    //
+    // The check is against the same minimum a split is refused for: a panel
+    // may never do what splitting is not allowed to do.
+    let mut wide = Screen::start();
+    wide.settle(2.0);
+    wide.type_in("\x02g");
+    wide.settle(1.5);
+    let with_panel = wide.screen();
+    wide.type_in("\x02g");
+    wide.settle(1.0);
+    let without = wide.screen();
+    wide.type_in("\x04");
+
+    assert!(
+        with_panel.contains("agents"),
+        "the panel did not appear on a {COLS}-column terminal:\n{with_panel}"
+    );
+    assert!(
+        !without.contains("agents"),
+        "the panel did not go away when it was turned off:\n{without}"
     );
 }

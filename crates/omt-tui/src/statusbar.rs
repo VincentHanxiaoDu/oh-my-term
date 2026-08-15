@@ -452,6 +452,31 @@ pub fn state_word(state: &omt_types::AgentState, seen: bool) -> &'static str {
     }
 }
 
+/// The same, in as few columns as it can still be told apart in.
+///
+/// A panel is twenty-three columns wide and a row has to hold a mark, a name
+/// and a state. "state not reported yet" is twenty-one of them, which is the
+/// whole row and then some — and cut to fit it reads "state not reported ye",
+/// which is worse than any of the words this could have chosen.
+///
+/// Not an abbreviation of the long form: a short word that means the same
+/// thing. "waiting" is what somebody scanning a narrow column needs to see,
+/// and the long form is there when there is room for it.
+#[must_use]
+pub fn state_word_short(state: &omt_types::AgentState, seen: bool) -> &'static str {
+    match state {
+        omt_types::AgentState::Blocked { .. } => "waiting",
+        omt_types::AgentState::Working { .. } => "working",
+        omt_types::AgentState::Starting => "starting",
+        omt_types::AgentState::Exited { .. } => "exited",
+        omt_types::AgentState::Idle if !seen => "done",
+        omt_types::AgentState::Idle => "idle",
+        // Still never "unknown", and still not a claim about the agent: omt
+        // has found it and cannot yet say what it is doing.
+        omt_types::AgentState::Unknown => "looking",
+    }
+}
+
 /// The mark an agent wears in a list.
 ///
 /// Filled for something that wants attention or is moving, hollow for

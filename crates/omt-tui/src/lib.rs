@@ -15,7 +15,9 @@ pub mod statusbar;
 
 pub use chrome::{Chrome, Tab};
 pub use overlay::{Choice, Overlay, render as render_overlay};
+pub mod panel;
 pub mod tree;
+pub use panel::{Entry, PANEL_COLS, Session as PanelSession, entries, fits};
 pub use statusbar::{Status, attention, glyph, render as status_bar, state_mark, state_word};
 pub use tree::{Node, PaneId, Placed, Towards, neighbour};
 pub mod layout;

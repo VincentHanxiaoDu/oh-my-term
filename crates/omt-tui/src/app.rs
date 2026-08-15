@@ -79,6 +79,8 @@ pub enum Input {
     /// a screen cut depends on what they are about to put in it, and a wrong
     /// guess costs a close and a re-split.
     SplitDown,
+    /// Show or hide the agent panel.
+    Panel,
     /// Move focus in a direction.
     ///
     /// Geometric, not "the next one in a list": with more than two panes,
@@ -169,11 +171,16 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
     // The order is a priority order. A narrow terminal drops from the end.
     ('d', "detach"),
     ('c', "new"),
-    ('s', "split"),
-    ('S', "split \u{2193}"),
+    // One entry for both directions, and one for all four arrows. The row has
+    // a hard width and every entry added has to come from somewhere: listing
+    // `S` and each arrow separately pushed `palette` off the end of the
+    // screen, which is a key somebody reaches for far more often than any one
+    // of them.
+    ('s', "s/S split"),
     ('h', "hjkl move"),
     ('w', "sessions"),
     ('a', "agents"),
+    ('g', "panel"),
     ('x', "close"),
     ('p', "palette"),
     // Bound and deliberately not listed: `o` cycles panes, which is what
@@ -192,6 +199,7 @@ pub fn leader_action(key: char) -> Option<Input> {
     Some(match key {
         'd' => Input::Detach,
         'S' => Input::SplitDown,
+        'g' => Input::Panel,
         'h' => Input::Focus(crate::tree::Towards::Left),
         'j' => Input::Focus(crate::tree::Towards::Down),
         'k' => Input::Focus(crate::tree::Towards::Up),
