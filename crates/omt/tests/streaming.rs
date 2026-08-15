@@ -260,3 +260,67 @@ fn a_subscriber_going_away_takes_nothing_with_it() {
     drop(second);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_client_emulator_ends_up_showing_what_the_session_shows() {
+    // The whole point, end to end: the instance owns the pty, the client owns
+    // an emulator, and what the client draws is what the session's screen says.
+    // Nothing above this line in the terminal — the renderer, the layout, copy
+    // mode — can tell the difference, which is the property that lets the
+    // sessions outlive the terminal.
+    let dir = temp_dir("stream-mirror");
+    let (state, session, socket) = serving(
+        &dir,
+        "printf 'before attach\\r\\n'; sleep 1; printf 'after attach'; sleep 30",
+    );
+    std::thread::sleep(Duration::from_millis(500));
+
+    let mut client = omt::client::Client::connect(&socket).expect("connect");
+    client.subscribe(vec![session]).expect("subscribe");
+
+    let mut mirror = omt_term::Terminal::new(omt_term::TermConfig {
+        size: omt_term::GridSize::new(40, 6),
+        ..omt_term::TermConfig::default()
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut mine = String::new();
+    while Instant::now() < deadline {
+        let bytes = client.take_output(0);
+        if !bytes.is_empty() {
+            mirror.advance(&bytes);
+        }
+        mine = (0..6)
+            .map(|r| mirror.row_text(r))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if mine.contains("before attach") && mine.contains("after attach") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    let theirs = {
+        let instance = state.lock().expect("lock");
+        let runtime = instance.runtime(session).expect("runtime");
+        (0..6)
+            .map(|r| runtime.terminal().row_text(r))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert!(
+        mine.contains("before attach"),
+        "what happened before attaching never arrived:\n{mine}"
+    );
+    assert!(
+        mine.contains("after attach"),
+        "what happened after attaching never arrived:\n{mine}"
+    );
+    assert_eq!(
+        mine.trim_end(),
+        theirs.trim_end(),
+        "the client's screen is not the session's"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
