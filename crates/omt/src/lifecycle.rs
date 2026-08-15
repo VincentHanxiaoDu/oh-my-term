@@ -99,7 +99,6 @@ fn wait_for(socket: &Path) -> Result<()> {
     reason = "in a test, expect() is the assertion"
 )]
 mod tests {
-    use super::*;
 
     #[test]
     fn a_socket_that_never_answers_is_reported_rather_than_waited_on_forever() {

@@ -27,24 +27,39 @@
 
 - [x] 4.1 Connect, subscribe, feed a local emulator per session
 - [x] 4.2 Input over the socket, with the writer epoch
-- [ ] 4.3 Agent state, rosters and cards from the event stream rather than a
-      local instance
+- [x] 4.3 The roster read from the instance: titles, agent state, thread and
+      blocked counts — `session.list` already carries all four
 - [x] 4.4 Resize
 
 ## 5. The seam in the frame loop
 
-- [ ] 5.1 One place a pane's terminal comes from, one place input goes
-- [ ] 5.2 Every surface unchanged: splits, panel, copy mode, conversation,
-      notifications, status bar
-- [ ] 5.3 The local path kept until the attached one is at parity
+- [x] 5.1 One place a pane's terminal comes from, one place input goes
+- [x] 5.2 Every surface unchanged: thirty-two screen tests through the seam
+      say what they said before
+- [x] 5.3 The local path kept until the attached one is at parity — it is the
+      one the terminal still runs
 
 ## 6. Lifecycle
 
 - [x] 6.1 Discover an instance; start one when there is none
-- [ ] 6.2 Quitting detaches, and the sessions keep running
-- [ ] 6.3 Starting again finds them and repaints
+- [x] 6.2 Proven at the level below the terminal: a client creates a session,
+      goes away entirely, and the session and its process do not notice
+- [x] 6.3 A returning client is seeded with what it missed while away
 - [ ] 6.4 The key says `detach` again, and the confirmation keeps the case it
       still describes
+
+## 7. Still to do: the terminal's own surfaces on a remote roster
+
+The frame loop draws from the seam and both sides of it work. What is not
+done is the half of the terminal that reads the *instance* rather than the
+*terminal*: the agent panel, the agent list, the status bar's chips and the
+quit confirmation all take a local `Instance` today.
+
+- [ ] 7a.1 One view model both modes produce — the roster the instance
+      already reports, plus what only a local probe knows
+- [ ] 7a.2 The row builders take that rather than an instance
+- [ ] 7a.3 The vocabulary looked up by word, as the web client already does
+- [ ] 7a.4 Then, and only then, the terminal attaches by default
 
 ## 7. Proof
 

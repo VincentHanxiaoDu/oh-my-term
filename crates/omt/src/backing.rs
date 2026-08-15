@@ -35,6 +35,12 @@ pub(crate) enum Backing<'a> {
 }
 
 /// A client's view of an instance's sessions.
+#[allow(
+    dead_code,
+    reason = "the attached half of the seam: read the moment the terminal \
+              attaches, and kept whole rather than grown a field at a time, \
+              because a partial view is what makes a migration stall halfway"
+)]
 pub(crate) struct Attached {
     /// The connection.
     pub(crate) client: crate::client::Client,
@@ -58,6 +64,11 @@ pub(crate) struct Attached {
 
 /// What the instance says about one session.
 #[derive(Debug, Clone)]
+#[allow(
+    dead_code,
+    reason = "the view model the row builders move to next; see this change's \
+              tasks, section 7a"
+)]
 pub(crate) struct Reported {
     /// Which session.
     pub(crate) id: SessionId,
@@ -87,6 +98,12 @@ pub(crate) fn backing<'a>(
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "`write` and `lost` are the attached path's, and the terminal \
+              still runs the local one until the surfaces above the seam read \
+              a roster rather than an instance"
+)]
 impl Backing<'_> {
     /// The emulator for a session, wherever it lives.
     pub(crate) fn terminal(&self, id: SessionId) -> Option<&omt_term::Terminal> {
@@ -119,7 +136,10 @@ impl Backing<'_> {
                     // Drained rather than left to accumulate: the client is not
                     // the host, and a queue nobody reads is a leak that grows
                     // with the session's whole output.
-                    mirror.drain_actions();
+                    // Dropped rather than acted on: a client is not the host,
+                    // and a queue nobody reads grows with the session's whole
+                    // output.
+                    drop(mirror.drain_actions());
                 }
                 // Events come from the instance's own stream, not invented
                 // here. What this returns is "something happened", which is
@@ -211,6 +231,117 @@ impl Backing<'_> {
             Self::Attached(attached) => !attached.client.is_live(),
         }
     }
+}
+
+/// Open a session in an instance and start watching it.
+///
+/// The attached counterpart of spawning a pty locally: the instance does the
+/// spawning, and what comes back is a mirror this terminal draws.
+///
+/// # Errors
+/// Fails if the instance refuses, or answers with something unusable.
+#[allow(
+    dead_code,
+    reason = "reached the moment the terminal attaches rather than owns"
+)]
+pub(crate) fn open_session(
+    attached: &mut Attached,
+    workspace: &str,
+    program: Option<&str>,
+    cols: u16,
+    rows: u16,
+) -> Result<SessionId> {
+    let created = attached.client.call(
+        "session.create",
+        serde_json::json!({
+            "workspace": workspace,
+            "program": program,
+            "cols": cols,
+            "rows": rows,
+        }),
+        true,
+    )?;
+    let id = created["session"]
+        .as_str()
+        .and_then(SessionId::from_wire)
+        .context("the instance created no session")?;
+    watch(attached, id, cols, rows)?;
+    Ok(id)
+}
+
+/// Take the writer token for a session and start mirroring it.
+///
+/// Used both for a session this terminal just created and for one it found
+/// already running — which is the same thing from here, and is the whole point
+/// of a session that outlives its terminal.
+///
+/// # Errors
+/// Fails if the subscription cannot be sent.
+#[allow(
+    dead_code,
+    reason = "reached the moment the terminal attaches rather than owns"
+)]
+pub(crate) fn watch(attached: &mut Attached, id: SessionId, cols: u16, rows: u16) -> Result<()> {
+    // The token, like any other actor. Not forced: another terminal or a phone
+    // may be holding it, and taking it from them because this process happens
+    // to be starting would be exactly the rudeness the token exists to prevent.
+    let claim = attached.client.call(
+        "session.acquire",
+        serde_json::json!({ "session": id.to_wire(), "force": false }),
+        true,
+    );
+    // Somebody else is typing. The session is still watchable — reading over
+    // somebody's shoulder is a feature, not a failure — and input is refused
+    // at the instance, which is where that decision belongs.
+    let epoch = claim.map_or(0, |answer| answer["epoch"].as_u64().unwrap_or(0));
+    attached.epochs.insert(id, epoch);
+
+    // One stream per session, numbered in the order they were asked for. The
+    // header carries sixteen bits and a session id is far wider, so the
+    // mapping is per-connection rather than global.
+    let stream = u16::try_from(attached.streams.len()).unwrap_or(u16::MAX);
+    attached.streams.insert(id, stream);
+    attached.mirrors.insert(
+        id,
+        omt_term::Terminal::new(omt_term::TermConfig {
+            size: omt_term::GridSize::new(cols, rows),
+            ..omt_term::TermConfig::default()
+        }),
+    );
+    let watching: Vec<SessionId> = attached.streams.keys().copied().collect();
+    attached.client.subscribe(watching)?;
+    Ok(())
+}
+
+/// What the instance says about its sessions, as this terminal reads them.
+///
+/// # Errors
+/// Fails if the instance refuses or has gone.
+#[allow(
+    dead_code,
+    reason = "reached the moment the terminal attaches rather than owns"
+)]
+pub(crate) fn refresh_roster(attached: &mut Attached) -> Result<()> {
+    let listed = attached
+        .client
+        .call("session.list", serde_json::json!({}), false)?;
+    attached.roster = listed["sessions"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some(Reported {
+                        id: row["id"].as_str().and_then(SessionId::from_wire)?,
+                        title: row["title"].as_str().unwrap_or("session").to_owned(),
+                        agent_state: row["agent_state"].as_str().map(str::to_owned),
+                        threads: row["threads"].as_u64().unwrap_or(0) as usize,
+                        blocked: row["blocked"].as_u64().unwrap_or(0) as usize,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(())
 }
 
 #[cfg(test)]

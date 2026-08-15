@@ -324,3 +324,131 @@ fn a_client_emulator_ends_up_showing_what_the_session_shows() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_session_created_through_an_instance_outlives_the_client_that_made_it() {
+    // The promise a multiplexer exists to make, at the level below the
+    // terminal: the client that created the session goes away entirely, and
+    // the session — and the process in it — does not notice.
+    let dir = temp_dir("stream-outlive");
+    let mut instance = omt_daemon::Instance::new();
+    // A directory that exists: a session is spawned in its workspace's root,
+    // and a chdir that fails leaves a session that was created and is already
+    // dead.
+    let workspace = instance
+        .open_workspace(&dir.display().to_string())
+        .expect("workspace");
+    let state = omt::state::State::new(instance);
+    let socket = dir.join("omt.sock");
+
+    let pumping = state.clone();
+    std::thread::spawn(move || {
+        loop {
+            if let Ok(mut instance) = pumping.lock() {
+                let _ = instance.pump_all();
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    });
+    let served = state.clone();
+    let path = socket.clone();
+    std::thread::spawn(move || {
+        let _ = omt::serve::serve_beside(&path, served);
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while omt_transport::connect(&socket).is_err() {
+        assert!(Instant::now() < deadline, "never started listening");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // A client makes a session, writes into it, and leaves.
+    let session = {
+        let mut client = omt::client::Client::connect(&socket).expect("connect");
+        let created = client
+            .call(
+                "session.create",
+                serde_json::json!({
+                    "workspace": workspace.to_wire(),
+                    "program": "/bin/sh",
+                    "cols": 40,
+                    "rows": 6,
+                }),
+                true,
+            )
+            .expect("create");
+        let session = created["session"].as_str().expect("an id").to_owned();
+        let claim = client
+            .call(
+                "session.acquire",
+                serde_json::json!({ "session": session, "force": false }),
+                true,
+            )
+            .expect("acquire");
+        client
+            .call(
+                "session.write",
+                serde_json::json!({
+                    "session": session,
+                    "text": "printf 'still here'\n",
+                    "epoch": claim["epoch"].as_u64().unwrap_or(0),
+                }),
+                true,
+            )
+            .expect("write");
+        session
+    };
+    // The client is gone. Everything below this line is somebody coming back.
+
+    let id = omt_types::SessionId::from_wire(&session).expect("an id");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut screen = String::new();
+    while Instant::now() < deadline {
+        {
+            let instance = state.lock().expect("lock");
+            if let Some(runtime) = instance.runtime(id) {
+                screen = (0..6)
+                    .map(|r| runtime.terminal().row_text(r))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            }
+        }
+        if screen.contains("still here") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        screen.contains("still here"),
+        "the session did not survive the client that made it:\n{screen}"
+    );
+
+    // And a new client is seeded with what it missed entirely.
+    let mut returning = omt::client::Client::connect(&socket).expect("reconnect");
+    returning.subscribe(vec![id]).expect("subscribe");
+    let mut mirror = omt_term::Terminal::new(omt_term::TermConfig {
+        size: omt_term::GridSize::new(40, 6),
+        ..omt_term::TermConfig::default()
+    });
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut mine = String::new();
+    while Instant::now() < deadline {
+        let bytes = returning.take_output(0);
+        if !bytes.is_empty() {
+            mirror.advance(&bytes);
+        }
+        mine = (0..6)
+            .map(|r| mirror.row_text(r))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if mine.contains("still here") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        mine.contains("still here"),
+        "coming back showed nothing of what happened while away:\n{mine}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
