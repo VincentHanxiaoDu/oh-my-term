@@ -1715,3 +1715,29 @@ fn attached_copy_mode_reaches_history_the_terminal_never_saw() {
         second.screen()
     );
 }
+
+#[test]
+fn the_agents_own_commands_are_listed_and_typed_into_its_own_interface() {
+    let _serial = serially();
+    // omt's palette lists what *omt* can do. This lists what the agent in this
+    // pane says it can do — a different question with a different answer per
+    // pane — and it types the choice into the agent's own interface, because
+    // omt has no composer and the agent's menu is the one that knows what the
+    // arguments mean.
+    let runtime = instance_dir("agent-commands");
+    let _cleanup = Instance(runtime.clone());
+    let mut s = Screen::start_attached_in(&runtime);
+    s.settle(3.0);
+
+    // Nothing has told omt what this shell offers, and the list says so
+    // rather than coming up empty.
+    s.type_in("\x02/");
+    s.settle_until(15.0, |s| s.screen().contains("has not said what it offers"));
+    assert!(
+        s.screen().contains("has not said what it offers"),
+        "an empty list came up blank instead of saying why:\n{}",
+        s.screen()
+    );
+    s.type_in("\x1b");
+    s.settle(1.0);
+}

@@ -88,6 +88,12 @@ pub enum Input {
     Panel,
     /// Read what has scrolled away, and take a copy of it.
     CopyMode,
+    /// What the agent in this pane says it offers.
+    ///
+    /// The agent's own commands, not omt's. omt has no composer to complete
+    /// into — you type into the agent's interface — so this lists what it
+    /// reported and types the one you pick.
+    Commands,
     /// Read the focused agent's conversation.
     ///
     /// What it *said and did*, not what it painted. The grid is a box an agent
@@ -211,6 +217,7 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
     ('a', "agents"),
     ('t', "transcript"),
     ('[', "copy"),
+    ('/', "commands"),
     ('w', "sessions"),
     ('g', "panel"),
     ('x', "close"),
@@ -259,6 +266,8 @@ pub fn leader_action(key: char) -> Option<Input> {
         't' => Input::Conversation,
         // The bracket tmux uses, so fingers that already know it are right.
         '[' => Input::CopyMode,
+        // The character the commands themselves start with.
+        '/' => Input::Commands,
         'w' => Input::Sessions,
         _ => return None,
     })

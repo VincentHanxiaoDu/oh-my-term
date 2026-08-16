@@ -43,6 +43,13 @@ pub(crate) const CHROME_ROWS: u16 = 0;
 /// overlay.
 const QUIT_TITLE: &str = "Quit — this ends what is running";
 
+/// The title of the agent's own command list.
+///
+/// Compared rather than remembered in a flag, for the same reason as the quit
+/// overlay: what a chosen row *does* depends on which list it came from, and
+/// the list is the thing that knows.
+const COMMANDS_TITLE: &str = "This agent's commands";
+
 /// Rows of chrome below the panes: the status bar, and only that.
 const STATUS_ROWS: u16 = 1;
 
@@ -195,6 +202,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // The list on screen, if any: the palette, the agents, or the sessions.
     let mut overlay: Option<omt_tui::Overlay> = None;
     let mut chosen: Option<String> = None;
+    // Which list the chosen row came from.
+    let mut picked_from: Option<String> = None;
     let mut term_rows = rows;
     let mut term_cols = cols;
     let mut layout_dirty = true;
@@ -843,6 +852,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                             // Picking is closing. What a choice *does* depends
                             // on which list it came from, and that is decided
                             // where the list was built.
+                            picked_from = Some(open.title.clone());
                             chosen = open.selected().map(|c| c.label.clone());
                             overlay = None;
                         }
@@ -857,6 +867,41 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 // bookkeeping — it is the repaint.
                 layout_dirty = true;
                 if let Some(label) = chosen.take() {
+                    // The agent's own command, typed into the agent's own
+                    // interface — which is where it belongs, since omt has no
+                    // composer of its own and the agent's menu is the one that
+                    // knows what the command's arguments mean. Typed, not
+                    // sent: the newline is somebody's to press once they have
+                    // finished the line.
+                    if picked_from.as_deref() == Some(COMMANDS_TITLE) {
+                        if !label.starts_with('/') {
+                            // The row that says the agent has not reported
+                            // any. Typing that sentence into a shell would be
+                            // absurd, and it is a row rather than an absence
+                            // for a reason.
+                            picked_from = None;
+                            continue;
+                        }
+                        let session = panes[focus].session;
+                        let bytes = label.into_bytes();
+                        if attached.is_some() {
+                            backing(&mut instance, &mut attached).write(session, &bytes)?;
+                        } else {
+                            let pane = &mut panes[focus];
+                            if let Some(rt) = instance.runtime_mut(session) {
+                                rt.write_input(
+                                    &mut pane.writer,
+                                    pane.epoch,
+                                    monotonic_ms(),
+                                    &bytes,
+                                )
+                                .context("writing input")?;
+                            }
+                        }
+                        picked_from = None;
+                        continue;
+                    }
+                    picked_from = None;
                     // A workspace row is a session to focus; anything else is a
                     // capability name, which the palette shows and the CLI runs.
                     if let Some(index) = panes.iter().position(|p| {
@@ -1011,6 +1056,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     };
                     let rows = rects.get(focus).map_or(1, |r| r.rows);
                     copying = Some(omt_tui::CopyMode::entering(total, rows));
+                    layout_dirty = true;
+                }
+                Input::Commands => {
+                    let session = panes[focus].session;
+                    let commands = crate::rows::offers_of(&mut attached, &state, session);
+                    overlay = Some(omt_tui::Overlay::new(
+                        COMMANDS_TITLE,
+                        crate::rows::command_rows(&commands),
+                    ));
                     layout_dirty = true;
                 }
                 Input::Conversation => {

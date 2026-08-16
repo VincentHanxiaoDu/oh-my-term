@@ -363,6 +363,25 @@ be interpreted as commands, which is one program writing control sequences into
 another's terminal.
 
 
+### 2.1e `⟨leader⟩ /` — the agent's own commands
+
+The palette lists what **omt** can do. This lists what the **agent in this
+pane** says it can do, which is a different question with a different answer per
+pane — and one omt must not answer from a table of its own. Agents version
+independently; a list offering a command the agent in front of somebody does not
+have is worse than no list, because they will try it.
+
+So the names come from the agent, through its hooks or its protocol, and nowhere
+else. An agent omt recognised only from its screen has reported none, and the
+list says exactly that rather than coming up blank: an empty list reads as a
+broken feature, where the sentence reads as a fact about the connection.
+
+**Picking types it; it does not send it.** omt has no composer of its own — you
+type into the agent's interface — and the agent's own menu is the one that knows
+what a command's arguments mean. So the choice arrives as keystrokes on the line
+somebody is already editing, and the newline stays theirs to press.
+
+
 ### 2.2 `⟨leader⟩ ?` — the help overlay
 
 `⟨leader⟩ ?` (`ui.open_keymap_help`, [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace))

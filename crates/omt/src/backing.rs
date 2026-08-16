@@ -488,6 +488,31 @@ pub(crate) fn history_line(attached: &mut Attached, id: SessionId, row: u64) -> 
         .and_then(|(rows, _)| rows.into_iter().next())
 }
 
+/// What the agent in a session says it offers, from the instance.
+///
+/// # Errors
+/// Fails if the instance refuses or has gone.
+pub(crate) fn offers(attached: &mut Attached, id: SessionId) -> Result<Vec<(String, String)>> {
+    let answer = attached.client.call(
+        "agent.offers",
+        serde_json::json!({ "session": id.to_wire() }),
+        false,
+    )?;
+    Ok(answer["commands"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some((
+                        row["name"].as_str()?.to_owned(),
+                        row["description"].as_str().unwrap_or_default().to_owned(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

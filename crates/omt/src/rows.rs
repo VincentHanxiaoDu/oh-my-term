@@ -646,6 +646,71 @@ pub(crate) fn conversation_of(
     conversation_rows(&entries, &asking, cols)
 }
 
+/// The rows behind the agent's own command list.
+///
+/// omt's palette lists what *omt* can do; this lists what the agent in this
+/// pane says it can do, which is a different question and has a different
+/// answer per pane. The names come from the agent — never from a table omt
+/// keeps — because a list offering commands the agent in front of somebody
+/// does not have is worse than no list.
+pub(crate) fn command_rows(commands: &[(String, String)]) -> Vec<omt_tui::Choice> {
+    if commands.is_empty() {
+        // Why, not blankness. An agent reports its commands over its hooks or
+        // its protocol; one identified only from its screen has never told omt
+        // anything of the sort, and that is a fact about the connection rather
+        // than about the agent.
+        return vec![omt_tui::Choice {
+            label: "this agent has not said what it offers".to_owned(),
+            detail: "its commands arrive with its hooks or its protocol; \
+                     an agent recognised only from its screen reports none"
+                .to_owned(),
+            chord: None,
+            mark: None,
+        }];
+    }
+    commands
+        .iter()
+        .map(|(name, description)| omt_tui::Choice {
+            // With the slash, because that is what gets typed and what
+            // somebody is looking for.
+            label: format!("/{name}"),
+            detail: description.clone(),
+            chord: None,
+            mark: None,
+        })
+        .collect()
+}
+
+/// What the agent in a session offers, from wherever the session lives.
+pub(crate) fn offers_of(
+    attached: &mut Option<crate::backing::Attached>,
+    state: &crate::state::State,
+    session: omt_types::SessionId,
+) -> Vec<(String, String)> {
+    if let Some(joined) = attached.as_mut() {
+        return crate::backing::offers(joined, session).unwrap_or_default();
+    }
+    state.transcripts().map_or_else(
+        |_| Vec::new(),
+        |transcripts| {
+            transcripts
+                .get(session)
+                .map_or_else(Vec::new, |transcript| {
+                    transcript
+                        .commands()
+                        .iter()
+                        .map(|command| {
+                            (
+                                command.name.clone(),
+                                command.description.clone().unwrap_or_default(),
+                            )
+                        })
+                        .collect()
+                })
+        },
+    )
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -654,6 +719,37 @@ pub(crate) fn conversation_of(
 )]
 mod view_tests {
     use super::*;
+
+    #[test]
+    fn a_command_row_is_typed_the_way_it_is_read() {
+        // The label is what gets typed into the agent's own interface, so it
+        // carries the slash somebody is looking for and nothing they are not.
+        let rows = command_rows(&[("compact".to_owned(), "shorten the context".to_owned())]);
+        assert_eq!(rows[0].label, "/compact");
+        assert_eq!(rows[0].detail, "shorten the context");
+    }
+
+    #[test]
+    fn an_agent_that_has_reported_nothing_says_why() {
+        // Blankness reads as a broken list. The reason is a fact about the
+        // connection — hooks or a protocol — rather than about the agent.
+        let rows = command_rows(&[]);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].label.contains("has not said"), "{rows:?}");
+        assert!(
+            !rows[0].label.starts_with('/'),
+            "the row that explains an absence must not look typeable: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_command_with_no_description_still_lists() {
+        // Agents report the name and often nothing else. A list that dropped
+        // those would hide most of what an agent offers.
+        let rows = command_rows(&[("clear".to_owned(), String::new())]);
+        assert_eq!(rows[0].label, "/clear");
+        assert!(rows[0].detail.is_empty());
+    }
 
     fn reported(state: Option<&str>, blocked: usize) -> crate::backing::Reported {
         crate::backing::Reported {

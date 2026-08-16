@@ -50,7 +50,7 @@ decision; an unrecorded one is a gap nobody has counted.
 | Their surface | omt | Verdict |
 |---|---|---|
 | Multi-agent orchestration with a tab bar | omt's is the session tree plus the agent panel | **different shape** — omt groups by workspace and orders by what needs a person, with no second navigation axis |
-| Per-agent identity colouring | partial | **gap worth having** — omt marks state by shape; agents are told apart by name and position |
+| Per-agent identity colouring | no | **deliberate** — theirs assigns a colour and glyph per agent from a stable hash. omt marks *state* by shape because a colour is the first thing a terminal theme takes away, and a second glyph column would make state and identity ambiguous in twenty-four columns. What tells omt's rows apart is already stable and already shown: the pane number in the bar, the workspace heading in the panel |
 | Question cards answered from another surface | built for protocol agents; refused for pty agents | **deliberate** — selecting an option in a pty card means moving a highlight omt cannot see |
 | Permission prompts, plan review | modelled in the ledger | **parity of model**, and the terminal shows them in the conversation view |
 | Subagent trees | modelled (`ThreadRoster`) | **parity of model** |
@@ -64,7 +64,7 @@ decision; an unrecorded one is a gap nobody has counted.
 | Classifying typed input as a shell command or a question for the agent | no | **not applicable** — omt has no prompt of its own. You type into the agent's own interface, so there is nothing to route |
 | Vim and emacs keymaps | specified; vim partially built | **gap**, recorded in [16](../architecture/16-input-and-keymap.md) |
 | Voice input | capability exists (`omt-stt`) | **parity of surface** |
-| Slash commands of the agent, surfaced by the host | designed | **gap** — the catalog exposes the agent's resolved command list and no surface offers it yet |
+| Slash commands of the agent, surfaced by the host | built | **taken, adapted**: theirs completes into their own composer as you type `/`; omt has no composer, so `⟨leader⟩ /` lists what the agent reported and *types* the choice into the agent's own interface ([19 §2.1e](../architecture/19-onboarding.md)) |
 | Command history and completion menus | recall exists; no menu in the terminal | **gap** |
 
 ## 6. Where omt is ahead
