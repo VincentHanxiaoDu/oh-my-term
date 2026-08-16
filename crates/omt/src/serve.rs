@@ -21,10 +21,10 @@ use crate::state::State;
 /// second would silently talk to the first's sessions.
 #[must_use]
 pub fn default_socket_path() -> PathBuf {
-    let base = std::env::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir());
-    base.join(format!("omt-{}.sock", std::process::id()))
+    // The directory discovery scans, which is a subdirectory of the runtime
+    // one: omt narrows the permissions of what it writes into, and narrowing
+    // the whole of somebody's runtime directory is not omt's to do.
+    crate::discovery::runtime_dir().join(format!("omt-{}.sock", std::process::id()))
 }
 
 /// Refuse to start in a directory this uid does not own.
@@ -100,6 +100,12 @@ pub fn serve(path: &Path, state: State) -> Result<()> {
     unsafe {
         libc::umask(crate::multiuser::UMASK as libc::mode_t);
     }
+    // The directory may not exist yet; a first run on a fresh machine is the
+    // common case, not an error.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
     guard_runtime_dir(path)?;
     // So a session this instance spawns can tell its agent's hooks where to
     // report. Nothing else knows this: a hook cannot work it out, and until
@@ -171,6 +177,10 @@ pub fn serve(path: &Path, state: State) -> Result<()> {
 /// # Errors
 /// Fails if the socket cannot be created.
 pub fn serve_beside(path: &Path, state: State) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
     guard_runtime_dir(path)?;
     state.listening_on(path);
     let _ = std::fs::remove_file(path);

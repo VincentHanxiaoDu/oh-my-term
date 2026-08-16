@@ -389,6 +389,31 @@ pub(crate) fn first_session(
     open_session(attached, &workspace, None, cols, rows)
 }
 
+/// Make another session in the instance, for a split.
+///
+/// Always a new one, where `first_session` deliberately reuses: somebody
+/// splitting has asked for another place to work, and handing them the session
+/// already on screen would be a split that shows the same thing twice.
+///
+/// # Errors
+/// Fails if the instance refuses.
+pub(crate) fn split_session(
+    attached: &mut Attached,
+    cwd: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<SessionId> {
+    let workspace =
+        attached
+            .client
+            .call("workspace.open", serde_json::json!({ "root": cwd }), true)?;
+    let workspace = workspace["id"]
+        .as_str()
+        .context("the instance opened no workspace")?
+        .to_owned();
+    open_session(attached, &workspace, None, cols, rows)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

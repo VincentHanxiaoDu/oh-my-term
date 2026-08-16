@@ -23,10 +23,29 @@ use std::path::{Path, PathBuf};
 /// The directory instance sockets live in.
 #[must_use]
 pub fn runtime_dir() -> PathBuf {
-    std::env::var("XDG_RUNTIME_DIR")
+    // 22 §1.1 and §7: `$XDG_RUNTIME_DIR/omt/`, and where that is unset — macOS,
+    // some containers — the temp directory with the uid in the *name*, so two
+    // people on one machine cannot collide and neither can squat on the
+    // other's path. `guard_runtime_dir` checks the owner and narrows the mode
+    // before anything is written into it.
+    //
+    // Set, non-empty *and* absolute. An empty variable is still set, and
+    // joining onto it yields a relative path — a socket bound in whichever
+    // directory the process started in, where nothing will ever look for it.
+    // One of those was found still running hours later.
+    if let Some(runtime) = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
         .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir())
-        .join("omt")
+        .filter(|p| p.is_absolute())
+    {
+        return runtime.join("omt");
+    }
+    #[allow(
+        unsafe_code,
+        reason = "getuid has no safe wrapper in std and cannot fail"
+    )]
+    let uid = unsafe { libc::getuid() };
+    std::env::temp_dir().join(format!("omt-{uid}"))
 }
 
 /// What discovery concluded.

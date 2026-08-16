@@ -1480,6 +1480,7 @@ fn attached_to_an_instance_a_pane_shows_what_that_session_shows() {
     // the status bar — so what this proves is the seam: bytes from a socket
     // reach a pane and are drawn like any other.
     let runtime = instance_dir("attached-one");
+    let _cleanup = Instance(runtime.clone());
     let mut s = Screen::start_attached_in(&runtime);
     s.settle(3.0);
     s.type_in("printf 'from-the-instance'\n");
@@ -1490,7 +1491,6 @@ fn attached_to_an_instance_a_pane_shows_what_that_session_shows() {
         s.screen()
     );
     drop(s);
-    end_instance(&runtime);
 }
 
 #[test]
@@ -1499,6 +1499,7 @@ fn what_was_left_running_is_what_comes_back() {
     // The promise. A terminal quits with work in it; the next one in the same
     // directory finds that work rather than a fresh shell.
     let runtime = instance_dir("attached-return");
+    let _cleanup = Instance(runtime.clone());
     let mut first = Screen::start_attached_in(&runtime);
     first.settle(3.0);
     let marker = format!("survives-{}", std::process::id());
@@ -1524,7 +1525,11 @@ fn what_was_left_running_is_what_comes_back() {
     let mut answering = None;
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline && answering.is_none() {
-        for entry in std::fs::read_dir(&runtime).expect("runtime dir").flatten() {
+        // omt keeps its sockets in a subdirectory of the runtime one, because
+        // it narrows the permissions of what it writes into and the runtime
+        // directory is not omt's to narrow.
+        let sockets = runtime.join("omt");
+        for entry in std::fs::read_dir(&sockets).into_iter().flatten().flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "sock")
                 && let Ok(client) = omt::client::Client::connect(&path)
@@ -1550,7 +1555,19 @@ fn what_was_left_running_is_what_comes_back() {
         second.screen()
     );
     drop(second);
-    end_instance(&runtime);
+}
+
+/// A runtime directory of this test's own, plus the promise to clean up.
+///
+/// A guard rather than a call at the end: a test that fails skips whatever
+/// came after the assertion, and the daemons those runs left behind were still
+/// running hours later, competing for the machine the next suite needed.
+struct Instance(std::path::PathBuf);
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        end_instance(&self.0);
+    }
 }
 
 /// A runtime directory of this test's own, so its instance is nobody else's.
@@ -1572,4 +1589,74 @@ fn end_instance(runtime: &std::path::Path) {
         .arg(runtime.display().to_string())
         .status();
     let _ = std::fs::remove_dir_all(runtime);
+}
+
+#[test]
+fn a_split_in_an_attached_terminal_makes_a_session_that_outlives_it_too() {
+    let _serial = serially();
+    // A split is another place to work, and in a terminal whose whole promise
+    // is that work survives it, a pane spawned in *this* process would be the
+    // one place that quietly did not.
+    let runtime = instance_dir("attached-split");
+    let _cleanup = Instance(runtime.clone());
+    let mut s = Screen::start_attached_in(&runtime);
+    s.settle(3.0);
+    s.type_in("\x02s"); // leader, split
+    s.settle(3.0);
+    s.type_in("printf 'in-the-split'\n");
+    s.settle_until(20.0, |s| s.screen().contains("in-the-split"));
+    assert!(
+        s.screen().contains("in-the-split"),
+        "the split never showed its session:\n{}",
+        s.screen()
+    );
+
+    // Two sessions in the instance, not one — and both of them its own.
+    let mut answering = None;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && answering.is_none() {
+        // omt keeps its sockets in a subdirectory of the runtime one, because
+        // it narrows the permissions of what it writes into and the runtime
+        // directory is not omt's to narrow.
+        let sockets = runtime.join("omt");
+        for entry in std::fs::read_dir(&sockets).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "sock")
+                && let Ok(client) = omt::client::Client::connect(&path)
+            {
+                answering = Some(client);
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let mut probe = answering.expect("no instance answered");
+    let listed = probe
+        .call("session.list", serde_json::json!({}), false)
+        .expect("session.list");
+    let count = listed["sessions"].as_array().map_or(0, Vec::len);
+    assert_eq!(count, 2, "the split did not reach the instance: {listed}");
+
+    drop(s);
+}
+
+#[test]
+fn attached_quitting_asks_nothing_because_it_ends_nothing() {
+    let _serial = serially();
+    // The confirmation exists because quitting used to take an agent mid-turn
+    // with it. Attached, it does not — and a question about a consequence that
+    // no longer happens is one people learn to dismiss without reading.
+    let runtime = instance_dir("attached-quit");
+    let _cleanup = Instance(runtime.clone());
+    let mut s = Screen::start_attached_in(&runtime);
+    s.settle(3.0);
+    s.type_in("sleep 30 &\n");
+    s.settle(1.5);
+    s.type_in("\x02d");
+    s.settle(2.0);
+    assert!(
+        !s.screen().contains("ends when omt does"),
+        "it asked about ending sessions it does not end:\n{}",
+        s.screen()
+    );
 }

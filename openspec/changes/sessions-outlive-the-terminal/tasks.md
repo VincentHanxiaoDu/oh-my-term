@@ -71,7 +71,9 @@ quit confirmation all take a local `Instance` today.
 - [x] 7.1 A terminal killed outright, and the next one in the same directory
       showing the work that was left running
 - [x] 7.2 Re-attaching shows what the session's screen shows now
-- [ ] 7.3 An agent mid-turn is still mid-turn after the terminal is gone
+- [x] 7.3 A split makes another session in the instance, which outlives the
+      terminal exactly as the first one does
+- [x] 7.4 Attached, quitting asks nothing — it ends nothing
 
 ## 8. Close-out
 

@@ -972,15 +972,26 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         // check.
                         if proposed.place(area).iter().any(|p| p.pane == new_tile) {
                             let size = PtySize::new(term_cols, term_rows.saturating_sub(1).max(1));
-                            if let Ok(pane) = LocalPane::open(
-                                &mut instance,
-                                workspace,
-                                &shell,
-                                &cwd,
-                                size,
-                                new_tile,
-                                &socket_text,
-                            ) {
+                            // Where the new session is made depends on who
+                            // owns them. Attached, asking the instance is not
+                            // a detail: a session this process spawned would
+                            // die with it, in a terminal whose whole promise
+                            // is that they do not.
+                            let opened = if let Some(joined) = attached.as_mut() {
+                                crate::backing::split_session(joined, &cwd, size.cols, size.rows)
+                                    .map(|session| LocalPane::watching(session, new_tile))
+                            } else {
+                                LocalPane::open(
+                                    &mut instance,
+                                    workspace,
+                                    &shell,
+                                    &cwd,
+                                    size,
+                                    new_tile,
+                                    &socket_text,
+                                )
+                            };
+                            if let Ok(pane) = opened {
                                 layout = proposed;
                                 panes.push(pane);
                                 focus = panes.len() - 1;
@@ -1156,7 +1167,16 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     // omt it kills every pty this process holds — so the one
                     // thing it must not do is take an agent mid-turn away
                     // without saying so.
-                    let at_work = crate::terminal_bits::still_working(&watched);
+                    // Attached, quitting ends nothing: the sessions are the
+                    // instance's and they keep running. Asking would be a
+                    // question about a consequence that no longer happens,
+                    // and a confirmation nobody needs is one people learn to
+                    // dismiss without reading.
+                    let at_work = if attached.is_some() {
+                        Vec::new()
+                    } else {
+                        crate::terminal_bits::still_working(&watched)
+                    };
                     if at_work.is_empty() {
                         break 'session;
                     }

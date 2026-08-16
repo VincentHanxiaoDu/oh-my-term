@@ -24,17 +24,23 @@ use omt_types::DeviceId;
 /// its own process can name is a socket nobody can attach to.
 #[must_use]
 pub fn daemon_socket_path() -> PathBuf {
-    let base = std::env::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir());
-    // The uid, so two people on one machine do not collide on a path — and so
-    // one cannot connect to the other's by guessing it.
+    // The same directory discovery scans. They were one level apart — daemons
+    // bound in `$XDG_RUNTIME_DIR` and discovery looked in `$XDG_RUNTIME_DIR/omt`
+    // — so nothing ever discovered anything, and every terminal started a
+    // daemon that found the path taken and died. It worked only because the
+    // *previous* daemon was still answering.
+    //
+    // A subdirectory rather than the runtime directory itself, because omt
+    // narrows the permissions of what it writes into, and narrowing the whole
+    // of somebody's runtime directory is not omt's to do.
     #[allow(
         unsafe_code,
         reason = "getuid has no safe wrapper in std and cannot fail"
     )]
     let uid = unsafe { libc::getuid() };
-    base.join(format!("omt-{uid}.sock"))
+    // The uid, so two people on one machine do not collide on a path — and so
+    // one cannot connect to the other's by guessing it.
+    crate::discovery::runtime_dir().join(format!("omt-{uid}.sock"))
 }
 
 /// Whether a daemon is listening there.
