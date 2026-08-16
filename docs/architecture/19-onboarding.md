@@ -809,7 +809,7 @@ literal for every row.
 | 2 | `new-window` (`c`) | `session.create` | `⟨leader⟩ c` |
 | 3 | `kill-pane` (`x`) | `session.close` | `⟨leader⟩ x` |
 | 4 | `kill-window` (`&`) | `session.close` (all panes) | `⟨leader⟩ X` |
-| 5 | `detach-client` (`d`) | `session.detach` | `⟨leader⟩ d` — labelled **quit** while the terminal owns its own ptys, and it asks before ending them ([05 §4.1b](05-session-model.md)) |
+| 5 | `detach-client` (`d`) | `session.detach` | `⟨leader⟩ d`. The sessions are the instance's, so leaving is leaving; on the fallback path, where no instance could be started, it asks first and says what it ends ([05 §4.1b](05-session-model.md)) |
 | 6 | `attach-session` | `session.attach` | `omt attach [<name>]` |
 | 7 | `choose-tree` / `choose-window` (`w`, `s`) | `ui.open_session_picker` | `⟨leader⟩ w` |
 | 8 | `split-window -h` (`%`) | `pane.split{vertical}` | `⟨leader⟩ \|` |

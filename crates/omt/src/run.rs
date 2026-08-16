@@ -88,10 +88,16 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // hook talks to a socket. A terminal with no socket is a terminal whose
     // agents can report nothing, which is what every one of them was doing.
     let state = crate::state::State::new(Instance::new());
+    // Attached is the default: a session that dies with the terminal showing
+    // it is the one thing a multiplexer exists to prevent. `OMT_LOCAL` is the
+    // way back, for a machine where an instance cannot be started and for the
+    // tests that drive the path that owns its own ptys.
+    //
     // Set *and non-empty*. An empty variable is how a harness says "not this
-    // one" while still handing the child a fixed set of names, and reading it
-    // as "yes" made every local test try to attach.
-    let attaching = std::env::var("OMT_ATTACH").is_ok_and(|v| !v.trim().is_empty());
+    // one" while still handing the child a fixed set of names, and reading one
+    // as "yes" once made every local test try to attach.
+    let asked_local = std::env::var("OMT_LOCAL").is_ok_and(|v| !v.trim().is_empty());
+    let attaching = !asked_local;
     let hook_socket = crate::serve::default_socket_path();
     if !attaching {
         let served = state.clone();
@@ -112,10 +118,19 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // does. Behind a switch until the attached path is at parity: a
     // half-migrated terminal is worse than either end of the migration, and
     // the way to find out which end this is is to be able to run both.
-    let mut attached: Option<Attached> = if attaching {
-        Some(crate::backing::join()?)
-    } else {
-        None
+    let mut attached: Option<Attached> = match attaching.then(crate::backing::join) {
+        Some(Ok(joined)) => Some(joined),
+        // Never refuse to start. A terminal that will not open because a
+        // daemon would not is worse than one whose sessions do not outlive it
+        // — but somebody has to be *told* which of the two they have, because
+        // the difference only shows up when they close it.
+        Some(Err(why)) => {
+            eprintln!(
+                "omt: running without an instance, so these sessions end when this terminal does\n     ({why})"
+            );
+            None
+        }
+        None => None,
     };
     let socket_text = hook_socket.display().to_string();
     let mut instance = state.lock().map_err(|e| anyhow::anyhow!("{e}"))?;

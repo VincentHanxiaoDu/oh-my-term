@@ -240,9 +240,7 @@ mod tests {
             blocked: 5,
             ..situation()
         };
-        // `quit`, which is what the key does while this process owns the
-        // ptys (05 §4.1b).
-        assert!(hint_for(&s).expect("a hint").contains("quit"));
+        assert!(hint_for(&s).expect("a hint").contains("detach"));
     }
 
     #[test]
@@ -380,7 +378,7 @@ mod strip_width_tests {
         // `sessions` and `agents` from the only place they are advertised.
         let narrow = pending_strip_within(40);
         assert!(narrow.chars().count() <= 40, "{narrow:?}");
-        assert!(narrow.contains("quit"), "{narrow:?}");
+        assert!(narrow.contains("detach"), "{narrow:?}");
         assert!(
             narrow.contains('…'),
             "it dropped keys and did not say so: {narrow:?}"

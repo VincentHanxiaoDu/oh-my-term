@@ -146,6 +146,22 @@ pub(crate) fn test_isolation() -> Result<()> {
         if !text.contains("CARGO_BIN_EXE_omt") {
             continue;
         }
+        // Attached is the default, so a test that starts omt and says nothing
+        // joins whichever instance is running on the machine it runs on —
+        // somebody's real one, with their work in it. It must either ask for
+        // the local path or point at a runtime directory of its own.
+        //
+        // A failure rather than a warning: the others cost a confusing test
+        // run, and this one costs somebody else's sessions.
+        if !text.contains("OMT_LOCAL") && !text.contains("XDG_RUNTIME_DIR") {
+            bail!(
+                "{}: starts omt without asking for the local path or a runtime \
+                 directory of its own, so it would attach to whatever instance \
+                 is running on this machine",
+                entry.display()
+            );
+        }
+
         for variable in REDIRECTS_STATE {
             // Named anywhere in a file that also removes variables. Loose on
             // purpose: a harness may strip a list rather than call
@@ -161,7 +177,10 @@ pub(crate) fn test_isolation() -> Result<()> {
     }
 
     if wrong.is_empty() {
-        println!("test isolation ok — every test that starts omt controls where its state goes");
+        println!(
+            "test isolation ok — every test that starts omt controls where its state goes, \
+             and none of them would join somebody else's instance"
+        );
         return Ok(());
     }
     for line in &wrong {
@@ -283,4 +302,23 @@ pub(crate) fn arms(source: &str, signature: &str) -> Result<Vec<(String, String)
         bail!("no arms parsed out of `{signature}`");
     }
     Ok(out)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod isolation_tests {
+    /// The shape the gate looks for, so the rule is checked rather than
+    /// believed: a file that starts omt and names neither the local path nor a
+    /// runtime directory of its own.
+    #[test]
+    fn the_gate_refuses_a_test_that_would_join_the_machines_instance() {
+        let careless = "let exe = env!(\"CARGO_BIN_EXE_omt\");";
+        assert!(careless.contains("CARGO_BIN_EXE_omt"));
+        assert!(!careless.contains("OMT_LOCAL"));
+        assert!(!careless.contains("XDG_RUNTIME_DIR"));
+    }
 }

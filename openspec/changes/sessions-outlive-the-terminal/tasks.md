@@ -45,8 +45,8 @@
 - [x] 6.2 Proven at the level below the terminal: a client creates a session,
       goes away entirely, and the session and its process do not notice
 - [x] 6.3 A returning client is seeded with what it missed while away
-- [ ] 6.4 The key says `detach` again, and the confirmation keeps the case it
-      still describes
+- [x] 6.4 The key says `detach` again, and the confirmation keeps the case it
+      still describes — the fallback path, where quitting does end them
 
 ## 7. Still to do: the terminal's own surfaces on a remote roster
 
@@ -63,8 +63,8 @@ quit confirmation all take a local `Instance` today.
 - [x] 7a.3 One table, two directions: `word_of` and `state_from_word` beside
       the words themselves, and the capability that puts a state on the wire
       asks it rather than keeping a second copy
-- [x] 7a.4 The attached path built and proven behind `OMT_ATTACH`; making it
-      the default is the next commit, once the whole suite has run against it
+- [x] 7a.4 Attached is the default; `OMT_LOCAL` is the way back, and a
+      terminal that cannot reach an instance still opens and says so
 
 ## 7. Proof
 
@@ -77,6 +77,10 @@ quit confirmation all take a local `Instance` today.
 
 ## 8. Close-out
 
-- [ ] 8.1 clippy, workspace tests, the screen suite, `npm run check`
-- [ ] 8.2 layering, licensing, file length, codegen, test isolation
-- [ ] 8.3 05 §4.1b rewritten: it describes a gap that no longer exists
+- [x] 8.1 clippy, workspace tests, the screen suite, `npm run check`
+- [x] 8.2 layering, licensing, file length, codegen, test isolation — the last
+      of which now *fails* rather than warns when a test that starts omt could
+      join the machine's own instance, because that one costs somebody else's
+      sessions rather than a confusing run
+- [x] 8.3 05 §4.1b rewritten: it describes where the sessions live, and keeps
+      the history of the wrong word because that is the part worth remembering

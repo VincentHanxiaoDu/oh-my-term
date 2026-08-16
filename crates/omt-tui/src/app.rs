@@ -69,12 +69,12 @@ pub enum Input {
         /// New height.
         rows: u16,
     },
-    /// Leave omt.
+    /// Leave, and let the sessions carry on without this terminal.
     ///
-    /// Named `Detach` for the key it is bound to. What it *does* is end this
-    /// process, and every pty it holds goes with it — so anything running in a
-    /// pane is asked about first (05 §4.1b). A real detach needs the sessions
-    /// to live somewhere this process is not, which they do not yet.
+    /// What it means depends on who owns them, and omt says which: attached to
+    /// an instance it ends nothing, and on the fallback path — where an
+    /// instance could not be started — it ends every pty this process holds,
+    /// and asks first.
     Detach,
     /// Split: put a new session beside this one, side by side.
     Split,
@@ -199,10 +199,10 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
     // terminal is what somebody is most likely to have opened the strip to
     // find, which is why `waiting` and `agents` are above `panel` and
     // `palette` rather than in the order they were added.
-    // "quit", not "detach", until a session can actually outlive this
-    // process. The key ends every pty it is holding, and a word that promised
-    // otherwise cost somebody an agent mid-turn — see 05 §4.1b.
-    ('d', "quit"),
+    // "detach" again, and now it is true: the sessions live in an instance
+    // this terminal is watching, so leaving is leaving. It read "quit" for
+    // exactly as long as the key ended every pty it was holding.
+    ('d', "detach"),
     ('c', "new"),
     ('s', "s/S split"),
     ('h', "hjkl/HJKL"),

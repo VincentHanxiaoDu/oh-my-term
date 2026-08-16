@@ -36,6 +36,11 @@ fn omt_on_a_pty() -> Pty {
             // it runs on.
             ("SHELL".to_owned(), "/bin/sh".to_owned()),
             ("PS1".to_owned(), "$ ".to_owned()),
+            // Its own sessions. Attached is the default, and a test that
+            // attached would put sessions into whichever instance happens to
+            // be running on the machine it is run on — somebody's real one,
+            // with their work in it.
+            ("OMT_LOCAL".to_owned(), "1".to_owned()),
         ],
         ..PtyConfig::default()
     })
@@ -111,9 +116,9 @@ fn runs_a_shell_and_types_into_it() {
     // rather than derived, so changing the default leader fails this test
     // instead of silently shipping a key nobody is told about.
     //
-    // Twice, with the answer between: a live shell is a running session, and
-    // quitting ends every pty this process holds, so omt asks first (05
-    // §4.1b). Enter is the answer, in the list itself.
+    // This one owns its sessions — see the spawn above — so leaving does end
+    // the shell in it, and omt asks first (05 §4.1b). Enter is the answer, in
+    // the list itself.
     pty.writer().write_all(b"\x02d").expect("quit");
     let asked = read_until(&pty, "ends when omt does", Duration::from_secs(10));
     assert!(

@@ -140,7 +140,6 @@ impl Screen {
         runtime: Option<&std::path::Path>,
     ) -> Self {
         let runtime_var = runtime.map(|r| r.display().to_string()).unwrap_or_default();
-        let attach_var = if runtime.is_some() { "1" } else { "" }.to_owned();
         // A state directory per screen, so what one test leaves behind cannot
         // decide what the next one starts with. The agent panel remembers
         // whether it is on; without this, the test that turns it on turns it
@@ -174,7 +173,14 @@ impl Screen {
                 // empty variable is a value, and reading one as "yes" made
                 // every local test in this file try to attach.
                 ("XDG_RUNTIME_DIR".to_owned(), runtime_var.clone()),
-                ("OMT_ATTACH".to_owned(), attach_var.clone()),
+                // The local path is the opt-out now, so a screen that owns its
+                // own sessions has to say so — and it is stripped rather than
+                // set empty for an attached one, because an empty variable is
+                // still a value.
+                (
+                    "OMT_LOCAL".to_owned(),
+                    if runtime.is_some() { "" } else { "1" }.to_owned(),
+                ),
                 // Where a client writes a call that never answered. A terminal
                 // that has frozen and one whose instance stopped replying look
                 // identical on screen, and the screen is the one thing that
@@ -215,11 +221,12 @@ impl Screen {
                     .map(str::to_owned),
                 );
                 if runtime.is_none() {
-                    // This screen owns its sessions. Inheriting either of these
-                    // from whoever ran the suite would have it attach to an
-                    // instance the test knows nothing about.
-                    stripped.push("OMT_ATTACH".to_owned());
+                    // This screen owns its sessions. Inheriting a runtime
+                    // directory from whoever ran the suite would point it at
+                    // an instance the test knows nothing about.
                     stripped.push("XDG_RUNTIME_DIR".to_owned());
+                } else {
+                    stripped.push("OMT_LOCAL".to_owned());
                 }
                 stripped
             },
@@ -523,9 +530,7 @@ fn the_leader_strip_lists_the_keys_after_a_pause() {
     s.type_in("\x02");
     s.settle(1.0);
     let screen = s.screen();
-    // `quit`, not `detach`: the key ends every pty this process holds, and
-    // the strip is where somebody reads what a key does (05 §4.1b).
-    for label in ["quit", "split", "zoom", "waiting", "agents"] {
+    for label in ["detach", "split", "zoom", "waiting", "agents"] {
         assert!(screen.contains(label), "`{label}` missing:\n{screen}");
     }
     // And when something is dropped it is said, because a menu that quietly
@@ -1073,7 +1078,7 @@ fn a_screen_that_changes_on_a_timer_still_repaints() {
     s.settle(0.5);
 
     assert!(
-        strip.contains("quit"),
+        strip.contains("detach"),
         "the strip never appeared, so a timed repaint was skipped:\n{strip}"
     );
 
