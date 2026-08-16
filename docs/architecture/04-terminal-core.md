@@ -114,10 +114,12 @@ means nothing.
 
 Two extensions, both implemented as omt-side wrappers, not forks:
 
-**(a) Streaming payload hooks.** `vte` already surfaces DCS as
-`hook`/`put`/`unhook`, and APC as `esc_dispatch` plus raw bytes if configured;
-what it does not do is let us *route* a payload to a stateful consumer chosen by
-the introducer. We add:
+**(a) Streaming payload hooks.** `vte` surfaces DCS as `hook`/`put`/`unhook`.
+**It does not surface APC at all** — the string is consumed by the parser's
+`SosPmApcString` state and no callback is ever made, so a kitty graphics
+sequence is not merely unhandled, it is invisible. Anything that wants APC has
+to see the bytes *before* the parser does. On top of that, `vte` does not let
+us *route* a payload to a stateful consumer chosen by the introducer. We add:
 
 ```rust
 pub trait PayloadHook: Send {

@@ -9,6 +9,7 @@ pub mod action;
 pub mod block;
 pub mod cell;
 pub mod damage;
+pub mod graphics;
 pub mod grid;
 pub mod line;
 mod osc;

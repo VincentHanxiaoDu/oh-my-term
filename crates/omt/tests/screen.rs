@@ -1501,6 +1501,52 @@ fn a_program_that_asked_for_the_mouse_gets_the_click_and_shift_takes_it_back() {
 }
 
 #[test]
+fn an_image_a_program_draws_is_not_swallowed() {
+    let _serial = serially();
+    // `vte` consumes an APC string in a state that makes no callback, so a
+    // program drawing an image produced *nothing at all* — and the next line
+    // landed where the image should have been, which makes a program that drew
+    // something look like one that did nothing.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    // The shape `imgcat` and every kitty-protocol tool writes.
+    s.type_in("printf '\\033_Gi=1,c=12,r=2;QUFBQQ==\\033\\\\'; printf 'after-the-image\\n'\n");
+    s.settle_until(10.0, |s| s.screen().contains("after-the-image"));
+
+    let screen = s.screen();
+    // Past the line the shell echoed back, which naturally contains what was
+    // typed: what matters is that the *sequence* did not put its payload on
+    // the screen.
+    let drawn: String = screen
+        .lines()
+        .filter(|line| !line.contains("printf"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !drawn.contains("QUFBQQ"),
+        "the payload was drawn as text:\n{screen}"
+    );
+    assert!(
+        screen.contains("12×2"),
+        "the image left no trace at all:\n{screen}"
+    );
+
+    // And what came after it is below it, not on top of it.
+    let card = drawn
+        .lines()
+        .position(|line| line.contains("12×2"))
+        .expect("the card");
+    let after = drawn
+        .lines()
+        .position(|line| line.contains("after-the-image"))
+        .expect("the line after");
+    assert!(
+        after > card,
+        "the following output landed on the image's rows:\n{screen}"
+    );
+}
+
+#[test]
 fn a_search_in_copy_mode_jumps_to_the_line_that_has_it() {
     let _serial = serially();
     // The `/` this document has specified for as long as it has specified copy

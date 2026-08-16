@@ -127,7 +127,8 @@ From reading the others, in `docs/reference/read-from-the-others.md`. Everything
 there has a verdict and a reason, including the rows omt is deliberately
 different on. Still open, roughly by value:
 
-- kitty graphics passthrough
+- drawing an image for real: re-emitting to the host terminal, clipped to the
+  pane's rectangle and diffed per frame (the rows and the card exist already)
 - copy mode's named registers and the emacs motion set
 
 ## 7. One request

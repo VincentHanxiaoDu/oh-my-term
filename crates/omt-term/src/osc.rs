@@ -139,6 +139,27 @@ impl State {
             }
             b"1337" => {
                 let body = text(1);
+                // The inline-image sequence, which the comparable product
+                // parses far enough to log as unimplemented — a silent drop,
+                // which on screen is the same as nothing having happened.
+                if body.starts_with("File=") || body.starts_with("MultipartFile=") {
+                    // Rejoined, because this sequence's own arguments are
+                    // separated by the same semicolon the OSC parameters are —
+                    // so the parser has already cut it into pieces, and only
+                    // the first one arrives as `body`.
+                    let whole = params[1..]
+                        .iter()
+                        .map(|p| String::from_utf8_lossy(p).into_owned())
+                        .collect::<Vec<_>>()
+                        .join(";");
+                    if let Some(image) = crate::graphics::iterm2(&whole) {
+                        self.place_image(&crate::graphics::Complete {
+                            image: Some(image),
+                            keep_cursor: false,
+                        });
+                    }
+                    return;
+                }
                 if let Some(rest) = body.strip_prefix("SetUserVar=")
                     && let Some((key, value)) = rest.split_once('=')
                 {

@@ -897,8 +897,8 @@ phone must see it, and the mechanism must not be a second one.
    exist); a tool call whose result names a written path under the workspace,
    correlated by the same rule as block attribution
    ([08 §4.2](08-web-client.md#42-block-view)); and an inline image sequence in
-   the PTY stream (kitty `APC _G`, iTerm2 `OSC 1337;File=`) which `omt-term`
-   already parses (§7.2).
+   the PTY stream (kitty `APC _G`, iTerm2 `OSC 1337;File=`), read by `omt-term`
+   (§7.2).
 2. **Ingestion.** Whichever source, the bytes land in the same blob store with
    `BlobOrigin::AgentOutput`, classified by §4.3.1 and attached to the block they
    occurred in. No copy, no second index.

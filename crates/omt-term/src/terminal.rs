@@ -73,6 +73,8 @@ pub enum Which {
 /// The whole emulator.
 pub struct Terminal {
     parser: vte::Parser,
+    /// Takes APC out of the stream before the parser can swallow it.
+    graphics: crate::graphics::Scanner,
     state: State,
     /// Command blocks, positioned in absolute rows.
     ///
@@ -118,6 +120,13 @@ pub(crate) struct State {
     wrote_output: bool,
     /// What to answer a program that asks what colour things are.
     pub(crate) colours: (Option<String>, Option<String>),
+    /// Images a program drew, against the absolute row each starts on.
+    ///
+    /// Kept rather than rendered: drawing one means asking the terminal omt is
+    /// itself drawn on, clipped to the pane's rectangle. Knowing an image is
+    /// there and how much room it takes is what everything else is built on —
+    /// and before this existed, an image was nothing at all.
+    pub(crate) images: Vec<(u64, crate::graphics::Image)>,
 }
 
 /// The DEC private modes that are on.
@@ -175,6 +184,7 @@ impl Terminal {
         let size = config.size;
         Self {
             parser: vte::Parser::new(),
+            graphics: crate::graphics::Scanner::default(),
             state: State {
                 primary: Grid::new(size),
                 alternate: Grid::new(size),
@@ -190,6 +200,7 @@ impl Terminal {
                 pending_blocks: Vec::new(),
                 wrote_output: false,
                 colours: (config.foreground.clone(), config.background.clone()),
+                images: Vec::new(),
             },
             blocks: crate::block::BlockTracker::new(),
             command_at: None,
@@ -207,12 +218,25 @@ impl Terminal {
             if self.state.stalled.is_some() {
                 return i;
             }
-            self.parser.advance(&mut self.state, &[*b]);
-            // Blocks are tracked here rather than in the parser because a block
-            // is positioned in *absolute* rows, and only this level knows how
-            // much has scrolled off. Peeked rather than drained: the host still
-            // receives every action it would have.
-            self.track_blocks();
+            // Before the parser, because `vte` consumes an APC string in a
+            // state that makes no callback: a graphics sequence reaching it is
+            // a sequence nothing can ever see.
+            match self.graphics.step(*b) {
+                crate::graphics::Step::Took => continue,
+                crate::graphics::Step::Complete(complete) => {
+                    self.state.place_image(&complete);
+                    continue;
+                }
+                crate::graphics::Step::Pass(passed) => {
+                    self.parser.advance(&mut self.state, &passed);
+                    // Blocks are tracked here rather than in the parser
+                    // because a block is positioned in *absolute* rows, and
+                    // only this level knows how much has scrolled off. Peeked
+                    // rather than drained: the host still receives every
+                    // action it would have.
+                    self.track_blocks();
+                }
+            }
         }
         self.note_damage();
         bytes.len()
@@ -284,6 +308,13 @@ impl Terminal {
         }
         let row = u16::try_from(absolute - scrolled).ok()?;
         (row < self.grid().size().rows).then(|| self.grid().row(row))
+    }
+
+    /// The images a program has drawn, each against the absolute row it
+    /// starts on.
+    #[must_use]
+    pub fn images(&self) -> &[(u64, crate::graphics::Image)] {
+        &self.state.images
     }
 
     /// How many lines have ever been written, history plus screen.
@@ -541,6 +572,44 @@ impl State {
             self.retire(off);
         } else {
             g.move_by(1, 0);
+        }
+    }
+
+    /// Give an image the rows it needs, and remember where it went.
+    ///
+    /// An image that occupies nothing is one the next line writes over, which
+    /// on screen is indistinguishable from an image that never arrived. So it
+    /// takes real rows, moved through exactly as a program printing that many
+    /// lines would move through them — which is also what makes it scroll like
+    /// everything else, because the rows *are* everything else.
+    pub(crate) fn place_image(&mut self, complete: &crate::graphics::Complete) {
+        let Some(image) = complete.image.clone() else {
+            return;
+        };
+        // Absolute, so the placement still means something after the rows it
+        // sits on have scrolled out of the screen and into the history.
+        let started = self.scrollback.len() as u64 + u64::from(self.grid().cursor.row);
+        self.images.push((started, image.clone()));
+        if complete.keep_cursor {
+            // The program asked to stay where it is: it is drawing something
+            // it means to write over itself.
+            return;
+        }
+        // Carriage return first, for the same reason a printed line ends with
+        // one: what comes after an image starts at the left, not indented by
+        // wherever the sequence happened to leave the cursor.
+        self.grid_mut().cursor.col = 0;
+        // Written into the cells, not painted over them. What is in the grid
+        // scrolls, copies, seeds and reaches the web client without any of
+        // those knowing an image exists; an overlay would have to be
+        // reimplemented on every surface to match.
+        let cols = self.grid().size().cols;
+        for line in crate::graphics::card(&image, cols, image.rows) {
+            for ch in line.chars() {
+                self.print(ch);
+            }
+            self.grid_mut().cursor.col = 0;
+            self.linefeed();
         }
     }
 
