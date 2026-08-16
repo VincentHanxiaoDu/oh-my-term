@@ -365,6 +365,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             anything_happened = true;
         }
 
+        // One view of the sessions per frame, which every list, the panel and
+        // the quit confirmation then read. Built here rather than per surface
+        // because it is the same question asked four times — and because it is
+        // the seam: a terminal watching an instance it does not own produces
+        // this from a roster instead of a probe, and nothing above this line
+        // changes.
+        let watched = crate::rows::watched_local(&mut instance, &panes, now);
+
         // Nothing changed and nothing is waiting to be typed. Wait out the
         // tick here and go round again without drawing.
         //
@@ -462,8 +470,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // The branch from the cache the status bar already fills, so the
             // panel costs no extra process spawns.
             let on_branch = branch.get(&cwd, monotonic_ms());
-            let sessions =
-                crate::rows::panel_sessions(&mut instance, &panes, now, on_branch.as_deref());
+            let sessions = crate::rows::panel_sessions(&watched, on_branch.as_deref());
             let rows_for_panel = term_rows.saturating_sub(STATUS_ROWS).max(1);
             let lines = omt_tui::panel::render(&omt_tui::entries(&sessions), rows_for_panel);
             // Only when it changed. Forcing a draw every tick because the
@@ -563,8 +570,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // filter and the selected row survive, so this is invisible to
             // somebody typing.
             match open.title.as_str() {
-                "Agents" => open.set_choices(agent_rows(&mut instance, &panes, monotonic_ms())),
-                "Sessions" => open.set_choices(session_rows(&instance, &panes)),
+                "Agents" => open.set_choices(agent_rows(&watched)),
+                "Sessions" => open.set_choices(session_rows(&watched)),
                 // Rebuilt like the others, and for a stronger reason: a
                 // conversation open on screen is one somebody is watching an
                 // agent write into.
@@ -854,10 +861,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     layout_dirty = true;
                 }
                 Input::Agents => {
-                    overlay = Some(omt_tui::Overlay::new(
-                        "Agents",
-                        agent_rows(&mut instance, &panes, monotonic_ms()),
-                    ));
+                    overlay = Some(omt_tui::Overlay::new("Agents", agent_rows(&watched)));
                     layout_dirty = true;
                 }
                 Input::CopyMode => {
@@ -882,10 +886,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     // else is exactly the one somebody opens this list to find,
                     // and a list that showed only what was already visible
                     // answered a question nobody had.
-                    overlay = Some(omt_tui::Overlay::new(
-                        "Sessions",
-                        session_rows(&instance, &panes),
-                    ));
+                    overlay = Some(omt_tui::Overlay::new("Sessions", session_rows(&watched)));
                     layout_dirty = true;
                 }
                 Input::Resize { cols, rows } => {
@@ -1109,7 +1110,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     // omt it kills every pty this process holds — so the one
                     // thing it must not do is take an agent mid-turn away
                     // without saying so.
-                    let at_work = crate::terminal_bits::still_working(&mut instance, &panes, now);
+                    let at_work = crate::terminal_bits::still_working(&watched);
                     if at_work.is_empty() {
                         break 'session;
                     }

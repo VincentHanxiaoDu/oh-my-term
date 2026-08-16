@@ -74,7 +74,9 @@ pub(crate) struct Reported {
     pub(crate) id: SessionId,
     /// What it is called.
     pub(crate) title: String,
-    /// What the agent in it is doing, in the shared vocabulary.
+    /// Which agent is in it, short enough for a column.
+    pub(crate) agent: Option<String>,
+    /// What the agent in it is doing, by the name that state travels under.
     pub(crate) agent_state: Option<String>,
     /// How many agent threads are in it.
     pub(crate) threads: usize,
@@ -333,6 +335,7 @@ pub(crate) fn refresh_roster(attached: &mut Attached) -> Result<()> {
                     Some(Reported {
                         id: row["id"].as_str().and_then(SessionId::from_wire)?,
                         title: row["title"].as_str().unwrap_or("session").to_owned(),
+                        agent: row["agent"].as_str().map(str::to_owned),
                         agent_state: row["agent_state"].as_str().map(str::to_owned),
                         threads: row["threads"].as_u64().unwrap_or(0) as usize,
                         blocked: row["blocked"].as_u64().unwrap_or(0) as usize,

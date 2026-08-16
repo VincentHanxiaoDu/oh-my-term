@@ -55,9 +55,11 @@ done is the half of the terminal that reads the *instance* rather than the
 *terminal*: the agent panel, the agent list, the status bar's chips and the
 quit confirmation all take a local `Instance` today.
 
-- [ ] 7a.1 One view model both modes produce — the roster the instance
-      already reports, plus what only a local probe knows
-- [ ] 7a.2 The row builders take that rather than an instance
+- [x] 7a.1 One view model both modes produce — the roster the instance
+      already reports, plus what only a local probe knows, as optional fields
+      rather than absent ones
+- [x] 7a.2 The row builders take that rather than an instance: the agent list,
+      the sessions list, the panel and the quit confirmation
 - [x] 7a.3 One table, two directions: `word_of` and `state_from_word` beside
       the words themselves, and the capability that puts a state on the wire
       asks it rather than keeping a second copy

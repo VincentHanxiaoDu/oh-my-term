@@ -10,66 +10,197 @@ use omt_daemon::Instance;
 
 use crate::run::LocalPane;
 
+/// One session, as every list in the terminal needs it.
+///
+/// The view model both modes produce. It exists because the row builders used
+/// to take an `Instance` — which a terminal watching an instance it does not
+/// own does not have — and because the alternative, a second set of builders
+/// for the attached case, is two lists that have to agree and will not.
+///
+/// What only a local probe can know is optional rather than absent: the wire
+/// carries a state's name, not the evidence a probe matched, and a row that
+/// claimed evidence it did not have would be worse than one that says less.
+#[derive(Debug, Clone)]
+pub(crate) struct Watched {
+    /// Which session.
+    pub(crate) id: omt_types::SessionId,
+    /// What it is called.
+    pub(crate) title: String,
+    /// Which workspace it belongs to, by name.
+    pub(crate) workspace: String,
+    /// What the agent in it is doing.
+    pub(crate) state: omt_types::AgentState,
+    /// Where the *session* is in its own life, which is a different question.
+    pub(crate) lifecycle: omt_session::SessionState,
+    /// Which agent, short enough for a column.
+    pub(crate) agent: Option<String>,
+    /// The agent's name as a person reads it, where omt identified one.
+    pub(crate) agent_full: Option<String>,
+    /// What a probe matched, where a probe was the one that found it.
+    pub(crate) evidence: Option<String>,
+    /// How many agent threads are in it.
+    pub(crate) threads: usize,
+    /// How many of those are waiting for a human.
+    pub(crate) blocked: usize,
+    /// Whether anybody has looked since its agent stopped working.
+    pub(crate) seen: bool,
+    /// Whether it has a pane on this screen.
+    pub(crate) on_screen: bool,
+}
+
+/// What this terminal is watching, when it owns the sessions itself.
+pub(crate) fn watched_local(
+    instance: &mut Instance,
+    panes: &[LocalPane],
+    now: u64,
+) -> Vec<Watched> {
+    let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
+    let mut out = Vec::new();
+    for id in ids {
+        let binding = instance.binding_for(id);
+        let state = instance
+            .agent_state(binding, now)
+            .unwrap_or(omt_types::AgentState::Unknown);
+        let (threads, blocked) = instance.threads(id).map_or((0, 0), |roster| {
+            (roster.threads().len(), roster.awaiting_human().len())
+        });
+        let detected = instance.observed_agent(id).cloned();
+        let Some(session) = instance.session(id) else {
+            continue;
+        };
+        let workspace_id = session.workspace;
+        let title = session.title.clone();
+        let lifecycle = session.state;
+        let workspace = instance
+            .workspaces()
+            .into_iter()
+            .find(|w| w.id == workspace_id)
+            .map_or_else(|| "?".to_owned(), |w| w.name.clone());
+        let pane = panes.iter().find(|p| p.session == id);
+        out.push(Watched {
+            id,
+            title,
+            workspace,
+            state,
+            lifecycle,
+            agent: detected.as_ref().map(|d| agent_short_name(d.agent)),
+            agent_full: detected.as_ref().map(|d| agent_name(d.agent)),
+            evidence: detected.map(|d| d.evidence),
+            threads,
+            blocked,
+            seen: pane.is_none_or(|p| p.seen),
+            on_screen: pane.is_some(),
+        });
+    }
+    out
+}
+
+/// The same view, when the sessions are somewhere else.
+///
+/// What the instance reports plus what this terminal knows about its own
+/// panes. Two fields are deliberately empty rather than guessed: the evidence
+/// a probe matched, which no probe here ran, and the agent's full name, which
+/// the roster gives as its short form — a row that invented either would be
+/// making up the part somebody reads when a detection looks wrong.
+#[allow(
+    dead_code,
+    reason = "the attached mode's producer: tested against the local one so \
+              the two cannot say different things about the same session, and \
+              reached when the terminal attaches rather than owns"
+)]
+pub(crate) fn watched_remote(
+    reported: &[crate::backing::Reported],
+    panes: &[LocalPane],
+    workspace: &str,
+) -> Vec<Watched> {
+    reported
+        .iter()
+        .map(|session| {
+            let pane = panes.iter().find(|p| p.session == session.id);
+            Watched {
+                id: session.id,
+                title: session.title.clone(),
+                workspace: workspace.to_owned(),
+                // The name the state travelled under, turned back into a state
+                // by the same table the words come from. A word this build has
+                // never heard of reads as unknown, never as idle.
+                state: session
+                    .agent_state
+                    .as_deref()
+                    .map_or(omt_types::AgentState::Unknown, omt_tui::state_from_word),
+                // The instance says what it is doing, not where it is in its
+                // own life; a session that is reported at all is one it still
+                // holds.
+                lifecycle: omt_session::SessionState::Running,
+                agent: session.agent.clone(),
+                agent_full: session.agent.clone(),
+                evidence: None,
+                threads: session.threads,
+                blocked: session.blocked,
+                seen: pane.is_none_or(|p| p.seen),
+                on_screen: pane.is_some(),
+            }
+        })
+        .collect()
+}
+
 /// The rows behind the agents list.
 ///
 /// Built from what the probe saw in each pane, not only from thread rosters.
 /// A roster is filled by hooks and protocols; a pty-only session has neither,
 /// which is why this said "nothing matches" with an agent plainly running in
 /// the pane.
-pub(crate) fn agent_rows(
-    instance: &mut Instance,
-    panes: &[LocalPane],
-    now: u64,
-) -> Vec<omt_tui::Choice> {
+pub(crate) fn agent_rows(watched: &[Watched]) -> Vec<omt_tui::Choice> {
     // Each row with what it wants, so the sort is over states rather than over
     // whether a row's text happens to contain a word. Two agents can be called
     // the same thing, so this is positional and never keyed by label.
     let mut rows: Vec<(u8, omt_tui::Choice)> = Vec::new();
-    for pane in panes {
-        let title = instance
-            .session(pane.session)
-            .map_or_else(|| "shell".to_owned(), |s| s.title.clone());
-        if let Some(probed) = &pane.agent {
-            let state = instance
-                .agent_state(pane.binding, now)
-                .unwrap_or(omt_types::AgentState::Unknown);
+    for session in watched {
+        if let Some(name) = &session.agent_full {
+            // The agent's name in the column the eye lands on. This was the
+            // session title — "shell" — with the agent buried mid-line after
+            // it, so a list opened *to find out whether omt knows about an
+            // agent* answered with the word "shell". Somebody reading that
+            // concludes it does not, and they are reading it correctly: the
+            // first column is the answer.
+            let mut detail = vec![
+                session.title.clone(),
+                omt_tui::state_word(&session.state, session.seen).to_owned(),
+            ];
+            // Last, and only when there is one: somebody looking at a wrong
+            // detection needs to see what was matched, not be told a name
+            // again. A terminal watching an instance has no probe of its own,
+            // and inventing evidence would be worse than saying less.
+            if let Some(evidence) = &session.evidence {
+                detail.push(evidence.clone());
+            }
             rows.push((
-                omt_tui::attention(&state, pane.seen),
+                omt_tui::attention(&session.state, session.seen),
                 omt_tui::Choice {
-                    // The agent's name in the column the eye lands on. This was
-                    // the session title — "shell" — with the agent buried mid-line
-                    // after it, so a list opened *to find out whether omt knows
-                    // about Claude Code* answered with the word "shell". Somebody
-                    // reading that concludes it does not, and they are reading it
-                    // correctly: the first column is the answer.
-                    label: agent_name(probed.detection.agent).to_owned(),
-                    // Then where it is and what it is doing, and last the
-                    // evidence — somebody looking at a wrong detection needs to
-                    // see what was matched, not be told a name again.
-                    detail: format!(
-                        "{} · {} · {}",
-                        title,
-                        omt_tui::state_word(&state, pane.seen),
-                        probed.detection.evidence
-                    ),
+                    label: name.clone(),
+                    detail: detail.join(" · "),
                     chord: None,
                     // What this row wants, as a shape. A colour is the first
                     // thing a terminal theme takes away.
-                    mark: Some(omt_tui::state_mark(&state, pane.seen)),
+                    mark: Some(omt_tui::state_mark(&session.state, session.seen)),
                 },
             ));
         }
-        let Some(roster) = instance.threads(pane.session) else {
-            continue;
-        };
-        for thread in roster.threads() {
+        // A thread that is waiting is its own row: a subagent can need a
+        // person while the agent that spawned it is still working, and a list
+        // that showed only the parent would hide the one that is waiting.
+        for _ in 0..session.blocked {
+            let waiting = omt_types::AgentState::Blocked {
+                reason: omt_types::BlockReason::Unspecified,
+                interaction: None,
+            };
             rows.push((
-                omt_tui::attention(&thread.state, true),
+                omt_tui::attention(&waiting, true),
                 omt_tui::Choice {
-                    label: title.clone(),
-                    detail: format!("{:?}", thread.state).to_lowercase(),
+                    label: session.title.clone(),
+                    detail: "waiting on you".to_owned(),
                     chord: None,
-                    mark: Some(omt_tui::state_mark(&thread.state, true)),
+                    mark: Some(omt_tui::state_mark(&waiting, true)),
                 },
             ));
         }
@@ -156,55 +287,45 @@ pub(crate) fn agent_name(kind: omt_types::AgentKind) -> String {
 /// deciding whether the row exists at all: "it is running, you just cannot see
 /// it" is the answer somebody is looking for, and omitting it looks like the
 /// session is gone.
-pub(crate) fn session_rows(instance: &Instance, panes: &[LocalPane]) -> Vec<omt_tui::Choice> {
+pub(crate) fn session_rows(watched: &[Watched]) -> Vec<omt_tui::Choice> {
     let mut rows: Vec<(u8, omt_tui::Choice)> = Vec::new();
-    for session in instance.sessions() {
-        let workspace = instance
-            .workspaces()
-            .into_iter()
-            .find(|w| w.id == session.workspace)
-            .map_or_else(|| "?".to_owned(), |w| w.name.clone());
-        let mut parts = vec![workspace, format!("{:?}", session.state).to_lowercase()];
-        if let Some(roster) = instance.threads(session.id) {
-            let blocked = roster.awaiting_human().len();
-            if blocked > 0 {
-                parts.push(format!("{blocked} waiting on you"));
-            } else if !roster.is_empty() {
-                parts.push(format!("{} running", roster.threads().len()));
-            }
+    for session in watched {
+        let mut parts = vec![
+            session.workspace.clone(),
+            format!("{:?}", session.lifecycle).to_lowercase(),
+        ];
+        if session.blocked > 0 {
+            parts.push(format!("{} waiting on you", session.blocked));
+        } else if session.threads > 0 {
+            parts.push(format!("{} running", session.threads));
         }
-        if !panes.iter().any(|p| p.session == session.id) {
+        if !session.on_screen {
             parts.push("not on screen".to_owned());
         }
         // What the session wants, from what its agent is doing where there is
         // one, and from its own lifecycle where there is not. A shape rather
         // than a colour: a colour is the first thing a terminal theme takes
         // away.
-        let wants = instance
-            .threads(session.id)
-            .filter(|roster| !roster.awaiting_human().is_empty())
-            .map_or_else(
-                || match session.state {
-                    omt_session::SessionState::Orphaned
-                    | omt_session::SessionState::Exited { .. } => (
-                        u8::MAX,
-                        omt_tui::state_mark(&omt_types::AgentState::Unknown, true),
-                    ),
-                    _ => (3, omt_tui::state_mark(&omt_types::AgentState::Idle, true)),
-                },
-                |_| {
-                    (
-                        0,
-                        omt_tui::state_mark(
-                            &omt_types::AgentState::Blocked {
-                                reason: omt_types::BlockReason::Unspecified,
-                                interaction: None,
-                            },
-                            true,
-                        ),
-                    )
-                },
-            );
+        let wants = if session.blocked > 0 {
+            (
+                0,
+                omt_tui::state_mark(
+                    &omt_types::AgentState::Blocked {
+                        reason: omt_types::BlockReason::Unspecified,
+                        interaction: None,
+                    },
+                    true,
+                ),
+            )
+        } else {
+            match session.lifecycle {
+                omt_session::SessionState::Orphaned | omt_session::SessionState::Exited { .. } => (
+                    u8::MAX,
+                    omt_tui::state_mark(&omt_types::AgentState::Unknown, true),
+                ),
+                _ => (3, omt_tui::state_mark(&omt_types::AgentState::Idle, true)),
+            }
+        };
         rows.push((
             wants.0,
             omt_tui::Choice {
@@ -219,8 +340,7 @@ pub(crate) fn session_rows(instance: &Instance, panes: &[LocalPane]) -> Vec<omt_
     // word: anything waiting on a human first, because that is why this list
     // gets opened.
     rows.sort_by_key(|(rank, _)| *rank);
-    let rows: Vec<omt_tui::Choice> = rows.into_iter().map(|(_, choice)| choice).collect();
-    rows
+    rows.into_iter().map(|(_, choice)| choice).collect()
 }
 
 /// Whether the agent panel is on.
@@ -246,48 +366,26 @@ pub(crate) fn panel_enabled() -> bool {
 /// surfaces use. This only gathers what it needs — which agent, what state,
 /// where — and hands it over.
 pub(crate) fn panel_sessions(
-    instance: &mut Instance,
-    panes: &[LocalPane],
-    now: u64,
+    watched: &[Watched],
     branch: Option<&str>,
 ) -> Vec<omt_tui::PanelSession> {
-    let branch = branch.map(str::to_owned);
-    let ids: Vec<_> = instance.sessions().iter().map(|s| s.id).collect();
-    let mut out = Vec::new();
-    for id in ids {
-        let Some(session) = instance.session(id) else {
-            continue;
-        };
-        let title = session.title.clone();
-        let workspace = instance
-            .workspaces()
-            .into_iter()
-            .find(|w| w.id == session.workspace)
-            .map_or_else(|| "?".to_owned(), |w| w.name.clone());
-        let pane = panes.iter().find(|p| p.session == id);
-        let binding = instance.binding_for(id);
-        let state = instance
-            .agent_state(binding, now)
-            .unwrap_or(omt_types::AgentState::Unknown);
-        let agent = instance
-            .observed_agent(id)
-            .map(|found| agent_short_name(found.agent));
-        out.push(omt_tui::PanelSession {
-            session: id.to_wire(),
-            title,
-            agent,
-            state,
-            workspace,
+    watched
+        .iter()
+        .map(|session| omt_tui::PanelSession {
+            session: session.id.to_wire(),
+            title: session.title.clone(),
+            agent: session.agent.clone(),
+            state: session.state.clone(),
+            workspace: session.workspace.clone(),
             // The branch, from the cache the status bar already fills. Asking
             // git per session per frame is what that cache exists to prevent,
             // and a panel that made omt shell out sixty times a second would
             // be a panel somebody turns off.
-            branch: branch.clone(),
-            seen: pane.is_none_or(|p| p.seen),
-            on_screen: pane.is_some(),
-        });
-    }
-    out
+            branch: branch.map(str::to_owned),
+            seen: session.seen,
+            on_screen: session.on_screen,
+        })
+        .collect()
 }
 
 /// Remember whether the panel is on.
@@ -488,4 +586,73 @@ pub(crate) fn conversation_of(
         .map(|t| t.entries().to_vec())
         .unwrap_or_default();
     conversation_rows(&entries, &asking, cols)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod view_tests {
+    use super::*;
+
+    fn reported(state: Option<&str>, blocked: usize) -> crate::backing::Reported {
+        crate::backing::Reported {
+            id: omt_types::SessionId::new(),
+            title: "app".to_owned(),
+            agent: Some("claude".to_owned()),
+            agent_state: state.map(str::to_owned),
+            threads: 1,
+            blocked,
+        }
+    }
+
+    #[test]
+    fn a_remote_state_becomes_the_same_state_the_local_one_would() {
+        // The two modes have to produce rows that say the same thing, or the
+        // same session reads differently depending on which terminal is
+        // looking at it.
+        let watched = watched_remote(&[reported(Some("blocked"), 1)], &[], "app");
+        assert!(matches!(
+            watched[0].state,
+            omt_types::AgentState::Blocked { .. }
+        ));
+        let rows = agent_rows(&watched);
+        assert!(
+            rows.iter().any(|r| r.detail.contains("waiting on you")),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_state_the_instance_did_not_report_is_unknown_rather_than_idle() {
+        // "Nothing to do here" is the one wrong answer for a session omt has
+        // not been told about yet.
+        let watched = watched_remote(&[reported(None, 0)], &[], "app");
+        assert!(matches!(watched[0].state, omt_types::AgentState::Unknown));
+    }
+
+    #[test]
+    fn a_remote_row_claims_no_evidence_it_does_not_have() {
+        // The evidence column is what somebody reads when a detection looks
+        // wrong. A terminal watching an instance ran no probe, so it says
+        // less rather than inventing the part that matters most.
+        let watched = watched_remote(&[reported(Some("working"), 0)], &[], "app");
+        assert!(watched[0].evidence.is_none());
+        let rows = agent_rows(&watched);
+        assert_eq!(rows[0].detail.matches('·').count(), 1, "{rows:?}");
+    }
+
+    #[test]
+    fn a_session_with_no_pane_says_so_rather_than_being_left_out() {
+        // "It is running, you just cannot see it" is the answer somebody opens
+        // this list for.
+        let watched = watched_remote(&[reported(Some("idle"), 0)], &[], "app");
+        let rows = session_rows(&watched);
+        assert!(
+            rows.iter().any(|r| r.detail.contains("not on screen")),
+            "{rows:?}"
+        );
+    }
 }

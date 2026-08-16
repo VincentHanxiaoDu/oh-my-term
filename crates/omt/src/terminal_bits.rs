@@ -291,41 +291,24 @@ pub(crate) fn reading_key(
 /// Every pane with a live session, with what its agent is doing where omt
 /// knows. Ordered by what needs a person first, for the same reason the agent
 /// list is: the row that changes somebody's mind is the one at the top.
-pub(crate) fn still_working(
-    instance: &mut omt_daemon::Instance,
-    panes: &[LocalPane],
-    now: u64,
-) -> Vec<omt_tui::Choice> {
+pub(crate) fn still_working(watched: &[crate::rows::Watched]) -> Vec<omt_tui::Choice> {
     let mut rows: Vec<(u8, omt_tui::Choice)> = Vec::new();
-    for pane in panes {
-        let Some(session) = instance.session(pane.session) else {
-            continue;
-        };
+    for session in watched {
         // An exited session has nothing left to lose, and listing it would
         // make the warning look like noise.
-        if matches!(session.state, omt_session::SessionState::Exited { .. }) {
+        if matches!(session.lifecycle, omt_session::SessionState::Exited { .. }) {
             continue;
         }
-        let title = session.title.clone();
-        let state = instance.agent_state(pane.binding, now);
-        let (rank, detail) = state.as_ref().map_or_else(
-            || (3, "running".to_owned()),
-            |state| {
-                (
-                    omt_tui::attention(state, pane.seen),
-                    omt_tui::state_word(state, pane.seen).to_owned(),
-                )
-            },
-        );
         rows.push((
-            rank,
+            omt_tui::attention(&session.state, session.seen),
             omt_tui::Choice {
-                label: title,
-                detail: format!("{detail} · ends when omt does"),
+                label: session.title.clone(),
+                detail: format!(
+                    "{} · ends when omt does",
+                    omt_tui::state_word(&session.state, session.seen)
+                ),
                 chord: None,
-                mark: state
-                    .as_ref()
-                    .map(|state| omt_tui::state_mark(state, pane.seen)),
+                mark: Some(omt_tui::state_mark(&session.state, session.seen)),
             },
         ));
     }
@@ -336,7 +319,7 @@ pub(crate) fn still_working(
         // what somebody is looking at, and an instruction they have to find
         // elsewhere is one they do not read.
         out.push(omt_tui::Choice {
-            label: "press it again to quit anyway".to_owned(),
+            label: "press Enter to quit anyway".to_owned(),
             detail: "Esc keeps them".to_owned(),
             chord: None,
             mark: None,
