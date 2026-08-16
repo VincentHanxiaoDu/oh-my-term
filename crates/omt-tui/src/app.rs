@@ -88,6 +88,12 @@ pub enum Input {
     Panel,
     /// Read what has scrolled away, and take a copy of it.
     CopyMode,
+    /// What has been run here before, across sessions.
+    ///
+    /// Not the shell's own history — that is one shell's, and reachable with
+    /// the shell's own keys. This is every session's, which is the part no
+    /// shell can offer.
+    Recall,
     /// What the agent in this pane says it offers.
     ///
     /// The agent's own commands, not omt's. omt has no composer to complete
@@ -218,6 +224,7 @@ pub const LEADER_KEYS: &[(char, &str)] = &[
     ('t', "transcript"),
     ('[', "copy"),
     ('/', "commands"),
+    ('r', "recall"),
     ('w', "sessions"),
     ('g', "panel"),
     ('x', "close"),
@@ -268,6 +275,7 @@ pub fn leader_action(key: char) -> Option<Input> {
         '[' => Input::CopyMode,
         // The character the commands themselves start with.
         '/' => Input::Commands,
+        'r' => Input::Recall,
         'w' => Input::Sessions,
         _ => return None,
     })

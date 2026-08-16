@@ -79,6 +79,8 @@ pub struct Terminal {
     /// Here rather than in `State` because a block's position depends on how
     /// much has scrolled off, and the parser has no idea.
     blocks: crate::block::BlockTracker,
+    /// Where the command being typed starts on the screen, while one is.
+    command_at: Option<(u64, u16)>,
     /// What changed since a renderer last looked.
     ///
     /// Here rather than in `State` for the same reason: it is derived from the
@@ -171,6 +173,7 @@ impl Terminal {
                 colours: (config.foreground.clone(), config.background.clone()),
             },
             blocks: crate::block::BlockTracker::new(),
+            command_at: None,
             damage: crate::damage::Tracker::new(size.rows),
         }
     }
@@ -278,6 +281,30 @@ impl Terminal {
     fn track_blocks(&mut self) {
         let row = self.state.scrollback.len() as u64 + u64::from(self.grid().cursor.row);
 
+        // The command line, read off the screen while the shell says it is
+        // being typed. Nothing did this: `command_text` existed, one test
+        // called it, and every block in production carried an empty command —
+        // so the block view showed output with no command above it and the
+        // history had nothing to record.
+        //
+        // Read rather than accumulated from keystrokes, and *replaced* rather
+        // than appended: a line is edited before it is submitted, and
+        // appending would record the backspaces along with the corrections.
+        if self.blocks.collecting()
+            && let Some((mark_row, mark_col)) = self.command_at
+            && mark_row == row
+        {
+            let text = self.state.grid().row(self.grid().cursor.row).text();
+            let from = usize::from(mark_col);
+            let to = usize::from(self.grid().cursor.col);
+            let line: String = text
+                .chars()
+                .skip(from)
+                .take(to.saturating_sub(from))
+                .collect();
+            self.blocks.set_command_text(line.trim_end());
+        }
+
         // Output with nothing open opens a block. This is what makes a shell
         // with no OSC 133 — `ssh` to a host that has none, a container, an
         // ancient login shell — produce something rather than an empty session
@@ -291,6 +318,17 @@ impl Terminal {
             return;
         }
         for event in std::mem::take(&mut self.state.pending_blocks) {
+            // Where on the screen the command begins, so the line can be read
+            // back from it. Taken at the mark rather than guessed from the
+            // prompt's width, which varies with everything a prompt can show.
+            match event {
+                crate::action::BlockEvent::CommandStart => {
+                    self.command_at = Some((row, self.grid().cursor.col));
+                }
+                crate::action::BlockEvent::OutputStart
+                | crate::action::BlockEvent::CommandEnd { .. } => self.command_at = None,
+                crate::action::BlockEvent::PromptStart => {}
+            }
             self.blocks.apply(event, row);
         }
     }
@@ -1771,5 +1809,41 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, HostAction::Notify { .. }))
         );
+    }
+    #[test]
+    fn a_block_carries_the_command_that_was_typed() {
+        // `command_text` existed and one test called it; nothing in production
+        // did, so every block carried an empty command — the block view showed
+        // output with no command above it, and history had nothing to record.
+        let mut t = term(40, 4);
+        feed(
+            &mut t,
+            "\x1b]133;A\x07$ \x1b]133;B\x07cargo test\x1b]133;C\x07",
+        );
+        feed(&mut t, "ok\r\n\x1b]133;D;0\x07");
+        assert_eq!(t.blocks()[0].command, "cargo test");
+    }
+
+    #[test]
+    fn a_corrected_command_is_recorded_as_the_line_that_ran() {
+        // The line is read off the screen as it changes rather than
+        // accumulated from keystrokes: appending would record the mistake, the
+        // backspaces and the correction as one command.
+        let mut t = term(40, 4);
+        feed(&mut t, "\x1b]133;A\x07$ \x1b]133;B\x07lx");
+        // A backspace and the rest of the word, as a shell redraws it.
+        feed(&mut t, "\x08s -la\x1b]133;C\x07");
+        feed(&mut t, "\x1b]133;D;0\x07");
+        assert_eq!(t.blocks()[0].command, "ls -la");
+    }
+
+    #[test]
+    fn a_prompt_with_no_command_after_it_records_none() {
+        // Pressing Enter on an empty line is not a command, and a history full
+        // of blank entries is worse than a short one.
+        let mut t = term(40, 4);
+        feed(&mut t, "\x1b]133;A\x07$ \x1b]133;B\x07\x1b]133;C\x07");
+        feed(&mut t, "\x1b]133;D;0\x07");
+        assert_eq!(t.blocks()[0].command, "");
     }
 }

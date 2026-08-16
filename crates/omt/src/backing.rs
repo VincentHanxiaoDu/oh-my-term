@@ -488,6 +488,34 @@ pub(crate) fn history_line(attached: &mut Attached, id: SessionId, row: u64) -> 
         .and_then(|(rows, _)| rows.into_iter().next())
 }
 
+/// What has been run in a workspace, from the instance that remembers.
+///
+/// # Errors
+/// Fails if the instance refuses or has gone.
+pub(crate) fn recall(
+    attached: &mut Attached,
+    workspace: omt_types::WorkspaceId,
+) -> Result<Vec<(String, u32)>> {
+    let answer = attached.client.call(
+        "recall.suggest",
+        serde_json::json!({ "prefix": "", "workspace": workspace.to_wire(), "limit": 20 }),
+        false,
+    )?;
+    Ok(answer["suggestions"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some((
+                        row["command"].as_str()?.to_owned(),
+                        u32::try_from(row["uses_here"].as_u64().unwrap_or(0)).unwrap_or(0),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 /// What the agent in a session says it offers, from the instance.
 ///
 /// # Errors

@@ -65,7 +65,7 @@ decision; an unrecorded one is a gap nobody has counted.
 | Vim and emacs keymaps | specified; vim partially built | **gap**, recorded in [16](../architecture/16-input-and-keymap.md) |
 | Voice input | capability exists (`omt-stt`) | **parity of surface** |
 | Slash commands of the agent, surfaced by the host | built | **taken, adapted**: theirs completes into their own composer as you type `/`; omt has no composer, so `⟨leader⟩ /` lists what the agent reported and *types* the choice into the agent's own interface ([19 §2.1e](../architecture/19-onboarding.md)) |
-| Command history and completion menus | recall exists; no menu in the terminal | **gap** |
+| Command history menu | built | **taken, adapted**: theirs opens on Up in their own composer and restores the buffer on dismiss; omt has no composer and Up belongs to the program in the pane, so it is `⟨leader⟩ r` — and what it offers is *every session's* history, which is the part no shell can offer. Looking for it found that nothing recorded anything, and that blocks carried no command text ([19 §2.1f](../architecture/19-onboarding.md)) |
 
 ## 6. Where omt is ahead
 

@@ -475,3 +475,72 @@ fn a_subscriber_can_ask_for_history_while_output_streams() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_command_that_ran_can_be_suggested_afterwards() {
+    // `recall.suggest` has existed since the catalog did and has always
+    // answered with nothing, because nothing recorded anything. This is the
+    // whole path: a shell with shell integration runs a command, the block
+    // closes, the instance writes it down, and the capability every surface
+    // asks can answer.
+    let dir = temp_dir("recall-round-trip");
+    let mut instance = omt_daemon::Instance::new();
+    let workspace = instance
+        .open_workspace(&dir.display().to_string())
+        .expect("workspace");
+    let session = instance
+        .create_session(
+            workspace,
+            omt_session::SessionKind::Shell,
+            omt_session::SessionMode::Pty,
+        )
+        .expect("session");
+    // The marks a shell with integration emits, without needing one installed.
+    let script = "printf '\\033]133;A\\007$ \\033]133;B\\007cargo test\\033]133;C\\007'; \
+                  printf 'ok\\r\\n'; printf '\\033]133;D;0\\007'; sleep 30";
+    let runtime = omt_daemon::SessionRuntime::spawn(
+        session,
+        &omt_pty::PtyConfig {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.to_owned()],
+            cwd: Some(dir.clone()),
+            size: omt_pty::PtySize::new(60, 8),
+            ..omt_pty::PtyConfig::default()
+        },
+        omt_term::ScrollbackLimits::default(),
+    )
+    .expect("spawn");
+    instance.attach(runtime).expect("attach");
+
+    let state = omt::state::State::new(instance);
+    let mut remembered = omt::remember::Remembered::default();
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut suggested: Vec<String> = Vec::new();
+    while Instant::now() < deadline {
+        {
+            let mut instance = state.lock().expect("lock");
+            let _ = instance.pump_session(session);
+            if let (Ok(mut history), Some(runtime)) = (state.recall(), instance.runtime(session)) {
+                remembered.absorb(&mut history, session, workspace, runtime.terminal());
+            }
+        }
+        suggested = state
+            .recall()
+            .expect("recall")
+            .suggest("", workspace, 10)
+            .into_iter()
+            .map(|s| s.command)
+            .collect();
+        if !suggested.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        suggested.iter().any(|c| c == "cargo test"),
+        "what ran was never written down: {suggested:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

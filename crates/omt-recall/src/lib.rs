@@ -170,7 +170,7 @@ pub fn is_dangerous(command: &str) -> bool {
 }
 
 /// Everything an instance remembers being run.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct History {
     entries: Vec<HistoryEntry>,
     limit: usize,
@@ -182,6 +182,19 @@ fn fuzzy(haystack: &str, needle: &str) -> bool {
     needle
         .chars()
         .all(|wanted| chars.any(|c| c.eq_ignore_ascii_case(&wanted)))
+}
+
+/// How many entries a history keeps when nobody said.
+///
+/// Not zero, which is what deriving `Default` gave it: `record` pushed and then
+/// trimmed to the limit, so a default history accepted everything and kept
+/// nothing — a silence that looks exactly like a feature nobody wired.
+pub const DEFAULT_LIMIT: usize = 10_000;
+
+impl Default for History {
+    fn default() -> Self {
+        Self::new(DEFAULT_LIMIT)
+    }
 }
 
 impl History {
@@ -898,5 +911,24 @@ mod tests {
     fn attribution_defaults_to_unknown_rather_than_to_a_person() {
         let (h, _, _) = queried();
         assert_eq!(h.entries()[0].attribution, Attribution::Unknown);
+    }
+    #[test]
+    fn a_history_nobody_gave_a_limit_still_keeps_what_it_is_given() {
+        // Deriving `Default` gave it a limit of zero, and `record` pushes then
+        // trims — so a default history accepted everything and kept nothing.
+        // That silence is indistinguishable from a feature nobody wired, which
+        // is exactly how it went unnoticed.
+        let mut history = History::default();
+        history.record(HistoryEntry {
+            command: "cargo test".to_owned(),
+            workspace: WorkspaceId::from_canonical_path("/w"),
+            session: SessionId::new(),
+            cwd: None,
+            at: Timestamp::now(),
+            exit_code: Some(0),
+            duration_ms: None,
+            attribution: Attribution::Unknown,
+        });
+        assert_eq!(history.len(), 1);
     }
 }

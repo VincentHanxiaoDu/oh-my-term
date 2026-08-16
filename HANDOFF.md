@@ -127,9 +127,7 @@ From reading the others, in `docs/reference/read-from-the-others.md`. Everything
 there has a verdict and a reason, including the rows omt is deliberately
 different on. Still open, roughly by value:
 
-- per-agent identity colouring in the panel
-- the agent's own slash commands, surfaced by the host
-- a command-history menu in the terminal
+- transcript file tailing, for agents that write one and report nothing
 - mouse selection (the keys document calls this deliberate; revisit it)
 - kitty graphics passthrough
 - copy mode's named registers and the emacs motion set

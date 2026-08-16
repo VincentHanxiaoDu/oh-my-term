@@ -50,6 +50,9 @@ const QUIT_TITLE: &str = "Quit — this ends what is running";
 /// the list is the thing that knows.
 const COMMANDS_TITLE: &str = "This agent's commands";
 
+/// The title of the list of what has been run here before.
+const RECALL_TITLE: &str = "Run here before";
+
 /// Rows of chrome below the panes: the status bar, and only that.
 const STATUS_ROWS: u16 = 1;
 
@@ -232,6 +235,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Where somebody is reading, when they are reading rather than typing.
     // `None` is the ordinary case: keys go to the pane.
     let mut copying: Option<omt_tui::CopyMode> = None;
+    // What this terminal has already written into history. Local only: an
+    // attached terminal's sessions are pumped by the instance, which records
+    // them there — two recorders on one session would write every command
+    // twice.
+    let mut remembered = crate::remember::Remembered::default();
     // When the roster was last asked for. Attached only; the local path reads
     // its own instance and has nothing to be stale about.
     let mut rostered_at = 0u64;
@@ -414,6 +422,22 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         if panes.len() != before {
             // A pane went. Everything moves.
             anything_happened = true;
+        }
+
+        // What finished running in a pane this terminal owns, into the history
+        // the suggestions come from. After the pump, because a block closes in
+        // the bytes the pump just read.
+        if attached.is_none()
+            && let Ok(mut history) = state.recall()
+        {
+            for pane in &panes {
+                let Some(workspace) = instance.session(pane.session).map(|s| s.workspace) else {
+                    continue;
+                };
+                if let Some(runtime) = instance.runtime(pane.session) {
+                    remembered.absorb(&mut history, pane.session, workspace, runtime.terminal());
+                }
+            }
         }
 
         // One view of the sessions per frame, which every list, the panel and
@@ -873,6 +897,33 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     // knows what the command's arguments mean. Typed, not
                     // sent: the newline is somebody's to press once they have
                     // finished the line.
+                    if picked_from.as_deref() == Some(RECALL_TITLE) {
+                        // Typed, not run. A command from an hour ago may want
+                        // a different argument today, and a list that pressed
+                        // Enter for somebody would be running things they only
+                        // meant to look at.
+                        picked_from = None;
+                        if label.starts_with("nothing has been recorded") {
+                            continue;
+                        }
+                        let session = panes[focus].session;
+                        let bytes = label.into_bytes();
+                        if attached.is_some() {
+                            backing(&mut instance, &mut attached).write(session, &bytes)?;
+                        } else {
+                            let pane = &mut panes[focus];
+                            if let Some(rt) = instance.runtime_mut(session) {
+                                rt.write_input(
+                                    &mut pane.writer,
+                                    pane.epoch,
+                                    monotonic_ms(),
+                                    &bytes,
+                                )
+                                .context("writing input")?;
+                            }
+                        }
+                        continue;
+                    }
                     if picked_from.as_deref() == Some(COMMANDS_TITLE) {
                         if !label.starts_with('/') {
                             // The row that says the agent has not reported
@@ -1056,6 +1107,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     };
                     let rows = rects.get(focus).map_or(1, |r| r.rows);
                     copying = Some(omt_tui::CopyMode::entering(total, rows));
+                    layout_dirty = true;
+                }
+                Input::Recall => {
+                    let suggestions = crate::rows::recall_of(&mut attached, &state, workspace);
+                    overlay = Some(omt_tui::Overlay::new(
+                        RECALL_TITLE,
+                        crate::rows::recall_rows(&suggestions),
+                    ));
                     layout_dirty = true;
                 }
                 Input::Commands => {

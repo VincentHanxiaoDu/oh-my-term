@@ -382,6 +382,35 @@ what a command's arguments mean. So the choice arrives as keystrokes on the line
 somebody is already editing, and the newline stays theirs to press.
 
 
+### 2.1f `⟨leader⟩ r` — what has been run here before
+
+Every shell already has a history and its own keys to reach it. What no shell
+has is **every session's** history: the command you ran in the other worktree,
+in the pane you closed, on the machine you are reaching from your phone. That is
+the only part worth a key here, and it is the part omt is in a position to know.
+
+It comes from the block model. A shell with shell integration says where a
+command begins and ends, and the close is when omt knows the line *was* a
+command rather than something that happened to be on the screen. A block opened
+from output alone contributes nothing — scraping the line above for something
+that looks like a prompt is the heuristic the tier ladder exists to keep out,
+and a list people re-run from is the last place to start guessing.
+
+So an empty list says **why**: nothing has been recorded here yet, and the
+recording needs the shell's integration. That is a fact about the setup, where
+blankness would read as a broken feature.
+
+**Picking types it; it does not run it.** A command from an hour ago may want a
+different argument today, and a list that pressed Enter on somebody's behalf
+would run things they only meant to look at.
+
+> This was the second half of a defect. `recall.suggest` had existed since the
+> catalog did, the web client had a handler for it, and it answered with nothing
+> for omt's whole life, because **nothing ever recorded anything** — and beneath
+> that, blocks carried no command text at all, because the collector had one
+> caller and it was a test.
+
+
 ### 2.2 `⟨leader⟩ ?` — the help overlay
 
 `⟨leader⟩ ?` (`ui.open_keymap_help`, [16 §8.2](16-input-and-keymap.md#82-the-leader-namespace))

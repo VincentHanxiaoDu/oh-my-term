@@ -242,6 +242,25 @@ impl BlockTracker {
         }
     }
 
+    /// Replace the command text being collected.
+    ///
+    /// For a caller reading the cells rather than the keystrokes: the line is
+    /// re-read as it changes, so a correction, a completion or a cursor move
+    /// leaves the *line* rather than everything that was typed to produce it.
+    /// Appending would record `lsX\x08 cargo test` as the command.
+    pub fn set_command_text(&mut self, text: &str) {
+        if let Some(buffer) = self.collecting.as_mut() {
+            buffer.clear();
+            buffer.push_str(text);
+        }
+    }
+
+    /// Whether a command line is being collected right now.
+    #[must_use]
+    pub const fn collecting(&self) -> bool {
+        self.collecting.is_some()
+    }
+
     /// Close a block the shell never closed.
     fn close_dangling(&mut self, row: u64) {
         if let Some(last) = self.blocks.last_mut()

@@ -1741,3 +1741,29 @@ fn the_agents_own_commands_are_listed_and_typed_into_its_own_interface() {
     s.type_in("\x1b");
     s.settle(1.0);
 }
+
+#[test]
+fn what_was_run_here_before_is_offered_and_says_when_there_is_none() {
+    let _serial = serially();
+    // Not the shell's own history — that is one shell's, and the shell's own
+    // keys already reach it. This is every session's, which is the part no
+    // shell can offer. An empty one says what is missing rather than coming up
+    // blank, because "nothing recorded" and "this feature is broken" look the
+    // same otherwise.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("\x02r"); // leader, recall
+    s.settle_until(15.0, |s| s.screen().contains("Run here before"));
+    assert!(
+        s.screen().contains("Run here before"),
+        "the list never opened:\n{}",
+        s.screen()
+    );
+    assert!(
+        s.screen().contains("nothing has been recorded"),
+        "an empty history came up blank instead of saying why:\n{}",
+        s.screen()
+    );
+    s.type_in("\x1b");
+    s.settle(0.5);
+}

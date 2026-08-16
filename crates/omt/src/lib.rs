@@ -41,6 +41,7 @@ pub mod client;
 mod firstrun;
 pub mod hooks;
 pub mod lifecycle;
+pub mod remember;
 pub mod serve;
 pub mod stream;
 mod terminal_bits;

@@ -681,6 +681,58 @@ pub(crate) fn command_rows(commands: &[(String, String)]) -> Vec<omt_tui::Choice
         .collect()
 }
 
+/// The rows behind what has been run here before.
+///
+/// Ordered by the history's own score, which weighs how often a command was
+/// run *in this workspace* — the reason a suggestion is there is the reason it
+/// is near the top, and the count is shown so somebody can see it.
+pub(crate) fn recall_rows(suggestions: &[(String, u32)]) -> Vec<omt_tui::Choice> {
+    if suggestions.is_empty() {
+        return vec![omt_tui::Choice {
+            label: "nothing has been recorded here yet".to_owned(),
+            detail: "commands are written down when a shell says one finished, \
+                     which needs its shell integration installed"
+                .to_owned(),
+            chord: None,
+            mark: None,
+        }];
+    }
+    suggestions
+        .iter()
+        .map(|(command, uses)| omt_tui::Choice {
+            label: command.clone(),
+            detail: match uses {
+                0 => "from another workspace".to_owned(),
+                1 => "once here".to_owned(),
+                many => format!("{many} times here"),
+            },
+            chord: None,
+            mark: None,
+        })
+        .collect()
+}
+
+/// What has been run in this workspace, best first.
+pub(crate) fn recall_of(
+    attached: &mut Option<crate::backing::Attached>,
+    state: &crate::state::State,
+    workspace: omt_types::WorkspaceId,
+) -> Vec<(String, u32)> {
+    if let Some(joined) = attached.as_mut() {
+        return crate::backing::recall(joined, workspace).unwrap_or_default();
+    }
+    state.recall().map_or_else(
+        |_| Vec::new(),
+        |history| {
+            history
+                .suggest("", workspace, 20)
+                .into_iter()
+                .map(|s| (s.command, s.uses_here))
+                .collect()
+        },
+    )
+}
+
 /// What the agent in a session offers, from wherever the session lives.
 pub(crate) fn offers_of(
     attached: &mut Option<crate::backing::Attached>,

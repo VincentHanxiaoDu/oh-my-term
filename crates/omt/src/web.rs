@@ -237,6 +237,10 @@ pub fn spawn_pump(state: State) {
         // most expensive thing in this loop by an order of magnitude.
         let adapters = omt_agent_adapters::builtin();
         let mut last_observed = std::time::Instant::now();
+        // What has been written down already. `recall.suggest` answered with
+        // nothing for as long as it existed, because nothing ever recorded
+        // anything — see `remember`.
+        let mut remembered = crate::remember::Remembered::default();
         loop {
             // The lock is taken and dropped inside each tick, never held across
             // the sleep: holding it would block every capability call for the
@@ -248,6 +252,20 @@ pub fn spawn_pump(state: State) {
                     // worth stopping the pump for — the others are still live,
                     // and the close arrives through its own path.
                     let _ = instance.pump_session(*id);
+                }
+
+                // What finished running, into the history the suggestions come
+                // from. After pumping, because a block closes in the bytes the
+                // pump just read.
+                if let Ok(mut history) = state.recall() {
+                    for id in &ids {
+                        let Some(workspace) = instance.session(*id).map(|s| s.workspace) else {
+                            continue;
+                        };
+                        if let Some(runtime) = instance.runtime(*id) {
+                            remembered.absorb(&mut history, *id, workspace, runtime.terminal());
+                        }
+                    }
                 }
 
                 // And what is running in each of them. On its own timer,
