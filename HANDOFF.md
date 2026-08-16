@@ -1,13 +1,14 @@
 # Handoff
 
-Written for whoever picks this up next. It says what is being built right now,
-what is already true, what is not, and the things that have already bitten
-somebody here — so they bite nobody twice.
+Written for whoever picks this up next. It says what is true now, what is not,
+and the things that have already bitten somebody here — so they bite nobody
+twice.
 
-Read `openspec/changes/sessions-outlive-the-terminal/` first: the proposal is
-why, the design is the decisions and their reasons, and `tasks.md` is the
-checklist this document summarises. If the two disagree, the change is right and
-this is stale.
+Read `openspec/changes/archive/` for the reasoning behind anything below: each
+change carries its proposal, its design and the decisions with their reasons. If
+one of them disagrees with this file, the change is right and this is stale.
+
+There is no change in flight. Section 6 is what is worth doing next.
 
 ---
 
@@ -36,76 +37,46 @@ These are not preferences. Breaking one has cost real work here before.
   Claude-Session: <the session URL>
   ```
 
-## 2. What is being built
+## 2. What was just finished
 
-**Sessions that outlive the terminal.** A multiplexer exists to make one
-promise — close the terminal, the work keeps running — and omt did not keep it:
-the terminal owned every pty in its own process, so quitting hung up on all of
-them, including an agent mid-turn.
+**Sessions that outlive the terminal.** `omt` is a client now: it finds an
+instance or starts one, and the sessions it shows are that instance's. Closing
+the terminal closes the terminal. The change is archived as
+`2026-08-16-sessions-outlive-the-terminal`; read it for the reasoning, not this
+summary.
 
-The intermediate honest state shipped first: the key says `quit`, and it lists
-what it is about to end. `docs/architecture/05-session-model.md` §4.1b records
-the gap and what closing it takes. **Delete that section when this change
-lands** — it describes a gap that will no longer exist.
+A terminal that cannot reach or start an instance still opens, owning its own
+sessions, and says so in one line. `OMT_LOCAL` asks for that path deliberately —
+and any test that starts the omt binary **must** set it or point at a runtime
+directory of its own, which `cargo xtask test-isolation` now fails on rather
+than warns about: the other things that gate checks cost a confusing test run,
+and this one costs somebody else's sessions.
 
-## 3. Where it stands: 21 of 32 tasks
+## 3. What that work found, and what it cost to find
 
-Three commits, each green on the full suite when it landed:
+Every one of these was only visible with real processes. They are the reason
+this file exists.
 
-| Commit | What |
-|---|---|
-| `4dabde5` | the instance pushes a session's output; seeding; the tail buffer |
-| `b1e0c7c` | the client: socket, reader thread, mirrored emulator |
-| `0a26f7b` | the seam in the frame loop; finding and starting an instance |
+- **The daemon died with the terminal**, intermittently. A child in the
+  terminal's foreground process group takes the hangup; moving it to another
+  group in the same session is not enough, because that terminal is still its
+  controlling one. `setsid` is the only call that severs it.
+- **Nothing was ever discovered.** Discovery scanned `$XDG_RUNTIME_DIR/omt/`
+  and daemons bound one directory up, so every terminal started a daemon that
+  found the path taken and died — and it all worked because the *previous*
+  daemon was still answering. The document had said the right thing all along.
+- **An empty variable is still set.** `$XDG_RUNTIME_DIR=""` yields a relative
+  socket path; one of those was found still running hours later, bound in
+  whatever directory it started in.
+- **A later edit silently dropped an earlier branch**, and copy mode drew
+  twenty-nine blank rows with no error anywhere. The diagnosis came from
+  capturing the bytes omt actually wrote — not from reading the code again.
+- **Sessions created by an instance had no `$OMT_SOCK`**, so hooks in them
+  exited at their guard clause: indistinguishable from hooks nobody installed.
 
-### Proven, with tests that cross the wire
-
-- `crates/omt-term/src/seed.rs` — a terminal's state rendered back into escape
-  sequences. Nine tests: colours, wide characters, cursor, alternate screen,
-  empty screen, and that a *reused* emulator ends up right.
-- `crates/omt-daemon/src/tail.rs` — recent output with absolute positions, so a
-  subscriber can be behind of something.
-- `crates/omt/src/stream.rs` + `crates/omt/tests/streaming.rs` — six tests over
-  a real socket. The two that matter most:
-  - `a_client_emulator_ends_up_showing_what_the_session_shows` — the instance
-    owns the pty, the client owns an emulator, and the client's screen equals
-    the session's, *including what happened before it attached*.
-  - `a_session_created_through_an_instance_outlives_the_client_that_made_it` —
-    the client vanishes entirely; the session and its process do not notice.
-- `crates/omt/src/backing.rs` — the seam. Thirty-two screen tests drive a real
-  terminal through it and say what they said before, which is what makes the
-  refactor behaviour-neutral rather than merely believed to be.
-- `crates/omt/src/lifecycle.rs` — find an instance, start one if there is none,
-  refuse when several are running.
-
-### Not done — this is the next work, in order
-
-The frame loop draws from the seam and both sides of the seam work. What is
-missing is the half of the terminal that reads the **instance** rather than the
-**terminal**: the agent panel, the agent list, the status bar's chips and the
-quit confirmation all take a local `Instance` today (`crates/omt/src/rows.rs`,
-`crates/omt/src/terminal_bits.rs`).
-
-1. **One view model both modes produce.** `backing::Reported` is the start of
-   it: id, title, agent state as a word, thread and blocked counts. Local mode
-   has more (the `Detection`'s evidence string, the rich `AgentState`); the
-   honest shape is `Reported` plus optional fields only a local probe can fill.
-2. **The row builders take that** instead of `&mut Instance`. They are
-   `agent_rows`, `session_rows`, `panel_sessions` (rows.rs) and `still_working`
-   (terminal_bits.rs).
-3. **Look the vocabulary up by word.** `omt_tui::state_word` / `attention` /
-   `state_mark` take `&AgentState`; over the wire what arrives is the word.
-   `web/src/generated/vocabulary.json` is the same table the web client uses —
-   do it the way the web already does, and keep `cargo xtask vocabulary`
-   passing so the three surfaces cannot drift.
-4. **Then** the terminal attaches by default, `⟨leader⟩ d` goes back to saying
-   `detach`, and the confirmation keeps only the case it still describes
-   (ending sessions on purpose). Update the screen test
-   `quitting_says_what_it_is_about_to_end` — today it asserts the session
-   *does not* survive, which is the current truth and will become the bug.
-
-`session.list` already carries everything step 1 needs, including which agent is
-in the session. No new capability is required.
+Two things left behind for the next person: a client writes a call that never
+answered to `$OMT_CLIENT_LOG`, and a history that cannot be fetched says so on
+the screen rather than being drawn as emptiness.
 
 ## 4. How to check your work
 
