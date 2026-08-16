@@ -59,6 +59,13 @@ pub struct Instance {
     /// the conversation rather than start a new one. Reported by hooks, which
     /// is why it appears for agents that have them and not for the rest.
     agent_sessions: BTreeMap<SessionId, String>,
+    /// Where the agent in each session is writing that conversation down.
+    ///
+    /// Reported by the agent itself, through its hook. Never derived: the
+    /// directory an agent writes into holds every conversation ever held in
+    /// that working directory, so a path worked out from the cwd reads
+    /// somebody else's session as soon as two agents share a directory.
+    transcript_paths: BTreeMap<SessionId, std::path::PathBuf>,
     /// Which foreground process that decision was about.
     ///
     /// Reading another process's arguments and environment copies the whole
@@ -98,6 +105,7 @@ impl Instance {
             bindings: BTreeMap::new(),
             observed: BTreeMap::new(),
             agent_sessions: BTreeMap::new(),
+            transcript_paths: BTreeMap::new(),
             observed_for: BTreeMap::new(),
             orphans: BTreeMap::new(),
             usage: omt_agent::UsageLedger::new(),
@@ -151,10 +159,40 @@ impl Instance {
         self.agent_sessions.insert(id, agent_session);
     }
 
+    /// Remember where the agent said it is writing this conversation down.
+    ///
+    /// Only absolute paths are kept. A relative one would be resolved against
+    /// whatever directory this process happens to be in, which is not the
+    /// agent's — and reading the wrong file is worse than reading none.
+    pub fn observe_transcript_path(&mut self, id: SessionId, path: std::path::PathBuf) {
+        if path.is_absolute() {
+            self.transcript_paths.insert(id, path);
+        }
+    }
+
+    /// Where the agent in a session is writing, if it said.
+    #[must_use]
+    pub fn transcript_path(&self, id: SessionId) -> Option<&std::path::Path> {
+        self.transcript_paths
+            .get(&id)
+            .map(std::path::PathBuf::as_path)
+    }
+
     /// What the agent in a session calls that conversation, if it said.
     #[must_use]
     pub fn agent_session(&self, id: SessionId) -> Option<&str> {
         self.agent_sessions.get(&id).map(String::as_str)
+    }
+
+    /// Record what is running in a session directly.
+    ///
+    /// For sources that identify an agent without going through a screen
+    /// observation — and for tests, which otherwise cannot express "an agent
+    /// omt has already identified" without a pty. It does not feed the merge
+    /// machine: [`Instance::observe_session`] is still the path that decides,
+    /// and this only states what was decided.
+    pub fn observe_detection(&mut self, id: SessionId, detection: omt_agent_adapters::Detection) {
+        self.observed.insert(id, detection);
     }
 
     /// What omt has decided is running in a session, if anything.
@@ -364,6 +402,11 @@ impl Instance {
         self.bindings.remove(&id);
         self.observed.remove(&id);
         self.observed_for.remove(&id);
+        // What the agent called its conversation, and where it was writing it,
+        // go with it too. These were kept until now, which meant a long-lived
+        // instance accumulated one entry per session it had ever opened.
+        self.agent_sessions.remove(&id);
+        self.transcript_paths.remove(&id);
         Ok(())
     }
 

@@ -17,7 +17,7 @@
 //!   card; it does not hold the agent's hand up while somebody's phone is in
 //!   another room.
 
-use omt_events::{AgentEvent, EventPayload, EventSourceTag};
+use omt_events::{EventPayload, EventSourceTag};
 use omt_proto::{HookAck, HookDirective, HookEvent};
 use omt_types::{SessionId, Tier, Timestamp};
 
@@ -65,40 +65,32 @@ fn absorb(state: &State, event: &HookEvent) -> Option<()> {
     if let Some(agent_session) = &event.agent_session {
         instance.observe_agent_session(session, agent_session.clone());
     }
+    // Where the agent is writing this conversation down. It arrives here or
+    // nowhere: the alternative is deriving a path from the working directory,
+    // which reads another conversation as soon as two agents share one.
+    if let Some(path) = &event.transcript_path {
+        instance.observe_transcript_path(session, std::path::PathBuf::from(path));
+    }
 
     let mode = instance.session(session).map(|s| s.mode);
 
     let mut transcripts = state.transcripts().ok()?;
+    let mut seen = state.seen().ok()?;
+    let from = crate::absorb::From {
+        session,
+        binding,
+        agent: event.agent,
+        agent_version: event.agent_version.clone(),
+        agent_session: event.agent_session.clone(),
+        // A hook is the agent telling omt what it is doing, which is the
+        // second-strongest thing omt can know and the reason the tier ladder
+        // has a rung for it.
+        tier: Tier::Hook,
+        tag: EventSourceTag::Hook,
+        mode,
+    };
     for payload in payloads {
-        transcripts.entry(session).observe(&payload);
-        raise_card(&mut instance, session, binding, mode, &payload);
-        instance.observe_usage(session, &payload);
-        let agent_event = AgentEvent {
-            session,
-            binding,
-            agent: event.agent,
-            agent_version: event.agent_version.clone(),
-            agent_session: event.agent_session.clone(),
-            thread: None,
-            // The instance assigns the real position when it emits. This one
-            // is a placeholder and is overwritten there — positions are minted
-            // in exactly one place.
-            seq: omt_types::Seq::new(0),
-            ts: Timestamp::now(),
-            // A hook is the agent telling omt what it is doing, which is the
-            // second-strongest thing omt can know and the reason the tier
-            // ladder has a rung for it.
-            tier: Tier::Hook,
-            payload,
-        };
-        instance.observe_thread(session, &agent_event);
-        instance.emit(
-            session,
-            EventSourceTag::Hook,
-            EventPayload::Agent {
-                event: Box::new(agent_event),
-            },
-        );
+        crate::absorb::payload(&mut instance, &mut transcripts, &mut seen, &from, payload);
     }
     Some(())
 }
@@ -112,7 +104,7 @@ fn absorb(state: &State, event: &HookEvent) -> Option<()> {
 /// question, and it is answered honestly below rather than optimistically:
 /// offering an answer omt cannot deliver is worse than saying it cannot,
 /// because somebody presses it and believes the agent heard.
-fn raise_card(
+pub(crate) fn raise_card(
     instance: &mut omt_daemon::Instance,
     session: SessionId,
     binding: omt_types::BindingId,
@@ -238,6 +230,7 @@ mod tests {
             agent: AgentKind::ClaudeCode,
             agent_version: None,
             agent_session: None,
+            transcript_path: None,
             event: "PreToolUse".to_owned(),
             tool_use_id: Some("t1".to_owned()),
             tool_name: Some("AskUserQuestion".to_owned()),

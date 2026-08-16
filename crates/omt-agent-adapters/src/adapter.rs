@@ -239,6 +239,21 @@ pub trait AgentAdapter: Send + Sync {
         payload: &serde_json::Value,
     ) -> Result<Vec<AgentPayload>, AdapterError>;
 
+    /// Turn one record of the agent's own session file into omt's vocabulary.
+    ///
+    /// Separate from [`AgentAdapter::normalize`] because a session file is not
+    /// a stream of hook events: it is what the agent wrote down, in whatever
+    /// shape that agent writes, and most of its records are bookkeeping omt
+    /// has no opinion on. Returning nothing is the ordinary answer, not an
+    /// error — which is why this returns a list rather than a `Result`.
+    ///
+    /// Empty by default: an agent whose file nobody has read is an honest
+    /// state, and a mapping guessed from one example file is how another
+    /// agent's records get read as this one's.
+    fn transcript_records(&self, _record: &serde_json::Value) -> Vec<AgentPayload> {
+        Vec::new()
+    }
+
     /// The highest tier this adapter can reach.
     ///
     /// Stated rather than discovered, because the honest answer for some agents

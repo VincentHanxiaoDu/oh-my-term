@@ -147,6 +147,7 @@ fn a_hook_reporting_for_an_unknown_session_changes_nothing() {
         agent: AgentKind::ClaudeCode,
         agent_version: None,
         agent_session: None,
+        transcript_path: None,
         event: "PreToolUse".to_owned(),
         tool_use_id: Some("t1".to_owned()),
         tool_name: Some("AskUserQuestion".to_owned()),

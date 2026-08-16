@@ -1,6 +1,7 @@
 //! Claude Code — the deepest adapter, and the one the others are measured
 //! against.
 
+use super::claude_code_transcript::transcript_record;
 use std::ffi::OsString;
 use std::path::Path;
 
@@ -184,6 +185,10 @@ impl AgentAdapter for ClaudeCode {
                 Some(AttachmentReference::BarePath(path.display().to_string()))
             }
         }
+    }
+
+    fn transcript_records(&self, record: &serde_json::Value) -> Vec<AgentPayload> {
+        transcript_record(record)
     }
 
     fn normalize(

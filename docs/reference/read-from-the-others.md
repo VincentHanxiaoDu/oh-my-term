@@ -22,7 +22,7 @@ decision; an unrecorded one is a gap nobody has counted.
 | Structured events over the terminal (`OSC 777`, JSON behind a marker) | built | **taken** — the only structured source that needs nothing installed; at `Marker` tier, because anything in the pane can write those bytes ([06 §3.6b](../architecture/06-agent-layer.md)) |
 | Terminal title as a state marker | built | **parity**, and omt asks the *state* of an already-identified agent so a title that omits the name still contributes |
 | Process and environment inspection | built | **parity**, with three failure modes theirs does not handle (signed binaries, versioned paths, the foreground race) |
-| Transcript file tailing | designed, not built | **gap**, recorded in [06](../architecture/06-agent-layer.md) |
+| The agent's own session file on disk | built | **neither of them tails it**, and the row was wrong to call omt's absence a gap against them. One reads the whole file at save points to upload it and write it back so a resume works on another machine, keeping every record opaque; the other never opens it and uses the path its hook reports purely as a resume reference. What is taken is the *discovery*: the agent says where its file is, so nothing derives a path. What is added is reading it — [06 §3.6c](../architecture/06-agent-layer.md) |
 | Per-agent resume, by the agent's own session id | built | **taken** — each CLI spells it differently, so it is per-adapter and never a template |
 
 ## 2. Telling somebody

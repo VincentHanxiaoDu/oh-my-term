@@ -1,6 +1,7 @@
 //! One module per agent.
 
 mod claude_code;
+mod claude_code_transcript;
 mod codex;
 mod copilot;
 mod cursor;

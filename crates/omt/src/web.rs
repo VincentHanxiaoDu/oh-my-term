@@ -268,6 +268,17 @@ pub fn spawn_pump(state: State) {
                     }
                 }
 
+                // And whatever the agents wrote down themselves. On the
+                // observation timer rather than every pump: it is a stat per
+                // session, and a file is written a message at a time, so
+                // reading it at frame rate would ask a hundred times per
+                // record.
+                if last_observed.elapsed() >= OBSERVE_INTERVAL {
+                    for id in &ids {
+                        crate::absorb::from_session_file(&state, &mut instance, *id);
+                    }
+                }
+
                 // And what is running in each of them. On its own timer,
                 // because pumping happens far more often than a process can
                 // change and a probe per pump would be a syscall storm.

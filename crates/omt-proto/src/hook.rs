@@ -46,6 +46,16 @@ pub struct HookEvent {
     /// The agent's own session id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session: Option<String>,
+    /// Where the agent is writing this conversation down.
+    ///
+    /// Carried because it is the one thing a derived path gets wrong: the
+    /// directory an agent writes into holds every conversation ever held in
+    /// that working directory, so picking the newest reads another session's
+    /// words whenever two agents share a directory — which, on a machine
+    /// running a session tree, is the ordinary case. The agent knows; this is
+    /// the agent saying so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
     /// The agent's own event name, **verbatim and un-normalized** —
     /// `"PreToolUse"`, `"beforeShellExecution"`, `"AfterTool"`.
     ///
@@ -213,6 +223,7 @@ mod tests {
             agent: AgentKind::ClaudeCode,
             agent_version: None,
             agent_session: None,
+            transcript_path: None,
             event: "PreToolUse".into(),
             tool_use_id: Some("toolu_1".into()),
             tool_name: Some("AskUserQuestion".into()),

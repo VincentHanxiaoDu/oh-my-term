@@ -223,6 +223,10 @@ pub fn build_event(env: &HookEnv, payload: Option<&serde_json::Value>) -> HookEv
         agent: env.agent,
         agent_version: field("version"),
         agent_session: field("session_id"),
+        // Reported, never derived. The hook is holding the payload in which
+        // the agent named its own file; everything downstream of a guessed
+        // path is a guess.
+        transcript_path: field("transcript_path"),
         event,
         tool_use_id: field("tool_use_id"),
         tool_name: field("tool_name"),

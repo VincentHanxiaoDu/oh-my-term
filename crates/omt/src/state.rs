@@ -37,6 +37,15 @@ pub struct State {
     stt: Arc<Mutex<omt_stt::ProviderSet>>,
     /// What each agent session has said and done.
     transcripts: Arc<Mutex<crate::transcript::Transcripts>>,
+    /// What has already been reported for each session, by the agent's own
+    /// ids.
+    ///
+    /// Two sources describe the same events — the hook as they happen, the
+    /// agent's session file afterwards — and without this every tool call
+    /// appears twice.
+    seen: Arc<Mutex<crate::absorb::Seen>>,
+    /// Where reading each agent's session file has got to.
+    readings: Arc<Mutex<crate::reading::Readings>>,
     /// Where this instance is listening, once it is.
     ///
     /// Kept so a session it spawns can be told where its agent's hooks should
@@ -89,6 +98,8 @@ impl State {
             socket: Arc::new(Mutex::new(None)),
             fanouts: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             transcripts: Arc::new(Mutex::new(crate::transcript::Transcripts::default())),
+            seen: Arc::new(Mutex::new(crate::absorb::Seen::default())),
+            readings: Arc::new(Mutex::new(crate::reading::Readings::default())),
             config: Arc::new(Mutex::new(None)),
         }
     }
@@ -160,6 +171,26 @@ impl State {
         self.transcripts
             .lock()
             .map_err(|_| CapabilityError::internal("the transcript lock was poisoned"))
+    }
+
+    /// What has already been reported for each session.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn seen(&self) -> Result<MutexGuard<'_, crate::absorb::Seen>, CapabilityError> {
+        self.seen
+            .lock()
+            .map_err(|_| CapabilityError::internal("the seen lock was poisoned"))
+    }
+
+    /// Where reading each session file has got to.
+    ///
+    /// # Errors
+    /// Fails if another thread panicked holding the lock.
+    pub fn readings(&self) -> Result<MutexGuard<'_, crate::reading::Readings>, CapabilityError> {
+        self.readings
+            .lock()
+            .map_err(|_| CapabilityError::internal("the reading lock was poisoned"))
     }
 
     /// Say where this instance is listening.

@@ -132,7 +132,7 @@ Implemented sources:
 |---|---|---|
 | `ProcessProbe` | Process | foreground pgid → argv + environ; env markers beat exe names because four agents ship as Node bundles |
 | `OscBackchannel` | Marker | intercepts OSC emitted by `omt-hook` via `terminalSequence`, and omt's own OSC namespace |
-| `TranscriptTail` | Transcript | per-agent readers; watches the *directory* so new sessions are caught |
+| `TranscriptTail` | Transcript | per-agent readers, each reading one file from a position. It reads the file the agent *reported*, and watches no directory: picking a file out of a directory is picking a conversation, and the newest one there belongs to whoever wrote last ([§3.6c](#36c-the-session-file-the-only-source-that-was-there-before-omt-was)) |
 | `HookBridge` | Hook | receives normalized payloads from the `omt-hook` binary over the local socket |
 | `AcpClient` | Protocol | generic ACP JSON-RPC client — covers opencode, Goose, Qwen at once |
 | `CopilotAcp` | Protocol | `copilot --acp`, plus Copilot's own hook vocabulary (Claude Code's, with `ErrorOccurred`, `SessionEnd`, `PreCompact` and a lowercase `subagentStart`) |
@@ -219,6 +219,47 @@ Everything unusable is dropped in silence — not JSON, no event name, no
 identified agent. A pane full of escape sequences is a pane full of noise, and
 a log line per unrecognized one is a log nobody reads.
 
+
+### 3.6c The session file: the only source that was there before omt was
+
+Every hook, every marker and every screen rule observes the present. Attach to
+an agent that has been working for an hour and the conversation view is empty,
+because omt was not there for any of it. The agent's own session file was.
+
+**omt never derives the path.** The hook that already reports every tool call
+also carries `transcript_path`, and that is where the path comes from. Deriving
+it means encoding a working directory into a directory name and picking the
+newest file in it — a guess that reads *another* conversation whenever two
+agents share a directory, which on a machine running a session tree is the
+normal case rather than the edge one. No path, no tail: the file is opened
+because an agent said so, or not at all.
+
+The tier is `Transcript`, below `Hook` and above `Marker`. The file is the
+agent's own writing, which is why it ranks above anything inferred; it is
+behind the hook because it is written after the fact, and a record can be
+seconds old while the hook's version of the same event was immediate.
+
+Reading it is where the work is, and it is the part neither of the others
+does at all:
+
+* **A position, not a re-read.** The offset is kept per file and the reader
+  starts there. A transcript reaches hundreds of megabytes in a long session,
+  and re-reading it on every change is a session that gets slower the longer
+  somebody works.
+* **A partial last line is not a corrupt one.** The agent appends a record
+  with two writes often enough to be caught mid-line. A line without its
+  newline is held, not parsed and not skipped — parsing it drops a record,
+  and skipping it drops it permanently because the offset has moved past it.
+* **Shrinking means a different file.** A file shorter than the offset was
+  replaced, not rewound. The reader restarts at zero rather than seeking past
+  the end of a file it is no longer reading.
+
+**What was already reported is not reported twice.** The hook and the file
+describe the same tool call, and a conversation view that shows both shows
+every call twice. Tool calls carry the agent's own call id and records carry
+their own uuid; both are remembered per session, and a payload whose id has
+already been seen from a stronger source is dropped. This is the tier ladder
+doing its job at the granularity of one event rather than one binding.
 
 ### 3.7 Screen rules: regions, not searches
 

@@ -338,6 +338,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // to live here, which meant the web client's sessions were never
             // probed at all — two surfaces, one of which could see agents and
             // one of which structurally could not.
+            // What the agent wrote down itself, on the same timer as the
+            // probe. Only where an agent reported a path; a local terminal
+            // whose instance already reads this file will find every record
+            // already seen and take nothing, which is what the suppression is
+            // there for.
+            crate::absorb::from_session_file(&state, &mut instance, pane.session);
+
             let detection = instance.observe_session(pane.session, pane.binding, &refs, now);
             let before = pane.agent.as_ref().map(|p| p.detection.agent);
             pane.agent = detection.map(|detection| crate::probe::Probed {

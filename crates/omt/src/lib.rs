@@ -6,6 +6,7 @@
 
 pub mod capabilities;
 
+pub mod absorb;
 pub mod attach;
 pub mod automation;
 pub mod bootstrap;
@@ -23,6 +24,7 @@ pub mod persist;
 pub mod probe;
 pub mod queue;
 pub mod reach;
+pub mod reading;
 pub mod rows;
 pub mod run;
 pub mod scheduler;
