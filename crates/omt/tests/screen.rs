@@ -1547,6 +1547,44 @@ fn an_image_a_program_draws_is_not_swallowed() {
 }
 
 #[test]
+fn copy_mode_jumps_back_to_where_the_last_command_started() {
+    let _serial = serially();
+    // The one motion here that no other terminal multiplexer can offer:
+    // it needs to know where prompts are, which needs the shell to have said
+    // so. omt already models that — every block carries the absolute row its
+    // prompt began on, in the same coordinates copy mode moves in.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    // A shell that marks its prompts, and a command with enough output to
+    // push the prompt well up the screen.
+    s.type_in("PS1='\\033]133;A\\007$ \\033]133;B\\007'\n");
+    s.settle(1.0);
+    s.type_in("seq -f padding-%g 1 12\n");
+    s.settle_until(10.0, |s| s.screen().contains("padding-12"));
+
+    s.type_in("\x02"); // leader
+    s.settle(0.3);
+    s.type_in("["); // copy mode
+    s.settle(0.5);
+    // Down to the very end, then back one prompt.
+    s.type_in("G");
+    s.settle(0.3);
+    s.type_in("[");
+    s.settle_until(10.0, |s| s.screen().contains("Esc leave"));
+
+    // Landing on a prompt means the command that produced this output is on
+    // the cursor's row — which is what somebody scrolling back is looking for.
+    let screen = s.screen();
+    assert!(
+        screen.contains("seq -f padding") || screen.contains("padding-1"),
+        "the jump did not land near the command that ran:\n{screen}"
+    );
+
+    s.type_in("\x1b");
+    s.settle(1.0);
+}
+
+#[test]
 fn a_search_in_copy_mode_jumps_to_the_line_that_has_it() {
     let _serial = serially();
     // The `/` this document has specified for as long as it has specified copy

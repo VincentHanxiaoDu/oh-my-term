@@ -39,18 +39,41 @@ These are not preferences. Breaking one has cost real work here before.
 
 ## 2. What was just finished
 
-**Sessions that outlive the terminal.** `omt` is a client now: it finds an
-instance or starts one, and the sessions it shows are that instance's. Closing
-the terminal closes the terminal. The change is archived as
-`2026-08-16-sessions-outlive-the-terminal`; read it for the reasoning, not this
-summary.
+**A feature-by-feature pass against the two comparable products**, whose source
+is under `.research/`. Five changes, each archived with its reasoning:
+command history, reading the agent's own session file, the mouse, images in a
+pane, and the rest of copy mode. `docs/reference/read-from-the-others.md` is the
+checklist and carries a verdict per row, including the rows where omt is
+deliberately different and the rows where **their** answer is worse than it
+looks.
 
-A terminal that cannot reach or start an instance still opens, owning its own
-sessions, and says so in one line. `OMT_LOCAL` asks for that path deliberately —
-and any test that starts the omt binary **must** set it or point at a runtime
-directory of its own, which `cargo xtask test-isolation` now fails on rather
-than warns about: the other things that gate checks cost a confusing test run,
-and this one costs somebody else's sessions.
+**The pattern worth knowing before you start anything here.** Every one of those
+five found the same class of defect underneath the feature, and it is the
+expensive kind:
+
+> **A vocabulary that exists everywhere and a producer that exists nowhere.**
+
+- `recall.suggest` had a capability, a web handler and a menu; **nothing had
+  ever called `recall.record`**, so it always answered empty.
+- `Tier::Transcript` and `EventSourceTag::Transcript` had existed since the
+  agent layer was designed; **no source ever emitted either**.
+- The mouse had a passthrough table, a `MouseEvent` type and a keymap grammar;
+  **omt never asked its terminal for mouse reporting**.
+- `BlockTracker::command_text` had exactly one caller, and it was a test — so
+  every block in production carried an empty command.
+- `keymap = "vim" | "emacs"` was documented in the configuration reference and
+  parsed into the binding file; **no code read the field**.
+
+From outside, every one of these is indistinguishable from "there was nothing
+to show". They do not fail, they do not log, and they do not look wrong in a
+review — the code that is missing is missing, not incorrect. **When a feature
+here answers with nothing, check that something writes to it before you believe
+the emptiness.** `grep` for the producer, not the type.
+
+Three documents also claimed things that were not true, which is the same
+defect wearing a different hat: that `vte` surfaces APC (it consumes it with no
+callback at all), that `omt-term` already parsed inline images, and that the
+transcript reader watches a directory.
 
 ## 3. What that work found, and what it cost to find
 
@@ -129,7 +152,6 @@ different on. Still open, roughly by value:
 
 - drawing an image for real: re-emitting to the host terminal, clipped to the
   pane's rectangle and diffed per frame (the rows and the card exist already)
-- copy mode's named registers and the emacs motion set
 
 ## 7. One request
 

@@ -20,7 +20,7 @@ pub mod copy;
 pub mod panel;
 pub mod tree;
 pub use conversation::{Said, Who, lines as conversation_lines};
-pub use copy::{Copy as CopyMode, Move as CopyMove, selected_text};
+pub use copy::{Copy as CopyMode, Move as CopyMove, Word as CopyWord, selected_text};
 pub use panel::{Entry, PANEL_COLS, Session as PanelSession, entries, fits};
 pub use statusbar::{
     Status, attention, glyph, render as status_bar, state_from_word, state_mark, state_word,

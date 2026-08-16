@@ -112,6 +112,7 @@ pub(crate) fn announce(
 }
 
 /// What one key means while reading history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CopyKey {
     /// Move.
     Go(omt_tui::CopyMove),
@@ -119,8 +120,14 @@ pub(crate) enum CopyKey {
     Mark,
     /// Take a copy and leave.
     Yank,
-    /// Open the search field.
-    Search,
+    /// Open the search field, forwards or backwards.
+    Search(bool),
+    /// Move by word.
+    Word(omt_tui::CopyWord),
+    /// Start a whole-line selection.
+    MarkLine,
+    /// To the previous or next prompt.
+    Prompt(bool),
     /// Repeat the last search, forwards or backwards.
     Repeat(bool),
     /// Leave without copying.
@@ -131,28 +138,119 @@ pub(crate) enum CopyKey {
     Ignore,
 }
 
+/// Which key table copy mode is using.
+///
+/// The `keymap` setting has been documented in the configuration reference and
+/// parsed into the binding file since either existed, and **nothing has ever
+/// read it** — so somebody could set it and watch it do nothing. This is what
+/// reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Flavour {
+    /// vim's motions, which is what copy mode has always used.
+    #[default]
+    Vim,
+    /// emacs' motions, for the fingers that have those instead.
+    Emacs,
+}
+
+impl Flavour {
+    /// Read it off the setting.
+    ///
+    /// Anything unrecognised is the default rather than an error: a keymap
+    /// name omt does not ship is a typo or a file from a later version, and
+    /// neither is worth refusing to open a terminal over.
+    pub(crate) fn named(name: &str) -> Self {
+        match name {
+            "emacs" => Self::Emacs,
+            _ => Self::Vim,
+        }
+    }
+}
+
 /// The keys, which are the ones people already have in their fingers.
-pub(crate) fn copy_key(key: &crossterm::event::KeyEvent) -> CopyKey {
-    use crossterm::event::KeyCode;
+pub(crate) fn copy_key(key: &crossterm::event::KeyEvent, flavour: Flavour) -> CopyKey {
+    use crossterm::event::{KeyCode, KeyModifiers};
     use omt_tui::CopyMove as Go;
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+
+    // Shared by both tables: the keys that are not a motion vocabulary at all.
+    // An arrow key means the same thing to everybody.
     match key.code {
-        KeyCode::Char('h') | KeyCode::Left => CopyKey::Go(Go::Left),
-        KeyCode::Char('j') | KeyCode::Down => CopyKey::Go(Go::Down),
-        KeyCode::Char('k') | KeyCode::Up => CopyKey::Go(Go::Up),
-        KeyCode::Char('l') | KeyCode::Right => CopyKey::Go(Go::Right),
-        KeyCode::Char('0') | KeyCode::Home => CopyKey::Go(Go::LineStart),
-        KeyCode::Char('$') | KeyCode::End => CopyKey::Go(Go::LineEnd),
-        KeyCode::Char('g') => CopyKey::Go(Go::Top),
-        KeyCode::Char('G') => CopyKey::Go(Go::Bottom),
-        KeyCode::PageUp | KeyCode::Char('b') => CopyKey::Go(Go::PageUp),
-        KeyCode::PageDown | KeyCode::Char('f') => CopyKey::Go(Go::PageDown),
-        KeyCode::Char('v') | KeyCode::Char(' ') => CopyKey::Mark,
-        KeyCode::Char('/') => CopyKey::Search,
-        KeyCode::Char('n') => CopyKey::Repeat(true),
-        KeyCode::Char('N') => CopyKey::Repeat(false),
-        KeyCode::Char('y') | KeyCode::Enter => CopyKey::Yank,
-        KeyCode::Esc | KeyCode::Char('q') => CopyKey::Leave,
-        _ => CopyKey::Ignore,
+        KeyCode::Left => return CopyKey::Go(Go::Left),
+        KeyCode::Down => return CopyKey::Go(Go::Down),
+        KeyCode::Up => return CopyKey::Go(Go::Up),
+        KeyCode::Right => return CopyKey::Go(Go::Right),
+        KeyCode::Home => return CopyKey::Go(Go::LineStart),
+        KeyCode::End => return CopyKey::Go(Go::LineEnd),
+        KeyCode::PageUp => return CopyKey::Go(Go::PageUp),
+        KeyCode::PageDown => return CopyKey::Go(Go::PageDown),
+        KeyCode::Esc => return CopyKey::Leave,
+        KeyCode::Enter => return CopyKey::Yank,
+        _ => {}
+    }
+
+    match flavour {
+        Flavour::Vim => match key.code {
+            KeyCode::Char('d') if ctrl => CopyKey::Go(Go::HalfPageDown),
+            KeyCode::Char('u') if ctrl => CopyKey::Go(Go::HalfPageUp),
+            KeyCode::Char('h') => CopyKey::Go(Go::Left),
+            KeyCode::Char('j') => CopyKey::Go(Go::Down),
+            KeyCode::Char('k') => CopyKey::Go(Go::Up),
+            KeyCode::Char('l') => CopyKey::Go(Go::Right),
+            KeyCode::Char('0') => CopyKey::Go(Go::LineStart),
+            KeyCode::Char('^') => CopyKey::Go(Go::FirstNonBlank),
+            KeyCode::Char('$') => CopyKey::Go(Go::LineEnd),
+            KeyCode::Char('w') => CopyKey::Word(omt_tui::CopyWord::Next),
+            KeyCode::Char('b') if !ctrl => CopyKey::Word(omt_tui::CopyWord::Back),
+            KeyCode::Char('e') => CopyKey::Word(omt_tui::CopyWord::End),
+            KeyCode::Char('g') => CopyKey::Go(Go::Top),
+            KeyCode::Char('G') => CopyKey::Go(Go::Bottom),
+            KeyCode::Char('b') => CopyKey::Go(Go::PageUp),
+            KeyCode::Char('f') => CopyKey::Go(Go::PageDown),
+            KeyCode::Char('v') | KeyCode::Char(' ') => CopyKey::Mark,
+            KeyCode::Char('V') => CopyKey::MarkLine,
+            KeyCode::Char('[') => CopyKey::Prompt(false),
+            KeyCode::Char(']') => CopyKey::Prompt(true),
+            KeyCode::Char('/') => CopyKey::Search(true),
+            KeyCode::Char('?') => CopyKey::Search(false),
+            KeyCode::Char('n') => CopyKey::Repeat(true),
+            KeyCode::Char('N') => CopyKey::Repeat(false),
+            KeyCode::Char('y') => CopyKey::Yank,
+            KeyCode::Char('q') => CopyKey::Leave,
+            _ => CopyKey::Ignore,
+        },
+        Flavour::Emacs => match key.code {
+            KeyCode::Char('b') if ctrl => CopyKey::Go(Go::Left),
+            KeyCode::Char('f') if ctrl => CopyKey::Go(Go::Right),
+            KeyCode::Char('p') if ctrl => CopyKey::Go(Go::Up),
+            KeyCode::Char('n') if ctrl => CopyKey::Go(Go::Down),
+            KeyCode::Char('a') if ctrl => CopyKey::Go(Go::LineStart),
+            KeyCode::Char('e') if ctrl => CopyKey::Go(Go::LineEnd),
+            KeyCode::Char('m') if alt => CopyKey::Go(Go::FirstNonBlank),
+            KeyCode::Char('v') if ctrl => CopyKey::Go(Go::PageDown),
+            KeyCode::Char('v') if alt => CopyKey::Go(Go::PageUp),
+            KeyCode::Char('f') if alt => CopyKey::Word(omt_tui::CopyWord::Next),
+            KeyCode::Char('b') if alt => CopyKey::Word(omt_tui::CopyWord::Back),
+            KeyCode::Char('<') if alt => CopyKey::Go(Go::Top),
+            KeyCode::Char('>') if alt => CopyKey::Go(Go::Bottom),
+            // The mark, which arrives as a control space or as a null
+            // depending on the terminal — both spellings, because a key that
+            // works in one terminal and not another reads as a broken build.
+            KeyCode::Char(' ') if ctrl => CopyKey::Mark,
+            KeyCode::Char('@') if ctrl => CopyKey::Mark,
+            KeyCode::Null => CopyKey::Mark,
+            KeyCode::Char('l') if ctrl => CopyKey::MarkLine,
+            KeyCode::Char('s') if ctrl => CopyKey::Search(true),
+            KeyCode::Char('r') if ctrl => CopyKey::Search(false),
+            KeyCode::Char('s') if alt => CopyKey::Repeat(true),
+            KeyCode::Char('r') if alt => CopyKey::Repeat(false),
+            KeyCode::Char('w') if alt => CopyKey::Yank,
+            KeyCode::Char('[') if alt => CopyKey::Prompt(false),
+            KeyCode::Char(']') if alt => CopyKey::Prompt(true),
+            KeyCode::Char('g') if ctrl => CopyKey::Leave,
+            _ => CopyKey::Ignore,
+        },
     }
 }
 
@@ -246,6 +344,12 @@ pub(crate) fn reading_key(
     reading: &mut omt_tui::CopyMode,
     rect: omt_tui::Rect,
     total: u64,
+    flavour: Flavour,
+    // `prompts`: where the shell said its prompts are, absolute and already
+    // filtered to the ones omt actually saw a command for. Filtered by the
+    // caller, because that is where the block model lives and where
+    // `attributed` means anything.
+    prompts: &[u64],
     line: &mut dyn FnMut(u64) -> Option<String>,
 ) -> Reading {
     use crossterm::event::KeyCode;
@@ -264,7 +368,10 @@ pub(crate) fn reading_key(
             }
             KeyCode::Enter => {
                 if reading.submit().is_some() {
-                    reading.jump(true, total, rows, line);
+                    // Whichever direction the search was opened in. A search
+                    // that always ran forwards would make `?` a one-shot.
+                    let forwards = !reading.backwards;
+                    reading.jump(forwards, total, rows, line);
                 }
             }
             KeyCode::Esc => reading.typing = None,
@@ -273,11 +380,36 @@ pub(crate) fn reading_key(
         return Reading::Stay;
     }
 
-    match copy_key(key) {
+    match copy_key(key, flavour) {
+        CopyKey::Go(omt_tui::CopyMove::FirstNonBlank) => reading.first_non_blank(line),
         CopyKey::Go(towards) => reading.go(towards, total, rows, cols),
-        CopyKey::Mark => reading.mark(),
-        CopyKey::Search => reading.search(),
-        CopyKey::Repeat(forwards) => {
+        CopyKey::Word(towards) => reading.word(towards, line),
+        CopyKey::Mark => {
+            reading.linewise = false;
+            reading.mark();
+        }
+        CopyKey::MarkLine => {
+            // Cleared when the selection is, so a line-wise selection that was
+            // dropped does not leave the next one taking whole rows nobody
+            // asked for.
+            reading.mark();
+            reading.linewise = reading.anchor.is_some();
+        }
+        CopyKey::Prompt(forwards) => {
+            reading.to_prompt(forwards, prompts, rows, total);
+        }
+        CopyKey::Search(forwards) => {
+            reading.backwards = !forwards;
+            reading.search();
+        }
+        CopyKey::Repeat(same) => {
+            // Relative to the direction the search was made in, which is what
+            // `N` means.
+            let forwards = if same {
+                !reading.backwards
+            } else {
+                reading.backwards
+            };
             reading.jump(forwards, total, rows, line);
         }
         CopyKey::Yank => return Reading::Yank,
@@ -457,4 +589,153 @@ pub(crate) fn still_working(watched: &[crate::rows::Watched]) -> Vec<omt_tui::Ch
         });
     }
     out
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn with(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, mods)
+    }
+
+    #[test]
+    fn the_keymap_setting_is_finally_read() {
+        // Documented in the configuration reference, parsed into the binding
+        // file, and read by nothing — a setting somebody could set and watch
+        // do nothing.
+        assert_eq!(Flavour::named("emacs"), Flavour::Emacs);
+        assert_eq!(Flavour::named("vim"), Flavour::Vim);
+        assert_eq!(Flavour::named("default"), Flavour::Vim);
+    }
+
+    #[test]
+    fn a_keymap_name_omt_does_not_ship_is_the_default_not_an_error() {
+        // A typo, or a file written by a later version. Neither is worth
+        // refusing to open a terminal over.
+        assert_eq!(Flavour::named("kakoune"), Flavour::Vim);
+        assert_eq!(Flavour::named(""), Flavour::Vim);
+    }
+
+    #[test]
+    fn the_vim_table_has_the_motions_it_was_missing() {
+        let f = Flavour::Vim;
+        assert_eq!(
+            copy_key(&key(KeyCode::Char('w')), f),
+            CopyKey::Word(omt_tui::CopyWord::Next)
+        );
+        assert_eq!(
+            copy_key(&key(KeyCode::Char('e')), f),
+            CopyKey::Word(omt_tui::CopyWord::End)
+        );
+        assert_eq!(
+            copy_key(&key(KeyCode::Char('^')), f),
+            CopyKey::Go(omt_tui::CopyMove::FirstNonBlank)
+        );
+        assert_eq!(
+            copy_key(&with(KeyCode::Char('d'), KeyModifiers::CONTROL), f),
+            CopyKey::Go(omt_tui::CopyMove::HalfPageDown)
+        );
+        assert_eq!(copy_key(&key(KeyCode::Char('V')), f), CopyKey::MarkLine);
+        assert_eq!(
+            copy_key(&key(KeyCode::Char('?')), f),
+            CopyKey::Search(false)
+        );
+        assert_eq!(
+            copy_key(&key(KeyCode::Char('[')), f),
+            CopyKey::Prompt(false)
+        );
+        assert_eq!(copy_key(&key(KeyCode::Char(']')), f), CopyKey::Prompt(true));
+    }
+
+    #[test]
+    fn the_vim_table_still_does_what_it_did() {
+        // Nothing changes for anybody who has not asked for something else.
+        let f = Flavour::Vim;
+        assert_eq!(
+            copy_key(&key(KeyCode::Char('j')), f),
+            CopyKey::Go(omt_tui::CopyMove::Down)
+        );
+        assert_eq!(copy_key(&key(KeyCode::Char('y')), f), CopyKey::Yank);
+        assert_eq!(copy_key(&key(KeyCode::Char('q')), f), CopyKey::Leave);
+        assert_eq!(copy_key(&key(KeyCode::Char('/')), f), CopyKey::Search(true));
+    }
+
+    #[test]
+    fn the_emacs_table_moves_the_way_those_fingers_expect() {
+        let f = Flavour::Emacs;
+        let ctrl = KeyModifiers::CONTROL;
+        let alt = KeyModifiers::ALT;
+        assert_eq!(
+            copy_key(&with(KeyCode::Char('n'), ctrl), f),
+            CopyKey::Go(omt_tui::CopyMove::Down)
+        );
+        assert_eq!(
+            copy_key(&with(KeyCode::Char('a'), ctrl), f),
+            CopyKey::Go(omt_tui::CopyMove::LineStart)
+        );
+        assert_eq!(
+            copy_key(&with(KeyCode::Char('f'), alt), f),
+            CopyKey::Word(omt_tui::CopyWord::Next)
+        );
+        assert_eq!(
+            copy_key(&with(KeyCode::Char('<'), alt), f),
+            CopyKey::Go(omt_tui::CopyMove::Top)
+        );
+        assert_eq!(
+            copy_key(&with(KeyCode::Char('s'), ctrl), f),
+            CopyKey::Search(true)
+        );
+        assert_eq!(
+            copy_key(&with(KeyCode::Char('r'), ctrl), f),
+            CopyKey::Search(false)
+        );
+        assert_eq!(copy_key(&with(KeyCode::Char('w'), alt), f), CopyKey::Yank);
+        assert_eq!(copy_key(&with(KeyCode::Char('g'), ctrl), f), CopyKey::Leave);
+    }
+
+    #[test]
+    fn the_mark_arrives_spelled_more_than_one_way() {
+        // Control-space reaches a program as a null in some terminals and as
+        // a control space in others. A key that works in one terminal and not
+        // another reads as a broken build.
+        let f = Flavour::Emacs;
+        assert_eq!(
+            copy_key(&with(KeyCode::Char(' '), KeyModifiers::CONTROL), f),
+            CopyKey::Mark
+        );
+        assert_eq!(copy_key(&key(KeyCode::Null), f), CopyKey::Mark);
+    }
+
+    #[test]
+    fn a_vim_key_does_nothing_in_the_emacs_table() {
+        // Otherwise the setting would be a superset rather than a choice, and
+        // `j` would move the cursor for somebody who asked for emacs.
+        assert_eq!(
+            copy_key(&key(KeyCode::Char('j')), Flavour::Emacs),
+            CopyKey::Ignore
+        );
+    }
+
+    #[test]
+    fn arrows_and_escape_mean_the_same_thing_to_everybody() {
+        for flavour in [Flavour::Vim, Flavour::Emacs] {
+            assert_eq!(
+                copy_key(&key(KeyCode::Down), flavour),
+                CopyKey::Go(omt_tui::CopyMove::Down)
+            );
+            assert_eq!(copy_key(&key(KeyCode::Esc), flavour), CopyKey::Leave);
+            assert_eq!(copy_key(&key(KeyCode::Enter), flavour), CopyKey::Yank);
+        }
+    }
 }

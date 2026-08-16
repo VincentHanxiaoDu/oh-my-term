@@ -29,6 +29,28 @@ pub struct Copy {
     pub typing: Option<String>,
     /// The last thing searched for, so `n` has something to repeat.
     pub needle: String,
+    /// Whether the last search ran backwards.
+    ///
+    /// Kept so `n` repeats the search that was actually made. A repeat key
+    /// that always went forwards would make a backward search a one-shot.
+    pub backwards: bool,
+    /// Whether the selection takes whole lines.
+    ///
+    /// A flag rather than a second kind of selection: `span` already returns
+    /// an ordered pair, and widening that pair when the text is taken leaves
+    /// every consumer that understands a span working unchanged.
+    pub linewise: bool,
+}
+
+/// Which way a word motion goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Word {
+    /// To the start of the next word.
+    Next,
+    /// To the start of the previous one.
+    Back,
+    /// To the end of this one.
+    End,
 }
 
 /// A direction to move in.
@@ -54,6 +76,13 @@ pub enum Move {
     LineStart,
     /// The end of the line.
     LineEnd,
+    /// The first character that is not a space.
+    FirstNonBlank,
+    /// Half a screen up, which keeps the reader's place in view in a way a
+    /// whole page does not.
+    HalfPageUp,
+    /// Half a screen down.
+    HalfPageDown,
 }
 
 impl Copy {
@@ -72,6 +101,8 @@ impl Copy {
             anchor: None,
             typing: None,
             needle: String::new(),
+            backwards: false,
+            linewise: false,
         }
     }
 
@@ -113,16 +144,26 @@ impl Copy {
         if self.needle.is_empty() {
             return false;
         }
-        let needle = self.needle.to_lowercase();
+        // Smart case: a query typed in lower case matches either, and a
+        // capital in it means that capital. Somebody looking for `error` wants
+        // every spelling of it; somebody who typed `ERROR` typed the capitals
+        // on purpose, and matching anything else walks them through every line
+        // they did not mean.
+        let exact = self.needle.chars().any(char::is_uppercase);
+        let needle = if exact {
+            self.needle.clone()
+        } else {
+            self.needle.to_lowercase()
+        };
         // `FnMut` all the way down: reading a line can be a call to another
         // process, and a signature that promised otherwise would push the lie
         // outward until somebody wrapped a socket in a lock to satisfy it.
         let hit = if forwards {
-            (self.row + 1..total_rows).find(|row| matches(*row, &needle, &mut read))
+            (self.row + 1..total_rows).find(|row| matches(*row, &needle, exact, &mut read))
         } else {
             (0..self.row)
                 .rev()
-                .find(|row| matches(*row, &needle, &mut read))
+                .find(|row| matches(*row, &needle, exact, &mut read))
         };
         let Some(row) = hit else {
             return false;
@@ -130,10 +171,9 @@ impl Copy {
         self.row = row;
         self.col = read(row)
             .and_then(|text| {
-                let lower = text.to_lowercase();
-                lower
-                    .find(&needle)
-                    .map(|byte| u16::try_from(lower[..byte].chars().count()).unwrap_or(0))
+                let hay = if exact { text } else { text.to_lowercase() };
+                hay.find(&needle)
+                    .map(|byte| u16::try_from(hay[..byte].chars().count()).unwrap_or(0))
             })
             .unwrap_or(0);
         self.follow(rows, total_rows);
@@ -158,8 +198,104 @@ impl Copy {
             Move::Bottom => self.row = last,
             Move::LineStart => self.col = 0,
             Move::LineEnd => self.col = cols.saturating_sub(1),
+            Move::HalfPageUp => self.row = self.row.saturating_sub(page.div_ceil(2)),
+            Move::HalfPageDown => self.row = (self.row + page.div_ceil(2)).min(last),
+            // Needs the line's text, which `go` does not have. Handled by
+            // `first_non_blank`, and here so the enum stays one vocabulary.
+            Move::FirstNonBlank => {}
         }
         self.follow(rows, total_rows);
+    }
+
+    /// Move by word.
+    ///
+    /// Takes a reader for the same reason everything else here does: reading a
+    /// line can be a call to another process, and a signature that promised
+    /// otherwise would push the lie outward until somebody wrapped a socket in
+    /// a lock to satisfy it.
+    ///
+    /// A word motion **stops at the end of its line** rather than wrapping. In
+    /// a scrollback the next line is usually unrelated output rather than a
+    /// continuation, so wrapping moves the reader somewhere they were not
+    /// looking.
+    pub fn word(&mut self, towards: Word, mut read: impl FnMut(u64) -> Option<String>) {
+        let Some(text) = read(self.row) else { return };
+        let chars: Vec<char> = text.chars().collect();
+        let at = usize::from(self.col);
+        let is_word = |c: char| !c.is_whitespace();
+        let landed = match towards {
+            Word::Next => {
+                let mut i = at;
+                // Off the current word, then over the space between.
+                while i < chars.len() && is_word(chars[i]) {
+                    i += 1;
+                }
+                while i < chars.len() && !is_word(chars[i]) {
+                    i += 1;
+                }
+                i
+            }
+            Word::Back => {
+                let mut i = at;
+                while i > 0 && !is_word(chars[i - 1]) {
+                    i -= 1;
+                }
+                while i > 0 && is_word(chars[i - 1]) {
+                    i -= 1;
+                }
+                i
+            }
+            Word::End => {
+                let mut i = at.saturating_add(1);
+                while i < chars.len() && !is_word(chars[i]) {
+                    i += 1;
+                }
+                while i + 1 < chars.len() && is_word(chars[i + 1]) {
+                    i += 1;
+                }
+                i.min(chars.len().saturating_sub(1))
+            }
+        };
+        self.col = u16::try_from(landed.min(chars.len().saturating_sub(1))).unwrap_or(self.col);
+    }
+
+    /// To the first character on the line that is not a space.
+    pub fn first_non_blank(&mut self, mut read: impl FnMut(u64) -> Option<String>) {
+        let Some(text) = read(self.row) else { return };
+        let at = text.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
+        self.col = u16::try_from(at).unwrap_or(0);
+    }
+
+    /// To the previous or next prompt.
+    ///
+    /// Takes the rows rather than the blocks: copy mode has no business
+    /// knowing what a block is, and the rows are the only part it can act on —
+    /// they are absolute, which is the coordinate it already moves in.
+    ///
+    /// Which rows count is the **caller's** decision, because that is where
+    /// the block model lives. A block omt never saw a command for has no
+    /// prompt, and jumping to a row omt guessed at would land somewhere
+    /// arbitrary while looking deliberate.
+    ///
+    /// Returns whether it moved, so a caller can say nothing happened rather
+    /// than leave somebody wondering whether the key exists.
+    pub fn to_prompt(
+        &mut self,
+        forwards: bool,
+        prompts: &[u64],
+        rows: u16,
+        total_rows: u64,
+    ) -> bool {
+        let found = if forwards {
+            prompts.iter().copied().find(|row| *row > self.row)
+        } else {
+            prompts.iter().copied().rfind(|row| *row < self.row)
+        };
+        let Some(row) = found else { return false };
+        self.row = row;
+        self.col = 0;
+        self.follow(rows, total_rows);
+        true
     }
 
     /// Keep the viewport around the cursor.
@@ -207,16 +343,34 @@ impl Copy {
         let Some((start, end)) = self.span() else {
             return false;
         };
+        if self.linewise {
+            // Whole rows, so the highlight says what will actually be copied.
+            // A line-wise selection drawn as a span would tell somebody they
+            // are taking less than they are.
+            return row >= start.0 && row <= end.0;
+        }
         (row, col) >= start && (row, col) <= end
     }
 }
 
-/// Whether one row contains the needle, which is already lower-cased.
+/// Whether one row contains the needle.
 ///
-/// Case-insensitive, because somebody searching their own scrollback is
+/// `exact` comes from the query having a capital in it: without one, both
+/// sides are lower-cased, because somebody searching their own scrollback is
 /// looking for a word and not for a spelling of it.
-fn matches(row: u64, needle: &str, read: &mut impl FnMut(u64) -> Option<String>) -> bool {
-    read(row).is_some_and(|text| text.to_lowercase().contains(needle))
+fn matches(
+    row: u64,
+    needle: &str,
+    exact: bool,
+    read: &mut impl FnMut(u64) -> Option<String>,
+) -> bool {
+    read(row).is_some_and(|text| {
+        if exact {
+            text.contains(needle)
+        } else {
+            text.to_lowercase().contains(needle)
+        }
+    })
 }
 
 /// The selected text, given a way to read a line.
@@ -233,6 +387,13 @@ pub fn selected_text(copy: &Copy, mut read: impl FnMut(u64) -> Option<String>) -
     let Some(((from_row, from_col), (to_row, to_col))) = copy.span() else {
         return String::new();
     };
+    // Line-wise widens the span to whole rows here, at the one point the text
+    // is taken, so nothing else has to learn a second shape of selection.
+    let (from_col, to_col) = if copy.linewise {
+        (0, u16::MAX)
+    } else {
+        (from_col, to_col)
+    };
     let mut pieces = Vec::new();
     for row in from_row..=to_row {
         // A row the history no longer holds is dropped, not rendered as a
@@ -248,6 +409,8 @@ pub fn selected_text(copy: &Copy, mut read: impl FnMut(u64) -> Option<String>) -
         } else {
             0
         };
+        // `to_col` is `u16::MAX` for a line-wise selection, so this is the
+        // whole row.
         let end = if row == to_row {
             usize::from(to_col).saturating_add(1).min(chars.len())
         } else {
@@ -453,5 +616,139 @@ mod tests {
         assert_eq!(copy.submit().as_deref(), Some("marker"));
         assert!(copy.typing.is_none(), "the field stayed open");
         assert_eq!(copy.needle, "marker");
+    }
+
+    #[test]
+    fn a_word_motion_reaches_an_argument_without_walking_to_it() {
+        // Reaching one argument in a long command line character by character
+        // is not reading, it is typing.
+        let line = |_row: u64| Some("cargo test --workspace".to_owned());
+        let mut copy = Copy::entering(1, 10);
+        copy.col = 0;
+        copy.word(Word::Next, line);
+        assert_eq!(copy.col, 6, "the start of `test`");
+        copy.word(Word::Next, line);
+        assert_eq!(copy.col, 11, "the start of `--workspace`");
+        copy.word(Word::Back, line);
+        assert_eq!(copy.col, 6);
+        copy.word(Word::End, line);
+        assert_eq!(copy.col, 9, "the end of `test`");
+    }
+
+    #[test]
+    fn a_word_motion_stops_at_the_end_of_its_line() {
+        // In a scrollback the next line is usually unrelated output rather
+        // than a continuation, so wrapping moves the reader somewhere they
+        // were not looking.
+        let line = |_row: u64| Some("one two".to_owned());
+        let mut copy = Copy::entering(10, 5);
+        copy.col = 4;
+        copy.word(Word::Next, line);
+        assert_eq!(copy.col, 6, "the last word, not the next line");
+        let before = copy.row;
+        copy.word(Word::Next, line);
+        assert_eq!(copy.row, before);
+    }
+
+    #[test]
+    fn the_first_thing_on_the_line_is_not_the_first_column() {
+        let mut copy = Copy::entering(1, 5);
+        copy.col = 9;
+        copy.first_non_blank(|_| Some("    indented".to_owned()));
+        assert_eq!(copy.col, 4);
+    }
+
+    #[test]
+    fn half_a_page_keeps_the_readers_place_in_view() {
+        let mut copy = Copy::entering(100, 10);
+        copy.row = 50;
+        copy.go(Move::HalfPageUp, 100, 10, 80);
+        assert_eq!(copy.row, 45);
+        copy.go(Move::HalfPageDown, 100, 10, 80);
+        assert_eq!(copy.row, 50);
+    }
+
+    #[test]
+    fn a_line_wise_selection_takes_whole_rows() {
+        // What somebody copies out of a scrollback is a command or a line of
+        // output far more often than it is a span within one.
+        let lines = ["first line", "second line", "third line"];
+        let read = |row: u64| lines.get(row as usize).map(|s| (*s).to_owned());
+        let mut copy = Copy::entering(3, 3);
+        copy.row = 0;
+        copy.col = 4;
+        copy.linewise = true;
+        copy.mark();
+        copy.row = 1;
+        copy.col = 2;
+        assert_eq!(selected_text(&copy, read), "first line\nsecond line");
+        // And the highlight says the same thing the copy will.
+        assert!(copy.selected(0, 0) && copy.selected(1, 9));
+    }
+
+    #[test]
+    fn a_line_wise_selection_of_one_row_is_that_row() {
+        let read = |_row: u64| Some("the whole line".to_owned());
+        let mut copy = Copy::entering(1, 3);
+        copy.col = 5;
+        copy.linewise = true;
+        copy.mark();
+        assert_eq!(selected_text(&copy, read), "the whole line");
+    }
+
+    #[test]
+    fn a_search_without_capitals_matches_either_case() {
+        let lines = ["nothing here", "an ERROR happened"];
+        let read = |row: u64| lines.get(row as usize).map(|s| (*s).to_owned());
+        let mut copy = Copy::entering(2, 2);
+        copy.row = 0;
+        copy.needle = "error".to_owned();
+        assert!(copy.jump(true, 2, 2, read));
+        assert_eq!(copy.row, 1);
+    }
+
+    #[test]
+    fn a_search_with_a_capital_means_that_capital() {
+        // Somebody who typed the capitals typed them on purpose, and matching
+        // anything else walks them through every line they did not mean.
+        let lines = ["an error happened", "an ERROR happened"];
+        let read = |row: u64| lines.get(row as usize).map(|s| (*s).to_owned());
+        let mut copy = Copy::entering(2, 2);
+        copy.row = 0;
+        copy.needle = "ERROR".to_owned();
+        assert!(copy.jump(true, 2, 2, read));
+        assert_eq!(copy.row, 1, "the lower-case line is not a match");
+    }
+
+    #[test]
+    fn jumping_between_prompts_is_what_a_scrollback_is_for() {
+        // And it is the one thing here that needs the shell to have said where
+        // its prompts are, which is why nothing without a block model can do
+        // it at all.
+        let prompts = [3u64, 40, 91];
+        let mut copy = Copy::entering(120, 10);
+        copy.row = 50;
+        assert!(copy.to_prompt(false, &prompts, 10, 120));
+        assert_eq!(copy.row, 40, "the prompt of the command above");
+        assert!(copy.to_prompt(true, &prompts, 10, 120));
+        assert_eq!(copy.row, 91);
+    }
+
+    #[test]
+    fn there_is_nothing_before_the_first_prompt() {
+        let prompts = [3u64];
+        let mut copy = Copy::entering(120, 10);
+        copy.row = 3;
+        assert!(!copy.to_prompt(false, &prompts, 10, 120));
+        assert_eq!(copy.row, 3, "it did not move somewhere arbitrary");
+    }
+
+    #[test]
+    fn a_shell_with_no_integration_has_no_prompts_to_jump_to() {
+        let mut copy = Copy::entering(120, 10);
+        copy.row = 50;
+        assert!(!copy.to_prompt(false, &[], 10, 120));
+        assert!(!copy.to_prompt(true, &[], 10, 120));
+        assert_eq!(copy.row, 50);
     }
 }

@@ -1832,9 +1832,44 @@ arbitrary loses the reader's place and gives them no way to tell that is what
 happened. An empty query is dropped rather than run — it matches every position
 on every line, which is a jump to where the cursor already was.
 
-Not built, and named here rather than left to be discovered: named registers
-and the emacs motion set. Their bindings are specified above
-and the honest state of each is "specified".
+Since then, the rest of the motions and the second keymap:
+
+| Key | Does |
+|---|---|
+| `w` / `b` / `e` | By word, which is how somebody reaching for one argument in a long command line gets to it |
+| `^` | The first thing on the line that is not a space |
+| `⌃d` / `⌃u` | Half a page, which keeps the reader's place in view in a way a whole page does not |
+| `V` | Select whole lines. A copied command is a whole line far more often than it is a span |
+| `?` | Search backwards, and `n` / `N` follow whichever direction the search was made in |
+| `[` / `]` | **To the previous or next prompt** |
+
+**Search is smart about case**: a query typed in lower case matches either,
+and a query with a capital in it means that capital. Somebody looking for
+`error` wants every spelling of it; somebody who typed `ERROR` typed the
+capitals on purpose.
+
+**`[` and `]` are the ones no other terminal multiplexer can offer.** Jumping
+to the previous prompt means knowing where prompts are, which means the shell
+having said so — omt already models exactly that, with each block carrying the
+absolute row its prompt began on, in the same coordinates copy mode moves in.
+Scrolling back through a thousand lines to find where the last command started
+is the thing a scrollback is actually used for.
+
+A block opened from output alone is skipped: it has no prompt, and jumping to a
+row omt guessed at would land somewhere arbitrary while looking deliberate.
+
+**The `keymap` setting is finally read.** `keymap = "emacs"` gives copy mode
+the emacs motion set — `⌃n` `⌃p` `⌃f` `⌃b`, `⌃a` `⌃e`, `⌃v` / `⌥v`, `⌃s` / `⌃r`
+to search forwards and back, `⌃Space` to mark and `⌥w` to copy. It was
+documented in the configuration reference, parsed into the binding file, and
+read by nothing — which is a setting somebody can set, and watch do nothing.
+
+Named registers stay unbuilt, and now say why rather than sitting on a list.
+Neither comparable product has them in a scrollback copy mode at all — one has
+no copy mode, the other has no registers — and the one register set that does
+exist belongs to an editor's vim mode, not to scrollback. omt's copy goes to
+the system clipboard over OSC 52 because that is what survives ssh; a second
+clipboard that only omt can paste from is a place to lose text in.
 
 
 ### 6.9 Parity: the web client and mobile

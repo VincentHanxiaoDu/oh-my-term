@@ -252,6 +252,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // opened 125 times a second for an answer that changes at most when
     // somebody edits it.
     let when = omt_notify::When::parse(&setting(&state, "notifications.when"));
+    // The setting the configuration reference has documented and nothing has
+    // ever read. Read once: a keymap does not change under somebody's fingers
+    // mid-session, and re-reading it per keystroke would put a config lookup
+    // in the input path.
+    let keymap = crate::terminal_bits::Flavour::named(&setting(&state, "keymap"));
     let notify_env = omt_notify::Environment::from_process();
     let sounds = omt_notify::sound::Sounds {
         needs_you: sound_file(&state, "notifications.sound.needs_you"),
@@ -1063,6 +1068,25 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         rows: 0,
                     });
                     let session = panes.get(focus).map(|pane| pane.session);
+                    // Where the shell said its prompts are. Owned rather than
+                    // borrowed, because the attached branch below needs the
+                    // instance back — and filtered here, where `attributed`
+                    // means something: a block opened from output alone has no
+                    // prompt, and jumping to a row omt guessed at would land
+                    // somewhere arbitrary while looking deliberate.
+                    let prompts: Vec<u64> = {
+                        let seam = backing(&mut instance, &mut attached);
+                        session
+                            .and_then(|id| seam.terminal(id))
+                            .map(|t| {
+                                t.blocks()
+                                    .iter()
+                                    .filter(|block| block.attributed)
+                                    .map(|block| block.prompt_row)
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    };
                     // How far the history goes, and how to read a line of it.
                     // Attached, both come from the instance: a mirror starts
                     // counting rows at the moment this terminal attached, and
@@ -1072,18 +1096,32 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         let total = crate::backing::history(joined, id, 0, 1)
                             .map(|(_, total)| total)
                             .unwrap_or_default();
-                        crate::terminal_bits::reading_key(key, reading, rect, total, &mut |row| {
-                            crate::backing::history_line(joined, id, row)
-                        })
+                        crate::terminal_bits::reading_key(
+                            key,
+                            reading,
+                            rect,
+                            total,
+                            keymap,
+                            &prompts,
+                            &mut |row| crate::backing::history_line(joined, id, row),
+                        )
                     } else {
                         let seam = backing(&mut instance, &mut attached);
                         let terminal = session.and_then(|id| seam.terminal(id));
                         let total = terminal.map_or(0, omt_term::Terminal::total_rows);
-                        crate::terminal_bits::reading_key(key, reading, rect, total, &mut |row| {
-                            terminal
-                                .and_then(|t| t.line_at(row))
-                                .map(omt_term::Line::text)
-                        })
+                        crate::terminal_bits::reading_key(
+                            key,
+                            reading,
+                            rect,
+                            total,
+                            keymap,
+                            &prompts,
+                            &mut |row| {
+                                terminal
+                                    .and_then(|t| t.line_at(row))
+                                    .map(omt_term::Line::text)
+                            },
+                        )
                     };
                     match outcome {
                         crate::terminal_bits::Reading::Yank => {
