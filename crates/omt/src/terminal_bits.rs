@@ -160,13 +160,12 @@ pub(crate) fn copy_key(key: &crossterm::event::KeyEvent) -> CopyKey {
 ///
 /// Reverse video for the selection: it is the one highlight every terminal
 /// has, in every theme, including the ones with no colour at all.
-pub(crate) fn draw_history(
-    out: &mut impl Write,
+pub(crate) fn history_rows(
     reading: &omt_tui::CopyMode,
     rect: omt_tui::Rect,
     terminal: Option<&omt_term::Terminal>,
-) -> io::Result<()> {
-    let lines: Vec<(u64, String)> = terminal.map_or_else(Vec::new, |terminal| {
+) -> Vec<(u64, String)> {
+    terminal.map_or_else(Vec::new, |terminal| {
         (0..rect.rows)
             .map(|offset| {
                 let row = reading.top + u64::from(offset);
@@ -179,7 +178,20 @@ pub(crate) fn draw_history(
                 )
             })
             .collect()
-    });
+    })
+}
+
+/// Paint a pane's history, with the selection marked and the way out shown.
+///
+/// Takes the rows rather than the terminal: whichever side of the seam owns
+/// that terminal, the borrow ends before the frame is written — and a
+/// renderer that takes text is one a test can drive without a pty.
+pub(crate) fn draw_history(
+    out: &mut impl Write,
+    reading: &omt_tui::CopyMode,
+    rect: omt_tui::Rect,
+    lines: &[(u64, String)],
+) -> io::Result<()> {
     for (offset, (row, text)) in lines.iter().enumerate() {
         let screen_row = rect.row + crate::run::CHROME_ROWS + offset as u16 + 1;
         write!(out, "\x1b[{screen_row};{}H\x1b[K", rect.col + 1)?;
@@ -204,13 +216,20 @@ pub(crate) fn draw_history(
     write!(out, "\x1b[{hint_row};{}H\x1b[7m{hint}\x1b[0m", rect.col + 1)
 }
 
-/// Whether copy mode should stay open after a key.
+/// What one key in copy mode asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Reading {
     /// Still reading.
     Stay,
     /// Done — the pane comes back.
     Leave,
+    /// Copy what is selected, then leave.
+    ///
+    /// Returned rather than done here, because *where the lines come from* is
+    /// the caller's question: a terminal that owns its session reads its own
+    /// emulator, and one watching an instance asks for the span in a single
+    /// call rather than a round trip per line.
+    Yank,
 }
 
 /// One key, while somebody is reading history rather than typing into a pane.
@@ -218,22 +237,21 @@ pub(crate) enum Reading {
 /// Every key belongs to this mode, like an overlay and for the same reason:
 /// somebody is reading, and a keystroke that reached the shell would type into
 /// a program nobody is looking at.
+///
+/// Takes how many rows there are and a way to read one, rather than a
+/// terminal: the history a reader moves through lives on whichever side of the
+/// seam owns the session.
 pub(crate) fn reading_key(
     key: &crossterm::event::KeyEvent,
     reading: &mut omt_tui::CopyMode,
     rect: omt_tui::Rect,
-    terminal: Option<&omt_term::Terminal>,
+    total: u64,
+    line: &mut dyn FnMut(u64) -> Option<String>,
 ) -> Reading {
     use crossterm::event::KeyCode;
 
     let rows = rect.rows.max(1);
     let cols = if rect.cols == 0 { 80 } else { rect.cols };
-    let total = terminal.map_or(0, omt_term::Terminal::total_rows);
-    let line = |row: u64| {
-        terminal
-            .and_then(|t| t.line_at(row))
-            .map(omt_term::Line::text)
-    };
 
     // While the search field is open every key is text, apart from the ones
     // that close it. Checked first, because otherwise typing `y` into a search
@@ -262,35 +280,38 @@ pub(crate) fn reading_key(
         CopyKey::Repeat(forwards) => {
             reading.jump(forwards, total, rows, line);
         }
-        CopyKey::Yank => {
-            let text = omt_tui::selected_text(reading, line);
-            // Through the terminal omt is drawing on, which is the only
-            // clipboard reachable from the far end of an ssh link — where
-            // these sessions actually run.
-            if !text.is_empty()
-                && let Ok(sequence) = omt_media::clipboard::osc52(
-                    &text,
-                    &std::env::var("TERM").unwrap_or_default(),
-                    omt_media::clipboard::DEFAULT_MAX_BYTES,
-                )
-            {
-                let mut stdout = io::stdout();
-                let _ = stdout.write_all(sequence.as_bytes());
-                let _ = stdout.flush();
-            }
-            return Reading::Leave;
-        }
+        CopyKey::Yank => return Reading::Yank,
         CopyKey::Leave => return Reading::Leave,
         CopyKey::Ignore => {}
     }
     Reading::Stay
 }
 
+/// Put a selection on the clipboard.
+///
+/// Through the terminal omt is drawing on, which is the only clipboard
+/// reachable from the far end of an ssh link — where these sessions actually
+/// run.
+pub(crate) fn yank(reading: &omt_tui::CopyMode, line: &mut dyn FnMut(u64) -> Option<String>) {
+    let text = omt_tui::selected_text(reading, line);
+    if text.is_empty() {
+        return;
+    }
+    if let Ok(sequence) = omt_media::clipboard::osc52(
+        &text,
+        &std::env::var("TERM").unwrap_or_default(),
+        omt_media::clipboard::DEFAULT_MAX_BYTES,
+    ) {
+        let mut stdout = io::stdout();
+        let _ = stdout.write_all(sequence.as_bytes());
+        let _ = stdout.flush();
+    }
+}
+
 /// What is still running, as rows somebody reads before ending it.
 ///
-/// Every pane with a live session, with what its agent is doing where omt
-/// knows. Ordered by what needs a person first, for the same reason the agent
-/// list is: the row that changes somebody's mind is the one at the top.
+/// Ordered by what needs a person first, for the same reason the agent list
+/// is: the row that changes somebody's mind is the one at the top.
 pub(crate) fn still_working(watched: &[crate::rows::Watched]) -> Vec<omt_tui::Choice> {
     let mut rows: Vec<(u8, omt_tui::Choice)> = Vec::new();
     for session in watched {

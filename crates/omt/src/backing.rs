@@ -414,6 +414,80 @@ pub(crate) fn split_session(
     open_session(attached, &workspace, None, cols, rows)
 }
 
+/// An agent's conversation, from the instance that holds it.
+///
+/// The transcript lives where the hooks report, which attached is the
+/// instance — so the terminal asks rather than reads. Entries only: the cards
+/// waiting for a person come from the ledger, and asking for both here would
+/// make one call answer two questions.
+///
+/// # Errors
+/// Fails if the instance refuses or has gone.
+pub(crate) fn transcript(attached: &mut Attached, id: SessionId) -> Result<Vec<serde_json::Value>> {
+    let answer = attached.client.call(
+        "session.transcript",
+        serde_json::json!({ "session": id.to_wire() }),
+        false,
+    )?;
+    Ok(answer["entries"].as_array().cloned().unwrap_or_default())
+}
+
+/// A window of a session's history, from the instance that kept it.
+///
+/// A mirror holds only what has streamed since this terminal attached, and its
+/// row numbers start there — so blending the two would put a reader at a
+/// different line than the one they are looking at. Attached, history comes
+/// from one place: the instance, whose row numbers count from the session's
+/// first line.
+///
+/// # Errors
+/// Fails if the instance refuses or has gone.
+pub(crate) fn history(
+    attached: &mut Attached,
+    id: SessionId,
+    from: u64,
+    lines: u32,
+) -> Result<(Vec<String>, u64)> {
+    let answer = attached.client.call(
+        "session.scrollback",
+        serde_json::json!({ "session": id.to_wire(), "from": from, "lines": lines }),
+        false,
+    )?;
+    let rows = answer["lines"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|runs| {
+                    // Styled runs on the wire, text here: copy mode selects
+                    // characters, and how they are painted is the renderer's
+                    // question rather than the selection's.
+                    runs.as_array()
+                        .map(|parts| {
+                            parts
+                                .iter()
+                                .filter_map(|run| run["text"].as_str())
+                                .collect::<String>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((rows, answer["total"].as_u64().unwrap_or(0)))
+}
+
+/// One line of a session's history, from the instance.
+///
+/// A call per line, which is right for what uses it: a search steps row by row
+/// and stops at the first match, so fetching a window ahead would be work
+/// thrown away most of the time. A yank, which wants a whole span, asks for it
+/// in one call instead.
+pub(crate) fn history_line(attached: &mut Attached, id: SessionId, row: u64) -> Option<String> {
+    history(attached, id, row, 1)
+        .ok()
+        .and_then(|(rows, _)| rows.into_iter().next())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

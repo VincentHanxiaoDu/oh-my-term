@@ -175,6 +175,16 @@ impl Screen {
                 // every local test in this file try to attach.
                 ("XDG_RUNTIME_DIR".to_owned(), runtime_var.clone()),
                 ("OMT_ATTACH".to_owned(), attach_var.clone()),
+                // Where a client writes a call that never answered. A terminal
+                // that has frozen and one whose instance stopped replying look
+                // identical on screen, and the screen is the one thing that
+                // cannot say which.
+                (
+                    "OMT_CLIENT_LOG".to_owned(),
+                    runtime
+                        .map(|r| r.join("client.log").display().to_string())
+                        .unwrap_or_default(),
+                ),
                 // Both are empty when this screen owns its sessions, and both
                 // are stripped below in that case — a variable set to nothing
                 // is still set, which is the distinction that broke a dozen
@@ -1658,5 +1668,45 @@ fn attached_quitting_asks_nothing_because_it_ends_nothing() {
         !s.screen().contains("ends when omt does"),
         "it asked about ending sessions it does not end:\n{}",
         s.screen()
+    );
+}
+
+#[test]
+fn attached_copy_mode_reaches_history_the_terminal_never_saw() {
+    let _serial = serially();
+    // The mirror holds only what has streamed since this terminal attached,
+    // and its rows are numbered from *there*. History has to come from the
+    // instance, whose numbering starts at the session's first line — blending
+    // the two would put a reader on a different line than the one they see.
+    let runtime = instance_dir("attached-copy");
+    let _cleanup = Instance(runtime.clone());
+    let mut first = Screen::start_attached_in(&runtime);
+    first.settle(3.0);
+    first.type_in("seq -f older-%g 1 60\n");
+    first.settle_until(20.0, |s| s.screen().contains("older-60"));
+    drop(first);
+
+    // A terminal that was not there when any of that was printed.
+    let mut second = Screen::start_attached_in(&runtime);
+    second.settle_until(20.0, |s| s.screen().contains("older-"));
+    assert!(
+        second.screen().contains("older-"),
+        "the second terminal saw nothing of the session at all:\n{}",
+        second.screen()
+    );
+    second.type_in("\x02["); // leader, copy mode
+    second.settle(0.5);
+    second.settle(1.5);
+    assert!(
+        second.screen().contains("copy:") || second.screen().contains("search:"),
+        "copy mode never drew at all:\n{}",
+        second.screen()
+    );
+    second.type_in("g"); // to the very top
+    second.settle_until(20.0, |s| s.screen().contains("older-1"));
+    assert!(
+        second.screen().contains("older-1"),
+        "history the terminal never saw was unreachable:\n{}",
+        second.screen()
     );
 }

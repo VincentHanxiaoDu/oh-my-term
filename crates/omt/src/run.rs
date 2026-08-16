@@ -619,6 +619,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 "Conversation" => {
                     open.set_choices(conversation_of(
                         &instance,
+                        &mut attached,
                         &state,
                         panes[focus].session,
                         term_cols,
@@ -647,11 +648,36 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // those cells and is still drawing live output into them — cannot
         // paint over what somebody is reading.
         if let (Some(reading), Some(rect)) = (copying.as_ref(), rects.get(focus)) {
-            let terminal = panes
-                .get(focus)
-                .and_then(|pane| instance.runtime(pane.session))
-                .map(omt_daemon::SessionRuntime::terminal);
-            crate::terminal_bits::draw_history(&mut out, reading, *rect, terminal)
+            // The rows first, while the borrow is short: the terminal belongs
+            // to whichever side of the seam owns the session, and the frame is
+            // about to write.
+            let session = panes.get(focus).map(|pane| pane.session);
+            let lines = if let (Some(joined), Some(id)) = (attached.as_mut(), session) {
+                // From the instance, whose row numbers count from the
+                // session's first line. A mirror starts counting at the moment
+                // this terminal attached and holds nothing before it, so
+                // reading history from it shows a screen of blanks — which is
+                // exactly what it did, with no error anywhere to say so.
+                match crate::backing::history(joined, id, reading.top, u32::from(rect.rows)) {
+                    Ok((rows, _)) => rows
+                        .into_iter()
+                        .enumerate()
+                        .map(|(offset, text)| (reading.top + offset as u64, text))
+                        .collect::<Vec<_>>(),
+                    // Said rather than drawn as emptiness: a blank history and
+                    // a history omt could not fetch are different answers, and
+                    // only one of them is a bug.
+                    Err(e) => vec![(reading.top, format!("history unavailable: {e}"))],
+                }
+            } else {
+                // The rows while the borrow is short: the terminal belongs to
+                // whichever side of the seam owns the session, and the frame
+                // is about to write.
+                let seam = backing(&mut instance, &mut attached);
+                let terminal = session.and_then(|id| seam.terminal(id));
+                crate::terminal_bits::history_rows(reading, *rect, terminal)
+            };
+            crate::terminal_bits::draw_history(&mut out, reading, *rect, &lines)
                 .context("drawing history")?;
         }
 
@@ -837,23 +863,66 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 && !armed
             {
                 if let crossterm::event::Event::Key(key) = &event {
-                    let terminal = panes
-                        .get(focus)
-                        .and_then(|p| instance.runtime(p.session))
-                        .map(omt_daemon::SessionRuntime::terminal);
-                    if crate::terminal_bits::reading_key(
-                        key,
-                        reading,
-                        rects.get(focus).copied().unwrap_or(omt_tui::Rect {
-                            col: 0,
-                            row: 0,
-                            cols: 0,
-                            rows: 0,
-                        }),
-                        terminal,
-                    ) == crate::terminal_bits::Reading::Leave
-                    {
-                        copying = None;
+                    let rect = rects.get(focus).copied().unwrap_or(omt_tui::Rect {
+                        col: 0,
+                        row: 0,
+                        cols: 0,
+                        rows: 0,
+                    });
+                    let session = panes.get(focus).map(|pane| pane.session);
+                    // How far the history goes, and how to read a line of it.
+                    // Attached, both come from the instance: a mirror starts
+                    // counting rows at the moment this terminal attached, and
+                    // a reader blending the two would be shown a line other
+                    // than the one they are on.
+                    let outcome = if let (Some(joined), Some(id)) = (attached.as_mut(), session) {
+                        let total = crate::backing::history(joined, id, 0, 1)
+                            .map(|(_, total)| total)
+                            .unwrap_or_default();
+                        crate::terminal_bits::reading_key(key, reading, rect, total, &mut |row| {
+                            crate::backing::history_line(joined, id, row)
+                        })
+                    } else {
+                        let seam = backing(&mut instance, &mut attached);
+                        let terminal = session.and_then(|id| seam.terminal(id));
+                        let total = terminal.map_or(0, omt_term::Terminal::total_rows);
+                        crate::terminal_bits::reading_key(key, reading, rect, total, &mut |row| {
+                            terminal
+                                .and_then(|t| t.line_at(row))
+                                .map(omt_term::Line::text)
+                        })
+                    };
+                    match outcome {
+                        crate::terminal_bits::Reading::Yank => {
+                            if let (Some(joined), Some(id)) = (attached.as_mut(), session) {
+                                let span = reading.span().map(|(from, to)| (from.0, to.0));
+                                let rows = span
+                                    .and_then(|(from, to)| {
+                                        let count =
+                                            u32::try_from(to.saturating_sub(from) + 1).ok()?;
+                                        crate::backing::history(joined, id, from, count).ok()
+                                    })
+                                    .map(|(rows, _)| rows)
+                                    .unwrap_or_default();
+                                let base = span.map_or(0, |(from, _)| from);
+                                crate::terminal_bits::yank(reading, &mut |row| {
+                                    usize::try_from(row.checked_sub(base)?)
+                                        .ok()
+                                        .and_then(|i| rows.get(i).cloned())
+                                });
+                            } else {
+                                let seam = backing(&mut instance, &mut attached);
+                                let terminal = session.and_then(|id| seam.terminal(id));
+                                crate::terminal_bits::yank(reading, &mut |row| {
+                                    terminal
+                                        .and_then(|t| t.line_at(row))
+                                        .map(omt_term::Line::text)
+                                });
+                            }
+                            copying = None;
+                        }
+                        crate::terminal_bits::Reading::Leave => copying = None,
+                        crate::terminal_bits::Reading::Stay => {}
                     }
                 }
                 layout_dirty = true;
@@ -911,10 +980,20 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     layout_dirty = true;
                 }
                 Input::CopyMode => {
-                    let total = panes
-                        .get(focus)
-                        .and_then(|p| instance.runtime(p.session))
-                        .map_or(0, |rt| rt.terminal().total_rows());
+                    // How much history there is, from whichever side owns it.
+                    // Asking the local instance while attached answered zero,
+                    // and a reader entering at row zero of nothing sees a
+                    // blank screen rather than the end of their session.
+                    let session = panes.get(focus).map(|p| p.session);
+                    let total = if let (Some(joined), Some(id)) = (attached.as_mut(), session) {
+                        crate::backing::history(joined, id, 0, 1)
+                            .map(|(_, total)| total)
+                            .unwrap_or_default()
+                    } else {
+                        session
+                            .and_then(|id| instance.runtime(id))
+                            .map_or(0, |rt| rt.terminal().total_rows())
+                    };
                     let rows = rects.get(focus).map_or(1, |r| r.rows);
                     copying = Some(omt_tui::CopyMode::entering(total, rows));
                     layout_dirty = true;
@@ -922,7 +1001,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 Input::Conversation => {
                     overlay = Some(omt_tui::Overlay::new(
                         "Conversation",
-                        conversation_of(&instance, &state, panes[focus].session, term_cols),
+                        conversation_of(
+                            &instance,
+                            &mut attached,
+                            &state,
+                            panes[focus].session,
+                            term_cols,
+                        ),
                     ));
                     layout_dirty = true;
                 }

@@ -452,3 +452,26 @@ fn a_session_created_through_an_instance_outlives_the_client_that_made_it() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_subscriber_can_ask_for_history_while_output_streams() {
+    // What copy mode does in an attached terminal: it asks the instance for
+    // lines it never saw, on the same connection its screen is arriving on.
+    let dir = temp_dir("stream-history");
+    let (_state, session, socket) = serving(&dir, "seq -f older-%g 1 40; sleep 30");
+    let mut client = omt::client::Client::connect(&socket).expect("connect");
+    client.subscribe(vec![session]).expect("subscribe");
+    std::thread::sleep(Duration::from_millis(800));
+
+    let answer = client
+        .call(
+            "session.scrollback",
+            serde_json::json!({ "session": session.to_wire(), "from": 0, "lines": 5 }),
+            false,
+        )
+        .expect("the instance answered nothing");
+    let lines = answer["lines"].as_array().expect("lines").len();
+    assert!(lines > 0, "no history came back: {answer}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

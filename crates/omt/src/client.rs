@@ -167,6 +167,21 @@ impl Client {
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
+        // Written where a test can read it: a call that never answers looks,
+        // from a terminal, exactly like a terminal that has frozen — and the
+        // screen it drew is the one thing that cannot say why.
+        if let Ok(path) = std::env::var("OMT_CLIENT_LOG")
+            && !path.is_empty()
+        {
+            use std::io::Write as _;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                let _ = writeln!(file, "timed out: {capability}");
+            }
+        }
         Err(ClientError::Refused(format!("{capability} never answered")))
     }
 

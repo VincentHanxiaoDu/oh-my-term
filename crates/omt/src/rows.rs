@@ -484,6 +484,55 @@ fn question_of(interaction: &omt_events::Interaction) -> Option<omt_tui::Said> {
     })
 }
 
+/// The conversation, from what the instance sent rather than from omt's own
+/// types.
+///
+/// Deliberately structural rather than typed: the wire shape is the
+/// capability's, a client one version older or newer will meet a kind it does
+/// not know, and refusing to draw the rest of somebody's conversation over one
+/// unfamiliar entry would be worse than saying what it can.
+fn remote_conversation_rows(entries: &[serde_json::Value], cols: u16) -> Vec<omt_tui::Choice> {
+    let said: Vec<omt_tui::Said> = entries
+        .iter()
+        .map(|entry| {
+            let kind = entry["kind"].as_str().unwrap_or_default();
+            let who = match kind {
+                "user" => {
+                    if entry["synthetic"].as_bool().unwrap_or(false) {
+                        omt_tui::Who::Onward
+                    } else {
+                        omt_tui::Who::You
+                    }
+                }
+                "assistant" | "plan" => omt_tui::Who::Agent,
+                "reasoning" => omt_tui::Who::Thinking,
+                "tool_call" | "tool_result" => omt_tui::Who::Tool,
+                "file_changed" => omt_tui::Who::File,
+                _ => omt_tui::Who::Other,
+            };
+            let text = entry["text"]
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| entry["name"].as_str().map(str::to_owned))
+                .or_else(|| entry["path"].as_str().map(str::to_owned))
+                .unwrap_or_else(|| kind.to_owned());
+            omt_tui::Said { who, text }
+        })
+        .collect();
+    if said.is_empty() {
+        return conversation_rows(&[], &[], cols);
+    }
+    omt_tui::conversation_lines(&said, cols)
+        .into_iter()
+        .map(|line| omt_tui::Choice {
+            label: line,
+            detail: String::new(),
+            chord: None,
+            mark: None,
+        })
+        .collect()
+}
+
 /// One transcript entry, as a line somebody reads.
 fn said_of(entry: &crate::transcript::Entry) -> omt_tui::Said {
     use crate::transcript::Entry;
@@ -563,10 +612,19 @@ fn one_line(input: &serde_json::Value) -> String {
 /// blank overlay reads as a conversation omt lost.
 pub(crate) fn conversation_of(
     instance: &Instance,
+    attached: &mut Option<crate::backing::Attached>,
     state: &crate::state::State,
     session: omt_types::SessionId,
     cols: u16,
 ) -> Vec<omt_tui::Choice> {
+    // Attached, the transcript lives where the hooks report — the instance —
+    // so it is asked for rather than read. A terminal that read its own empty
+    // copy would say "nothing said yet" about an agent mid-conversation, which
+    // is the most confident way to be wrong.
+    if let Some(joined) = attached.as_mut() {
+        let entries = crate::backing::transcript(joined, session).unwrap_or_default();
+        return remote_conversation_rows(&entries, cols);
+    }
     // Read from the instance the caller already holds, never locked again
     // here: the frame loop holds that guard for the whole iteration, and a
     // second acquisition on the same thread is a deadlock rather than a wait —

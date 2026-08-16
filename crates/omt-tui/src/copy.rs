@@ -108,18 +108,21 @@ impl Copy {
         forwards: bool,
         total_rows: u64,
         rows: u16,
-        read: impl Fn(u64) -> Option<String>,
+        mut read: impl FnMut(u64) -> Option<String>,
     ) -> bool {
         if self.needle.is_empty() {
             return false;
         }
         let needle = self.needle.to_lowercase();
+        // `FnMut` all the way down: reading a line can be a call to another
+        // process, and a signature that promised otherwise would push the lie
+        // outward until somebody wrapped a socket in a lock to satisfy it.
         let hit = if forwards {
-            (self.row + 1..total_rows).find(|row| matches(*row, &needle, &read))
+            (self.row + 1..total_rows).find(|row| matches(*row, &needle, &mut read))
         } else {
             (0..self.row)
                 .rev()
-                .find(|row| matches(*row, &needle, &read))
+                .find(|row| matches(*row, &needle, &mut read))
         };
         let Some(row) = hit else {
             return false;
@@ -212,7 +215,7 @@ impl Copy {
 ///
 /// Case-insensitive, because somebody searching their own scrollback is
 /// looking for a word and not for a spelling of it.
-fn matches(row: u64, needle: &str, read: &impl Fn(u64) -> Option<String>) -> bool {
+fn matches(row: u64, needle: &str, read: &mut impl FnMut(u64) -> Option<String>) -> bool {
     read(row).is_some_and(|text| text.to_lowercase().contains(needle))
 }
 
@@ -226,7 +229,7 @@ fn matches(row: u64, needle: &str, read: &impl Fn(u64) -> Option<String>) -> boo
 /// width, so an untrimmed copy carries hundreds of spaces that were never
 /// typed — and they reappear when it is pasted somewhere that keeps them.
 #[must_use]
-pub fn selected_text(copy: &Copy, read: impl Fn(u64) -> Option<String>) -> String {
+pub fn selected_text(copy: &Copy, mut read: impl FnMut(u64) -> Option<String>) -> String {
     let Some(((from_row, from_col), (to_row, to_col))) = copy.span() else {
         return String::new();
     };
