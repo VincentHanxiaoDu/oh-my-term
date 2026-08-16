@@ -419,6 +419,56 @@ mod tests {
     }
 }
 
+/// The state's own name, as it travels.
+///
+/// Not one of the words above: those are for a person reading a bar, and they
+/// carry a judgement — "waiting on you", "done" — that only makes sense beside
+/// whether *this* person has looked. What crosses a wire is the state itself,
+/// so that a surface receiving it can apply its own words with its own idea of
+/// who is watching.
+///
+/// The two directions live together deliberately. They were apart once, in two
+/// crates, and drifted: one said "blocked" where the other said "waiting on
+/// you", in the same product, about the same session, and a person found it
+/// rather than a test.
+#[must_use]
+pub fn word_of(state: &omt_types::AgentState) -> &'static str {
+    match state {
+        omt_types::AgentState::Starting => "starting",
+        omt_types::AgentState::Idle => "idle",
+        omt_types::AgentState::Working { .. } => "working",
+        omt_types::AgentState::Blocked { .. } => "blocked",
+        omt_types::AgentState::Exited { .. } => "exited",
+        omt_types::AgentState::Unknown => "unknown",
+    }
+}
+
+/// A state from the name it travelled under.
+///
+/// Lossy on purpose, and the loss is stated rather than hidden: a `Blocked`
+/// rebuilt here has no reason and no interaction, because the wire carried
+/// none. A surface that needs those asks for the card; a surface that only
+/// needs to say "this one is waiting on you" has everything it needs.
+///
+/// An unrecognised word reads as `Unknown` rather than as idle. An instance
+/// newer than this client will one day send a state this build has never heard
+/// of, and rendering that as "nothing to do here" would be the one wrong
+/// answer — `Unknown` is what omt says when omt does not know.
+#[must_use]
+pub fn state_from_word(word: &str) -> omt_types::AgentState {
+    match word.trim() {
+        "starting" => omt_types::AgentState::Starting,
+        "idle" => omt_types::AgentState::Idle,
+        "working" => omt_types::AgentState::Working { detail: None },
+        "blocked" => omt_types::AgentState::Blocked {
+            reason: omt_types::BlockReason::Unspecified,
+            interaction: None,
+        },
+        "exited" => omt_types::AgentState::Exited { code: None },
+        _ => omt_types::AgentState::Unknown,
+    }
+}
+
 /// What to call an agent's state to somebody looking at a list.
 ///
 /// Takes whether the pane has been looked at since, because that is not
@@ -589,7 +639,7 @@ pub fn attention(state: &omt_types::AgentState, seen: bool) -> u8 {
     reason = "in a test, expect() is the assertion"
 )]
 mod attention_tests {
-    use super::attention;
+    use super::{attention, state_from_word, state_word, word_of};
     use omt_types::AgentState;
 
     fn blocked() -> AgentState {
@@ -642,5 +692,51 @@ mod attention_tests {
         assert_eq!(attention(&AgentState::Working { detail: None }, true), 2);
         assert_eq!(attention(&AgentState::Idle, true), 3);
         assert_eq!(attention(&AgentState::Unknown, true), 4);
+    }
+    #[test]
+    fn every_state_survives_the_round_trip_through_its_name() {
+        // The wire carries the name; a surface turns it back into a state and
+        // applies its own words. A state that came back as a different one
+        // would make a phone and a terminal disagree about the same session,
+        // which is the defect the shared table exists to prevent.
+        for state in [
+            omt_types::AgentState::Starting,
+            omt_types::AgentState::Idle,
+            omt_types::AgentState::Working { detail: None },
+            omt_types::AgentState::Blocked {
+                reason: omt_types::BlockReason::Question,
+                interaction: None,
+            },
+            omt_types::AgentState::Exited { code: Some(0) },
+            omt_types::AgentState::Unknown,
+        ] {
+            let back = state_from_word(word_of(&state));
+            assert_eq!(
+                word_of(&back),
+                word_of(&state),
+                "{state:?} came back as {back:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_word_this_build_has_never_heard_of_is_unknown_rather_than_idle() {
+        // An instance newer than its client will send one. "Nothing to do
+        // here" is the single worst way to render a state omt cannot read.
+        assert_eq!(
+            state_from_word("negotiating-with-the-compiler"),
+            omt_types::AgentState::Unknown
+        );
+    }
+
+    #[test]
+    fn the_name_is_not_the_word_a_person_reads() {
+        // They are different jobs: one is what travels, the other carries a
+        // judgement that only makes sense beside whether this person has
+        // looked at it yet.
+        let idle = omt_types::AgentState::Idle;
+        assert_eq!(word_of(&idle), "idle");
+        assert_eq!(state_word(&idle, false), "done");
+        assert_eq!(state_word(&idle, true), "idle");
     }
 }

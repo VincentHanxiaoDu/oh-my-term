@@ -493,14 +493,11 @@ impl CapabilityHandler<AgentThreads> for AgentThreadsHandler {
 }
 
 pub(crate) fn describe_agent_state(state: &omt_types::AgentState) -> String {
-    match state {
-        omt_types::AgentState::Starting => "starting".to_owned(),
-        omt_types::AgentState::Idle => "idle".to_owned(),
-        omt_types::AgentState::Working { .. } => "working".to_owned(),
-        omt_types::AgentState::Blocked { .. } => "blocked".to_owned(),
-        omt_types::AgentState::Exited { .. } => "exited".to_owned(),
-        omt_types::AgentState::Unknown => "unknown".to_owned(),
-    }
+    // The terminal's own table, not a second copy of it. These two were apart
+    // once and drifted — one surface said "blocked" where the other said
+    // "waiting on you", about the same session — which is why the words live
+    // in one place and every surface asks it.
+    omt_tui::word_of(state).to_owned()
 }
 
 // ---------------------------------------------------------------------------
