@@ -1585,6 +1585,32 @@ fn copy_mode_jumps_back_to_where_the_last_command_started() {
 }
 
 #[test]
+fn a_terminal_that_never_answered_is_sent_no_image() {
+    let _serial = serially();
+    // The rule the whole feature is gated on: confirmed, never assumed. The
+    // test harness's terminal is a bare pty that answers nothing, which is
+    // what most terminals do — and on those, omt must behave exactly as it did
+    // before any of this existed.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("printf '\\033_Gi=1,f=100,c=8,r=2;iVBORw0KGgoAAAA\\033\\\\'; printf 'done\\n'\n");
+    s.settle_until(10.0, |s| s.screen().contains("done"));
+
+    let raw = s.raw();
+    assert!(
+        !raw.contains("a=T"),
+        "omt drew an image on a terminal that never said it could"
+    );
+    // And the card is what shows, which is the fallback being structural
+    // rather than conditional.
+    assert!(
+        s.screen().contains("8×2"),
+        "the card is not there either:\n{}",
+        s.screen()
+    );
+}
+
+#[test]
 fn a_search_in_copy_mode_jumps_to_the_line_that_has_it() {
     let _serial = serially();
     // The `/` this document has specified for as long as it has specified copy

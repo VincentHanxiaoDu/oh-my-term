@@ -192,6 +192,32 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // rather than into raw mode.
     let _guard = RawGuard::enter().context("entering raw mode")?;
     let mut out = io::stdout();
+    // Asked once, here and nowhere else: a query's reply arrives in the same
+    // stream as typing, and this is the one moment between raw mode and the
+    // first keystroke where that cannot be mistaken for somebody's input.
+    // No answer means no image is ever sent, which is most terminals and is
+    // not a failure.
+    // Anything it read that was not the reply is still the person's: a probe
+    // that swallowed the first keystroke would lose input, which is a worse
+    // failure than never drawing an image.
+    let (host_graphics, typed_during_probe) = crate::host_graphics::probe(&mut out, io::stdin());
+    if !typed_during_probe.is_empty()
+        && let Some(pane) = panes.get_mut(focus)
+    {
+        let session = pane.session;
+        if attached.is_some() {
+            backing(&mut instance, &mut attached).write(session, &typed_during_probe)?;
+        } else if let Some(rt) = instance.runtime_mut(session) {
+            rt.write_input(
+                &mut pane.writer,
+                pane.epoch,
+                monotonic_ms(),
+                &typed_during_probe,
+            )
+            .context("passing on what was typed during the handshake")?;
+        }
+    }
+    let mut drawn_images = crate::host_graphics::Drawn::default();
     let mut armed = false;
     // When the leader was pressed, so the which-key strip can wait 250 ms
     // before appearing (16 §3.3). Somebody executing `⟨leader⟩ s` from muscle
@@ -558,6 +584,53 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 // Offset by the tab bar, which owns the first row.
                 .draw_at(&mut out, terminal.grid(), rect.col, rect.row + CHROME_ROWS)
                 .context("drawing")?;
+        }
+
+        // The images, over the cards that were just drawn for them. An
+        // overlay rather than a change to the renderer: every path that ends
+        // in no image — a terminal that said nothing, no cell size, bytes
+        // evicted, a clip that leaves nothing visible — lands on the card,
+        // because the card is already there.
+        if host_graphics != crate::host_graphics::Host::Nothing
+            && let Some(cell) = crate::host_graphics::cell_size()
+        {
+            let mut wanted = Vec::new();
+            for (i, (pane, rect)) in panes.iter().zip(&rects).enumerate() {
+                let seam = backing(&mut instance, &mut attached);
+                let Some(terminal) = seam.terminal(pane.session) else {
+                    continue;
+                };
+                let grid_rows = terminal.grid().size().rows;
+                // The absolute row the live screen begins at, which is the
+                // coordinate images are recorded against.
+                let top = terminal.total_rows().saturating_sub(u64::from(grid_rows));
+                let area = omt_tui::Rect {
+                    col: rect.col,
+                    row: rect.row + CHROME_ROWS,
+                    cols: rect.cols,
+                    rows: rect.rows,
+                };
+                for (index, (started, image)) in terminal.images().iter().enumerate() {
+                    if image.data.is_empty() {
+                        // Evicted, or a format omt cannot hand back. Its card
+                        // is the answer, and the card is already drawn.
+                        continue;
+                    }
+                    // An id of omt's own, per pane and per image, so two panes
+                    // showing the same picture do not overwrite each other's
+                    // placement on the host.
+                    let id = crate::host_graphics::host_id(i, index);
+                    if let Some(placement) =
+                        crate::host_graphics::place(id, *started, image.rows, image.cols, top, area)
+                    {
+                        wanted.push((placement, image.data.clone()));
+                    }
+                }
+            }
+            let bytes = drawn_images.sync(&wanted, cell);
+            if !bytes.is_empty() {
+                out.write_all(&bytes).context("drawing images")?;
+            }
         }
 
         // Whatever is on screen and focused is being looked at, so its result
@@ -1521,6 +1594,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         }
     }
 
+    // Take the images off before leaving. One left behind outlives the program
+    // that drew it and sits on the shell somebody gets back.
+    let bye = drawn_images.clear();
+    if !bye.is_empty() {
+        out.write_all(&bye).ok();
+    }
     out.flush().ok();
     Ok(())
 }

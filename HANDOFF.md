@@ -42,7 +42,8 @@ These are not preferences. Breaking one has cost real work here before.
 **A feature-by-feature pass against the two comparable products**, whose source
 is under `.research/`. Five changes, each archived with its reasoning:
 command history, reading the agent's own session file, the mouse, images in a
-pane, and the rest of copy mode. `docs/reference/read-from-the-others.md` is the
+pane, the rest of copy mode, and drawing those images where a terminal says it
+can. `docs/reference/read-from-the-others.md` is the
 checklist and carries a verdict per row, including the rows where omt is
 deliberately different and the rows where **their** answer is worse than it
 looks.
@@ -139,19 +140,30 @@ three gates will tell you which one you forgot.
 - **The disk fills.** `target/` reached tens of gigabytes and stopped the whole
   session — no tool could run, because the harness could not even write its own
   output file. `cargo clean` between long sessions.
+- **Anything that reads the terminal's own input eats somebody's keystroke.**
+  The graphics handshake reads the raw descriptor for ~120 ms at startup, and
+  the first version swallowed whatever else arrived in that window — the
+  keystroke never reached the shell, and only `runs_for_real` caught it. What
+  is read there and is not the reply belongs to the person at the keyboard and
+  has to be handed on. Any future query has the same obligation, which is most
+  of why omt does not query terminals mid-session at all.
 - **A screen test's shell is `/bin/sh`.** `printf '\033[...'` works; `$(...)`
   inside a typed command line has bitten someone; a shell running a single
   command execs it, so a marker put in `argv` is gone by the time anything looks
   for it.
 
-## 6. The longer backlog
+## 6. The survey
 
-From reading the others, in `docs/reference/read-from-the-others.md`. Everything
-there has a verdict and a reason, including the rows omt is deliberately
-different on. Still open, roughly by value:
+From reading the others, in `docs/reference/read-from-the-others.md`.
 
-- drawing an image for real: re-emitting to the host terminal, clipped to the
-  pane's rectangle and diffed per frame (the rows and the card exist already)
+**Nothing from that survey is left open.** Every row has a verdict and a
+reason, including the rows omt is deliberately different on and the rows where
+their answer turned out to be worse than it looked. The rows omt does not
+implement say why, rather than sitting on a list as though somebody forgot.
+
+What that leaves for the next person is not a backlog of features but the
+habit that found them: when a surface here answers with nothing, check that
+something writes to it before believing the emptiness.
 
 ## 7. One request
 

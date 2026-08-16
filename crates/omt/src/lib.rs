@@ -14,6 +14,7 @@ pub mod cli;
 pub mod discovery;
 pub mod doctor;
 pub mod events;
+pub mod host_graphics;
 pub mod media;
 pub mod migrate;
 pub mod mouse;

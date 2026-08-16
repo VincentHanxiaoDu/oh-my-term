@@ -34,6 +34,14 @@ pub struct Image {
     pub bytes: usize,
     /// What it is called, where the sequence said.
     pub name: Option<String>,
+    /// The payload, kept **as it arrived** — base64 — because that is the form
+    /// it goes back out in. Decoding to re-encode is work done twice to arrive
+    /// at the same string.
+    ///
+    /// Empty when omt could not keep it: over the bound, or a format it cannot
+    /// re-send. Both leave the card, which is the same outcome and needs no
+    /// second state.
+    pub data: String,
 }
 
 /// Which protocol carried it.
@@ -105,6 +113,7 @@ struct Pending {
     keys: Keys,
     bytes: usize,
     overflowed: bool,
+    data: String,
 }
 
 impl Scanner {
@@ -198,8 +207,10 @@ impl Scanner {
             keys,
             bytes: 0,
             overflowed: false,
+            data: String::new(),
         });
         held.bytes += data.len();
+        held.data.push_str(&String::from_utf8_lossy(data));
         held.overflowed = held.overflowed || overflowed || held.bytes > MAX_TRANSMISSION;
 
         if keys.more {
@@ -224,6 +235,15 @@ impl Scanner {
                 rows: held.keys.rows,
                 bytes: held.bytes,
                 name: None,
+                // Only what can be handed back to a terminal. kitty takes PNG
+                // directly; anything else would need an image codec inside the
+                // terminal core to re-send, and a payload omt cannot re-send
+                // is one whose card is the answer.
+                data: if held.keys.png {
+                    held.data
+                } else {
+                    String::new()
+                },
             }),
             keep_cursor,
         }
@@ -242,10 +262,16 @@ struct Keys {
     cols: u16,
     rows: u16,
     keep_cursor: bool,
+    /// Whether the payload is PNG, which is the one form that can be handed
+    /// back to a terminal without decoding it first.
+    png: bool,
 }
 
 impl Keys {
     fn read(control: &[u8]) -> Self {
+        // `png` starts false deliberately: kitty's default format is 32-bit
+        // RGBA, so a transmission that says nothing about its format is not
+        // something omt can hand back.
         let mut keys = Self::default();
         let text = String::from_utf8_lossy(control);
         let (mut width, mut height) = (0u32, 0u32);
@@ -263,6 +289,8 @@ impl Keys {
                 // A program that asked for the cursor to stay is drawing
                 // something it means to write over.
                 "C" => keys.keep_cursor = value == "1",
+                // 100 is PNG in kitty's vocabulary.
+                "f" => keys.png = value == "100",
                 _ => {}
             }
         }
@@ -315,6 +343,13 @@ pub fn iterm2(argument: &str) -> Option<Image> {
         rows: 0,
         bytes: payload.len(),
         name: None,
+        // The bytes are base64 of a whole image file. Kept only when it is a
+        // PNG, which is what a terminal can be handed without decoding.
+        data: if looks_like_png(payload) {
+            payload.to_owned()
+        } else {
+            String::new()
+        },
     };
     let mut inline = false;
     for pair in keys.split(';') {
@@ -337,6 +372,15 @@ pub fn iterm2(argument: &str) -> Option<Image> {
     image.cols = image.cols.max(1);
     image.rows = image.rows.max(1);
     Some(image)
+}
+
+/// Whether a base64 payload begins with PNG's signature.
+///
+/// Checked on the encoded form rather than decoding first: the signature is
+/// fixed, so its encoding is a fixed prefix, and decoding a whole screenshot
+/// to look at eight bytes is work for nothing.
+fn looks_like_png(base64: &str) -> bool {
+    base64.starts_with("iVBORw0KGgo")
 }
 
 /// A size in the iTerm2 spelling, which may be cells, pixels or a percentage.
@@ -380,6 +424,23 @@ fn decode_name(value: &str) -> Option<String> {
         }
     }
     String::from_utf8(out).ok().filter(|name| !name.is_empty())
+}
+
+/// Keep the held payloads under a bound, oldest first.
+///
+/// The placement is small and the payload is not. A scrollback of a hundred
+/// screenshots must not be a process that grows until it is killed — and an
+/// image whose bytes went keeps its rows and its card, which is exactly what
+/// somebody sees when a terminal cannot draw it anyway.
+pub fn evict(images: &mut [(u64, Image)], bound: usize) {
+    let mut held: usize = images.iter().map(|(_, image)| image.data.len()).sum();
+    for (_, image) in images.iter_mut() {
+        if held <= bound {
+            return;
+        }
+        held -= image.data.len();
+        image.data = String::new();
+    }
 }
 
 /// What to draw in the rows an image reserved.
@@ -584,6 +645,7 @@ mod tests {
             rows: 3,
             bytes: 4096,
             name: Some("plot.png".into()),
+            data: String::new(),
         };
         let card = card(&image, 40, 3);
         assert_eq!(card.len(), 3);
@@ -604,6 +666,7 @@ mod tests {
             rows: 1,
             bytes: 10,
             name: Some("a-very-long-file-name-indeed.png".into()),
+            data: String::new(),
         };
         let card = card(&image, 12, 1);
         assert_eq!(card.len(), 1);
@@ -696,5 +759,72 @@ mod tests {
         let images = t.images();
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].1.name.as_deref(), Some("pic.png"));
+    }
+
+    #[test]
+    fn a_png_payload_is_kept_so_it_can_be_handed_back() {
+        let mut t = term(40, 10);
+        // `f=100` is PNG in kitty's vocabulary.
+        feed(&mut t, "\x1b_Gi=1,f=100,c=4,r=2;iVBORw0KGgoAAAA\x1b\\");
+        let images = t.images();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].1.data, "iVBORw0KGgoAAAA");
+    }
+
+    #[test]
+    fn a_payload_omt_could_not_hand_back_is_not_kept() {
+        // kitty's default format is raw RGBA, not PNG. Re-sending anything
+        // else would mean an image codec inside the terminal core, and the
+        // card is the answer instead.
+        let mut t = term(40, 10);
+        feed(&mut t, "\x1b_Gi=2,c=4,r=2;AAAABBBB\x1b\\");
+        let images = t.images();
+        assert_eq!(images.len(), 1, "it is still recorded and still has rows");
+        assert!(images[0].1.data.is_empty());
+    }
+
+    #[test]
+    fn the_oldest_payload_goes_first_and_leaves_its_card() {
+        // A scrollback of a hundred screenshots must not be a process that
+        // grows until it is killed.
+        let one = |row: u64, data: &str| {
+            (
+                row,
+                Image {
+                    id: None,
+                    via: Protocol::Kitty,
+                    cols: 2,
+                    rows: 1,
+                    bytes: data.len(),
+                    name: None,
+                    data: data.to_owned(),
+                },
+            )
+        };
+        let mut images = vec![one(0, "aaaa"), one(1, "bbbb"), one(2, "cccc")];
+        evict(&mut images, 8);
+        assert_eq!(images.len(), 3, "every image still has its rows");
+        assert!(images[0].1.data.is_empty(), "the oldest payload went");
+        assert_eq!(images[2].1.data, "cccc", "the newest is still holdable");
+        let held: usize = images.iter().map(|(_, i)| i.data.len()).sum();
+        assert!(held <= 8, "held {held}");
+    }
+
+    #[test]
+    fn nothing_is_evicted_while_it_fits() {
+        let mut images = vec![(
+            0,
+            Image {
+                id: None,
+                via: Protocol::Kitty,
+                cols: 1,
+                rows: 1,
+                bytes: 4,
+                name: None,
+                data: "aaaa".to_owned(),
+            },
+        )];
+        evict(&mut images, 1024);
+        assert_eq!(images[0].1.data, "aaaa");
     }
 }

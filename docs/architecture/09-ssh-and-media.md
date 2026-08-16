@@ -1328,6 +1328,48 @@ Rendering rules:
   `FilePart=` / `FileEnd` for the iTerm2 protocol) so a large image does not
   produce one enormous escape sequence.
 
+### 7.2b What was built, and the two rules that shaped it
+
+Detection is **one query, once**, and everything else follows from where it can
+happen.
+
+`vte` swallows APC in a pane and crossterm swallows it on omt's own input —
+the same defect that made an image invisible in the first place — so the answer
+cannot arrive through either. It is read off the raw descriptor.
+
+And omt does not query a terminal mid-session: a reply arrives in the same
+stream as typing, and an answer mistaken for keystrokes puts escape text into
+somebody's shell. There is exactly one moment where that is not true, and the
+handshake lives in it: after raw mode is entered, before the first keystroke is
+read. No answer within a short deadline means no support — which is most
+terminals, and is the ordinary case rather than a failure.
+
+**The image is an overlay drawn after the pane, not a change to the renderer.**
+The diffing renderer keeps writing the card's cells exactly as it did, and the
+image is drawn over them. That is what makes the fallback structural instead of
+conditional: every path that ends in no image — a terminal that said nothing,
+an unknown cell size, evicted bytes, a clip that leaves nothing visible — lands
+on the card, because the card is already there. No branch has to remember to
+draw something else.
+
+Three things are held to deliberately:
+
+- **Payloads are kept as base64, bounded, oldest evicted first.** They are kept
+  in the form they go back out in, because decoding to re-encode is work done
+  twice for the same string; and bounded because a scrollback of a hundred
+  screenshots must not be a process that grows until it is killed.
+- **Only what can be re-sent is kept.** kitty takes PNG directly. Anything else
+  would need an image codec inside the terminal core, so it is dropped and its
+  card is the answer — the same outcome as eviction, needing no second state.
+- **omt numbers the images itself.** Two panes can show pictures whose programs
+  both called theirs `1`, and one would take the other's off the screen.
+
+Re-sending is by signature — the image, its pane, its row, its clipping. A
+frame is drawn many times a second and an image is measured in megabytes.
+Placements are erased when they go away, and everything is erased on the way
+out: an image left behind outlives the program that drew it and sits on the
+shell somebody gets back.
+
 ### 7.3 Display in the web client
 
 Always available. The blob is fetched over the control channel (or a

@@ -129,6 +129,14 @@ pub(crate) struct State {
     pub(crate) images: Vec<(u64, crate::graphics::Image)>,
 }
 
+/// How much image payload one terminal holds, across every image in it.
+///
+/// Held so an image can be handed back to a terminal that can draw it. Past
+/// this the oldest payloads are dropped and their cards remain, because the
+/// alternative is a session that grows without limit for as long as somebody
+/// keeps printing screenshots.
+pub const MAX_HELD_IMAGE_BYTES: usize = 32 << 20; // 32 MiB
+
 /// The DEC private modes that are on.
 #[derive(Debug, Clone, Default)]
 pub struct Modes {
@@ -590,6 +598,7 @@ impl State {
         // sits on have scrolled out of the screen and into the history.
         let started = self.scrollback.len() as u64 + u64::from(self.grid().cursor.row);
         self.images.push((started, image.clone()));
+        crate::graphics::evict(&mut self.images, MAX_HELD_IMAGE_BYTES);
         if complete.keep_cursor {
             // The program asked to stay where it is: it is drawing something
             // it means to write over itself.
