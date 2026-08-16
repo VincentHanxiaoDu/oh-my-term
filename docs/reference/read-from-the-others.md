@@ -40,6 +40,7 @@ decision; an unrecorded one is a gap nobody has counted.
 | Their surface | omt | Verdict |
 |---|---|---|
 | Scrollback copy mode with search | built | **taken**; omt's coordinates are absolute rows, because screen-relative ones move under a reader |
+| Mouse selection, and the mouse in general | built | **taken with their defects left out.** Both give the program in the pane priority, and one of them makes Shift the universal escape hatch, which is the convention and is what omt does. What neither does correctly: one collapses the three tracking modes so a click-only program is sent motion, drops the modifier bits so Ctrl+click arrives as a plain click, has no middle button, and forwards a right-press whose release never follows; the other translates the wheel to arrow keys for *every* alternate-screen program instead of asking whether 1007 was set, which moves an editor's cursor when somebody scrolls ([18 §5.1b](../architecture/18-semantic-open.md)) |
 | Clipboard over the terminal (`OSC 52`) | built | **parity** — write only, and read refused unconditionally |
 | An editor inside the terminal | no | **not applicable** — omt hosts the programs people already use; a text editor in a multiplexer is a second editor to learn |
 | Language-server integration | no | **not applicable**, same reason |

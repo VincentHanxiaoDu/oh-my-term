@@ -36,7 +36,12 @@ impl RawGuard {
             // to be fast enough to keep up with a burst it should never have
             // been handed. It also lets the pane below know a burst is a
             // paste, which is what stops a pasted newline running a command.
-            crossterm::event::EnableBracketedPaste
+            crossterm::event::EnableBracketedPaste,
+            // Without this omt never sees a pointer at all, and a drag across
+            // a pane is the *outer* terminal selecting a rectangle of omt's
+            // whole frame — every pane's chrome included. Asking for reports
+            // is what makes a selection mean the pane it was made in.
+            crossterm::event::EnableMouseCapture
         )?;
         out.flush()?;
         Ok(Self)
@@ -48,6 +53,7 @@ impl Drop for RawGuard {
         let mut out = io::stdout();
         let _ = crossterm::execute!(
             out,
+            crossterm::event::DisableMouseCapture,
             crossterm::event::DisableBracketedPaste,
             crossterm::cursor::Show,
             crossterm::terminal::LeaveAlternateScreen

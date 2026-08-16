@@ -15,6 +15,7 @@ pub mod keymap;
 pub mod layers;
 pub mod layout;
 pub mod modal;
+pub mod mouse;
 
 pub use key::{Chord, ChordParseError, EncodeMode, Key, Modifiers, encode};
 pub use keymap::{

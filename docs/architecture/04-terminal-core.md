@@ -801,11 +801,11 @@ Priorities: **Must** = required for v1, a real terminal is wrong without it.
 | 47 / 1047 / 1048 / **1049** (alt screen) | Must | 1049 is what everything uses; the other three must behave per the xterm truth table |
 | 66 DECNKM (keypad) | Should | Numeric keypad in `emacs` |
 | 69 DECLRMM | Should | Enables DECSLRM; see §5.1 |
-| 1000 / 1002 / 1003 mouse | Must | Click, drag, motion. `1001` highlight tracking: never |
+| 1000 / 1002 / 1003 mouse | Must | Click, drag, motion — and **held apart, not collapsed into one flag**. A program that asked for clicks and is sent motion reports gets input it did not ask for and cannot parse; the three modes are three different questions. `1001` highlight tracking: never |
 | 1004 focus reporting | Must | Agents and editors use it; **policy-gated** (§5.6) |
 | 1005 (UTF-8 mouse ext) | Later | Superseded and broken by design |
 | **1006 SGR mouse** | Must | The only mouse encoding that works past column 223 |
-| 1007 alternate scroll | Should | Scroll wheel → arrow keys in pagers; policy-gated |
+| 1007 alternate scroll | Should | Scroll wheel → arrow keys in pagers; policy-gated. **Consulted, never assumed**: translating the wheel for every alternate-screen program sends arrow keys to programs that never asked for them, which in an editor is a cursor that moves on scroll |
 | 1015 (urxvt mouse) | Later | Legacy |
 | 1016 SGR-pixel mouse | Later | Only useful with pixel-accurate rendering |
 | 1036 (meta sends escape) | Should | Alt-key behaviour in emacs/readline |

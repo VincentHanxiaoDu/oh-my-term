@@ -76,8 +76,22 @@ pub enum TermMode {
     BracketedPaste,
     /// Focus reporting (1004).
     FocusReporting,
-    /// Any mouse tracking mode (1000/1002/1003).
-    MouseTracking,
+    /// Presses and releases (1000).
+    ///
+    /// Held apart from the other two rather than collapsed into one flag: a
+    /// program that asked for clicks and is sent motion reports receives input
+    /// it did not ask for, in the middle of whatever it was parsing.
+    MouseClicks,
+    /// And motion while a button is down (1002).
+    MouseButtonMotion,
+    /// And every motion, button or not (1003).
+    MouseAnyMotion,
+    /// Alternate scroll (1007): the wheel becomes arrow keys.
+    ///
+    /// Asked, never assumed from the alternate screen being active. A
+    /// full-screen program that did not set it and is sent arrow keys is an
+    /// editor whose cursor moves when somebody scrolls.
+    AlternateScroll,
     /// SGR mouse encoding (1006).
     SgrMouse,
     /// The kitty keyboard protocol.

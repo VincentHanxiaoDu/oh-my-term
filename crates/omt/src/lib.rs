@@ -16,6 +16,7 @@ pub mod doctor;
 pub mod events;
 pub mod media;
 pub mod migrate;
+pub mod mouse;
 pub mod multiuser;
 pub mod onboarding;
 pub mod ops;

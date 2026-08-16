@@ -1381,6 +1381,125 @@ fn copy_mode_shows_what_has_already_scrolled_off_the_screen() {
     );
 }
 
+/// Decode what a clipboard sequence carries.
+///
+/// The payload is base64 because OSC 52 is; the test asserts on the text
+/// somebody would paste, not on the encoding.
+fn from_base64(text: &str) -> String {
+    let table = |c: u8| -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some(u32::from(c - b'A')),
+            b'a'..=b'z' => Some(u32::from(c - b'a') + 26),
+            b'0'..=b'9' => Some(u32::from(c - b'0') + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    };
+    let mut out = Vec::new();
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for byte in text.bytes() {
+        let Some(value) = table(byte) else { continue };
+        acc = (acc << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            #[allow(clippy::cast_possible_truncation, reason = "masked to a byte")]
+            out.push(((acc >> bits) & 0xff) as u8);
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[test]
+fn dragging_across_a_pane_selects_what_was_dragged_over_and_copies_it() {
+    let _serial = serially();
+    // omt never enabled mouse reporting on its own terminal, so a drag across
+    // a pane was the *outer* terminal selecting a rectangle of omt's whole
+    // frame — every pane's chrome included. The documents have described this
+    // behaviour since before any of it existed.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    s.type_in("printf 'selectable-line\\n'\n");
+    s.settle_until(10.0, |s| s.screen().contains("selectable-line"));
+
+    // Find the row the text landed on, so the drag is over real output rather
+    // than a guessed coordinate.
+    let row = s
+        .screen()
+        .lines()
+        .position(|line| line.contains("selectable-line"))
+        .expect("the line is on the screen");
+    // One-based, as a mouse report is on the wire.
+    let row = row + 1;
+
+    // A press, a drag across the text, and a release — the bytes a terminal
+    // sends when somebody drags, which is what omt now asks for.
+    s.type_in(&format!("\x1b[<0;1;{row}M"));
+    s.settle(0.3);
+    s.type_in(&format!("\x1b[<32;40;{row}M"));
+    s.settle(0.3);
+    s.type_in(&format!("\x1b[<0;40;{row}m"));
+    s.settle_until(10.0, |s| s.raw().contains("]52;"));
+
+    let raw = s.raw();
+    let clipboard = raw
+        .split("]52;")
+        .nth(1)
+        .expect("omt wrote a clipboard sequence");
+    let payload = clipboard
+        .split(';')
+        .nth(1)
+        .and_then(|rest| rest.split('\x07').next())
+        .and_then(|rest| rest.split('\x1b').next())
+        .expect("a payload");
+    let text = from_base64(payload);
+    assert!(
+        text.contains("selectable"),
+        "what was dragged over is not what was copied: {text:?}"
+    );
+}
+
+#[test]
+fn a_program_that_asked_for_the_mouse_gets_the_click_and_shift_takes_it_back() {
+    let _serial = serially();
+    // The rule the whole design starts from: vim, htop, lazygit and every
+    // agent's own interface ask for the mouse, and a multiplexer that swallows
+    // their clicks has broken all of them. The other half is the escape hatch
+    // — Shift, which every terminal omt runs inside already treats this way,
+    // which is exactly why applications do not expect to receive it.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    // Ask for the mouse, then show what arrives. `cat -v` renders an escape
+    // as printable text, so the report is visible on the screen.
+    s.type_in("printf '\\033[?1000h\\033[?1006h'; cat -v\n");
+    s.settle(2.0);
+
+    s.type_in("\x1b[<0;4;3M");
+    s.settle_until(10.0, |s| s.screen().contains("[<0;4;3M"));
+    assert!(
+        s.screen().contains("[<0;4;3M"),
+        "the program never saw the click:\n{}",
+        s.screen()
+    );
+
+    // The same click with Shift held is omt's, so nothing reaches the program.
+    // Bit 4 is Shift, on the wire.
+    let before = s.screen();
+    s.type_in("\x1b[<4;6;5M");
+    s.settle(1.0);
+    let after = s.screen();
+    assert!(
+        !after.contains("[<4;6;5M"),
+        "a shifted click reached the program that had grabbed the mouse:\n{after}"
+    );
+    assert_ne!(before, after, "the shifted click did nothing at all");
+
+    // And omt let go of it cleanly.
+    s.type_in("\x1b[<4;6;5m");
+    s.settle(0.5);
+}
+
 #[test]
 fn a_search_in_copy_mode_jumps_to_the_line_that_has_it() {
     let _serial = serially();

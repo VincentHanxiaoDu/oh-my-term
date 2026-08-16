@@ -133,6 +133,25 @@ impl Modes {
         self.set.contains(&m)
     }
 
+    /// Whether the program has grabbed the mouse at all.
+    ///
+    /// For everything that only needs to know *whether* the mouse belongs to
+    /// the program. What class of event it asked for is a different question,
+    /// and asking this one instead of that one is how a click-only program
+    /// ends up being sent motion.
+    #[must_use]
+    pub fn mouse_tracking(&self) -> bool {
+        self.contains(TermMode::MouseClicks)
+            || self.contains(TermMode::MouseButtonMotion)
+            || self.contains(TermMode::MouseAnyMotion)
+    }
+
+    /// Whether motion with a button held is wanted.
+    #[must_use]
+    pub fn mouse_drag(&self) -> bool {
+        self.contains(TermMode::MouseButtonMotion) || self.contains(TermMode::MouseAnyMotion)
+    }
+
     /// Every mode that is on.
     pub fn iter(&self) -> impl Iterator<Item = TermMode> + '_ {
         self.set.iter().copied()
@@ -968,7 +987,10 @@ impl State {
             6 => self.grid_mut().origin_mode = enabled,
             7 => self.grid_mut().autowrap = enabled,
             25 => self.grid_mut().cursor.visible = enabled,
-            1000 | 1002 | 1003 => self.set_mode(TermMode::MouseTracking, enabled),
+            1000 => self.set_mode(TermMode::MouseClicks, enabled),
+            1002 => self.set_mode(TermMode::MouseButtonMotion, enabled),
+            1003 => self.set_mode(TermMode::MouseAnyMotion, enabled),
+            1007 => self.set_mode(TermMode::AlternateScroll, enabled),
             1004 => self.set_mode(TermMode::FocusReporting, enabled),
             1006 => self.set_mode(TermMode::SgrMouse, enabled),
             1049 => {
@@ -1845,5 +1867,35 @@ mod tests {
         feed(&mut t, "\x1b]133;A\x07$ \x1b]133;B\x07\x1b]133;C\x07");
         feed(&mut t, "\x1b]133;D;0\x07");
         assert_eq!(t.blocks()[0].command, "");
+    }
+
+    #[test]
+    fn the_three_tracking_modes_are_three_different_requests() {
+        // Collapsed into one flag, a program that asked for clicks gets sent
+        // motion — input it never asked for, arriving in the middle of
+        // whatever it was parsing.
+        let mut t = term(40, 4);
+        feed(&mut t, "\x1b[?1000h");
+        assert!(t.modes().contains(TermMode::MouseClicks));
+        assert!(t.modes().mouse_tracking(), "the mouse is grabbed");
+        assert!(!t.modes().mouse_drag(), "but motion was not asked for");
+
+        let mut t = term(40, 4);
+        feed(&mut t, "\x1b[?1002h");
+        assert!(t.modes().mouse_drag());
+        assert!(!t.modes().contains(TermMode::MouseClicks));
+    }
+
+    #[test]
+    fn alternate_scroll_is_asked_not_assumed() {
+        // A full-screen program that did not set 1007 and is sent arrow keys
+        // is an editor whose cursor moves when somebody scrolls.
+        let mut t = term(40, 4);
+        feed(&mut t, "\x1b[?1049h");
+        assert!(!t.modes().contains(TermMode::AlternateScroll));
+        feed(&mut t, "\x1b[?1007h");
+        assert!(t.modes().contains(TermMode::AlternateScroll));
+        feed(&mut t, "\x1b[?1007l");
+        assert!(!t.modes().contains(TermMode::AlternateScroll));
     }
 }

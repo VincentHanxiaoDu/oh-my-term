@@ -899,6 +899,40 @@ reporting is on. This is also a performance win — no work per mouse move.
 
 **The mouse is never the only way.** Which brings us to:
 
+### 5.1b What is forwarded, exactly
+
+The rule above says *whether* a mouse event is the program's. This says what
+the program then receives, because a report that reaches it in the wrong shape
+is worse than one that never arrives: it is decoded as something else.
+
+**The three tracking modes are three different questions.** 1000 asks for
+presses and releases, 1002 adds motion while a button is down, 1003 asks for
+every motion. A host that treats them as one flag sends a click-only program a
+stream of motion reports — input it did not ask for, arriving in the middle of
+whatever it was parsing. omt holds them apart and forwards only what was asked
+for.
+
+**Modifiers travel with the report.** Ctrl+click and Alt+drag are distinct
+gestures to the program receiving them; dropping the modifier bits delivers a
+plain click and silently changes what the user did.
+
+**A press is always followed by its release.** Forwarding a button down and
+never the matching up leaves the program believing a button is still held —
+which for a selection in an editor means one that never ends.
+
+**The wheel goes to one of three places**, decided per pane:
+
+| The pane's state | Where the wheel goes |
+|---|---|
+| any of 1000/1002/1003 on | reported to the program, as a wheel button |
+| alternate screen **and** 1007 on | translated to arrow keys, which is what a pager wants |
+| otherwise | omt's own scrollback |
+
+The middle row is the one worth stating: 1007 is *asked*, never assumed from
+the alternate screen being active. A full-screen program that did not set it
+gets arrow keys it never requested, and in an editor that is a cursor that
+moves when somebody scrolls.
+
 ### 5.2 Hint mode — the primary mechanism
 
 Press a chord; every match in the viewport gets a short label; type the label;

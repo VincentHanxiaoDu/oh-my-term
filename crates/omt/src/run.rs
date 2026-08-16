@@ -973,6 +973,81 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 continue;
             }
 
+            // The pointer, before anything that reads keys. Where it goes is
+            // decided per event and mostly says "not mine": the program in
+            // the pane asked for the mouse, and a multiplexer that swallows
+            // its clicks has broken every full-screen program somebody runs.
+            if let crossterm::event::Event::Mouse(pointer) = &event {
+                let rect = rects.get(focus).copied().unwrap_or(omt_tui::Rect {
+                    col: 0,
+                    row: 0,
+                    cols: 0,
+                    rows: 0,
+                });
+                if let Some((moused, inside)) = crate::mouse::from_crossterm(pointer, rect) {
+                    let session = panes.get(focus).map(|pane| pane.session);
+                    let asked = {
+                        let seam = backing(&mut instance, &mut attached);
+                        session
+                            .and_then(|id| seam.terminal(id))
+                            .map(crate::mouse::Asked::of)
+                            .unwrap_or_default()
+                    };
+                    match crate::mouse::route(&moused, asked, inside) {
+                        crate::mouse::Route::Forward(bytes) => {
+                            if let Some(id) = session {
+                                if attached.is_some() {
+                                    backing(&mut instance, &mut attached).write(id, &bytes)?;
+                                } else if let Some(rt) = instance.runtime_mut(id) {
+                                    let pane = &mut panes[focus];
+                                    rt.write_input(
+                                        &mut pane.writer,
+                                        pane.epoch,
+                                        monotonic_ms(),
+                                        &bytes,
+                                    )
+                                    .context("writing a mouse report")?;
+                                }
+                            }
+                        }
+                        crate::mouse::Route::Select(kind) => {
+                            let total = crate::terminal_bits::history_depth(
+                                &mut instance,
+                                &mut attached,
+                                session,
+                            );
+                            crate::terminal_bits::selecting(
+                                &mut copying,
+                                kind,
+                                &moused,
+                                rect,
+                                total,
+                                &mut |row| {
+                                    crate::terminal_bits::line_of(
+                                        &mut instance,
+                                        &mut attached,
+                                        session,
+                                        row,
+                                    )
+                                },
+                            );
+                            layout_dirty = true;
+                        }
+                        crate::mouse::Route::Scroll(lines) => {
+                            let total = crate::terminal_bits::history_depth(
+                                &mut instance,
+                                &mut attached,
+                                session,
+                            );
+                            crate::terminal_bits::scrolling(&mut copying, lines, rect, total);
+                            layout_dirty = true;
+                        }
+                        crate::mouse::Route::Ignore => {}
+                    }
+                }
+                continue;
+            }
+
             // Copy mode takes every key, like an overlay does and for the same
             // reason: somebody is reading, and a keystroke that reached the
             // shell would type into a program nobody is looking at. Checked

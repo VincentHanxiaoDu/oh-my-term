@@ -127,7 +127,6 @@ From reading the others, in `docs/reference/read-from-the-others.md`. Everything
 there has a verdict and a reason, including the rows omt is deliberately
 different on. Still open, roughly by value:
 
-- mouse selection (the keys document calls this deliberate; revisit it)
 - kitty graphics passthrough
 - copy mode's named registers and the emacs motion set
 

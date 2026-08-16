@@ -287,6 +287,116 @@ pub(crate) fn reading_key(
     Reading::Stay
 }
 
+/// How far the history goes, from whichever side owns it.
+///
+/// Attached, this must come from the instance: a mirror starts counting rows
+/// at the moment this terminal attached, and a reader blending the two is
+/// shown a line other than the one they are on.
+pub(crate) fn history_depth(
+    instance: &mut omt_daemon::Instance,
+    attached: &mut Option<crate::backing::Attached>,
+    session: Option<omt_types::SessionId>,
+) -> u64 {
+    if let (Some(joined), Some(id)) = (attached.as_mut(), session) {
+        return crate::backing::history(joined, id, 0, 1)
+            .map(|(_, total)| total)
+            .unwrap_or_default();
+    }
+    let seam = crate::backing::backing(instance, attached);
+    session
+        .and_then(|id| seam.terminal(id))
+        .map_or(0, omt_term::Terminal::total_rows)
+}
+
+/// One line of history, from whichever side owns it.
+pub(crate) fn line_of(
+    instance: &mut omt_daemon::Instance,
+    attached: &mut Option<crate::backing::Attached>,
+    session: Option<omt_types::SessionId>,
+    row: u64,
+) -> Option<String> {
+    if let (Some(joined), Some(id)) = (attached.as_mut(), session) {
+        return crate::backing::history_line(joined, id, row);
+    }
+    let seam = crate::backing::backing(instance, attached);
+    session
+        .and_then(|id| seam.terminal(id))
+        .and_then(|t| t.line_at(row))
+        .map(omt_term::Line::text)
+}
+
+/// A drag, in the reader that already knows how to hold a selection.
+///
+/// Reusing copy mode rather than adding a second selection is what makes a
+/// mouse selection continuable with the keyboard, and what gives the pointer
+/// absolute rows: a screen-relative selection moves under its own reader as
+/// soon as the pane produces output.
+pub(crate) fn selecting(
+    copying: &mut Option<omt_tui::CopyMode>,
+    kind: omt_input::mouse::Kind,
+    event: &omt_input::mouse::MouseEvent,
+    rect: omt_tui::Rect,
+    total: u64,
+    line: &mut dyn FnMut(u64) -> Option<String>,
+) {
+    use omt_input::mouse::Kind;
+    match kind {
+        Kind::Press => {
+            let mut reading = omt_tui::CopyMode::entering(total, rect.rows);
+            // Where the pointer is, in absolute rows: the top of the viewport
+            // plus how far down the pane it was clicked.
+            reading.row = reading.top.saturating_add(u64::from(event.row));
+            reading.col = event.col;
+            // Marked on the press, not on the first motion. A selection that
+            // only starts existing once the pointer moves loses its first
+            // character.
+            reading.mark();
+            *copying = Some(reading);
+        }
+        Kind::Drag => {
+            if let Some(reading) = copying.as_mut() {
+                reading.row = reading.top.saturating_add(u64::from(event.row));
+                reading.col = event.col;
+            }
+        }
+        Kind::Release => {
+            if let Some(reading) = copying.as_ref() {
+                // A press that never moved is a click, not a selection, and
+                // copying on it would replace the clipboard every time
+                // somebody put the cursor somewhere.
+                let moved = reading
+                    .anchor
+                    .is_some_and(|(row, col)| (row, col) != (reading.row, reading.col));
+                if moved {
+                    yank(reading, line);
+                }
+            }
+            *copying = None;
+        }
+        Kind::Motion => {}
+    }
+}
+
+/// The wheel, over omt's own scrollback.
+pub(crate) fn scrolling(
+    copying: &mut Option<omt_tui::CopyMode>,
+    lines: i16,
+    rect: omt_tui::Rect,
+    total: u64,
+) {
+    // Scrolling *is* reading the scrollback, so it enters the reader rather
+    // than inventing a second way to look at the same rows.
+    let reading = copying.get_or_insert_with(|| omt_tui::CopyMode::entering(total, rect.rows));
+    let (towards, count) = if lines < 0 {
+        (omt_tui::CopyMove::Up, lines.unsigned_abs())
+    } else {
+        (omt_tui::CopyMove::Down, lines.unsigned_abs())
+    };
+    for _ in 0..count {
+        reading.go(towards, total, rect.rows, rect.cols);
+    }
+}
+
 /// Put a selection on the clipboard.
 ///
 /// Through the terminal omt is drawing on, which is the only clipboard
