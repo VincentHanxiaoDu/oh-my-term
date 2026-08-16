@@ -37,6 +37,14 @@ pub struct State {
     stt: Arc<Mutex<omt_stt::ProviderSet>>,
     /// What each agent session has said and done.
     transcripts: Arc<Mutex<crate::transcript::Transcripts>>,
+    /// Where this instance is listening, once it is.
+    ///
+    /// Kept so a session it spawns can be told where its agent's hooks should
+    /// report. The daemon is the only one that knows this — a hook has no way
+    /// to work it out, and a pane started by a browser or another terminal had
+    /// no socket in its environment at all, which is a hook that silently does
+    /// nothing.
+    socket: Arc<Mutex<Option<std::path::PathBuf>>>,
     /// Fan-outs in progress, by name.
     ///
     /// Named rather than numbered because a fan-out outlives the call that
@@ -78,6 +86,7 @@ impl State {
             // no key: a provider appears only once the user has supplied one,
             // which is the whole of BYOK.
             stt: Arc::new(Mutex::new(providers_from_env())),
+            socket: Arc::new(Mutex::new(None)),
             fanouts: Arc::new(Mutex::new(std::collections::BTreeMap::new())),
             transcripts: Arc::new(Mutex::new(crate::transcript::Transcripts::default())),
             config: Arc::new(Mutex::new(None)),
@@ -151,6 +160,19 @@ impl State {
         self.transcripts
             .lock()
             .map_err(|_| CapabilityError::internal("the transcript lock was poisoned"))
+    }
+
+    /// Say where this instance is listening.
+    pub fn listening_on(&self, socket: &std::path::Path) {
+        if let Ok(mut held) = self.socket.lock() {
+            *held = Some(socket.to_path_buf());
+        }
+    }
+
+    /// Where it is listening, if it has been told.
+    #[must_use]
+    pub fn socket(&self) -> Option<std::path::PathBuf> {
+        self.socket.lock().ok().and_then(|held| held.clone())
     }
 
     /// The command history.

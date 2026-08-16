@@ -107,6 +107,18 @@ impl Screen {
         Self::start_with_shell_and_terminal("/bin/sh", Some("ghostty"))
     }
 
+    /// A terminal that watches an instance rather than owning its sessions.
+    ///
+    /// The runtime directory is passed in because it decides *which* instance:
+    /// two screens given the same one attach to the same sessions — which is
+    /// what "come back to what you left" means — and two given different ones
+    /// cannot see each other at all, which is what keeps these tests from
+    /// sharing a daemon with the rest of the suite.
+    fn start_attached_in(runtime: &std::path::Path) -> Self {
+        std::fs::create_dir_all(runtime).expect("runtime dir");
+        Self::start_full("/bin/sh", None, Some(runtime))
+    }
+
     /// The same, under a named shell.
     ///
     /// Which shell is not a detail: how a shell starts a child decides what
@@ -118,6 +130,17 @@ impl Screen {
 
     /// The same, with control over what omt thinks it is drawing on.
     fn start_with_shell_and_terminal(shell: &str, term_program: Option<&str>) -> Self {
+        Self::start_full(shell, term_program, None)
+    }
+
+    /// The whole set of choices a screen can be started with.
+    fn start_full(
+        shell: &str,
+        term_program: Option<&str>,
+        runtime: Option<&std::path::Path>,
+    ) -> Self {
+        let runtime_var = runtime.map(|r| r.display().to_string()).unwrap_or_default();
+        let attach_var = if runtime.is_some() { "1" } else { "" }.to_owned();
         // A state directory per screen, so what one test leaves behind cannot
         // decide what the next one starts with. The agent panel remembers
         // whether it is on; without this, the test that turns it on turns it
@@ -147,6 +170,15 @@ impl Screen {
                 ("PS1".to_owned(), "$ ".to_owned()),
                 ("SHELL".to_owned(), shell.to_owned()),
                 ("XDG_STATE_HOME".to_owned(), state.display().to_string()),
+                // Attached only, and *absent* rather than empty otherwise: an
+                // empty variable is a value, and reading one as "yes" made
+                // every local test in this file try to attach.
+                ("XDG_RUNTIME_DIR".to_owned(), runtime_var.clone()),
+                ("OMT_ATTACH".to_owned(), attach_var.clone()),
+                // Both are empty when this screen owns its sessions, and both
+                // are stripped below in that case — a variable set to nothing
+                // is still set, which is the distinction that broke a dozen
+                // tests at once.
                 (
                     "TERM_PROGRAM".to_owned(),
                     term_program.unwrap_or_default().to_owned(),
@@ -172,6 +204,13 @@ impl Screen {
                     ]
                     .map(str::to_owned),
                 );
+                if runtime.is_none() {
+                    // This screen owns its sessions. Inheriting either of these
+                    // from whoever ran the suite would have it attach to an
+                    // instance the test knows nothing about.
+                    stripped.push("OMT_ATTACH".to_owned());
+                    stripped.push("XDG_RUNTIME_DIR".to_owned());
+                }
                 stripped
             },
         })
@@ -1431,4 +1470,106 @@ fn quitting_says_what_it_is_about_to_end() {
         !survived,
         "the session outlived omt, which would mean the warning is now wrong"
     );
+}
+
+#[test]
+fn attached_to_an_instance_a_pane_shows_what_that_session_shows() {
+    let _serial = serially();
+    // The terminal watching sessions it does not own. Everything above the
+    // seam is the same code the local path runs — the renderer, the layout,
+    // the status bar — so what this proves is the seam: bytes from a socket
+    // reach a pane and are drawn like any other.
+    let runtime = instance_dir("attached-one");
+    let mut s = Screen::start_attached_in(&runtime);
+    s.settle(3.0);
+    s.type_in("printf 'from-the-instance'\n");
+    s.settle_until(20.0, |s| s.screen().contains("from-the-instance"));
+    assert!(
+        s.screen().contains("from-the-instance"),
+        "an attached pane never showed its session:\n{}",
+        s.screen()
+    );
+    drop(s);
+    end_instance(&runtime);
+}
+
+#[test]
+fn what_was_left_running_is_what_comes_back() {
+    let _serial = serially();
+    // The promise. A terminal quits with work in it; the next one in the same
+    // directory finds that work rather than a fresh shell.
+    let runtime = instance_dir("attached-return");
+    let mut first = Screen::start_attached_in(&runtime);
+    first.settle(3.0);
+    let marker = format!("survives-{}", std::process::id());
+    first.type_in(&format!("printf '{marker}'\n"));
+    first.settle_until(20.0, |s| s.screen().contains(&marker));
+    assert!(
+        first.screen().contains(&marker),
+        "the marker never appeared"
+    );
+
+    // Gone: not detached politely, *gone* — which is the case somebody's
+    // laptop lid closing produces.
+    drop(first);
+
+    // What the instance itself says, before a second terminal is blamed for
+    // not showing it. This assertion is why the defect was found in one run:
+    // the daemon had been dying with the terminal that started it, because a
+    // child left in the terminal's foreground process group receives the
+    // hangup the kernel sends when that terminal closes.
+    // The one that answers, not the first one on disk. A terminal binds a
+    // socket of its own for its agents' hooks, so the directory holds more
+    // than the instance's — and picking by name found the dead terminal's.
+    let mut answering = None;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && answering.is_none() {
+        for entry in std::fs::read_dir(&runtime).expect("runtime dir").flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "sock")
+                && let Ok(client) = omt::client::Client::connect(&path)
+            {
+                answering = Some(client);
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let mut probe = answering.expect("no instance in the runtime directory answered");
+    let listed = probe
+        .call("session.list", serde_json::json!({}), false)
+        .expect("session.list");
+    let count = listed["sessions"].as_array().map_or(0, Vec::len);
+    assert!(count > 0, "the instance kept no sessions: {listed}");
+
+    let mut second = Screen::start_attached_in(&runtime);
+    second.settle_until(20.0, |s| s.screen().contains(&marker));
+    assert!(
+        second.screen().contains(&marker),
+        "coming back showed none of what was left running:\n{}",
+        second.screen()
+    );
+    drop(second);
+    end_instance(&runtime);
+}
+
+/// A runtime directory of this test's own, so its instance is nobody else's.
+fn instance_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("omt-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("runtime dir");
+    dir
+}
+
+/// Stop the instance a test started, and take its sessions with it.
+///
+/// Left running, it would outlive the suite — which is the whole point of the
+/// thing being tested, and a leak in a test. The daemon is found by the socket
+/// path it was started with, because that path is unique to this test.
+fn end_instance(runtime: &std::path::Path) {
+    let _ = std::process::Command::new("pkill")
+        .arg("-f")
+        .arg(runtime.display().to_string())
+        .status();
+    let _ = std::fs::remove_dir_all(runtime);
 }

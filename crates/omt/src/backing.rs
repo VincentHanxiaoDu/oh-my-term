@@ -242,10 +242,6 @@ impl Backing<'_> {
 ///
 /// # Errors
 /// Fails if the instance refuses, or answers with something unusable.
-#[allow(
-    dead_code,
-    reason = "reached the moment the terminal attaches rather than owns"
-)]
 pub(crate) fn open_session(
     attached: &mut Attached,
     workspace: &str,
@@ -279,10 +275,6 @@ pub(crate) fn open_session(
 ///
 /// # Errors
 /// Fails if the subscription cannot be sent.
-#[allow(
-    dead_code,
-    reason = "reached the moment the terminal attaches rather than owns"
-)]
 pub(crate) fn watch(attached: &mut Attached, id: SessionId, cols: u16, rows: u16) -> Result<()> {
     // The token, like any other actor. Not forced: another terminal or a phone
     // may be holding it, and taking it from them because this process happens
@@ -319,10 +311,6 @@ pub(crate) fn watch(attached: &mut Attached, id: SessionId, cols: u16, rows: u16
 ///
 /// # Errors
 /// Fails if the instance refuses or has gone.
-#[allow(
-    dead_code,
-    reason = "reached the moment the terminal attaches rather than owns"
-)]
 pub(crate) fn refresh_roster(attached: &mut Attached) -> Result<()> {
     let listed = attached
         .client
@@ -345,6 +333,60 @@ pub(crate) fn refresh_roster(attached: &mut Attached) -> Result<()> {
         })
         .unwrap_or_default();
     Ok(())
+}
+
+/// Connect to an instance, starting one if there is none.
+///
+/// # Errors
+/// Fails when no instance can be reached or started, or when several are
+/// running and none was named.
+pub(crate) fn join() -> Result<Attached> {
+    let socket = crate::lifecycle::instance_socket()?;
+    let client = crate::client::Client::connect(&socket)
+        .with_context(|| format!("attaching to {}", socket.display()))?;
+    Ok(Attached {
+        client,
+        mirrors: std::collections::BTreeMap::new(),
+        streams: std::collections::BTreeMap::new(),
+        roster: Vec::new(),
+        epochs: std::collections::BTreeMap::new(),
+    })
+}
+
+/// The session this terminal should show first.
+///
+/// What was left running in this directory, or a new one when there is
+/// nothing. Reusing what is there is the entire point — a terminal that made a
+/// fresh session every time would keep the *processes* alive and show nobody
+/// their work.
+///
+/// # Errors
+/// Fails if the instance refuses to open the workspace or make a session.
+pub(crate) fn first_session(
+    attached: &mut Attached,
+    cwd: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<SessionId> {
+    let workspace =
+        attached
+            .client
+            .call("workspace.open", serde_json::json!({ "root": cwd }), true)?;
+    let workspace = workspace["id"]
+        .as_str()
+        .context("the instance opened no workspace")?
+        .to_owned();
+
+    refresh_roster(attached)?;
+    // The first one that is still alive. Ordered by the instance, which knows
+    // when each was created; picking the newest would mean a terminal that
+    // reopened showed the session somebody made last rather than the one they
+    // were working in.
+    if let Some(existing) = attached.roster.first().map(|s| s.id) {
+        watch(attached, existing, cols, rows)?;
+        return Ok(existing);
+    }
+    open_session(attached, &workspace, None, cols, rows)
 }
 
 #[cfg(test)]

@@ -88,19 +88,35 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // hook talks to a socket. A terminal with no socket is a terminal whose
     // agents can report nothing, which is what every one of them was doing.
     let state = crate::state::State::new(Instance::new());
+    // Set *and non-empty*. An empty variable is how a harness says "not this
+    // one" while still handing the child a fixed set of names, and reading it
+    // as "yes" made every local test try to attach.
+    let attaching = std::env::var("OMT_ATTACH").is_ok_and(|v| !v.trim().is_empty());
     let hook_socket = crate::serve::default_socket_path();
-    {
+    if !attaching {
         let served = state.clone();
         let path = hook_socket.clone();
         // Serving, but not owning: this process pumps its own sessions and
         // persists nothing, so the listener does neither.
+        //
+        // Only when this terminal owns the sessions. Attached, the instance is
+        // the one with ptys for hooks to report about, and a second listener
+        // here would leave a socket in the discovery directory that answers
+        // for an instance holding nothing — which is how the next terminal
+        // attaches to an empty one.
         std::thread::spawn(move || {
             let _ = crate::serve::serve_beside(&path, served);
         });
     }
-    // Nothing yet: this terminal owns its sessions until it is told to attach
-    // to an instance instead. The seam reads this to decide which it is.
-    let mut attached: Option<Attached> = None;
+    // Whether this terminal owns its sessions or watches an instance that
+    // does. Behind a switch until the attached path is at parity: a
+    // half-migrated terminal is worse than either end of the migration, and
+    // the way to find out which end this is is to be able to run both.
+    let mut attached: Option<Attached> = if attaching {
+        Some(crate::backing::join()?)
+    } else {
+        None
+    };
     let socket_text = hook_socket.display().to_string();
     let mut instance = state.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
     let cwd = crate::state::canonical_root(
@@ -128,15 +144,23 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     };
     let first_tile = tile_id();
     let mut layout = omt_tui::Node::leaf(first_tile);
-    let mut panes = vec![LocalPane::open(
-        &mut instance,
-        workspace,
-        &shell,
-        &cwd,
-        PtySize::new(cols, usable_rows),
-        first_tile,
-        &socket_text,
-    )?];
+    // The sessions this terminal is about to show. Attached, they may already
+    // exist — which is the entire point: what was left running is what comes
+    // back — and one is created only when there is nothing to come back to.
+    let mut panes = if let Some(joined) = attached.as_mut() {
+        let session = crate::backing::first_session(joined, &cwd, cols, usable_rows)?;
+        vec![LocalPane::watching(session, first_tile)]
+    } else {
+        vec![LocalPane::open(
+            &mut instance,
+            workspace,
+            &shell,
+            &cwd,
+            PtySize::new(cols, usable_rows),
+            first_tile,
+            &socket_text,
+        )?]
+    };
     let mut focus = 0usize;
 
     // Entered last, so anything that fails above reports on a working terminal
@@ -184,6 +208,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Where somebody is reading, when they are reading rather than typing.
     // `None` is the ordinary case: keys go to the pane.
     let mut copying: Option<omt_tui::CopyMode> = None;
+    // When the roster was last asked for. Attached only; the local path reads
+    // its own instance and has nothing to be stale about.
+    let mut rostered_at = 0u64;
     let mut branch = BranchCache::default();
 
     // Labelled, because the input drain below is itself a loop: an unlabelled
@@ -371,7 +398,21 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // the seam: a terminal watching an instance it does not own produces
         // this from a roster instead of a probe, and nothing above this line
         // changes.
-        let watched = crate::rows::watched_local(&mut instance, &panes, now);
+        let watched = if let Some(joined) = attached.as_mut() {
+            // On the probe's timer rather than per frame: it is a socket round
+            // trip, and what it carries — titles, agent state, thread counts —
+            // changes on human timescales, not on frame ones.
+            if now.saturating_sub(rostered_at) >= crate::probe::PROBE_EVERY_MS {
+                rostered_at = now;
+                // A refresh that fails is an instance that has gone, which the
+                // frame below reports. Losing a roster is not worth ending the
+                // terminal over.
+                let _ = crate::backing::refresh_roster(joined);
+            }
+            crate::rows::watched_remote(&joined.roster.clone(), &panes, &cwd)
+        } else {
+            crate::rows::watched_local(&mut instance, &panes, now)
+        };
 
         // Nothing changed and nothing is waiting to be typed. Wait out the
         // tick here and go round again without drawing.
@@ -836,7 +877,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 Input::Bytes(bytes) => {
                     let pane = &mut panes[focus];
                     let session = pane.session;
-                    if let Some(rt) = instance.runtime_mut(session) {
+                    if attached.is_some() {
+                        // Over the socket, with the epoch the instance handed
+                        // out. The token is arbitrated where the session lives,
+                        // which is the only place that can see every actor.
+                        backing(&mut instance, &mut attached).write(session, &bytes)?;
+                    } else if let Some(rt) = instance.runtime_mut(session) {
                         rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &bytes)
                             .context("writing input")?;
                     }
@@ -1176,6 +1222,32 @@ pub(crate) struct LocalPane {
 }
 
 impl LocalPane {
+    /// A pane for a session this terminal is watching rather than running.
+    ///
+    /// No pty, no writer token held here — the token is the client's and lives
+    /// with the connection, because the thing that owns the session is the
+    /// thing that must arbitrate who types into it.
+    fn watching(session: omt_types::SessionId, tile: omt_tui::PaneId) -> Self {
+        Self {
+            session,
+            // The instance holds the workspace's panes. A client inventing one
+            // would put a pane in its own head that no other surface can see.
+            pane: None,
+            screen: Screen::new(),
+            writer: WriterState::new(WriterPolicy::default()),
+            epoch: omt_session::Epoch::default(),
+            binding: omt_types::BindingId::new(),
+            // What is running in it comes from the instance, which is the one
+            // with the pty to look at.
+            agent: None,
+            probed_at: 0,
+            last_output_ms: 0,
+            tile,
+            seen: true,
+            said: None,
+        }
+    }
+
     /// Start a session and take its writer token.
     fn open(
         instance: &mut Instance,

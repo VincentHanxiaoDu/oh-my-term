@@ -349,6 +349,23 @@ impl CapabilityHandler<SessionRelease> for SessionReleaseHandler {
     }
 }
 
+/// What a session spawned by this instance is told about omt.
+///
+/// Assembled here rather than at each call site so the two spawn paths — a
+/// terminal's own and an instance's — cannot drift into telling an agent
+/// different things.
+fn session_env(state: &State, id: omt_types::SessionId) -> Vec<(String, String)> {
+    let mut env = vec![("OMT_SESSION".to_owned(), id.to_wire())];
+    if let Some(socket) = state.socket() {
+        env.push(("OMT_SOCK".to_owned(), socket.display().to_string()));
+    }
+    env.push((
+        "OMT_AGENT_EVENTS".to_owned(),
+        omt_term::AGENT_EVENT_PROTOCOL.to_string(),
+    ));
+    env
+}
+
 /// Input to `session.create`.
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SessionCreateIn {
@@ -449,10 +466,14 @@ impl CapabilityHandler<SessionCreate> for SessionCreateHandler {
                 args: input.args,
                 cwd: Some(root.into()),
                 size: omt_pty::PtySize::new(input.cols, input.rows),
-                // The same variable the local path sets, so a hook started by
-                // a browser-created session knows which pane it belongs to
-                // exactly as one started from the terminal does.
-                env: vec![("OMT_SESSION".to_owned(), id.to_wire())],
+                // The same variables the local path sets, so a hook started by
+                // a session this instance created knows which pane it belongs
+                // to *and where to report* — exactly as one started from a
+                // terminal that owns its own ptys does. The session id alone
+                // was not enough: a hook with no socket exits at its guard
+                // clause, which is indistinguishable from a hook nobody
+                // installed.
+                env: session_env(&self.0, id),
                 ..omt_pty::PtyConfig::default()
             },
             omt_term::ScrollbackLimits::default(),

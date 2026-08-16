@@ -101,6 +101,11 @@ pub fn serve(path: &Path, state: State) -> Result<()> {
         libc::umask(crate::multiuser::UMASK as libc::mode_t);
     }
     guard_runtime_dir(path)?;
+    // So a session this instance spawns can tell its agent's hooks where to
+    // report. Nothing else knows this: a hook cannot work it out, and until
+    // now a pane created through the daemon had no socket in its environment
+    // at all — which is a hook that runs and silently does nothing.
+    state.listening_on(path);
 
     // Sessions in a daemon nobody is looking at still have to advance: a pty
     // whose output is never read fills its buffer and the program blocks. This
@@ -167,6 +172,7 @@ pub fn serve(path: &Path, state: State) -> Result<()> {
 /// Fails if the socket cannot be created.
 pub fn serve_beside(path: &Path, state: State) -> Result<()> {
     guard_runtime_dir(path)?;
+    state.listening_on(path);
     let _ = std::fs::remove_file(path);
     let listener = omt_transport::SocketListener::bind(path)
         .with_context(|| format!("binding {}", path.display()))?;

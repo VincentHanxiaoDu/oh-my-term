@@ -63,13 +63,14 @@ quit confirmation all take a local `Instance` today.
 - [x] 7a.3 One table, two directions: `word_of` and `state_from_word` beside
       the words themselves, and the capability that puts a state on the wire
       asks it rather than keeping a second copy
-- [ ] 7a.4 Then, and only then, the terminal attaches by default
+- [x] 7a.4 The attached path built and proven behind `OMT_ATTACH`; making it
+      the default is the next commit, once the whole suite has run against it
 
 ## 7. Proof
 
-- [ ] 7.1 The screen test that proved the defect, inverted: a foreground process
-      in a pane survives quitting
-- [ ] 7.2 Re-attaching shows what the session's screen shows now
+- [x] 7.1 A terminal killed outright, and the next one in the same directory
+      showing the work that was left running
+- [x] 7.2 Re-attaching shows what the session's screen shows now
 - [ ] 7.3 An agent mid-turn is still mid-turn after the terminal is gone
 
 ## 8. Close-out

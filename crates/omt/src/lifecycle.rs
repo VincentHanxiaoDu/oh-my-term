@@ -58,18 +58,41 @@ fn start_one() -> Result<PathBuf> {
     // started tomorrow has to be able to find this, and it cannot guess a pid.
     let socket = crate::attach::daemon_socket_path();
     let exe = std::env::current_exe().context("finding omt")?;
-    // Detached: it must outlive this terminal, which is the entire point.
-    // Its output goes nowhere rather than into the screen somebody is about
-    // to draw a terminal on.
-    std::process::Command::new(exe)
+    // A session of its own, with no controlling terminal at all. This is the
+    // whole difference between an instance and a subprocess, and it took two
+    // goes to get right: a child left in the terminal's foreground process
+    // group dies of the hangup when that terminal closes, and a child merely
+    // moved to *another group in the same session* still has that terminal as
+    // its controlling one — which left the daemon dying with its terminal
+    // sometimes, under load, which is the worst way for it to be wrong.
+    //
+    // `setsid` is the only call that severs it. Its output goes nowhere rather
+    // than into the screen somebody is about to draw a terminal on.
+    use std::os::unix::process::CommandExt as _;
+    let mut command = std::process::Command::new(exe);
+    command
         .arg("serve")
         .arg("--socket")
         .arg(&socket)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .context("starting an instance")?;
+        .stderr(std::process::Stdio::null());
+    #[allow(
+        unsafe_code,
+        reason = "setsid has no safe wrapper; it is called between fork and \
+                  exec, where the only async-signal-safe work allowed is \
+                  exactly this kind of syscall"
+    )]
+    unsafe {
+        command.pre_exec(|| {
+            // Already a session leader is not a failure: it means this process
+            // was started with no controlling terminal in the first place,
+            // which is the state being asked for.
+            libc::setsid();
+            Ok(())
+        });
+    }
+    command.spawn().context("starting an instance")?;
 
     wait_for(&socket).with_context(|| {
         format!(
