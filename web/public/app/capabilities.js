@@ -212,10 +212,15 @@ export const HANDLERS = {
     'store.redaction_test': (request, text) => call(request, 'store.redaction_test', { text }),
     'store.retention': (request, query) => call(request, 'store.retention', query),
     'identity.reauth_check': (request, check) => call(request, 'identity.reauth_check', check),
-    'keys.check_file': (request, leader, bindings, keymap) => call(request, 'keys.check_file', {
+    'keys.check_file': (request, leader, bindings, keymap, 
+    // The file itself. Everything the format specifies beyond a trigger and a
+    // name — `when`, `args`, `force`, `platform`, `requires`, `modes` — can
+    // only be checked from the text, so an editor that has the file sends it.
+    text) => call(request, 'keys.check_file', {
         leader,
         bindings,
         ...(keymap === undefined ? {} : { keymap }),
+        ...(text === undefined ? {} : { text }),
     }),
     'launch.preview': (request, launch) => call(request, 'launch.preview', { launch }),
     'config.reload_class': (request, keys) => call(request, 'config.reload_class', { keys }),

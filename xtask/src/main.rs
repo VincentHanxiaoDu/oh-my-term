@@ -8,13 +8,13 @@ use anyhow::{Context, Result, bail};
 
 mod tasks;
 
-use tasks::{install, test_isolation, vocabulary};
+use tasks::{install, settings_readers, test_isolation, vocabulary};
 
 const USAGE: &str = "usage: cargo xtask \
      <layering|file-length|licensing|handlers|codegen|codegen-check|install|\
-     test-isolation|vocabulary>... [--root <path>]";
+     test-isolation|settings-readers|vocabulary>... [--root <path>]";
 
-const TASKS: [&str; 9] = [
+const TASKS: [&str; 10] = [
     "layering",
     "file-length",
     "licensing",
@@ -23,6 +23,7 @@ const TASKS: [&str; 9] = [
     "codegen-check",
     "install",
     "test-isolation",
+    "settings-readers",
     "vocabulary",
 ];
 
@@ -80,6 +81,7 @@ fn run_task(name: &str, root: Option<String>) -> Result<()> {
         "codegen-check" => codegen(true),
         "install" => install(),
         "test-isolation" => test_isolation(),
+        "settings-readers" => settings_readers(),
         "vocabulary" => vocabulary(),
         // `plan` has already rejected everything else, so reaching this is a
         // disagreement between the two lists rather than a user's typo.

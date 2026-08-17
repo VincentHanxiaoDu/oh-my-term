@@ -149,7 +149,7 @@ cargo fmt --all
 cargo clippy --workspace --all-targets      # warnings are failures here
 cargo test --workspace                      # slow: ~15 min from cold
 cargo test -p omt --test screen             # a real pty, ~3 min, serialised
-cargo run -p xtask -- layering licensing file-length codegen-check test-isolation
+cargo run -p xtask -- layering licensing file-length codegen-check test-isolation settings-readers
 cd web && npm run check
 ```
 

@@ -19,11 +19,20 @@ for as a literal string in `crates/`, `web/src/` and `xtask/`, excluding
 |---|---|
 | `notifications.when` | `crates/omt/src/run.rs`, `crates/omt-notify/src/policy.rs` |
 | `notifications.sound` | `crates/omt/src/run.rs` |
-| `notifications.sound.needs_you` | `crates/omt/src/run.rs` |
-| `notifications.sound.finished` | `crates/omt/src/run.rs` |
-| `terminal.blocks` | `crates/omt/src/capabilities/session_input_and_geometry.rs`, `crates/omt/src/remember.rs` |
-| `terminal.foreground` | `crates/omt/src/terminal_bits.rs` (via `host_colours`) |
-| `terminal.background` | `crates/omt/src/terminal_bits.rs` (via `host_colours`) |
+| `notifications.sound.needs_you` | `crates/omt/src/run.rs` (via `sound_file`) |
+| `notifications.sound.finished` | `crates/omt/src/run.rs` (via `sound_file`) |
+
+Four, not seven. The first pass counted three more and was wrong about each,
+which is worth recording because the mistake is the same one twice over:
+
+- `terminal.blocks` matched `terminal.blocks()` — a method call on a terminal,
+  not a setting being read.
+- `terminal.foreground` and `terminal.background` matched `omt-theme`'s
+  importer, which maps *VS Code* keys that happen to be spelled the same.
+  `host_colours` reads `$OMT_TERM_FOREGROUND` and `$COLORFGBG`, and no setting.
+
+A string match is not a reader. The gate below looks for the key inside a
+lookup, in the crates that actually hold the resolved configuration.
 
 ## Not read by anything
 
@@ -105,7 +114,21 @@ rebind does nothing.
 
 ## Keeping this honest
 
-This file is written by hand and goes stale the moment a setting is wired up or
-added. The gate that keeps it true is described in the change that introduced
-it: a documented setting either has a reader or is named here, and a setting
-that is neither fails the build.
+The list above goes stale the moment a setting is wired up. What does not is
+`cargo xtask settings-readers`, and the declaration it checks — `UNWIRED` in
+`crates/omt-config/src/schema.rs`, which names every unread setting *and why*.
+
+The gate fails in both directions:
+
+- a setting nothing reads and nothing declares is a silent promise;
+- an entry in `UNWIRED` for a setting that has since been wired up is a stale
+  excuse, and stale excuses are how a list like this stops meaning anything.
+
+Both were seen failing before the table was filled in:
+
+```
+`terminal.blocks` is a setting nothing reads. Wire it up, or add it to
+`UNWIRED` in omt-config's schema with the reason.
+`appearance.theme` has a reader and is still listed in `UNWIRED`. Remove the
+entry: a stale excuse is how the list stops meaning anything.
+```

@@ -30,4 +30,5 @@ rewritten from the notes.
 - [ ] `cargo clippy --workspace --all-targets`
 - [ ] `cargo run -p xtask -- codegen-check` (if a capability changed)
 - [ ] `cargo run -p xtask -- layering`
+- [ ] `cargo run -p xtask -- settings-readers` (if a setting was added or wired up)
 - [ ] `cargo run -p xtask -- licensing`

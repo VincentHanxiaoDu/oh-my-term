@@ -227,6 +227,142 @@ pub(crate) fn walk(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// Every setting either has a reader or says why it has none.
+///
+/// The gate for the defect this repository keeps meeting: a vocabulary that
+/// exists everywhere and a producer — here, a *consumer* — that exists
+/// nowhere. Fifty-nine of the sixty-six settings parsed, validated and
+/// reported their provenance while changing nothing at all, and from outside
+/// that is indistinguishable from a setting that works.
+///
+/// It fails in both directions on purpose. A setting nothing reads and nothing
+/// declares is a silent promise; an entry in `UNWIRED` for a setting that has
+/// since been wired up is a stale excuse, and stale excuses are how a list
+/// like this stops meaning anything.
+pub(crate) fn settings_readers() -> Result<()> {
+    let root = workspace_root()?;
+
+    let schema = std::fs::read_to_string(root.join("crates/omt-config/src/schema.rs"))
+        .context("reading the settings schema")?;
+    let keys = declared(&schema, "key: \"");
+    let unwired = unwired_entries(&schema);
+
+    // Everything that could read a setting, which is everything except the
+    // crate that defines and validates them: naming a key there is declaring
+    // it, not acting on it.
+    let mut sources = String::new();
+    for dir in [
+        root.join("crates/omt/src"),
+        root.join("crates/omt-server/src"),
+        root.join("crates/omt-daemon/src"),
+        root.join("web/src"),
+    ] {
+        for file in walk(&dir)? {
+            let path = file.to_string_lossy().to_string();
+            if file
+                .extension()
+                .is_none_or(|e| e != "rs" && e != "ts" && e != "tsx")
+            {
+                continue;
+            }
+            // Tests are excluded: a fixture that mentions a key proves
+            // somebody typed it, not that anything acts on it.
+            if path.contains("/tests/") {
+                continue;
+            }
+            sources.push_str(&std::fs::read_to_string(&file).unwrap_or_default());
+            sources.push('\n');
+        }
+    }
+
+    let mut problems: Vec<String> = Vec::new();
+    for key in &keys {
+        let read = reads(&sources, key);
+        let declared = unwired.iter().any(|(k, _)| k == key);
+        match (read, declared) {
+            (false, false) => problems.push(format!(
+                "`{key}` is a setting nothing reads. Wire it up, or add it to \
+                 `UNWIRED` in omt-config's schema with the reason."
+            )),
+            (true, true) => problems.push(format!(
+                "`{key}` has a reader and is still listed in `UNWIRED`. Remove \
+                 the entry: a stale excuse is how the list stops meaning anything."
+            )),
+            _ => {}
+        }
+    }
+    for (key, why) in &unwired {
+        if !keys.contains(key) {
+            problems.push(format!("`{key}` is in `UNWIRED` and is not a setting"));
+        }
+        if why.trim().is_empty() {
+            problems.push(format!("`{key}` is unwired without a reason"));
+        }
+    }
+
+    if problems.is_empty() {
+        println!(
+            "settings readers ok — {} settings, {} of them declared unwired with a reason",
+            keys.len(),
+            unwired.len()
+        );
+        return Ok(());
+    }
+    for problem in &problems {
+        eprintln!("  {problem}");
+    }
+    bail!("{} setting(s) without an honest answer", problems.len())
+}
+
+/// Whether anything actually asks the configuration for a key.
+///
+/// The key must appear *inside a lookup*, not merely somewhere in a file. A
+/// bare string match called `terminal.background` read: the name collides with
+/// a VS Code theme key that `omt-theme` maps, and a gate that counted that
+/// would report a setting as wired because two unrelated things are spelled
+/// the same.
+fn reads(sources: &str, key: &str) -> bool {
+    let quoted = format!("\"{key}\"");
+    sources.lines().any(|line| {
+        line.contains(&quoted)
+            && (line.contains("get(") || line.contains("setting(") || line.contains("_file("))
+    })
+}
+
+/// The quoted words following a marker, in file order.
+fn declared(text: &str, marker: &str) -> Vec<String> {
+    text.match_indices(marker)
+        .filter_map(|(at, _)| {
+            let rest = &text[at + marker.len()..];
+            rest.find('"').map(|end| rest[..end].to_owned())
+        })
+        .collect()
+}
+
+/// The `UNWIRED` table, as pairs.
+fn unwired_entries(schema: &str) -> Vec<(String, String)> {
+    let Some(start) = schema.find("pub const UNWIRED") else {
+        return Vec::new();
+    };
+    let body = &schema[start..];
+    let Some(end) = body.find("\n];") else {
+        return Vec::new();
+    };
+    // Every quoted string in the block, paired up. Reading it line by line
+    // broke the moment rustfmt wrapped an entry across three lines — a gate
+    // that depends on formatting is a gate that fails for the wrong reason.
+    let quoted: Vec<String> = body[..end]
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .collect();
+    quoted
+        .chunks_exact(2)
+        .map(|pair| (pair[0].clone(), pair[1].clone()))
+        .collect()
+}
+
 /// Emit the words both surfaces use for an agent's state.
 ///
 /// The TUI and the web client each decide what to *call* a state, and they
@@ -316,6 +452,48 @@ pub(crate) fn arms(source: &str, signature: &str) -> Result<Vec<(String, String)
         bail!("no arms parsed out of `{signature}`");
     }
     Ok(out)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod settings_reader_tests {
+    use super::{reads, unwired_entries};
+
+    #[test]
+    fn a_name_collision_is_not_a_reader() {
+        // `omt-theme` maps a VS Code key spelled `terminal.background`. A gate
+        // that counted that would report a setting as wired because two
+        // unrelated things are spelled the same — which is the exact shape of
+        // defect it exists to catch.
+        let collision = "    let background = get(\"terminal.background\")";
+        assert!(reads(collision, "terminal.background"));
+        let mention = "    // terminal.background is documented in 10 §3";
+        assert!(!reads(mention, "terminal.background"));
+    }
+
+    #[test]
+    fn a_lookup_is_what_counts_as_reading() {
+        let lookup = "let when = When::parse(&setting(&state, \"notifications.when\"));";
+        assert!(reads(lookup, "notifications.when"));
+        let listed = "    pub key: \"notifications.when\",";
+        assert!(!reads(listed, "notifications.when"));
+    }
+
+    #[test]
+    fn the_unwired_table_survives_being_reformatted() {
+        // rustfmt wraps a long entry across three lines. A gate that read the
+        // table line by line failed the moment it did, which is a gate failing
+        // for the wrong reason.
+        let wrapped = "pub const UNWIRED: &[(&str, &str)] = &[\n    (\n        \"a.b\",\n        \"why\",\n    ),\n];";
+        assert_eq!(
+            unwired_entries(wrapped),
+            vec![("a.b".to_owned(), "why".to_owned())]
+        );
+    }
 }
 
 #[cfg(test)]

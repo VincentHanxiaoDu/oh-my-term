@@ -88,6 +88,270 @@ pub fn key_specs() -> Vec<crate::KeySpec> {
         .collect()
 }
 
+/// Settings nothing reads yet, and why.
+///
+/// A setting is a promise. A settings screen that shows a key, validates it,
+/// records which file it came from and then changes nothing is worse than no
+/// setting at all: it fails in the one way nobody checks for, because it looks
+/// exactly like a setting that worked. Fifty-nine of these were found that way
+/// — `terminal.scrollback_lines` never reached `ScrollbackLimits`, and
+/// `media.images.enabled` could not turn anything off.
+///
+/// So the list is here rather than in somebody's head, and
+/// `cargo xtask settings-readers` fails in *both* directions: a setting with
+/// no reader and no entry here fails, and an entry here for a setting that has
+/// since been wired up fails as stale. Emptiness has to be declared.
+pub const UNWIRED: &[(&str, &str)] = &[
+    (
+        "terminal.blocks",
+        "the block tracker is always on; nothing consults this yet",
+    ),
+    (
+        "terminal.foreground",
+        "the host colours come from the environment; nothing consults this yet",
+    ),
+    (
+        "terminal.background",
+        "the host colours come from the environment; nothing consults this yet",
+    ),
+    (
+        "agents.detection",
+        "detection is unconditional; nothing consults this yet",
+    ),
+    (
+        "appearance.block_style",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.cursor.blink",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.cursor.style",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.density",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.font.fallbacks",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.font.family",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.font.ligatures",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.font.line_height",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.font.size",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.show_agent_badges",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.theme",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.theme_light",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "appearance.theme_mode",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "font.family",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "font.line_height",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "font.size",
+        "the web client draws with it; nothing applies it yet",
+    ),
+    (
+        "hints.enabled",
+        "the hint line is state-driven; nothing consults this yet",
+    ),
+    (
+        "log.file",
+        "logging goes to stderr and the crash note; nothing consults this yet",
+    ),
+    (
+        "log.level",
+        "logging goes to stderr and the crash note; nothing consults this yet",
+    ),
+    (
+        "log.max_size",
+        "logging goes to stderr and the crash note; nothing consults this yet",
+    ),
+    (
+        "log.redact_secrets",
+        "logging goes to stderr and the crash note; nothing consults this yet",
+    ),
+    (
+        "media.blob_dir",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.clipboard.osc52_max_bytes",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.clipboard.osc52_read",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.clipboard.osc52_write",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.images.enabled",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.images.max_rows",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.images.protocol",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.images.thumbnail_max_px",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.osc_bridge.max_bytes",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.quota.max_blob_bytes",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.quota.max_blobs_per_session",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.quota.max_total_bytes",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.quota.ttl",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.quota.ttl_referenced",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "media.reverse_socket.hosts",
+        "the media path is unconditional; nothing consults this yet",
+    ),
+    (
+        "server.bind",
+        "the address comes from the command line; nothing consults this yet",
+    ),
+    (
+        "shell.auto_install",
+        "shell integration installs the same way for everyone; nothing consults this yet",
+    ),
+    (
+        "shell.command_metadata",
+        "shell integration installs the same way for everyone; nothing consults this yet",
+    ),
+    (
+        "shell.inject_env",
+        "shell integration installs the same way for everyone; nothing consults this yet",
+    ),
+    (
+        "shell.osc133",
+        "shell integration installs the same way for everyone; nothing consults this yet",
+    ),
+    (
+        "shell.propagate_over_ssh",
+        "shell integration installs the same way for everyone; nothing consults this yet",
+    ),
+    (
+        "shell.shells",
+        "shell integration installs the same way for everyone; nothing consults this yet",
+    ),
+    (
+        "terminal.bell",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.blocks.enabled",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.blocks.heuristic_fallback",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.blocks.max_retained",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.bracketed_paste",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.default_cwd",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.default_shell",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.env_passthrough",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.highlight",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.mouse_reporting",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.paste_confirm_lines",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.paste_confirm_on_newline",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.reflow.on_resize",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.scrollback_lines",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+    (
+        "terminal.word_separators",
+        "the terminal core takes its own defaults; nothing passes this in yet",
+    ),
+];
+
 /// Every setting omt understands.
 ///
 /// One table. A settings screen, `config.schema` and the validator all read it,
