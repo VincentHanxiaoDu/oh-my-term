@@ -11,9 +11,28 @@
 use std::process::Command;
 
 fn main() {
-    // Rerun when the checked-out commit changes, which is what `.git/HEAD` and
-    // the ref it points at record.
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    // Rerun when the checked-out commit changes.
+    //
+    // `.git/HEAD` alone is not that. On a branch it holds `ref: refs/heads/x`
+    // and does not change when a commit is made — so the stamp stayed at
+    // whatever commit was checked out the first time this was built, and
+    // `omt --version` reported a commit the binary was not built from. That is
+    // the exact confusion this file exists to prevent, which is how it went
+    // unnoticed: the line was there and it was watching the wrong file.
+    let git = std::path::Path::new("../../.git");
+    println!("cargo:rerun-if-changed={}", git.join("HEAD").display());
+    if let Ok(head) = std::fs::read_to_string(git.join("HEAD"))
+        && let Some(reference) = head.strip_prefix("ref: ").map(str::trim)
+    {
+        // The ref file itself, which is what a commit actually writes.
+        println!("cargo:rerun-if-changed={}", git.join(reference).display());
+    }
+    // And where refs live once they have been packed away, which is where a
+    // ref file goes when it stops existing on its own.
+    println!(
+        "cargo:rerun-if-changed={}",
+        git.join("packed-refs").display()
+    );
 
     let commit = Command::new("git")
         .args(["rev-parse", "--short=12", "HEAD"])
