@@ -204,8 +204,22 @@ pub trait AgentAdapter: Send + Sync {
     /// place, because the shipped rules are better than nothing in every one
     /// of those cases.
     fn rules_in_use(&self) -> Vec<crate::rules::Rule> {
-        crate::manifest::load(&format!("{:?}", self.kind()).to_lowercase())
-            .unwrap_or_else(|| self.screen_rules())
+        self.rules_in_use_from(crate::manifest::directory().as_deref())
+    }
+
+    /// The same, from a named directory.
+    ///
+    /// The directory is a parameter because the environment is process state:
+    /// two tests that each pointed `OMT_AGENT_RULES` somewhere raced through
+    /// libtest's threads, and one of them failed roughly one run in three
+    /// while the comment beside them claimed they were single-threaded. A
+    /// caller that knows where to look says so; only the process entry point
+    /// consults the environment.
+    fn rules_in_use_from(&self, dir: Option<&std::path::Path>) -> Vec<crate::rules::Rule> {
+        dir.and_then(|dir| {
+            crate::manifest::load_from(dir, &format!("{:?}", self.kind()).to_lowercase())
+        })
+        .unwrap_or_else(|| self.screen_rules())
     }
 
     /// Environment to inject when omt spawns it.

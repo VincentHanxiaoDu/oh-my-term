@@ -463,7 +463,17 @@ pub fn directory() -> Option<std::path::PathBuf> {
 /// broken one is a mistake somebody made and has to be told about.
 #[must_use]
 pub fn load(agent: &str) -> Option<Vec<Rule>> {
-    let path = directory()?.join(format!("{agent}.toml"));
+    load_from(&directory()?, agent)
+}
+
+/// The same, from a named directory.
+///
+/// Split out so a caller can say where to look rather than setting an
+/// environment variable to be read back: process state is shared by everything
+/// in the process, and two callers pointing it at different directories race.
+#[must_use]
+pub fn load_from(dir: &std::path::Path, agent: &str) -> Option<Vec<Rule>> {
+    let path = dir.join(format!("{agent}.toml"));
     let text = std::fs::read_to_string(&path).ok()?;
     let manifest: Manifest = match toml::from_str(&text) {
         Ok(manifest) => manifest,
@@ -551,7 +561,7 @@ mod override_tests {
         );
         // SAFETY: single-threaded test, and the variable is the documented way
         // to point the rules directory somewhere else.
-        let loaded = with_rules_dir(dir.path(), || crate::agents::ClaudeCode.rules_in_use());
+        let loaded = crate::agents::ClaudeCode.rules_in_use_from(Some(dir.path()));
         assert!(
             loaded.iter().any(|r| r.id == "a wording nobody shipped"),
             "the written rules were not used: {:?}",
@@ -565,24 +575,8 @@ mod override_tests {
         // are better than nothing in each case. Silence here would be an agent
         // omt suddenly cannot read the state of, for a reason nobody can see.
         let dir = written("claudecode", "this is not toml at all {{{");
-        let loaded = with_rules_dir(dir.path(), || crate::agents::ClaudeCode.rules_in_use());
+        let loaded = crate::agents::ClaudeCode.rules_in_use_from(Some(dir.path()));
         let shipped = crate::agents::ClaudeCode.screen_rules();
         assert_eq!(loaded.len(), shipped.len());
-    }
-
-    /// Run something with the rules directory pointed at a path.
-    fn with_rules_dir<T>(dir: &std::path::Path, body: impl FnOnce() -> T) -> T {
-        // SAFETY: these tests are single-threaded within this module and the
-        // variable exists to be set.
-        #[allow(unsafe_code, reason = "no safe way to set an environment variable")]
-        unsafe {
-            std::env::set_var("OMT_AGENT_RULES", dir);
-        }
-        let out = body();
-        #[allow(unsafe_code, reason = "no safe way to remove an environment variable")]
-        unsafe {
-            std::env::remove_var("OMT_AGENT_RULES");
-        }
-        out
     }
 }
