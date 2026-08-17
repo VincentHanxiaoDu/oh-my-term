@@ -8,7 +8,8 @@ Read `openspec/changes/archive/` for the reasoning behind anything below: each
 change carries its proposal, its design and the decisions with their reasons. If
 one of them disagrees with this file, the change is right and this is stale.
 
-There is no change in flight. Section 6 is what is worth doing next.
+There is no change in flight. Section 6 is the one thing still open, and it is
+a question rather than a feature.
 
 ---
 
@@ -40,7 +41,7 @@ These are not preferences. Breaking one has cost real work here before.
 ## 2. What was just finished
 
 **A feature-by-feature pass against the two comparable products**, whose source
-is under `.research/`. Five changes, each archived with its reasoning:
+is under `.research/`. Six changes, each archived with its reasoning:
 command history, reading the agent's own session file, the mouse, images in a
 pane, the rest of copy mode, and drawing those images where a terminal says it
 can. `docs/reference/read-from-the-others.md` is the
@@ -48,9 +49,14 @@ checklist and carries a verdict per row, including the rows where omt is
 deliberately different and the rows where **their** answer is worse than it
 looks.
 
+**Then the first real use of that build**, which is a different kind of
+evidence and found things no suite had: omt closing without a word, and chrome
+drawn as a white slab. Archived as
+`2026-08-17-the-chrome-has-a-palette-and-the-exit-has-a-reason`.
+
 **The pattern worth knowing before you start anything here.** Every one of those
-five found the same class of defect underneath the feature, and it is the
-expensive kind:
+found the same class of defect underneath the feature, and it is the expensive
+kind:
 
 > **A vocabulary that exists everywhere and a producer that exists nowhere.**
 
@@ -64,6 +70,11 @@ expensive kind:
   every block in production carried an empty command.
 - `keymap = "vim" | "emacs"` was documented in the configuration reference and
   parsed into the binding file; **no code read the field**.
+- `omt-theme` has held a background, a foreground and sixteen colours since the
+  web client existed, and **none of the terminal's own chrome ever read it** —
+  which is why the status bar was a slab of reverse video.
+- A session records how its program ended. **Nothing asked it**, so omt closed
+  in silence and looked like a crash.
 
 From outside, every one of these is indistinguishable from "there was nothing
 to show". They do not fail, they do not log, and they do not look wrong in a
@@ -71,8 +82,15 @@ review — the code that is missing is missing, not incorrect. **When a feature
 here answers with nothing, check that something writes to it before you believe
 the emptiness.** `grep` for the producer, not the type.
 
+There is a second form of it, and it is worse because the line *is* there:
+**code that runs and watches the wrong thing.** `omt --version` reported a
+commit the binary was not built from for as long as the stamp existed — the
+build script asked to rerun when `.git/HEAD` changed, and on a branch that file
+does not change when you commit. The stamp existed precisely to stop somebody
+wondering whether they were running the fix.
+
 Three documents also claimed things that were not true, which is the same
-defect wearing a different hat: that `vte` surfaces APC (it consumes it with no
+defect wearing a third hat: that `vte` surfaces APC (it consumes it with no
 callback at all), that `omt-term` already parsed inline images, and that the
 transcript reader watches a directory.
 
@@ -102,6 +120,28 @@ Two things left behind for the next person: a client writes a call that never
 answered to `$OMT_CLIENT_LOG`, and a history that cannot be fetched says so on
 the screen rather than being drawn as emptiness.
 
+### 3.1 What the first real use added
+
+A build that passed every suite was run in somebody's own terminal and
+"disappeared when I clicked". None of that was reproducible here; what settled
+it was **asking the machine instead of the code**:
+
+- **The session's own state said it.** `omt session list` on the still-running
+  instance reported `exited:130` — the pane's shell had been stopped by
+  `SIGINT`, so the last pane went and omt closed with nothing left to show.
+- **macOS keeps crash reports.** `~/Library/Logs/DiagnosticReports` had no omt
+  in it, which rules out every signal that would have produced one. "It
+  crashed" and "it exited" look identical on screen and are not the same bug.
+
+Both of those are cheaper than a debugger and neither needs the person who hit
+it to still be at the keyboard. Reach for them first.
+
+**Why it took so long to see:** the exit *was* reported — to stderr, on the
+alternate screen, which `LeaveAlternateScreen` then threw away. Not silence. A
+sentence written where nobody could read it.
+
+**Still unreproduced:** what sent that `SIGINT`. Section 6.
+
 ## 4. How to check your work
 
 ```
@@ -121,6 +161,19 @@ Adding a capability means: the `capability!` declaration, a web handler in
 `web/src/capabilities.ts`, `cargo xtask handlers`, and a schema snapshot
 (`UPDATE_SCHEMA_SNAPSHOT=1 cargo test -p omt --test schema_compatibility`). All
 three gates will tell you which one you forgot.
+
+**When it misbehaves in a real terminal rather than in a test**, in the order
+that costs least:
+
+```
+omt --version                 # the commit it was actually built from
+cat /tmp/omt-crash.log        # a panic left a note here
+omt session list              # a session records how its program ended
+ls ~/Library/Logs/DiagnosticReports   # macOS logs anything killed by a signal
+```
+
+omt also says why it closed, on the line after it hands the terminal back.
+That line is the first thing to ask for.
 
 ## 5. Traps that have already cost time here
 
@@ -151,19 +204,57 @@ three gates will tell you which one you forgot.
   inside a typed command line has bitten someone; a shell running a single
   command execs it, so a marker put in `argv` is gone by the time anything looks
   for it.
+- **Anything printed before the guard drops is printed onto a screen that is
+  about to be discarded.** Errors, panics, "why omt closed" — all of it goes
+  after the alternate screen is handed back, or it does not exist. This is the
+  single reason a real failure looked like a silent one.
+- **The screen suite must stay one test binary.** Cargo runs test binaries in
+  parallel, and sixteen real ptys at once is a test of the machine, not of omt
+  — it fails on timing, in a pattern that changes with load. The harness lives
+  in `crates/omt/tests/common/screen_harness.rs` so the file can be split
+  without splitting the binary.
+- **A gate can fire on code that is correct.** Moving that harness made
+  `test-isolation` report a suite that *was* isolated, because the isolation
+  moved with it. The gate now follows `mod common;`. Worth remembering the
+  shape: the tempting fix for a false alarm is to weaken the gate, and that is
+  how a gate stops being one.
 
-## 6. The survey
+## 6. What is open
 
-From reading the others, in `docs/reference/read-from-the-others.md`.
+### 6.1 The survey: nothing
 
-**Nothing from that survey is left open.** Every row has a verdict and a
-reason, including the rows omt is deliberately different on and the rows where
-their answer turned out to be worse than it looked. The rows omt does not
-implement say why, rather than sitting on a list as though somebody forgot.
+From reading the others, in `docs/reference/read-from-the-others.md`. Every row
+has a verdict and a reason, including the rows omt is deliberately different on
+and the rows where their answer turned out to be worse than it looked. The rows
+omt does not implement say why, rather than sitting on a list as though
+somebody forgot.
 
-What that leaves for the next person is not a backlog of features but the
-habit that found them: when a surface here answers with nothing, check that
-something writes to it before believing the emptiness.
+What that leaves is not a backlog of features but the habit that found them:
+when a surface here answers with nothing, check that something writes to it
+before believing the emptiness.
+
+### 6.2 The one open question: who sent that `SIGINT`
+
+A pane's shell was stopped by `SIGINT` in ordinary use (§3.1) and it has not
+been reproduced here. Ruled out, each by a real run rather than by reading:
+
+- mouse input of every shape — 360 random events, SGR and the legacy encoding,
+  clicks landing during the startup handshake, over both a local terminal and
+  one attached to a daemon;
+- a real `claude` and a real `pi` in a pane, 108 events each, plus copy mode
+  over their output;
+- restoring an older snapshot, two instances present at once, and `Ctrl-C` sent
+  straight at an idle shell — which an interactive shell survives, as it should.
+
+So it is something about that machine's terminal or shell that this machine's
+ptys do not have. **The instrumentation to catch it is now in place**: omt
+names the reason on the way out, and a panic leaves a note at
+`/tmp/omt-crash.log`. The next occurrence should report itself.
+
+If you pick this up: the shape to suspect is a signal reaching the pane's
+process group from outside it, and the thing to compare is the pty's terminal
+settings and process-group layout between a daemon-created session and a
+locally-owned one.
 
 ## 7. One request
 
