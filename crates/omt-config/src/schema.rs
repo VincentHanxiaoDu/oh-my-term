@@ -315,10 +315,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
     (
-        "terminal.default_shell",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
         "terminal.env_passthrough",
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
@@ -340,10 +336,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
     ),
     (
         "terminal.reflow.on_resize",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.scrollback_lines",
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
     (

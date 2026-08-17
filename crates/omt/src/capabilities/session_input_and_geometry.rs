@@ -476,7 +476,7 @@ impl CapabilityHandler<SessionCreate> for SessionCreateHandler {
                 env: session_env(&self.0, id),
                 ..omt_pty::PtyConfig::default()
             },
-            omt_term::ScrollbackLimits::default(),
+            crate::terminal_bits::scrollback_limits(&self.0),
         )
         .map_err(|e| CapabilityError::internal(e.to_string()))?;
 

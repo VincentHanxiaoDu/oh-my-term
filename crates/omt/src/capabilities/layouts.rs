@@ -197,7 +197,7 @@ impl LayoutOpenHandler {
                 env: vec![("OMT_SESSION".to_owned(), id.to_wire())],
                 ..omt_pty::PtyConfig::default()
             },
-            omt_term::ScrollbackLimits::default(),
+            crate::terminal_bits::scrollback_limits(&self.0),
         )
         .map_err(|e| CapabilityError::internal(e.to_string()))?;
         instance

@@ -28,6 +28,55 @@ pub(crate) fn setting(state: &crate::state::State, key: &str) -> String {
     })
 }
 
+/// A configured number, where one is set and sane.
+///
+/// `None` for absent, unreadable or nonsensical, all three deliberately: the
+/// caller's fallback is the built-in default, which is a real answer. A
+/// terminal that refused to start over a settings file is worse than one with
+/// default settings.
+pub(crate) fn number_setting(state: &crate::state::State, key: &str) -> Option<u64> {
+    state
+        .config()
+        .ok()
+        .and_then(|resolved| resolved.get(key).and_then(serde_json::Value::as_u64))
+        .filter(|n| *n > 0)
+}
+
+/// The scrollback caps this instance is configured with.
+///
+/// `terminal.scrollback_lines` has been in the settings reference, the settings
+/// screen and the importer since any of them existed, and **it never reached
+/// `ScrollbackLimits`** — every session kept the built-in ten thousand lines
+/// while the settings screen reported whatever the user had asked for. A
+/// setting that is accepted and does nothing is worse than one that is
+/// refused.
+pub(crate) fn scrollback_limits(state: &crate::state::State) -> omt_term::ScrollbackLimits {
+    scrollback_limits_of(number_setting(state, "terminal.scrollback_lines"))
+}
+
+/// The same, from the number itself.
+///
+/// Split from the lookup so it can be checked without a configuration on disk:
+/// a test that reads the real files passes or fails according to the settings
+/// of whoever runs it, which is a test of their machine.
+pub(crate) fn scrollback_limits_of(lines: Option<u64>) -> omt_term::ScrollbackLimits {
+    let mut limits = omt_term::ScrollbackLimits::default();
+    if let Some(lines) = lines {
+        limits.max_lines = u32::try_from(lines).unwrap_or(u32::MAX);
+    }
+    limits
+}
+
+/// The shell a new pane starts, in the order the documents promise.
+///
+/// `terminal.default_shell` before `$SHELL`: the setting is the one thing a
+/// user set on purpose, and it was read by nothing at all.
+pub(crate) fn default_shell(state: &crate::state::State) -> Option<String> {
+    let configured = setting(state, "terminal.default_shell");
+    let trimmed = configured.trim().trim_matches('"').trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
 /// What colour the terminal omt is drawing on actually is.
 ///
 /// Configuration first, then `$COLORFGBG`, which is what terminals that
@@ -757,5 +806,18 @@ mod tests {
             assert_eq!(copy_key(&key(KeyCode::Esc), flavour), CopyKey::Leave);
             assert_eq!(copy_key(&key(KeyCode::Enter), flavour), CopyKey::Yank);
         }
+    }
+
+    #[test]
+    fn a_configured_scrollback_reaches_the_limits_and_an_absent_one_does_not() {
+        // It never did: `terminal.scrollback_lines` was accepted, shown with
+        // its provenance, and every session kept the built-in ten thousand.
+        assert_eq!(scrollback_limits_of(Some(250)).max_lines, 250);
+        assert_eq!(
+            scrollback_limits_of(None).max_lines,
+            omt_term::ScrollbackLimits::default().max_lines
+        );
+        // A nonsense value is the default rather than a refusal to start.
+        assert_eq!(scrollback_limits_of(Some(u64::MAX)).max_lines, u32::MAX);
     }
 }

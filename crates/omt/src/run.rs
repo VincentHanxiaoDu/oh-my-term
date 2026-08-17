@@ -84,20 +84,30 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         Ok((c, r)) if c > 0 && r > 1 => (c, r),
         _ => (80, 24),
     };
+    // The state has to exist before the shell is chosen, because the shell is
+    // a setting — and `terminal.default_shell` was documented, importable and
+    // read by nothing.
+    let state = crate::state::State::new(Instance::new());
     let shell = program
+        .or_else(|| crate::terminal_bits::default_shell(&state))
         .or_else(|| std::env::var("SHELL").ok())
         .unwrap_or_else(|| "/bin/sh".to_owned());
+
+    // How much scrollback each session keeps, from the setting that reached
+    // nothing until now. Read once: it is a cap applied when a session starts,
+    // and re-reading it per pane would open the file again for an answer that
+    // cannot have changed.
+    let scrollback = crate::terminal_bits::scrollback_limits(&state);
 
     // Printed before anything else, so it is above the session rather than
     // interleaved with it. Prints and continues — no question, no wait. Every
     // question is a step, and a step is where people stop.
     crate::firstrun::first_run_summary();
 
-    // Held behind a `State` rather than owned outright, because something
-    // else now needs to reach it: the agents in these panes fire hooks, and a
-    // hook talks to a socket. A terminal with no socket is a terminal whose
-    // agents can report nothing, which is what every one of them was doing.
-    let state = crate::state::State::new(Instance::new());
+    // The `State` above is held rather than owned outright because something
+    // else needs to reach it: the agents in these panes fire hooks, and a hook
+    // talks to a socket. A terminal with no socket is a terminal whose agents
+    // can report nothing, which is what every one of them was doing.
     // Attached is the default: a session that dies with the terminal showing
     // it is the one thing a multiplexer exists to prevent. `OMT_LOCAL` is the
     // way back, for a machine where an instance cannot be started and for the
@@ -178,12 +188,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     } else {
         vec![LocalPane::open(
             &mut instance,
-            workspace,
-            &shell,
-            &cwd,
-            PtySize::new(cols, usable_rows),
-            first_tile,
-            &socket_text,
+            &Opening {
+                workspace,
+                program: &shell,
+                cwd: &cwd,
+                size: PtySize::new(cols, usable_rows),
+                tile: first_tile,
+                socket: &socket_text,
+                scrollback,
+            },
         )?]
     };
     let mut focus = 0usize;
@@ -1386,12 +1399,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                             } else {
                                 LocalPane::open(
                                     &mut instance,
-                                    workspace,
-                                    &shell,
-                                    &cwd,
-                                    size,
-                                    new_tile,
-                                    &socket_text,
+                                    &Opening {
+                                        workspace,
+                                        program: &shell,
+                                        cwd: &cwd,
+                                        size,
+                                        tile: new_tile,
+                                        socket: &socket_text,
+                                        scrollback,
+                                    },
                                 )
                             };
                             if let Ok(pane) = opened {
@@ -1682,6 +1698,22 @@ pub(crate) struct LocalPane {
     pub(crate) said: Option<omt_types::AgentState>,
 }
 
+/// Everything a new pane needs, which is more than seven words.
+///
+/// A struct rather than a longer parameter list: the shape is the argument
+/// list of one call site repeated three times, and the seventh unlabelled
+/// argument is where somebody swaps two strings.
+#[derive(Clone, Copy)]
+struct Opening<'a> {
+    workspace: omt_types::WorkspaceId,
+    program: &'a str,
+    cwd: &'a str,
+    size: PtySize,
+    tile: omt_tui::PaneId,
+    socket: &'a str,
+    scrollback: omt_term::ScrollbackLimits,
+}
+
 impl LocalPane {
     /// A pane for a session this terminal is watching rather than running.
     ///
@@ -1710,15 +1742,16 @@ impl LocalPane {
     }
 
     /// Start a session and take its writer token.
-    fn open(
-        instance: &mut Instance,
-        workspace: omt_types::WorkspaceId,
-        program: &str,
-        cwd: &str,
-        size: PtySize,
-        tile: omt_tui::PaneId,
-        socket: &str,
-    ) -> Result<Self> {
+    fn open(instance: &mut Instance, opening: &Opening<'_>) -> Result<Self> {
+        let Opening {
+            workspace,
+            program,
+            cwd,
+            size,
+            tile,
+            socket,
+            scrollback,
+        } = *opening;
         let session = instance
             .create_session(workspace, SessionKind::Shell, SessionMode::Pty)
             .context("creating a session")?;
@@ -1748,7 +1781,7 @@ impl LocalPane {
                 ],
                 ..PtyConfig::default()
             },
-            omt_term::ScrollbackLimits::default(),
+            scrollback,
         )
         .context("starting the shell")?;
         instance.attach(runtime).context("attaching")?;
