@@ -238,7 +238,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Anything it read that was not the reply is still the person's: a probe
     // that swallowed the first keystroke would lose input, which is a worse
     // failure than never drawing an image.
-    let (host_graphics, typed_during_probe) = crate::host_graphics::probe(&mut out, io::stdin());
+    // Whether to ask at all is the user's. `media.images.enabled` and
+    // `media.images.protocol` were in the settings reference and the settings
+    // screen, and the image path was unconditional: the switch could not turn
+    // anything off, and `protocol = "none"` drew images anyway.
+    let (host_graphics, typed_during_probe) = if crate::media::images_wanted(&state) {
+        crate::host_graphics::probe(&mut out, io::stdin())
+    } else {
+        (crate::host_graphics::Host::Nothing, Vec::new())
+    };
     if !typed_during_probe.is_empty()
         && let Some(pane) = panes.get_mut(focus)
     {

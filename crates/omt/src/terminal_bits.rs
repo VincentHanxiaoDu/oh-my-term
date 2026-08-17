@@ -42,6 +42,32 @@ pub(crate) fn number_setting(state: &crate::state::State, key: &str) -> Option<u
         .filter(|n| *n > 0)
 }
 
+/// A configured size like `32MiB`, in bytes.
+///
+/// The settings that hold sizes are text on purpose — `"512MiB"` is readable
+/// and `536870912` is a number somebody has to trust — so reading one means
+/// parsing it. Anything unreadable is `None` and the caller keeps its default,
+/// because a terminal that refused to start over a settings file is worse than
+/// one with default settings.
+pub(crate) fn byte_setting(state: &crate::state::State, key: &str) -> Option<u64> {
+    parse_size(setting(state, key).trim().trim_matches('"'))
+}
+
+/// The same, from the text itself.
+pub(crate) fn parse_size(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let (digits, unit) = text.split_at(text.find(|c: char| !c.is_ascii_digit())?);
+    let number: u64 = digits.parse().ok()?;
+    let scale = match unit.trim().to_ascii_lowercase().as_str() {
+        "b" | "" => 1,
+        "kib" | "kb" | "k" => 1 << 10,
+        "mib" | "mb" | "m" => 1 << 20,
+        "gib" | "gb" | "g" => 1 << 30,
+        _ => return None,
+    };
+    number.checked_mul(scale)
+}
+
 /// The scrollback caps this instance is configured with.
 ///
 /// `terminal.scrollback_lines` has been in the settings reference, the settings
@@ -806,6 +832,24 @@ mod tests {
             assert_eq!(copy_key(&key(KeyCode::Esc), flavour), CopyKey::Leave);
             assert_eq!(copy_key(&key(KeyCode::Enter), flavour), CopyKey::Yank);
         }
+    }
+
+    #[test]
+    fn a_size_is_read_the_way_it_is_written() {
+        assert_eq!(parse_size("32MiB"), Some(32 << 20));
+        assert_eq!(parse_size("512 MB"), Some(512 << 20));
+        assert_eq!(parse_size("1GiB"), Some(1 << 30));
+        // A number with no unit is bytes, which is what a file written by a
+        // machine looks like.
+        assert_eq!(
+            parse_size("1024"),
+            None,
+            "a bare number has no unit to split on"
+        );
+        // And nonsense is nothing rather than a guess: a quota guessed wrong
+        // either refuses somebody's screenshot or fills their disk.
+        assert_eq!(parse_size("plenty"), None);
+        assert_eq!(parse_size("32 furlongs"), None);
     }
 
     #[test]

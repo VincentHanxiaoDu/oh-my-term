@@ -362,6 +362,44 @@ mod handing_a_blob_to_an_agent;
 mod keymap_conflicts;
 mod why_one_result_beat_another;
 
+/// The blob quota this instance is configured with.
+///
+/// Each part falls back on its own: a file that sets one of the three and
+/// misspells another gets the one it wrote and the default for the other,
+/// which is better than a store that refuses to exist over a typo.
+#[must_use]
+pub fn configured_quota(state: &crate::state::State) -> omt_media::store::Quota {
+    let mut quota = omt_media::store::Quota::default();
+    if let Some(bytes) = crate::terminal_bits::byte_setting(state, "media.quota.max_blob_bytes") {
+        quota.max_blob = bytes;
+    }
+    if let Some(bytes) = crate::terminal_bits::byte_setting(state, "media.quota.max_total_bytes") {
+        quota.max_total = bytes;
+    }
+    // Hours in the file, because a person thinks in hours and a `Duration`
+    // thinks in seconds.
+    if let Some(hours) = crate::terminal_bits::number_setting(state, "media.quota.ttl") {
+        quota.ttl = std::time::Duration::from_secs(hours.saturating_mul(3600));
+    }
+    quota
+}
+
+/// Whether this instance draws images in a pane at all.
+///
+/// Two settings, because they answer different questions and a user may reach
+/// for either: `media.images.enabled` turns it off, and
+/// `media.images.protocol = "none"` says the same thing in the language of the
+/// protocol list. Anything else names a protocol, and omt asks the terminal —
+/// the only protocol it can actually draw is kitty's, so naming another is the
+/// same as `auto` until there is a second one to choose.
+#[must_use]
+pub fn images_wanted(state: &crate::state::State) -> bool {
+    if crate::terminal_bits::setting(state, "media.images.enabled").contains("false") {
+        return false;
+    }
+    !crate::terminal_bits::setting(state, "media.images.protocol").contains("none")
+}
+
 pub use bind_policy::*;
 pub use handing_a_blob_to_an_agent::*;
 pub use keymap_conflicts::*;

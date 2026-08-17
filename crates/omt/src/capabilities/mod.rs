@@ -300,8 +300,13 @@ pub fn registry_full(
         hints,
         state.clone(),
     ))?;
+    // The quota a user configured, rather than the built-in one. The three
+    // `media.quota.*` keys were in the settings reference and the settings
+    // screen and reached nothing: somebody who raised their blob limit still
+    // had a screenshot refused at thirty-two megabytes, by a number they had
+    // changed and could see was changed.
     let blobs: crate::media::Shared = std::sync::Arc::new(std::sync::Mutex::new(
-        omt_media::store::BlobStore::new(omt_media::store::Quota::default()),
+        omt_media::store::BlobStore::new(crate::media::configured_quota(&state)),
     ));
     r.register::<crate::media::MediaPut, _>(crate::media::MediaHandler(blobs.clone()))?;
     r.register::<crate::media::MediaGet, _>(crate::media::MediaHandler(blobs.clone()))?;

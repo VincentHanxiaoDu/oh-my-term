@@ -1754,3 +1754,41 @@ fn the_command_mark_line_is_installed_where_omt_said_it_would_be() {
         s.screen()
     );
 }
+
+#[test]
+fn images_can_be_turned_off_and_the_terminal_is_not_even_asked() {
+    let _serial = serially();
+    // `media.images.enabled` was in the settings reference and the settings
+    // screen, and the image path was unconditional: the switch turned nothing
+    // off. Off now means omt does not even send the graphics query — which is
+    // the observable part, because the query is the first thing it writes.
+    let mut s = Screen::start_with_config("media.images.enabled = false\n");
+    s.settle(2.0);
+    assert!(
+        !s.raw().contains("\x1b_G"),
+        "omt sent a graphics query with images turned off:\n{:?}",
+        s.raw()
+    );
+    // And it is still a working terminal.
+    s.type_in("echo alive\r");
+    s.settle_until(10.0, |s| s.screen().contains("alive"));
+    assert!(s.screen().contains("alive"), "{}", s.screen());
+    // The positive control lives in its own test rather than here: two
+    // screens in one test share a state directory, so the second would read
+    // the config the first was given — which is how this check nearly proved
+    // the opposite of what it says.
+}
+
+#[test]
+fn a_default_screen_asks_the_terminal_about_graphics() {
+    let _serial = serially();
+    // The positive control for the switch above. If omt never asks, the
+    // assertion that it does not ask when told not to proves nothing.
+    let mut s = Screen::start();
+    s.settle(2.0);
+    assert!(
+        s.raw().contains("a=q"),
+        "no graphics query in {} bytes",
+        s.raw.len()
+    );
+}

@@ -122,13 +122,21 @@ impl Screen {
         Self::start_full(shell, term_program, None)
     }
 
+    /// A screen whose instance has a `config.toml`.
+    ///
+    /// Written before omt starts, because the settings that decide what omt
+    /// does at startup are read once, before the first frame.
+    pub fn start_with_config(text: &str) -> Self {
+        Self::start_full_with_config("/bin/sh", None, None, None, Some(text))
+    }
+
     /// A screen whose instance has a keybinding file.
     ///
     /// The file is written before omt starts, because it is read once at
     /// startup — a keymap that changed under a pending chord would make the
     /// second key of a sequence mean something the first did not promise.
     pub fn start_with_bindings(text: &str) -> Self {
-        Self::start_full_with_config("/bin/sh", None, None, Some(text))
+        Self::start_full_with_config("/bin/sh", None, None, Some(text), None)
     }
 
     /// The whole set of choices a screen can be started with.
@@ -137,7 +145,7 @@ impl Screen {
         term_program: Option<&str>,
         runtime: Option<&std::path::Path>,
     ) -> Self {
-        Self::start_full_with_config(shell, term_program, runtime, None)
+        Self::start_full_with_config(shell, term_program, runtime, None, None)
     }
 
     /// The same, with a keybinding file for the instance to read.
@@ -146,6 +154,7 @@ impl Screen {
         term_program: Option<&str>,
         runtime: Option<&std::path::Path>,
         bindings: Option<&str>,
+        config: Option<&str>,
     ) -> Self {
         let runtime_var = runtime.map(|r| r.display().to_string()).unwrap_or_default();
         // A state directory per screen, so what one test leaves behind cannot
@@ -179,6 +188,10 @@ impl Screen {
         if let Some(text) = bindings {
             std::fs::write(config_home.join("omt").join("keybindings.toml"), text)
                 .expect("the binding file");
+        }
+        if let Some(text) = config {
+            std::fs::write(config_home.join("omt").join("config.toml"), text)
+                .expect("the config file");
         }
         let binary = std::path::Path::new(env!("CARGO_BIN_EXE_omt"));
         let dir = std::env::temp_dir().join(format!("omt-screen-{}", std::process::id()));

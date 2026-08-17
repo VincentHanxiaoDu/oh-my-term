@@ -219,15 +219,7 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the media path is unconditional; nothing consults this yet",
     ),
     (
-        "media.images.enabled",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
         "media.images.max_rows",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
-        "media.images.protocol",
         "the media path is unconditional; nothing consults this yet",
     ),
     (
@@ -239,19 +231,7 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the media path is unconditional; nothing consults this yet",
     ),
     (
-        "media.quota.max_blob_bytes",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
         "media.quota.max_blobs_per_session",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
-        "media.quota.max_total_bytes",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
-        "media.quota.ttl",
         "the media path is unconditional; nothing consults this yet",
     ),
     (
