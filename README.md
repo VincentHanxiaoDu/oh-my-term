@@ -99,7 +99,7 @@ assumed to work.
 ```sh
 cargo test --workspace # 900+ tests
 cargo clippy --workspace --all-targets
-cargo run -p xtask -- layering # the crate graph
+cargo run -p xtask -- layering licensing file-length codegen-check test-isolation # every gate
 cargo run -p xtask -- codegen # regenerate what is generated
 cd web && npm test # the browser client
 ```

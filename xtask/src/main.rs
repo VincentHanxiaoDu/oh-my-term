@@ -10,26 +10,192 @@ mod tasks;
 
 use tasks::{install, test_isolation, vocabulary};
 
-fn main() -> Result<()> {
-    match std::env::args().nth(1).as_deref() {
-        Some("layering") => layering(),
-        Some("file-length") => file_length(),
-        Some("licensing") => licensing(std::env::args().nth(2)),
-        Some("handlers") => handlers(),
-        Some("codegen") => codegen(false)
+const USAGE: &str = "usage: cargo xtask \
+     <layering|file-length|licensing|handlers|codegen|codegen-check|install|\
+     test-isolation|vocabulary>... [--root <path>]";
+
+const TASKS: [&str; 9] = [
+    "layering",
+    "file-length",
+    "licensing",
+    "handlers",
+    "codegen",
+    "codegen-check",
+    "install",
+    "test-isolation",
+    "vocabulary",
+];
+
+/// What a command line asked for.
+///
+/// A value rather than control flow, so the parsing can be tested without
+/// spending two minutes running a gate — and so a typo in the fifth name is
+/// caught before the first one starts.
+#[derive(Debug, PartialEq, Eq)]
+struct Plan {
+    tasks: Vec<String>,
+    /// The licensing gate's fixture directory, if one was given.
+    root: Option<String>,
+}
+
+/// Every word of the command line, or an error naming the word that was wrong.
+///
+/// This exists because the previous version read `args().nth(1)` and returned:
+/// `cargo xtask layering licensing file-length codegen-check test-isolation`
+/// — the line `HANDOFF.md` tells the next person to run — ran one gate and
+/// exited zero, which reads exactly like five passes. Nothing may be ignored
+/// here; a word this function does not understand is a failure.
+fn plan(args: impl IntoIterator<Item = String>) -> Result<Plan> {
+    let mut tasks = Vec::new();
+    let mut root = None;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        if let Some(path) = arg.strip_prefix("--root=") {
+            root = Some(path.to_owned());
+        } else if arg == "--root" {
+            root = Some(
+                args.next()
+                    .ok_or_else(|| anyhow::anyhow!("--root needs a path"))?,
+            );
+        } else if arg.starts_with('-') {
+            bail!("unknown option `{arg}`\n{USAGE}");
+        } else if TASKS.contains(&arg.as_str()) {
+            tasks.push(arg);
+        } else {
+            bail!("unknown task `{arg}`\n{USAGE}");
+        }
+    }
+    Ok(Plan { tasks, root })
+}
+
+fn run_task(name: &str, root: Option<String>) -> Result<()> {
+    match name {
+        "layering" => layering(),
+        "file-length" => file_length(),
+        "licensing" => licensing(root),
+        "handlers" => handlers(),
+        "codegen" => codegen(false)
             .and_then(|()| handlers())
             .and_then(|()| vocabulary()),
-        Some("codegen-check") => codegen(true),
-        Some("install") => install(),
-        Some("test-isolation") => test_isolation(),
-        Some("vocabulary") => vocabulary(),
-        Some(other) => bail!("unknown task `{other}`"),
-        None => {
-            eprintln!(
-                "usage: cargo xtask \
-                 <layering|licensing|handlers|codegen|codegen-check|install|test-isolation|vocabulary>"
+        "codegen-check" => codegen(true),
+        "install" => install(),
+        "test-isolation" => test_isolation(),
+        "vocabulary" => vocabulary(),
+        // `plan` has already rejected everything else, so reaching this is a
+        // disagreement between the two lists rather than a user's typo.
+        other => bail!("task `{other}` is named but not wired up"),
+    }
+}
+
+fn main() -> Result<()> {
+    let plan = plan(std::env::args().skip(1))?;
+    if plan.tasks.is_empty() {
+        eprintln!("{USAGE}");
+        return Ok(());
+    }
+
+    // Every failure is collected rather than returned, because the reason to
+    // name five gates is to learn about all five. They are read-only checks,
+    // so continuing past one costs nothing but time.
+    let mut failed = Vec::new();
+    for task in &plan.tasks {
+        if plan.tasks.len() > 1 {
+            println!("== {task} ==");
+        }
+        if let Err(err) = run_task(task, plan.root.clone()) {
+            eprintln!("{task} failed: {err:#}");
+            failed.push(task.clone());
+        }
+    }
+    if !failed.is_empty() {
+        bail!(
+            "{} of {} tasks failed: {}",
+            failed.len(),
+            plan.tasks.len(),
+            failed.join(", ")
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod plan_tests {
+    use super::{Plan, TASKS, plan};
+
+    fn words(line: &str) -> Vec<String> {
+        line.split_whitespace().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn the_line_the_handoff_prints_runs_all_five_gates() {
+        // The regression this whole change exists for: this line ran one gate
+        // and exited zero.
+        let plan = plan(words(
+            "layering licensing file-length codegen-check test-isolation",
+        ))
+        .unwrap();
+        assert_eq!(
+            plan,
+            Plan {
+                tasks: words("layering licensing file-length codegen-check test-isolation"),
+                root: None,
+            }
+        );
+    }
+
+    #[test]
+    fn the_fixture_root_is_an_option_in_both_spellings() {
+        // It used to be the second bare word, which on the line above is the
+        // name of the next gate — so licensing checked a path called
+        // `file-length`.
+        for line in [
+            "licensing --root /tmp/fixture",
+            "licensing --root=/tmp/fixture",
+        ] {
+            let plan = plan(words(line)).unwrap();
+            assert_eq!(plan.tasks, words("licensing"));
+            assert_eq!(plan.root.as_deref(), Some("/tmp/fixture"));
+        }
+    }
+
+    #[test]
+    fn a_bare_word_that_is_not_a_task_fails_before_anything_runs() {
+        let err = plan(words("licensing /tmp/fixture"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown task `/tmp/fixture`"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_option_is_a_failure_rather_than_a_shrug() {
+        let err = plan(words("layering --quiet")).unwrap_err().to_string();
+        assert!(err.contains("unknown option `--quiet`"), "{err}");
+    }
+
+    #[test]
+    fn a_typo_in_the_last_name_fails_before_the_first_gate_runs() {
+        let err = plan(words("layering licensing test-isolaton"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown task `test-isolaton`"), "{err}");
+    }
+
+    #[test]
+    fn an_empty_command_line_is_not_an_error() {
+        assert_eq!(plan(Vec::new()).unwrap().tasks, Vec::<String>::new());
+    }
+
+    #[test]
+    fn every_named_task_is_wired_up() {
+        // The two lists are separate — `plan` accepts names and `run_task`
+        // dispatches them. A name in one and not the other is the same class
+        // of defect as the one being fixed: a word that looks handled.
+        for task in TASKS {
+            assert!(plan(words(task)).is_ok(), "{task} is not accepted");
+            assert!(
+                super::USAGE.contains(task),
+                "{task} is not in the usage line"
             );
-            Ok(())
         }
     }
 }
