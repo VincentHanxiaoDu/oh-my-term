@@ -1782,6 +1782,7 @@ dependencies = [
  "omt-catalog",
  "omt-input",
  "omt-term",
+ "omt-theme",
  "omt-types",
  "serde",
  "serde_json",

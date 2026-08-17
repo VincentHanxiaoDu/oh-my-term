@@ -191,6 +191,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // Entered last, so anything that fails above reports on a working terminal
     // rather than into raw mode.
     let _guard = RawGuard::enter().context("entering raw mode")?;
+    // Why omt stopped, said out loud on the way out.
+    //
+    // A terminal that closes without a word is indistinguishable from one that
+    // crashed — that is exactly what it looked like the first time somebody's
+    // shell exited under it, and the answer was sitting in the session's
+    // state the whole time.
+    let mut why: Option<String> = None;
     let mut out = io::stdout();
     // Asked once, here and nowhere else: a query's reply arrives in the same
     // stream as typing, and this is the one moment between raw mode and the
@@ -283,6 +290,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // mid-session, and re-reading it per keystroke would put a config lookup
     // in the input path.
     let keymap = crate::terminal_bits::Flavour::named(&setting(&state, "keymap"));
+    // omt's own furniture, from the theme that has existed the whole time and
+    // that none of the chrome ever read. Worked out once: a terminal's colour
+    // depth does not change under somebody's fingers, and asking per frame
+    // would put an environment lookup in the draw path.
+    let depth = omt_tui::paint::Depth::of_environment();
+    let palette = omt_tui::paint::Chrome::builtin();
     let notify_env = omt_notify::Environment::from_process();
     let sounds = omt_notify::sound::Sounds {
         needs_you: sound_file(&state, "notifications.sound.needs_you"),
@@ -445,16 +458,27 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // tree — it is finished, not forgotten — but a dead pane holding screen
         // space is space the live ones need.
         let before = panes.len();
+        // Kept, not just counted: when the last one goes it is the only thing
+        // that can say why omt is about to close.
+        let mut gone = Vec::new();
         panes.retain(|p| {
-            !instance
+            let finished = instance
                 .session(p.session)
-                .is_some_and(omt_session::Session::is_finished)
+                .is_some_and(omt_session::Session::is_finished);
+            if finished {
+                gone.push(p.session);
+            }
+            !finished
         });
         if panes.len() != before {
             layout_dirty = true;
             focus = focus.min(panes.len().saturating_sub(1));
         }
         if panes.is_empty() {
+            why = gone
+                .last()
+                .and_then(|id| instance.session(*id))
+                .map(ended_because);
             break 'session;
         }
         if panes.len() != before {
@@ -565,7 +589,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             for (pane, rect) in panes.iter().zip(&rects) {
                 backing(&mut instance, &mut attached).resize(pane.session, rect.cols, rect.rows)?;
             }
-            draw_separators(&mut out, &rects).context("drawing separators")?;
+            draw_separators(&mut out, &rects, palette, depth).context("drawing separators")?;
             layout_dirty = false;
         }
 
@@ -768,11 +792,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // overlay drawn once is painted over within milliseconds and what
             // is left is half a list interleaved with a shell — which is
             // exactly what it looked like.
-            let lines =
-                omt_tui::render_overlay(open, term_cols, term_rows.saturating_sub(STATUS_ROWS));
-            for (i, line) in lines.iter().enumerate() {
-                write!(out, "\x1b[{};1H\x1b[7m{line}\x1b[0m", i as u16 + 2)
-                    .context("drawing the overlay")?;
+            let lines = omt_tui::overlay::render_rows(
+                open,
+                term_cols,
+                term_rows.saturating_sub(STATUS_ROWS),
+            );
+            for (i, (row, line)) in lines.iter().enumerate() {
+                let painted = omt_tui::paint::overlay_line(*row, line, palette, depth);
+                write!(out, "\x1b[{};1H{painted}", i as u16 + 2).context("drawing the overlay")?;
             }
         }
 
@@ -810,8 +837,10 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 let terminal = session.and_then(|id| seam.terminal(id));
                 crate::terminal_bits::history_rows(reading, *rect, terminal)
             };
-            crate::terminal_bits::draw_history(&mut out, reading, *rect, &lines)
-                .context("drawing history")?;
+            crate::terminal_bits::draw_history(
+                &mut out, reading, *rect, &lines, keymap, palette, depth,
+            )
+            .context("drawing history")?;
         }
 
         // One row, at the bottom, per 19 §2.1. The tab bar that used to sit
@@ -834,8 +863,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         };
         let bar = omt_tui::status_bar(&status, term_cols);
         if shown_bar.as_deref() != Some(bar.as_str()) {
-            write!(out, "\x1b[{};1H\x1b[7m{bar}\x1b[0m", term_rows)
-                .context("drawing the status bar")?;
+            write!(
+                out,
+                "\x1b[{};1H{}",
+                term_rows,
+                omt_tui::paint::status_line(&bar, palette, depth)
+            )
+            .context("drawing the status bar")?;
             shown_bar = Some(bar);
         }
 
@@ -1062,66 +1096,16 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     cols: 0,
                     rows: 0,
                 });
-                if let Some((moused, inside)) = crate::mouse::from_crossterm(pointer, rect) {
-                    let session = panes.get(focus).map(|pane| pane.session);
-                    let asked = {
-                        let seam = backing(&mut instance, &mut attached);
-                        session
-                            .and_then(|id| seam.terminal(id))
-                            .map(crate::mouse::Asked::of)
-                            .unwrap_or_default()
-                    };
-                    match crate::mouse::route(&moused, asked, inside) {
-                        crate::mouse::Route::Forward(bytes) => {
-                            if let Some(id) = session {
-                                if attached.is_some() {
-                                    backing(&mut instance, &mut attached).write(id, &bytes)?;
-                                } else if let Some(rt) = instance.runtime_mut(id) {
-                                    let pane = &mut panes[focus];
-                                    rt.write_input(
-                                        &mut pane.writer,
-                                        pane.epoch,
-                                        monotonic_ms(),
-                                        &bytes,
-                                    )
-                                    .context("writing a mouse report")?;
-                                }
-                            }
-                        }
-                        crate::mouse::Route::Select(kind) => {
-                            let total = crate::terminal_bits::history_depth(
-                                &mut instance,
-                                &mut attached,
-                                session,
-                            );
-                            crate::terminal_bits::selecting(
-                                &mut copying,
-                                kind,
-                                &moused,
-                                rect,
-                                total,
-                                &mut |row| {
-                                    crate::terminal_bits::line_of(
-                                        &mut instance,
-                                        &mut attached,
-                                        session,
-                                        row,
-                                    )
-                                },
-                            );
-                            layout_dirty = true;
-                        }
-                        crate::mouse::Route::Scroll(lines) => {
-                            let total = crate::terminal_bits::history_depth(
-                                &mut instance,
-                                &mut attached,
-                                session,
-                            );
-                            crate::terminal_bits::scrolling(&mut copying, lines, rect, total);
-                            layout_dirty = true;
-                        }
-                        crate::mouse::Route::Ignore => {}
-                    }
+                if crate::mouse::handle(
+                    pointer,
+                    rect,
+                    &mut instance,
+                    &mut attached,
+                    &mut panes,
+                    focus,
+                    &mut copying,
+                )? {
+                    layout_dirty = true;
                 }
                 continue;
             }
@@ -1601,7 +1585,39 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         out.write_all(&bye).ok();
     }
     out.flush().ok();
+    // The terminal goes back to the person *before* anything is said, or the
+    // sentence is written onto a screen that is about to be thrown away —
+    // which is how "it just vanished" happens.
+    drop(_guard);
+    if let Some(reason) = why {
+        println!("omt: {reason}");
+    }
     Ok(())
+}
+
+/// Why omt is closing, from the session that ended it.
+///
+/// A terminal that closes without a word cannot be told apart from one that
+/// crashed. The session knows — it has been carrying the exit status the whole
+/// time — and nothing ever asked it.
+fn ended_because(session: &omt_session::Session) -> String {
+    match session.state {
+        omt_session::SessionState::Exited { code: Some(0) }
+        | omt_session::SessionState::Exited { code: None } => {
+            "the last session ended, so there is nothing left to show".to_owned()
+        }
+        // Above 128 is a signal wearing an exit status. Saying which one is
+        // the difference between "my shell died" and "I pressed something".
+        omt_session::SessionState::Exited { code: Some(code) } if code > 128 => format!(
+            "the last session's program was stopped by signal {} (exit {code}), \
+             so there is nothing left to show",
+            code - 128
+        ),
+        omt_session::SessionState::Exited { code: Some(code) } => format!(
+            "the last session's program exited with {code}, so there is nothing left to show"
+        ),
+        other => format!("the last session ended ({other:?})"),
+    }
 }
 
 /// One pane the local TUI is drawing.
@@ -1823,11 +1839,19 @@ impl BranchCache {
     }
 }
 
-fn draw_separators(out: &mut impl Write, rects: &[omt_tui::Rect]) -> io::Result<()> {
+fn draw_separators(
+    out: &mut impl Write,
+    rects: &[omt_tui::Rect],
+    palette: omt_tui::paint::Chrome,
+    depth: omt_tui::paint::Depth,
+) -> io::Result<()> {
+    // Built once rather than per row: the rule is the same every time, and a
+    // hundred-row window is a hundred allocations of the same short string.
+    let rule = omt_tui::paint::separator(palette, depth);
     for pair in rects.windows(2) {
         let col = pair[0].col + pair[0].cols + 1;
         for row in 0..pair[0].rows {
-            write!(out, "\x1b[{};{col}H\x1b[2m│\x1b[0m", row + 1)?;
+            write!(out, "\x1b[{};{col}H{rule}", row + 1)?;
         }
     }
     Ok(())

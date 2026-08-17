@@ -57,3 +57,27 @@ one-line description — from the same declarations that resolve their values.
 - **AND** the list is derived from the declarations, so a setting cannot exist
   without appearing in it
 
+### Requirement: A terminal that closes says why it closed
+
+When omt exits because its last session ended, it SHALL say so, name how that
+session's program ended, and report an exit status above 128 as the signal it
+stands for.
+
+A terminal that closes without a word is indistinguishable from one that
+crashed, and gets reported as one.
+
+#### Scenario: The last session's program was signalled
+
+- **WHEN** the last session's program ended with a status above 128
+- **THEN** omt names the signal and the status
+
+#### Scenario: The last session's program exited normally
+
+- **WHEN** the last session's program exited with zero
+- **THEN** omt says the session ended, without inventing a fault
+
+#### Scenario: The message outlives the screen
+
+- **WHEN** omt says why it closed
+- **THEN** it does so after the alternate screen has been given back
+

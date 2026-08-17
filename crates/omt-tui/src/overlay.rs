@@ -126,7 +126,27 @@ impl Overlay {
 /// Lines rather than escape sequences, so what it says can be tested without a
 /// terminal. Where it is painted is the caller's business.
 #[must_use]
-pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
+/// What one rendered line of a panel is.
+///
+/// Carried out of the renderer rather than sniffed back out of the text: a
+/// painter that decided "this line is the selected one" by looking for a
+/// marker character would colour a row whose *label* happened to contain it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Row {
+    /// The top or bottom edge, and the title that sits in the top one.
+    Edge,
+    /// The filter somebody is typing into.
+    Filter,
+    /// A choice.
+    Choice,
+    /// The choice the cursor is on.
+    Picked,
+    /// Something the panel is saying rather than offering.
+    Note,
+}
+
+/// Render, keeping what each line is.
+pub fn render_rows(overlay: &Overlay, cols: u16, rows: u16) -> Vec<(Row, String)> {
     let width = cols as usize;
     // A bounded panel rather than the whole width. Full width put the label at
     // one edge of a 170-column terminal and its detail at the other, with a
@@ -152,10 +172,13 @@ pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
         )
     };
 
-    let mut out = vec![format!(
-        "{pad}\u{250c}\u{2500}{}\u{2500}{}\u{2510}",
-        heading,
-        "\u{2500}".repeat(inner.saturating_sub(heading.chars().count() + 2))
+    let mut out = vec![(
+        Row::Edge,
+        format!(
+            "{pad}\u{256d}\u{2500}{}\u{2500}{}\u{256e}",
+            heading,
+            "\u{2500}".repeat(inner.saturating_sub(heading.chars().count() + 2))
+        ),
     )];
 
     let typed = if overlay.filter.is_empty() {
@@ -163,17 +186,19 @@ pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
     } else {
         overlay.filter.clone()
     };
-    out.push(boxed(&pad, &typed, inner));
+    out.push((Row::Filter, boxed(&pad, &typed, inner)));
 
     if visible.is_empty() {
         // Said, rather than an empty box: an empty list looks like a broken
         // one, and the useful information is that the filter matched nothing.
-        out.push(boxed(
-            &pad,
-            &format!("nothing matches {}", overlay.filter),
-            inner,
+        out.push((
+            Row::Note,
+            boxed(&pad, &format!("nothing matches {}", overlay.filter), inner),
         ));
-        out.push(format!("{pad}\u{2514}{}\u{2518}", "\u{2500}".repeat(inner)));
+        out.push((
+            Row::Edge,
+            format!("{pad}\u{2570}{}\u{256f}", "\u{2500}".repeat(inner)),
+        ));
         return out;
     }
 
@@ -210,19 +235,32 @@ pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
             line.push_str(&" ".repeat(room_left));
             line.push_str(&chord);
         }
-        out.push(boxed(&pad, &line, inner));
+        out.push((
+            if picked { Row::Picked } else { Row::Choice },
+            boxed(&pad, &line, inner),
+        ));
     }
     if visible.len() > room {
         // Never silently truncated: a list showing eight of forty is one
         // somebody believes is all of them.
-        out.push(boxed(
-            &pad,
-            &format!("{} more", visible.len() - room),
-            inner,
+        out.push((
+            Row::Note,
+            boxed(&pad, &format!("{} more", visible.len() - room), inner),
         ));
     }
-    out.push(format!("{pad}\u{2514}{}\u{2518}", "\u{2500}".repeat(inner)));
+    out.push((
+        Row::Edge,
+        format!("{pad}\u{2570}{}\u{256f}", "\u{2500}".repeat(inner)),
+    ));
     out
+}
+
+/// Render as plain lines, for callers and tests that only want the text.
+pub fn render(overlay: &Overlay, cols: u16, rows: u16) -> Vec<String> {
+    render_rows(overlay, cols, rows)
+        .into_iter()
+        .map(|(_, line)| line)
+        .collect()
 }
 
 /// The widest a list is allowed to get.
@@ -368,21 +406,21 @@ mod tests {
         let chars: Vec<char> = top.chars().collect();
         let left = chars
             .iter()
-            .position(|c| *c == '\u{250c}')
+            .position(|c| *c == '\u{256d}')
             .expect("a left corner");
         let right = chars
             .iter()
-            .rposition(|c| *c == '\u{2510}')
+            .rposition(|c| *c == '\u{256e}')
             .expect("a right corner");
         let panel = right - left + 1;
         assert!(panel < 100, "the panel spread to {panel} columns");
         assert!(left > 10, "it is not centred: {left} columns of margin");
         assert!(
-            drawn.first().is_some_and(|l| l.contains('\u{250c}')),
+            drawn.first().is_some_and(|l| l.contains('\u{256d}')),
             "no top border"
         );
         assert!(
-            drawn.last().is_some_and(|l| l.contains('\u{2514}')),
+            drawn.last().is_some_and(|l| l.contains('\u{2570}')),
             "no bottom border"
         );
     }

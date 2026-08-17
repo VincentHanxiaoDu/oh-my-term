@@ -11,6 +11,7 @@ pub mod geometry;
 pub mod hint;
 pub mod navigate;
 pub mod overlay;
+pub mod paint;
 pub mod statusbar;
 
 pub use chrome::{Chrome, Tab};

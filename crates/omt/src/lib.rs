@@ -11,6 +11,7 @@ pub mod attach;
 pub mod automation;
 pub mod bootstrap;
 pub mod cli;
+pub mod crash;
 pub mod discovery;
 pub mod doctor;
 pub mod events;

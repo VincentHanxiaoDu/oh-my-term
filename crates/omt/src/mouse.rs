@@ -216,6 +216,74 @@ fn of_button(button: crossterm::event::MouseButton) -> Button {
     }
 }
 
+/// Take one pointer event, wherever it ends up going.
+///
+/// Here rather than in the frame loop because the deciding already lives here,
+/// and a routing rule split across two files is one that gets changed in one
+/// of them.
+///
+/// Returns whether the screen needs redrawing.
+///
+/// # Errors
+/// Fails only if writing to the session does — the same failure as any other
+/// keystroke, and for the same reason.
+pub(crate) fn handle(
+    pointer: &crossterm::event::MouseEvent,
+    rect: omt_tui::Rect,
+    instance: &mut omt_daemon::Instance,
+    attached: &mut Option<crate::backing::Attached>,
+    panes: &mut [crate::run::LocalPane],
+    focus: usize,
+    copying: &mut Option<omt_tui::CopyMode>,
+) -> anyhow::Result<bool> {
+    use anyhow::Context as _;
+
+    let Some((moused, inside)) = from_crossterm(pointer, rect) else {
+        return Ok(false);
+    };
+    let session = panes.get(focus).map(|pane| pane.session);
+    let asked = {
+        let seam = crate::backing::backing(instance, attached);
+        session
+            .and_then(|id| seam.terminal(id))
+            .map(Asked::of)
+            .unwrap_or_default()
+    };
+    match route(&moused, asked, inside) {
+        Route::Forward(bytes) => {
+            if let Some(id) = session {
+                if attached.is_some() {
+                    crate::backing::backing(instance, attached).write(id, &bytes)?;
+                } else if let Some(runtime) = instance.runtime_mut(id) {
+                    let pane = &mut panes[focus];
+                    runtime
+                        .write_input(
+                            &mut pane.writer,
+                            pane.epoch,
+                            crate::run::monotonic_ms(),
+                            &bytes,
+                        )
+                        .context("writing a mouse report")?;
+                }
+            }
+            Ok(false)
+        }
+        Route::Select(kind) => {
+            let total = crate::terminal_bits::history_depth(instance, attached, session);
+            crate::terminal_bits::selecting(copying, kind, &moused, rect, total, &mut |row| {
+                crate::terminal_bits::line_of(instance, attached, session, row)
+            });
+            Ok(true)
+        }
+        Route::Scroll(lines) => {
+            let total = crate::terminal_bits::history_depth(instance, attached, session);
+            crate::terminal_bits::scrolling(copying, lines, rect, total);
+            Ok(true)
+        }
+        Route::Ignore => Ok(false),
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,

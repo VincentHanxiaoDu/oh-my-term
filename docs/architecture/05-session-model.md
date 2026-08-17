@@ -1253,3 +1253,22 @@ property tests call after every operation:
    annoyance. Should the default be aggressive (redact anything matching
    `=[A-Za-z0-9_\-]{20,}`) or conservative? Needs a call in
    [13 — Security](13-security.md).
+
+## A terminal that closes says why
+
+omt closed without a word when its last session ended. On screen that is a
+shell prompt appearing where a terminal used to be — indistinguishable from a
+crash, and reported as one.
+
+The session had been carrying the answer the whole time. It records how its
+program ended, and nothing ever asked it: a shell that exited 130 was a shell
+stopped by `SIGINT`, and saying so is the difference between "omt is broken"
+and "something interrupted my shell".
+
+So on the way out omt names the reason, and an exit status above 128 is
+reported as the signal it stands for.
+
+**Said after the terminal is handed back, not before.** The alternate screen is
+about to be thrown away; a sentence written onto it is a sentence nobody reads.
+That ordering is the whole of why the original failure was invisible — the
+message existed, on a screen that no longer did.

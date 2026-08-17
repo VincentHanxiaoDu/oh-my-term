@@ -204,3 +204,5 @@ pub fn git_repo() -> tempfile::TempDir {
 pub const fn stream_role() -> Role {
     Role::Operator
 }
+
+pub mod screen_harness;

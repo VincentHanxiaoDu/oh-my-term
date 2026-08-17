@@ -140,7 +140,21 @@ pub(crate) fn test_isolation() -> Result<()> {
         if !name.contains("/tests/") || entry.extension().is_none_or(|e| e != "rs") {
             continue;
         }
-        let text = std::fs::read_to_string(&entry).unwrap_or_default();
+        let mut text = std::fs::read_to_string(&entry).unwrap_or_default();
+        // A test file's harness may live beside it in `tests/common/`, and the
+        // isolation it establishes is established there. Reading the file
+        // alone once made this gate fire on a suite that *was* isolated —
+        // which is the worst kind of gate, because the fix for a false alarm
+        // is to weaken it.
+        if text.contains("mod common;")
+            && let Some(dir) = entry.parent()
+        {
+            for shared in walk(&dir.join("common")).unwrap_or_default() {
+                if shared.extension().is_some_and(|e| e == "rs") {
+                    text.push_str(&std::fs::read_to_string(&shared).unwrap_or_default());
+                }
+            }
+        }
         // Only files that actually start the binary: a unit test that never
         // spawns omt cannot inherit anything omt would read.
         if !text.contains("CARGO_BIN_EXE_omt") {

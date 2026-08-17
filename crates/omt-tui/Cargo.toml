@@ -14,6 +14,7 @@ serde = { workspace = true }
 omt-types = { workspace = true }
 omt-catalog = { workspace = true }
 omt-term = { workspace = true }
+omt-theme = { workspace = true }
 omt-input = { workspace = true }
 crossterm = "0.29"
 

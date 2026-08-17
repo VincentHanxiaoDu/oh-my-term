@@ -8,6 +8,14 @@ use anyhow::Result;
 use omt::capabilities;
 
 fn main() -> Result<()> {
+    // Somewhere to say what went wrong.
+    //
+    // A panic prints to stderr, and stderr is on a screen that
+    // `LeaveAlternateScreen` is about to throw away — so a terminal that died
+    // mid-frame left the user looking at their shell with no cursor and no
+    // explanation, which is exactly what happened the first time somebody ran
+    // this build. A file outlives the screen.
+    omt::crash::leave_a_note();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args
         .iter()

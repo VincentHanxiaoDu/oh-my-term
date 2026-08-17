@@ -289,6 +289,9 @@ pub(crate) fn draw_history(
     reading: &omt_tui::CopyMode,
     rect: omt_tui::Rect,
     lines: &[(u64, String)],
+    flavour: Flavour,
+    palette: omt_tui::paint::Chrome,
+    depth: omt_tui::paint::Depth,
 ) -> io::Result<()> {
     for (offset, (row, text)) in lines.iter().enumerate() {
         let screen_row = rect.row + crate::run::CHROME_ROWS + offset as u16 + 1;
@@ -304,14 +307,30 @@ pub(crate) fn draw_history(
     // Said on the screen rather than left to be remembered: this is a mode,
     // and a mode nobody can see the way out of is a terminal somebody
     // force-quits.
+    // The keys of whichever keymap is actually in use. A hint naming `hjkl`
+    // to somebody who asked for emacs is worse than no hint: it is a list of
+    // keys that do nothing, in the one place they went looking for help.
+    let keys = match flavour {
+        Flavour::Vim => {
+            "hjkl move · w/b word · [ ] prompt · / search · v select · y copy · Esc leave"
+        }
+        Flavour::Emacs => {
+            "^n^p^f^b move · M-f/M-b word · M-[ M-] prompt · ^s search · ^Spc select · M-w copy · ^g leave"
+        }
+    };
     let hint = reading.typing.as_ref().map_or_else(
-        || "copy: hjkl move · / search · v select · y copy · Esc leave".to_owned(),
+        || format!("copy: {keys}"),
         // The field itself, because a search somebody cannot see what they
         // have typed into is a search they retype.
         |typed| format!("search: {typed}"),
     );
     let hint_row = rect.row + crate::run::CHROME_ROWS + rect.rows;
-    write!(out, "\x1b[{hint_row};{}H\x1b[7m{hint}\x1b[0m", rect.col + 1)
+    write!(
+        out,
+        "\x1b[{hint_row};{}H{}",
+        rect.col + 1,
+        omt_tui::paint::hint_line(&hint, palette, depth)
+    )
 }
 
 /// What one key in copy mode asked for.

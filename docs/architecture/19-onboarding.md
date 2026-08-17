@@ -239,6 +239,46 @@ Rules:
  else.
 
 
+### 2.1a What the chrome is coloured with
+
+The bar and the panels were drawn in reverse video, because that is the one
+highlight every terminal has and it needs no theme to be visible. That is the
+right answer for a **selection**, which has to show up in a colour scheme
+nobody chose. It is the wrong answer for a whole row: reverse video across a
+row is a solid slab of the foreground colour, so on a dark theme omt's status
+bar is a white bar and its panels are white boxes with the terminal squeezed
+underneath.
+
+A theme has existed in this repository the whole time — a background, a
+foreground, sixteen colours, shared with the web client — and **none of the
+chrome ever read it**. The same shape as the rest of this month's defects: a
+vocabulary that was there and a consumer that was not.
+
+So the furniture is derived from the theme, in small steps:
+
+| | What it is |
+|---|---|
+| surface | the background lifted about a tenth of the way toward the foreground — a step, not a leap, because a surface far from the background reads as a separate window rather than part of this one |
+| picked | the row the cursor is on, tinted with the accent |
+| border | edges, lifted about a fifth |
+| muted | text that is present but not the point |
+| accent | the one colour that draws the eye, spent **once per surface** |
+
+Three rules it holds to:
+
+1. **It degrades, completely.** Truecolor where the terminal says so, the
+   256-colour cube otherwise, and on a terminal that promises neither —
+   `TERM=dumb`, a pipe, or anybody who set `NO_COLOR` — exactly the reverse
+   video it always had.
+2. **Nothing here carries meaning.** State is still a word and a shape, never a
+   colour, because colour is the first thing a terminal theme takes away. The
+   furniture is decoration; losing it loses nothing.
+3. **The panel's margin is not painted.** A panel is centred, so each line
+   arrives with the margin in front of it — and painting that margin turns a
+   floating panel into a full-width band with a box drawn inside it. The
+   surface starts where the box does, or the shape being drawn is not the
+   shape being seen.
+
 ### 2.1b The agent panel: chrome that takes columns
 
 **Off by default. A fixed 24 columns when it fits, and nothing at all when it
