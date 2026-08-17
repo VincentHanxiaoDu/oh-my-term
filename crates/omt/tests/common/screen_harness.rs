@@ -81,6 +81,8 @@ pub struct Screen {
     pub dir: std::path::PathBuf,
     /// Every byte omt has written, uninterpreted.
     pub raw: Vec<u8>,
+    /// The `$HOME` this screen was given, which is the only one it may write to.
+    pub home: std::path::PathBuf,
 }
 
 impl Screen {
@@ -165,6 +167,13 @@ impl Screen {
         // otherwise omt reads whatever the person running the suite has in
         // `~/.config/omt`, and the suite passes or fails according to their
         // settings.
+        // A home of its own. omt writes into a shell's configuration file when
+        // it is asked to, and a suite that inherited the machine's `$HOME`
+        // would append to the developer's own `~/.zshrc` — the same class of
+        // defect as a test joining the machine's instance, which this harness
+        // already refuses.
+        let home = state.join("home");
+        std::fs::create_dir_all(&home).expect("home dir");
         let config_home = state.join("config");
         std::fs::create_dir_all(config_home.join("omt")).expect("config dir");
         if let Some(text) = bindings {
@@ -186,6 +195,7 @@ impl Screen {
                 ("PS1".to_owned(), "$ ".to_owned()),
                 ("SHELL".to_owned(), shell.to_owned()),
                 ("XDG_STATE_HOME".to_owned(), state.display().to_string()),
+                ("HOME".to_owned(), home.display().to_string()),
                 (
                     "XDG_CONFIG_HOME".to_owned(),
                     config_home.display().to_string(),
@@ -257,6 +267,7 @@ impl Screen {
         Self {
             pty,
             dir,
+            home,
             raw: Vec::new(),
             term: Terminal::new(TermConfig {
                 size: GridSize::new(COLS, ROWS),

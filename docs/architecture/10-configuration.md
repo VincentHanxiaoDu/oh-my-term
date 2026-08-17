@@ -715,7 +715,7 @@ rather than hiding them (which would violate §4.2's rule).
 
 | Key | Type | Default |
 |---|---|---|
-| `auto_install` | bool | `true` |
+| `auto_install` | bool | `true` (omt adds the OSC 133 line to the shell's rc file, once, inside a block marked `# omt: command marks`; it owns that block and nothing else in the file) |
 | `shells` | array<enum `bash\|zsh\|fish\|nu\|pwsh`> | auto-detected |
 | `osc133` | enum `emit\|consume\|both` | `"both"` |
 | `inject_env` | bool | `true` (adds `OMT_INSTANCE`, `OMT_SESSION`, `OMT_SOCK`, and `OMT_SHELL_INTEGRATION` — see [04 §7.3](04-terminal-core.md#73-propagation-into-subshells-and-over-ssh) and [06 §7.2](06-agent-layer.md#72-correlation)) |

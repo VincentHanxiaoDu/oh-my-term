@@ -475,7 +475,7 @@ capability! {
         intent: None,
         parity: Parity::Full,
         since: "0.1.0",
-        doc: "Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself.",
+        doc: "Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt installs that line once, inside a marked block, when `shell.auto_install` is on; it owns that block and nothing else in the file.",
     },
 }
 
@@ -541,8 +541,10 @@ pub(crate) fn current_shell() -> String {
 /// error in somebody's terminal on every login, which is worse than no snippet.
 pub(crate) fn snippet_for(shell: &str) -> Option<ShellSnippet> {
     // One line each, self-contained, and emitting the marks the block tracker
-    // reads. Deliberately not a script omt installs: a line somebody can read
-    // before pasting is a line they will paste.
+    // reads. One line rather than a script, because it is a line somebody can
+    // read in their own rc file afterwards and understand — omt installs it
+    // inside a marked block, and a block containing a script would be a thing
+    // nobody can check.
     let (file, line) = match shell {
         "bash" => (
             "~/.bashrc",

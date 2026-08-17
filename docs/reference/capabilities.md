@@ -133,7 +133,7 @@ vanishing.
 | `session.transcript` | query | viewer | Messages, reasoning, tool calls and results for an agent session. An agent emits no command marks, so blocks do not apply to it; this is what it is read through instead. |
 | `session.write` | command | operator | Write input to a session, gated on the writer token's epoch. |
 | `setup.detect_agents` | query | viewer | Every agent omt can drive, found or not. Listing only what is present hides the difference between an agent omt did not find and one it has never heard of. |
-| `shell.integration` | query | viewer | Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself. |
+| `shell.integration` | query | viewer | Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt installs that line once, inside a marked block, when `shell.auto_install` is on; it owns that block and nothing else in the file. |
 | `ssh.plan` | query | operator | An argument vector, never a shell string: a hostname from a config file with a quote in it would otherwise become remote execution. |
 | `state.restore` | command | operator | Reopen the workspaces from a snapshot, reporting any whose directory is gone rather than dropping them silently. |
 | `state.save` | command | operator | Write the open workspaces to a snapshot a later run can restore. Written atomically: a crash mid-write leaves the previous snapshot, never half of a new one. |

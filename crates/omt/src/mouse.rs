@@ -232,7 +232,7 @@ pub(crate) fn handle(
     rect: omt_tui::Rect,
     instance: &mut omt_daemon::Instance,
     attached: &mut Option<crate::backing::Attached>,
-    panes: &mut [crate::run::LocalPane],
+    panes: &mut [crate::panes::LocalPane],
     focus: usize,
     copying: &mut Option<omt_tui::CopyMode>,
 ) -> anyhow::Result<bool> {

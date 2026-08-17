@@ -11801,7 +11801,7 @@
     },
     {
       "aliases": [],
-      "doc": "Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt prints it and never edits a shell's configuration itself.",
+      "doc": "Whether the shell emits command marks, judged by what has been seen rather than by a setting, with the line that enables them. omt installs that line once, inside a marked block, when `shell.auto_install` is on; it owns that block and nothing else in the file.",
       "effects": [],
       "group": "shell",
       "hidden": false,

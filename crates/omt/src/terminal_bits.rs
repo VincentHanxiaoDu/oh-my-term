@@ -11,8 +11,8 @@
 
 use std::io::{self, Write};
 
+use crate::panes::LocalPane;
 use crate::rows::agent_name;
-use crate::run::LocalPane;
 
 /// One configured value, as text.
 ///

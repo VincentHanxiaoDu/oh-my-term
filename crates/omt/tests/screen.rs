@@ -1725,3 +1725,32 @@ fn the_leader_is_the_one_the_binding_file_names() {
     s.type_in("\x1b");
     s.settle(0.5);
 }
+
+#[test]
+fn the_command_mark_line_is_installed_where_omt_said_it_would_be() {
+    let _serial = serially();
+    // `shell.auto_install` has been `true` in the configuration reference
+    // since it was written, and nothing installed anything: a default
+    // installation was promised command marks and got the heuristic fallback.
+    // This starts a real omt under a home of its own and looks at the file.
+    let mut s = Screen::start_with_shell("/bin/bash");
+    s.settle(2.0);
+
+    let rc = s.home.join(".bashrc");
+    let written = std::fs::read_to_string(&rc).unwrap_or_default();
+    assert!(
+        written.contains("omt: command marks"),
+        "omt did not install its line into {}:\n{written:?}",
+        rc.display()
+    );
+    assert!(
+        written.contains("133"),
+        "the block is there and the line is not:\n{written:?}"
+    );
+    // And it says so, rather than editing somebody's shell in silence.
+    assert!(
+        s.raw().contains("command-mark line"),
+        "nothing was said about the change:\n{}",
+        s.screen()
+    );
+}

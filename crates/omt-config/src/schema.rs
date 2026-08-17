@@ -267,10 +267,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the address comes from the command line; nothing consults this yet",
     ),
     (
-        "shell.auto_install",
-        "shell integration installs the same way for everyone; nothing consults this yet",
-    ),
-    (
         "shell.command_metadata",
         "shell integration installs the same way for everyone; nothing consults this yet",
     ),
@@ -284,10 +280,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
     ),
     (
         "shell.propagate_over_ssh",
-        "shell integration installs the same way for everyone; nothing consults this yet",
-    ),
-    (
-        "shell.shells",
         "shell integration installs the same way for everyone; nothing consults this yet",
     ),
     (

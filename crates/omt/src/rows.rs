@@ -8,7 +8,7 @@
 
 use omt_daemon::Instance;
 
-use crate::run::LocalPane;
+use crate::panes::LocalPane;
 
 /// One session, as every list in the terminal needs it.
 ///
