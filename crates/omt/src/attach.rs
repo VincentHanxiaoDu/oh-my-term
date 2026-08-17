@@ -279,7 +279,12 @@ pub fn run(socket: Option<&Path>, program: Option<String>) -> Result<()> {
             .context("polling for input")?
         {
             let event = crossterm::event::read().context("reading input")?;
-            let (input, next) = omt_tui::translate(&event, armed, omt_input::EncodeMode::default());
+            let (input, next) = omt_tui::translate(
+                &event,
+                armed,
+                omt_input::EncodeMode::default(),
+                omt_tui::Leader::default(),
+            );
             armed = next;
             match input {
                 omt_tui::Input::Bytes(bytes) => {

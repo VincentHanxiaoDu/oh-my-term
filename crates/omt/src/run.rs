@@ -285,11 +285,23 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // opened 125 times a second for an answer that changes at most when
     // somebody edits it.
     let when = omt_notify::When::parse(&setting(&state, "notifications.when"));
-    // The setting the configuration reference has documented and nothing has
-    // ever read. Read once: a keymap does not change under somebody's fingers
-    // mid-session, and re-reading it per keystroke would put a config lookup
-    // in the input path.
-    let keymap = crate::terminal_bits::Flavour::named(&setting(&state, "keymap"));
+    // From the binding file, which is the file the documents put it in — and
+    // which nothing opened until now. Read once: a keymap does not change
+    // under somebody's fingers mid-session, and re-reading it per keystroke
+    // would put a file lookup in the input path.
+    let bindings = state.bindings().ok();
+    let keymap = crate::terminal_bits::Flavour::named(
+        &bindings
+            .as_ref()
+            .map_or_else(|| "default".to_owned(), |b| b.keymap()),
+    );
+    // The leader, likewise. A file that names one relocates the whole
+    // namespace with one edit, which is what the documents have promised since
+    // before anything read them.
+    let leader = bindings
+        .as_ref()
+        .map_or_else(omt_tui::app::default_leader, |b| b.leader());
+    let leader_key = omt_tui::app::leader_chord(&leader);
     // omt's own furniture, from the theme that has existed the whole time and
     // that none of the chrome ever read. Worked out once: a terminal's colour
     // depth does not change under somebody's fingers, and asking per frame
@@ -688,6 +700,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
         let focused_session = panes[focus].session;
         let situation = omt_tui::Situation {
+            leader: leader_key.display(),
             prefix_armed: armed
                 && armed_at.is_some_and(|at| {
                     at.elapsed().as_millis() as u64 >= omt_tui::PENDING_STRIP_DELAY_MS
@@ -859,7 +872,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 .and_then(|s| s.cwd.clone()),
             branch: chrome.branch.clone(),
             dirty: false,
-            leader: omt_tui::leader(),
+            leader: leader_key.display(),
         };
         let bar = omt_tui::status_bar(&status, term_cols);
         if shown_bar.as_deref() != Some(bar.as_str()) {
@@ -1217,7 +1230,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 continue;
             }
 
-            let (input, next) = omt_tui::translate(&event, armed, mode);
+            let (input, next) = omt_tui::translate(&event, armed, mode, leader_key);
             // Recorded the moment it is first armed: somebody who has pressed
             // it knows it exists, and the introduction stops being useful.
             has_used_prefix = has_used_prefix || next;

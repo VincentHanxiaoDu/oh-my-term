@@ -10,11 +10,19 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use omt_catalog::CapabilityError;
 use omt_daemon::Instance;
 
+use crate::bindings::Bindings;
+
 /// Shared access to the running instance.
 #[derive(Clone)]
 pub struct State {
     instance: Arc<Mutex<Instance>>,
     config: Arc<Mutex<Option<Arc<omt_config::Resolved>>>>,
+    /// The keybinding files, as they were found.
+    ///
+    /// Cached beside the configuration and for the same reason: a surface that
+    /// asks what a key does on every keypress would read four files a
+    /// keystroke.
+    bindings: Arc<Mutex<Option<Arc<Bindings>>>>,
     /// Command history and its suggestions.
     ///
     /// Held here rather than in the instance because it is a surface concern:
@@ -101,6 +109,7 @@ impl State {
             seen: Arc::new(Mutex::new(crate::absorb::Seen::default())),
             readings: Arc::new(Mutex::new(crate::reading::Readings::default())),
             config: Arc::new(Mutex::new(None)),
+            bindings: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -138,6 +147,29 @@ impl State {
             *slot = Some(resolved.clone());
         }
         Ok(resolved)
+    }
+
+    /// The keybinding files, read and compiled.
+    ///
+    /// Loaded lazily and cached. A file that exists and is not TOML is an
+    /// error rather than an empty keymap: starting with keys silently
+    /// different from what the file says is the failure this whole surface
+    /// exists to end.
+    ///
+    /// # Errors
+    /// Fails if a binding file exists but cannot be read or parsed.
+    pub fn bindings(&self) -> Result<Arc<Bindings>, CapabilityError> {
+        if let Some(cached) = self.bindings.lock().ok().and_then(|b| b.clone()) {
+            return Ok(cached);
+        }
+        let workspace = std::env::current_dir().ok();
+        let loaded = omt_config::keys::load(&config_home(), workspace.as_deref())
+            .map_err(|e| CapabilityError::internal(e.to_string()))?;
+        let bindings = Arc::new(Bindings::from_files(loaded));
+        if let Ok(mut slot) = self.bindings.lock() {
+            *slot = Some(bindings.clone());
+        }
+        Ok(bindings)
     }
 
     /// Borrow the instance.

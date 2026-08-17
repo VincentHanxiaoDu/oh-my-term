@@ -1692,3 +1692,36 @@ fn what_was_run_here_before_is_offered_and_says_when_there_is_none() {
     s.type_in("\x1b");
     s.settle(0.5);
 }
+
+#[test]
+fn the_leader_is_the_one_the_binding_file_names() {
+    let _serial = serially();
+    // `keybindings.toml` was specified, described to users, and opened by
+    // nothing: the leader was a compiled-in constant, so `leader = "ctrl-a"`
+    // — documented as a one-line edit that relocates the whole namespace —
+    // relocated nothing. This is the first test that has ever started omt with
+    // a binding file.
+    let mut s = Screen::start_with_bindings("leader = \"ctrl-a\"\nkeymap = \"emacs\"\n");
+    s.settle(2.0);
+
+    // The new prefix opens the leader strip, and it names itself with the key
+    // the user actually has rather than the default.
+    s.type_in("\x01");
+    s.settle_until(5.0, |s| s.screen().contains('\u{25b8}'));
+    let screen = s.screen();
+    assert!(
+        screen.contains("detach"),
+        "`ctrl-a` did not open the leader strip:\n{screen}"
+    );
+    let strip = screen
+        .lines()
+        .find(|line| line.contains('\u{25b8}'))
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        strip.contains("^A"),
+        "the strip still names the built-in leader: {strip:?}"
+    );
+    s.type_in("\x1b");
+    s.settle(0.5);
+}

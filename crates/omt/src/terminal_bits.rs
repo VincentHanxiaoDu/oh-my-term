@@ -140,10 +140,11 @@ pub(crate) enum CopyKey {
 
 /// Which key table copy mode is using.
 ///
-/// The `keymap` setting has been documented in the configuration reference and
-/// parsed into the binding file since either existed, and **nothing has ever
-/// read it** — so somebody could set it and watch it do nothing. This is what
-/// reads it.
+/// Read from the binding file's `keymap`, which is where 10 §8.2 puts it. It
+/// was read from the *configuration* stack for a while, where the key does not
+/// exist: the merge answered `OMT-C101 unknown key`, so the flavour was always
+/// the default and anybody who set it got an error rather than emacs motions.
+/// Reading a key from the wrong store fails exactly like reading nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Flavour {
     /// vim's motions, which is what copy mode has always used.

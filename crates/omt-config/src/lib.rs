@@ -9,6 +9,7 @@ pub mod launch;
 pub mod schema;
 pub use schema::{SETTINGS, Setting, key_specs, setting};
 pub mod import;
+pub mod keys;
 pub mod layer;
 pub mod load;
 pub mod merge;

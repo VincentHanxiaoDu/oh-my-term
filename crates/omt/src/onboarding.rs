@@ -45,9 +45,13 @@ pub struct Hint {
 
 impl Hint {
     /// The text with the resolved leader substituted in.
+    ///
+    /// The leader is passed in because it is the instance's, not this
+    /// module's: naming the compiled-in default would tell somebody who
+    /// relocated their prefix to press a key they have not got.
     #[must_use]
-    pub fn resolved(&self) -> String {
-        self.text.replace("{leader}", &omt_tui::leader())
+    pub fn resolved(&self, leader: &str) -> String {
+        self.text.replace("{leader}", leader)
     }
 }
 
@@ -190,7 +194,14 @@ omt_catalog::capability! {
 }
 
 /// Serves the onboarding capabilities.
-pub struct HintsHandler(pub std::sync::Arc<std::sync::Mutex<Hints>>);
+///
+/// It holds the state as well as the hints because a hint names the leader,
+/// and the leader is the instance's — read from the binding file rather than
+/// from the constant these strings used to be written against.
+pub struct HintsHandler(
+    pub std::sync::Arc<std::sync::Mutex<Hints>>,
+    pub crate::state::State,
+);
 
 impl CapabilityHandler<HintState> for HintsHandler {
     fn call(
@@ -204,7 +215,10 @@ impl CapabilityHandler<HintState> for HintsHandler {
             .map_err(|_| CapabilityError::internal("the hint lock was poisoned"))?;
         let next = hints.next().map(|h| HintOut {
             id: h.id.to_owned(),
-            text: h.resolved(),
+            text: h.resolved(&self.1.bindings().map_or_else(
+                |_| omt_tui::default_leader(),
+                |b| omt_tui::Leader::parse(&b.leader()).display(),
+            )),
         });
         // Asking for it is showing it. Otherwise the same hint comes back on
         // every poll and the one-at-a-time rule buys nothing.
@@ -697,8 +711,11 @@ mod tests {
         );
         // And it must come out as the key that is actually bound, not as the
         // placeholder and not as a hardcoded one.
-        let shown = HINTS[0].resolved();
-        assert!(shown.contains(&omt_tui::leader()), "{shown}");
+        let shown = HINTS[0].resolved(&omt_tui::default_leader());
+        assert!(shown.contains(&omt_tui::default_leader()), "{shown}");
+        // And a relocated leader is the one the hint names.
+        let moved = HINTS[0].resolved("^A");
+        assert!(moved.contains("^A"), "{moved}");
         assert!(!shown.contains("{leader}"), "{shown}");
     }
 

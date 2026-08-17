@@ -10,7 +10,7 @@
 //! is why this is computed from state rather than printed once.
 
 /// What the terminal underneath is doing, as far as a hint needs to know.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Situation {
     /// Whether the prefix key has been pressed and is waiting for the next one.
     pub prefix_armed: bool,
@@ -28,6 +28,11 @@ pub struct Situation {
     /// exists, and repeating the introduction to them is the definition of
     /// nagging.
     pub has_used_prefix: bool,
+    /// The prefix as this instance is configured, as a person reads it.
+    ///
+    /// Carried rather than looked up: a hint naming a key the user has not got
+    /// is worse than no hint, and the leader is the user's to relocate.
+    pub leader: String,
 }
 
 /// The hint to show, or nothing.
@@ -48,11 +53,15 @@ pub fn hint_for_within(s: &Situation, cols: u16) -> Option<String> {
     // The *resolved* leader, never the literal `^A` these strings used to
     // carry. A hint naming a key the user has not got is worse than no hint:
     // they press it, something else happens, and they stop trusting the row.
-    let p = leader();
+    let p = if s.leader.is_empty() {
+        default_leader()
+    } else {
+        s.leader.clone()
+    };
     // Ordered by urgency, and the order is the design: whatever is most likely
     // to be the reason you are looking at the screen wins the single slot.
     if s.prefix_armed {
-        return Some(pending_strip_within(cols));
+        return Some(pending_strip_within(cols, &p));
     }
     if s.blocked > 1 {
         return Some(format!("agents are waiting on you — {p} a to answer"));
@@ -85,8 +94,8 @@ pub fn hint_for_within(s: &Situation, cols: u16) -> Option<String> {
 /// muscle memory never sees a flash, and somebody who forgot gets the menu.
 /// The delay is the caller's — this only says what the strip reads.
 #[must_use]
-pub fn pending_strip() -> String {
-    pending_strip_within(u16::MAX)
+pub fn pending_strip(leader: &str) -> String {
+    pending_strip_within(u16::MAX, leader)
 }
 
 /// The same, kept inside a width.
@@ -102,8 +111,8 @@ pub fn pending_strip() -> String {
 /// narrow terminal. When something is dropped the strip says so, because a
 /// menu that quietly shows less than it has is worse than one that admits it.
 #[must_use]
-pub fn pending_strip_within(cols: u16) -> String {
-    let head = format!("{} ▸ ", leader());
+pub fn pending_strip_within(cols: u16, leader: &str) -> String {
+    let head = format!("{leader} ▸ ");
     let cols = cols as usize;
     let entries: Vec<String> = crate::app::LEADER_KEYS
         .iter()
@@ -134,10 +143,13 @@ pub fn pending_strip_within(cols: u16) -> String {
 /// How long the leader is held before the strip appears.
 pub const PENDING_STRIP_DELAY_MS: u64 = 250;
 
-/// The prefix as a person reads it, e.g. `^B`.
+/// The default prefix as a person reads it, e.g. `^B`.
+///
+/// Only for surfaces with no instance to ask: the leader a *running* omt uses
+/// comes from the binding file and travels with whatever is being drawn.
 #[must_use]
-pub fn leader() -> String {
-    format!("^{}", crate::app::PREFIX_KEY.to_ascii_uppercase())
+pub fn default_leader() -> String {
+    crate::app::Leader::default().display()
 }
 
 /// How long "just started" lasts.
@@ -175,6 +187,7 @@ mod tests {
             age_secs: 5,
             remote_clients: 0,
             has_used_prefix: false,
+            leader: default_leader(),
         }
     }
 
@@ -271,7 +284,7 @@ mod tests {
         // The bug this exists to prevent: the strip was a hand-typed string
         // listing four of nine bindings, so `sessions`, `agents`, `close` and
         // the palette were reachable and invisible.
-        let strip = pending_strip();
+        let strip = pending_strip(&default_leader());
         for (key, label) in crate::app::LEADER_KEYS {
             assert!(strip.contains(*label), "`{label}` is missing from {strip}");
             assert!(
@@ -323,7 +336,7 @@ mod tests {
             prefix_armed: true,
             ..situation()
         };
-        assert_eq!(hint_for(&s), Some(pending_strip()));
+        assert_eq!(hint_for(&s), Some(pending_strip(&default_leader())));
     }
 
     #[test]
@@ -332,11 +345,20 @@ mod tests {
         // nothing checked. A hint naming a key the user has not got is worse
         // than no hint at all.
         let hint = hint_for(&situation()).expect("a hint");
-        assert!(hint.contains(&leader()), "{hint}");
+        assert!(hint.contains(&default_leader()), "{hint}");
         assert_eq!(
-            leader(),
+            default_leader(),
             format!("^{}", crate::app::PREFIX_KEY.to_ascii_uppercase())
         );
+
+        // And a relocated leader is what the hint names, which is the whole
+        // point of the file: the hint used to name a compiled-in constant.
+        let relocated = Situation {
+            leader: crate::app::Leader::parse("ctrl-a").display(),
+            ..situation()
+        };
+        let hint = hint_for(&relocated).expect("a hint");
+        assert!(hint.contains("^A"), "{hint}");
     }
 
     #[test]
@@ -376,7 +398,7 @@ mod strip_width_tests {
         // truncates, so a strip wider than the terminal loses its *last*
         // entries — which is how adding four direction keys silently removed
         // `sessions` and `agents` from the only place they are advertised.
-        let narrow = pending_strip_within(40);
+        let narrow = pending_strip_within(40, &default_leader());
         assert!(narrow.chars().count() <= 40, "{narrow:?}");
         assert!(narrow.contains("detach"), "{narrow:?}");
         assert!(
@@ -387,7 +409,7 @@ mod strip_width_tests {
 
     #[test]
     fn a_wide_strip_says_everything_and_adds_no_marker() {
-        let wide = pending_strip_within(u16::MAX);
+        let wide = pending_strip_within(u16::MAX, &default_leader());
         for (_, label) in crate::app::LEADER_KEYS {
             assert!(wide.contains(label), "`{label}` missing from {wide:?}");
         }
@@ -400,7 +422,7 @@ mod strip_width_tests {
         // what a person reaches for most often is listed first.
         let first = crate::app::LEADER_KEYS.first().expect("a key").1;
         for cols in [30u16, 40, 60, 80] {
-            let strip = pending_strip_within(cols);
+            let strip = pending_strip_within(cols, &default_leader());
             assert!(
                 strip.contains(first) || strip.chars().count() <= 12,
                 "at {cols} columns the first key is gone: {strip:?}"
@@ -411,7 +433,7 @@ mod strip_width_tests {
     #[test]
     fn a_strip_with_no_room_at_all_still_says_where_the_keys_are() {
         // Nothing fits, and the answer is still not a blank row.
-        let tiny = pending_strip_within(1);
+        let tiny = pending_strip_within(1, &default_leader());
         assert!(tiny.contains('?') || tiny.contains('▸'), "{tiny:?}");
     }
 }
@@ -441,7 +463,7 @@ mod strip_budget_tests {
         // Three times in one session a key was added and pushed another off
         // the end — `sessions`, then `agents`, then `palette` — and each time
         // nothing failed, because no test knew the row had a budget.
-        let strip = pending_strip_within(ORDINARY);
+        let strip = pending_strip_within(ORDINARY, &default_leader());
         assert!(
             strip.chars().count() <= usize::from(ORDINARY),
             "the strip overran its width: {strip:?}"
@@ -458,7 +480,7 @@ mod strip_budget_tests {
     fn dropping_anything_is_said_rather_than_silent() {
         // A menu that quietly shows less than it has is worse than one that
         // admits it.
-        let narrow = pending_strip_within(40);
+        let narrow = pending_strip_within(40, &default_leader());
         assert!(
             narrow.contains('…'),
             "keys were dropped in silence: {narrow:?}"
@@ -467,7 +489,7 @@ mod strip_budget_tests {
 
     #[test]
     fn a_wide_terminal_advertises_every_key_in_the_table() {
-        let wide = pending_strip_within(u16::MAX);
+        let wide = pending_strip_within(u16::MAX, &default_leader());
         for (_, label) in crate::app::LEADER_KEYS {
             assert!(wide.contains(label), "`{label}` missing from {wide:?}");
         }

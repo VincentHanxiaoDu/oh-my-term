@@ -63,7 +63,12 @@ omt_catalog::capability! {
 }
 
 /// Serves the keymap conflict registry.
-pub struct KeysHandler;
+///
+/// It holds the state because `keys.list` answers with the map actually in
+/// force, which includes the user's binding file. It used to answer from
+/// `omt_input::keymap::defaults()` alone, so the guide's promise that the
+/// cheatsheet includes "your own bindings" was not true.
+pub struct KeysHandler(pub crate::state::State);
 
 impl CapabilityHandler<KeysConflicts> for KeysHandler {
     fn call(
@@ -253,6 +258,10 @@ pub struct BindingOut {
     pub chord: String,
     /// What it does.
     pub action: String,
+    /// Which layer bound it: `builtin`, `user`, `project`, and so on.
+    pub source: String,
+    /// The file it came from, when it came from one.
+    pub file: Option<String>,
 }
 
 /// What `keys.list` reports.
@@ -303,8 +312,38 @@ impl CapabilityHandler<KeysList> for KeysHandler {
                     omt_input::keymap::Action::Passthrough => "passthrough".to_owned(),
                     omt_input::keymap::Action::Unbound => "unbound".to_owned(),
                 },
+                source: "builtin".to_owned(),
+                file: None,
             })
             .collect();
+
+        // And the user's own, which is the half that was missing. Reported
+        // with the file they came from: "why does this key do that" is
+        // answered by a path, not by a list.
+        for loaded in self.0.bindings()?.files() {
+            let (resolver, _) = omt_input::resolve::compile(
+                &[(loaded.source, loaded.file.clone())],
+                &omt_input::resolve::Gates {
+                    platform: std::env::consts::OS.to_owned(),
+                    terminal: Vec::new(),
+                    modal: matches!(loaded.file.keymap.as_str(), "vim" | "emacs"),
+                },
+                &[],
+            );
+            for compiled in resolver.bindings() {
+                bindings.push(BindingOut {
+                    mode: compiled.when.to_string(),
+                    chord: compiled.trigger.clone(),
+                    action: match &compiled.action {
+                        omt_input::bindings::BindingAction::Capability { name, .. } => name.clone(),
+                        omt_input::bindings::BindingAction::Unbind => "unbound".to_owned(),
+                    },
+                    source: format!("{:?}", compiled.source).to_lowercase(),
+                    file: Some(loaded.path.display().to_string()),
+                });
+            }
+        }
+
         bindings.sort_by(|a, b| a.mode.cmp(&b.mode).then(a.chord.cmp(&b.chord)));
         Ok(KeysListOut { bindings })
     }

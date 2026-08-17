@@ -9,6 +9,7 @@ pub mod capabilities;
 pub mod absorb;
 pub mod attach;
 pub mod automation;
+pub mod bindings;
 pub mod bootstrap;
 pub mod cli;
 pub mod crash;

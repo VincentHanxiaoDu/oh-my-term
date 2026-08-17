@@ -120,11 +120,30 @@ impl Screen {
         Self::start_full(shell, term_program, None)
     }
 
+    /// A screen whose instance has a keybinding file.
+    ///
+    /// The file is written before omt starts, because it is read once at
+    /// startup — a keymap that changed under a pending chord would make the
+    /// second key of a sequence mean something the first did not promise.
+    pub fn start_with_bindings(text: &str) -> Self {
+        Self::start_full_with_config("/bin/sh", None, None, Some(text))
+    }
+
     /// The whole set of choices a screen can be started with.
     pub fn start_full(
         shell: &str,
         term_program: Option<&str>,
         runtime: Option<&std::path::Path>,
+    ) -> Self {
+        Self::start_full_with_config(shell, term_program, runtime, None)
+    }
+
+    /// The same, with a keybinding file for the instance to read.
+    pub fn start_full_with_config(
+        shell: &str,
+        term_program: Option<&str>,
+        runtime: Option<&std::path::Path>,
+        bindings: Option<&str>,
     ) -> Self {
         let runtime_var = runtime.map(|r| r.display().to_string()).unwrap_or_default();
         // A state directory per screen, so what one test leaves behind cannot
@@ -141,6 +160,17 @@ impl Screen {
             std::thread::current().id()
         ));
         std::fs::create_dir_all(&state).expect("state dir");
+        // A configuration directory per screen, for the same reason as the
+        // state one — and it is set even when a test has no config, because
+        // otherwise omt reads whatever the person running the suite has in
+        // `~/.config/omt`, and the suite passes or fails according to their
+        // settings.
+        let config_home = state.join("config");
+        std::fs::create_dir_all(config_home.join("omt")).expect("config dir");
+        if let Some(text) = bindings {
+            std::fs::write(config_home.join("omt").join("keybindings.toml"), text)
+                .expect("the binding file");
+        }
         let binary = std::path::Path::new(env!("CARGO_BIN_EXE_omt"));
         let dir = std::env::temp_dir().join(format!("omt-screen-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
@@ -156,6 +186,10 @@ impl Screen {
                 ("PS1".to_owned(), "$ ".to_owned()),
                 ("SHELL".to_owned(), shell.to_owned()),
                 ("XDG_STATE_HOME".to_owned(), state.display().to_string()),
+                (
+                    "XDG_CONFIG_HOME".to_owned(),
+                    config_home.display().to_string(),
+                ),
                 // Attached only, and *absent* rather than empty otherwise: an
                 // empty variable is a value, and reading one as "yes" made
                 // every local test in this file try to attach.

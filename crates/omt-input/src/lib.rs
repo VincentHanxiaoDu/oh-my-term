@@ -8,7 +8,9 @@
 
 pub mod highlight;
 pub use highlight::{Class, Span, classify};
+pub mod bindings;
 pub mod conflicts;
+pub mod context;
 pub mod dispatch;
 pub mod key;
 pub mod keymap;
@@ -16,7 +18,9 @@ pub mod layers;
 pub mod layout;
 pub mod modal;
 pub mod mouse;
+pub mod resolve;
 
+pub use context::{Context, ContextSet, Predicate, PredicateError};
 pub use key::{Chord, ChordParseError, EncodeMode, Key, Modifiers, encode};
 pub use keymap::{
     Action, BindingRefused, CheatsheetEntry, Keymap, Mode, RESERVED_BINDING, RESERVED_GLOBAL,

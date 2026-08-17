@@ -409,17 +409,30 @@ impl CapabilityHandler<LaunchPreview> for SecurityHandler {
 #[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CheckFileIn {
     /// The leader chord.
+    #[serde(default)]
     pub leader: String,
     /// Which flavour.
     #[serde(default)]
     pub keymap: Option<String>,
     /// Trigger to action.
+    #[serde(default)]
     pub bindings: Vec<(String, String)>,
+    /// The file itself.
+    ///
+    /// The form a user actually has: everything 10 §8.2 specifies beyond a
+    /// trigger and a name — `when`, `args`, `force`, `platform`, `requires`,
+    /// `modes` — can only be checked from the text. The pair form remains for
+    /// a client that is building a file rather than reading one.
+    #[serde(default)]
+    pub text: Option<String>,
 }
 
 /// Something wrong with a keybinding file.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct BindingProblemOut {
+    /// The stable code to look it up by.
+    #[serde(default)]
+    pub code: String,
     /// Which trigger.
     pub trigger: String,
     /// What is wrong.
@@ -473,23 +486,71 @@ impl CapabilityHandler<CheckBindingFile> for BindingFileHandler {
         _ctx: &omt_catalog::CallContext,
         input: CheckFileIn,
     ) -> Result<CheckFileOut, CapabilityError> {
-        let file = omt_input::keymap::BindingFile {
-            leader: input.leader,
-            keymap: input.keymap.unwrap_or_else(|| "default".to_owned()),
-            bindings: input.bindings,
+        let capabilities = self.0.get().map_or(&[][..], Vec::as_slice);
+
+        // The text form when there is one, because it is the only form that
+        // can carry what the document specifies.
+        let (file, mut problems) = match &input.text {
+            Some(text) => match omt_input::bindings::parse_text(text) {
+                Ok(read) => read,
+                Err(err) => {
+                    return Ok(CheckFileOut {
+                        problems: vec![BindingProblemOut {
+                            code: omt_input::bindings::codes::BAD_ACTION.to_owned(),
+                            trigger: "the file".to_owned(),
+                            message: format!("this is not valid TOML: {err}"),
+                            help: "Fix the syntax; nothing in it can be checked until then."
+                                .to_owned(),
+                        }],
+                    });
+                }
+            },
+            None => (
+                omt_input::bindings::BindingFile {
+                    leader: if input.leader.is_empty() {
+                        omt_input::bindings::DEFAULT_LEADER.to_owned()
+                    } else {
+                        input.leader.clone()
+                    },
+                    keymap: input.keymap.clone().unwrap_or_else(|| "default".to_owned()),
+                    bindings: input
+                        .bindings
+                        .iter()
+                        .map(|(trigger, action)| {
+                            omt_input::bindings::Binding::simple(trigger, action)
+                        })
+                        .collect(),
+                },
+                Vec::new(),
+            ),
         };
+
+        // Compiling is the check: a trigger that is not a chord, a `when` over
+        // a context omt does not have, a reserved chord taken without meaning
+        // it, a gate that cannot be met here — each is a binding that would
+        // not be installed, and every one of them used to be silence.
+        let modal = matches!(file.keymap.as_str(), "vim" | "emacs");
+        let (_, refused) = omt_input::resolve::compile(
+            &[(omt_input::bindings::Source::User, file)],
+            &omt_input::resolve::Gates {
+                platform: std::env::consts::OS.to_owned(),
+                terminal: Vec::new(),
+                modal,
+            },
+            capabilities,
+        );
+        problems.extend(refused);
+
         Ok(CheckFileOut {
-            problems: omt_input::keymap::check_bindings(
-                &file,
-                self.0.get().map_or(&[][..], Vec::as_slice),
-            )
-            .into_iter()
-            .map(|p| BindingProblemOut {
-                trigger: p.trigger,
-                message: p.message,
-                help: p.help,
-            })
-            .collect(),
+            problems: problems
+                .into_iter()
+                .map(|p| BindingProblemOut {
+                    code: p.code.to_owned(),
+                    trigger: p.trigger,
+                    message: p.message,
+                    help: p.help,
+                })
+                .collect(),
         })
     }
 }

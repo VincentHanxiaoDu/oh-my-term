@@ -173,11 +173,110 @@ pub const PREFIX: KeyModifiers = KeyModifiers::CONTROL;
 /// product shipped different leaders.
 pub const PREFIX_KEY: char = 'b';
 
+/// The prefix key, as this instance is actually configured.
+///
+/// A value rather than the constant it used to be. `leader = "ctrl-a"` is
+/// documented as a one-line edit that relocates the whole namespace, and with
+/// a constant here it relocated nothing: the file was never opened, and the
+/// TUI could not have used it if it had been.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Leader {
+    /// The character.
+    pub key: char,
+    /// What is held with it.
+    pub mods: KeyModifiers,
+}
+
+impl Default for Leader {
+    fn default() -> Self {
+        Self {
+            key: PREFIX_KEY,
+            mods: PREFIX,
+        }
+    }
+}
+
+impl Leader {
+    /// Read one from a chord spelling like `ctrl-a`.
+    ///
+    /// Anything that is not a single modified character is the default: a
+    /// leader omt cannot press is worse than the one the user knows, and the
+    /// binding file reports the bad spelling separately rather than leaving
+    /// somebody with no prefix at all.
+    #[must_use]
+    pub fn parse(spec: &str) -> Self {
+        let Ok(chord) = omt_input::Chord::parse(spec) else {
+            return Self::default();
+        };
+        let omt_input::Key::Char(key) = chord.key else {
+            return Self::default();
+        };
+        let mut mods = KeyModifiers::empty();
+        if chord.mods.ctrl {
+            mods |= KeyModifiers::CONTROL;
+        }
+        if chord.mods.alt {
+            mods |= KeyModifiers::ALT;
+        }
+        if chord.mods.shift {
+            mods |= KeyModifiers::SHIFT;
+        }
+        if mods.is_empty() {
+            // A bare character as a prefix would swallow that letter from
+            // every shell in every pane.
+            return Self::default();
+        }
+        Self { key, mods }
+    }
+
+    /// The prefix as a person reads it, e.g. `^B`.
+    #[must_use]
+    pub fn display(self) -> String {
+        if self.mods == KeyModifiers::CONTROL {
+            return format!("^{}", self.key.to_ascii_uppercase());
+        }
+        let mut out = String::new();
+        if self.mods.contains(KeyModifiers::CONTROL) {
+            out.push_str("ctrl-");
+        }
+        if self.mods.contains(KeyModifiers::ALT) {
+            out.push_str("alt-");
+        }
+        if self.mods.contains(KeyModifiers::SHIFT) {
+            out.push_str("shift-");
+        }
+        out.push(self.key);
+        out
+    }
+
+    /// Whether a key event is this leader.
+    #[must_use]
+    pub fn matches(self, key: &KeyEvent) -> bool {
+        matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&self.key))
+            && key.modifiers.contains(self.mods)
+    }
+}
+
+/// The default leader as a person reads it.
+///
+/// For the surfaces that have no instance to ask — the first-run message runs
+/// before anything is loaded.
+#[must_use]
+pub fn default_leader() -> String {
+    Leader::default().display()
+}
+
+/// The leader chord a spelling names.
+#[must_use]
+pub fn leader_chord(spec: &str) -> Leader {
+    Leader::parse(spec)
+}
+
 /// Translate one terminal event, given whether the prefix was just pressed.
 ///
 /// Returns the input and whether the prefix is now armed.
 #[must_use]
-pub fn translate(event: &Event, armed: bool, mode: EncodeMode) -> (Input, bool) {
+pub fn translate(event: &Event, armed: bool, mode: EncodeMode, leader: Leader) -> (Input, bool) {
     match event {
         Event::Resize(cols, rows) => (
             Input::Resize {
@@ -186,7 +285,7 @@ pub fn translate(event: &Event, armed: bool, mode: EncodeMode) -> (Input, bool) 
             },
             false,
         ),
-        Event::Key(key) => translate_key(key, armed, mode),
+        Event::Key(key) => translate_key(key, armed, mode, leader),
         // A paste goes through whole, wrapped in the markers the program
         // underneath is expecting. Forwarding the text bare would let a
         // pasted newline submit a half-typed command in a shell, and would
@@ -287,18 +386,18 @@ pub fn leader_action(key: char) -> Option<Input> {
     })
 }
 
-fn translate_key(key: &KeyEvent, armed: bool, mode: EncodeMode) -> (Input, bool) {
+fn translate_key(key: &KeyEvent, armed: bool, mode: EncodeMode, leader: Leader) -> (Input, bool) {
     if armed {
         // The prefix consumed the last key, so this one is a command.
         return match key.code {
             // The prefix twice sends a literal prefix, which is how a user
             // types the chord the multiplexer took. Checked before the table,
             // because `Ctrl-A` must not be read as the bare `a`.
-            KeyCode::Char(c) if c == PREFIX_KEY && key.modifiers.contains(PREFIX) => (
-                Input::Bytes(omt_input::encode(&Chord::ctrl(PREFIX_KEY), mode)),
+            KeyCode::Char(_) if leader.matches(key) => (
+                Input::Bytes(omt_input::encode(&Chord::ctrl(leader.key), mode)),
                 false,
             ),
-            KeyCode::Char(c) if !key.modifiers.contains(PREFIX) => (
+            KeyCode::Char(c) if !key.modifiers.contains(leader.mods) => (
                 // An unrecognized command does nothing rather than reaching the
                 // program: a mistyped chord that silently ran something would
                 // be worse than one that did not.
@@ -309,7 +408,7 @@ fn translate_key(key: &KeyEvent, armed: bool, mode: EncodeMode) -> (Input, bool)
         };
     }
 
-    if key.modifiers.contains(PREFIX) && matches!(key.code, KeyCode::Char(c) if c == PREFIX_KEY) {
+    if leader.matches(key) {
         return (Input::Ignore, true);
     }
 
@@ -400,7 +499,7 @@ mod tests {
             ('?', Input::Help),
         ] {
             let event = Event::Key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
-            let (input, armed) = translate(&event, true, mode);
+            let (input, armed) = translate(&event, true, mode, Leader::default());
             assert_eq!(input, expected, "prefix {key}");
             assert!(!armed, "the prefix stayed armed after {key}");
         }
@@ -411,7 +510,7 @@ mod tests {
         // A mistyped chord that silently ran something is worse than one that
         // did not, and it must not reach the program either.
         let event = Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
-        let (input, armed) = translate(&event, true, EncodeMode::default());
+        let (input, armed) = translate(&event, true, EncodeMode::default(), Leader::default());
         assert_eq!(input, Input::Ignore);
         assert!(!armed);
     }
@@ -427,7 +526,8 @@ mod tests {
 
     #[test]
     fn an_ordinary_key_becomes_the_bytes_a_program_expects() {
-        let (input, armed) = translate(&plain('a'), false, EncodeMode::default());
+        let (input, armed) =
+            translate(&plain('a'), false, EncodeMode::default(), Leader::default());
         assert_eq!(input, Input::Bytes(b"a".to_vec()));
         assert!(!armed);
     }
@@ -440,6 +540,7 @@ mod tests {
             &key(KeyCode::Char('c'), KeyModifiers::CONTROL),
             false,
             EncodeMode::default(),
+            Leader::default(),
         );
         assert_eq!(input, Input::Bytes(vec![0x03]));
     }
@@ -450,6 +551,7 @@ mod tests {
             &key(KeyCode::Char(PREFIX_KEY), KeyModifiers::CONTROL),
             false,
             EncodeMode::default(),
+            Leader::default(),
         );
         assert_eq!(input, Input::Ignore);
         assert!(armed);
@@ -457,7 +559,7 @@ mod tests {
 
     #[test]
     fn the_prefix_then_d_detaches() {
-        let (input, armed) = translate(&plain('d'), true, EncodeMode::default());
+        let (input, armed) = translate(&plain('d'), true, EncodeMode::default(), Leader::default());
         assert_eq!(input, Input::Detach);
         assert!(!armed, "and the prefix is spent");
     }
@@ -469,6 +571,7 @@ mod tests {
             &key(KeyCode::Char(PREFIX_KEY), KeyModifiers::CONTROL),
             true,
             EncodeMode::default(),
+            Leader::default(),
         );
         // Derived from the prefix rather than written as a literal, so
         // changing the default leader cannot leave this test asserting the
@@ -488,6 +591,7 @@ mod tests {
             &Event::Paste("two words".to_owned()),
             false,
             EncodeMode::default(),
+            Leader::default(),
         );
         let Input::Bytes(bytes) = input else {
             panic!("a paste must reach the program, got {input:?}");
@@ -516,7 +620,12 @@ mod tests {
         // Somebody who pressed the leader and then pasted has not cancelled
         // the leader, and swallowing it would make the next keystroke run a
         // command they did not mean.
-        let (_, armed) = translate(&Event::Paste("x".to_owned()), true, EncodeMode::default());
+        let (_, armed) = translate(
+            &Event::Paste("x".to_owned()),
+            true,
+            EncodeMode::default(),
+            Leader::default(),
+        );
         assert!(armed);
     }
 
@@ -524,14 +633,19 @@ mod tests {
     fn an_unrecognized_command_does_nothing_rather_than_reaching_the_program() {
         // A mistyped chord that silently ran something is worse than one that
         // did not.
-        let (input, armed) = translate(&plain('~'), true, EncodeMode::default());
+        let (input, armed) = translate(&plain('~'), true, EncodeMode::default(), Leader::default());
         assert_eq!(input, Input::Ignore);
         assert!(!armed);
     }
 
     #[test]
     fn a_resize_is_reported_and_clears_the_prefix() {
-        let (input, armed) = translate(&Event::Resize(100, 40), true, EncodeMode::default());
+        let (input, armed) = translate(
+            &Event::Resize(100, 40),
+            true,
+            EncodeMode::default(),
+            Leader::default(),
+        );
         assert_eq!(
             input,
             Input::Resize {
@@ -547,13 +661,14 @@ mod tests {
         // Going through omt-input rather than crossterm's own encoding is what
         // keeps the TUI and every remote client sending identical bytes.
         let up = key(KeyCode::Up, KeyModifiers::NONE);
-        let (normal, _) = translate(&up, false, EncodeMode::default());
+        let (normal, _) = translate(&up, false, EncodeMode::default(), Leader::default());
         let (app, _) = translate(
             &up,
             false,
             EncodeMode {
                 application_cursor: true,
             },
+            Leader::default(),
         );
         assert_eq!(normal, Input::Bytes(b"\x1b[A".to_vec()));
         assert_eq!(app, Input::Bytes(b"\x1bOA".to_vec()));
@@ -565,6 +680,7 @@ mod tests {
             &key(KeyCode::Backspace, KeyModifiers::NONE),
             false,
             EncodeMode::default(),
+            Leader::default(),
         );
         assert_eq!(input, Input::Bytes(vec![0x7f]));
     }
@@ -575,6 +691,7 @@ mod tests {
             &key(KeyCode::BackTab, KeyModifiers::NONE),
             false,
             EncodeMode::default(),
+            Leader::default(),
         );
         assert_eq!(input, Input::Bytes(b"\x1b[Z".to_vec()));
     }
@@ -583,7 +700,12 @@ mod tests {
     fn an_event_nothing_handles_is_ignored_rather_than_forwarded() {
         // Sending bytes no program asked to receive is how a paste turns into a
         // command.
-        let (input, armed) = translate(&Event::FocusGained, true, EncodeMode::default());
+        let (input, armed) = translate(
+            &Event::FocusGained,
+            true,
+            EncodeMode::default(),
+            Leader::default(),
+        );
         assert_eq!(input, Input::Ignore);
         assert!(armed, "and it does not spend a pending prefix");
     }

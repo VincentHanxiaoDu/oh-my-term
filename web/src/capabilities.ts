@@ -596,11 +596,16 @@ export const HANDLERS = {
     leader: string,
     bindings: [string, string][],
     keymap?: string,
+    // The file itself. Everything the format specifies beyond a trigger and a
+    // name — `when`, `args`, `force`, `platform`, `requires`, `modes` — can
+    // only be checked from the text, so an editor that has the file sends it.
+    text?: string,
   ) =>
     call(request, 'keys.check_file', {
       leader,
       bindings,
       ...(keymap === undefined ? {} : { keymap }),
+      ...(text === undefined ? {} : { text }),
     }),
 
   'launch.preview': (request: RequestId, launch: Record<string, unknown>) =>

@@ -292,8 +292,14 @@ pub fn registry_full(
     // client" — a phone and a terminal each offering their own first tip is the
     // failure this exists to prevent.
     let hints = std::sync::Arc::new(std::sync::Mutex::new(crate::onboarding::Hints::default()));
-    r.register::<crate::onboarding::HintState, _>(crate::onboarding::HintsHandler(hints.clone()))?;
-    r.register::<crate::onboarding::DismissHints, _>(crate::onboarding::HintsHandler(hints))?;
+    r.register::<crate::onboarding::HintState, _>(crate::onboarding::HintsHandler(
+        hints.clone(),
+        state.clone(),
+    ))?;
+    r.register::<crate::onboarding::DismissHints, _>(crate::onboarding::HintsHandler(
+        hints,
+        state.clone(),
+    ))?;
     let blobs: crate::media::Shared = std::sync::Arc::new(std::sync::Mutex::new(
         omt_media::store::BlobStore::new(omt_media::store::Quota::default()),
     ));
@@ -347,13 +353,13 @@ pub fn registry_full(
         std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     r.register::<crate::media::RemoteList, _>(crate::media::MirrorHandler(mirrors.clone()))?;
     r.register::<crate::media::RemoteDiscard, _>(crate::media::MirrorHandler(mirrors))?;
-    r.register::<crate::media::KeysConflicts, _>(crate::media::KeysHandler)?;
-    r.register::<crate::media::KeysAudit, _>(crate::media::KeysHandler)?;
-    r.register::<crate::media::KeysFlavour, _>(crate::media::KeysHandler)?;
-    r.register::<crate::media::KeysList, _>(crate::media::KeysHandler)?;
-    r.register::<crate::media::KeysExplain, _>(crate::media::KeysHandler)?;
-    r.register::<crate::media::KeysRegistry, _>(crate::media::KeysHandler)?;
-    r.register::<crate::media::PaneNavigate, _>(crate::media::KeysHandler)?;
+    r.register::<crate::media::KeysConflicts, _>(crate::media::KeysHandler(state.clone()))?;
+    r.register::<crate::media::KeysAudit, _>(crate::media::KeysHandler(state.clone()))?;
+    r.register::<crate::media::KeysFlavour, _>(crate::media::KeysHandler(state.clone()))?;
+    r.register::<crate::media::KeysList, _>(crate::media::KeysHandler(state.clone()))?;
+    r.register::<crate::media::KeysExplain, _>(crate::media::KeysHandler(state.clone()))?;
+    r.register::<crate::media::KeysRegistry, _>(crate::media::KeysHandler(state.clone()))?;
+    r.register::<crate::media::PaneNavigate, _>(crate::media::KeysHandler(state.clone()))?;
     let layouts: crate::media::Layouts =
         std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     r.register::<crate::media::LayoutSave, _>(crate::media::LayoutHandler(layouts.clone()))?;

@@ -31,9 +31,9 @@ pub use tree::{Node, PaneId, Placed, Towards, neighbour, place_with_zoom};
 pub mod layout;
 pub mod render;
 
-pub use app::{Frame, Input, RawGuard, translate};
+pub use app::{Frame, Input, Leader, RawGuard, default_leader, leader_chord, translate};
 pub use hint::{
-    PENDING_STRIP_DELAY_MS, Situation, hint_for, hint_for_within, leader, pending_strip,
+    PENDING_STRIP_DELAY_MS, Situation, hint_for, hint_for_within, pending_strip,
     pending_strip_within, render_hint,
 };
 pub use layout::{MIN_PANE_COLS, MIN_PANE_ROWS, Rect, Split, how_many_fit, pane_at, tile};

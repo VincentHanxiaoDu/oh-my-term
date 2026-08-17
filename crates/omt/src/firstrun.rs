@@ -40,7 +40,7 @@ pub(crate) fn first_run_summary() {
     } else {
         println!("  agents: {}", agents.join(", "));
     }
-    let leader = omt_tui::leader();
+    let leader = omt_tui::default_leader();
     println!("  {leader} ? for every key · {leader} d to detach · `omt web` for a phone");
     println!();
 }

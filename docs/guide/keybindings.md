@@ -29,12 +29,20 @@ overlay that leaked `Ctrl+C` to a running build would be a data-loss bug.
 
 ## The prefix
 
-`Ctrl+A`, then:
+`Ctrl+B`, then:
 
 | Key | Does |
 |---|---|
 | `d` | Detach |
-| `Ctrl+A` | Send a literal `Ctrl+A` |
+| `Ctrl+B` | Send a literal `Ctrl+B` |
+
+It is `Ctrl+B` because that is the prefix the largest group of incoming users
+already has in their fingers. `Ctrl+A` is the one alternative worth
+considering and it is rejected: in readline it is `beginning-of-line`, a key
+people press constantly in a shell, and a shell is what half of omt's panes
+contain.
+
+Moving it is one line — see below.
 
 A mistyped chord does nothing rather than reaching the program. Silently
 running something you did not mean is worse than losing a keystroke.
@@ -60,19 +68,34 @@ budget stay one key wide instead of inventing a chord for every operation.
 
 ## Rebinding
 
-`~/.config/omt/keybindings.toml`:
+`~/.config/omt/keybindings.toml`, and `.omt/keybindings.toml` in a project,
+which outranks it — a keybinding is a config value and obeys the same
+precedence as everything else in `config.toml`:
 
 ```toml
-[global]
-"cmd-j" = "palette.open"
-"cmd-k" = "@unset"        # drop a default without knowing where it came from
+leader = "ctrl-a"     # relocates the whole `<leader>` namespace with one edit
+keymap = "emacs"      # "default" | "vim" | "emacs"
 
-[overlay]
-"ctrl-c" = "ui.close"
+"<leader> c" = "session.create"
+"<leader> |" = { capability = "pane.split", args = { direction = "vertical" } }
+"<leader> d" = "none"  # drop a default without knowing where it came from
+"ctrl-shift-p" = "palette.open"
+
+[[binding]]
+trigger    = "enter"
+when       = "card_focused"
+capability = "interaction.resolve"
 ```
 
-`@unset` matters more than it looks: a plain absence means "no opinion", and no
-opinion is exactly what inherits. Only an explicit unset removes a default.
+`"none"` matters more than it looks: a plain absence means "no opinion", and no
+opinion is exactly what inherits. Only an explicit `"none"` removes a default,
+and it stops there rather than revealing whatever the layer below had bound.
+
+A binding that cannot be installed **says so** rather than disappearing: a
+reserved chord without `force = true` is `OMT-C410`, a `platform` or `requires`
+that this machine or terminal cannot meet is `OMT-C408`, and a `when` naming a
+context omt does not have is refused with the word quoted back. One bad line
+never costs you the rest of the file.
 
 Chords canonicalize, so `ctrl-shift-p` and `shift-ctrl-p` are one binding. Two
 spellings of one chord would otherwise let a rebind silently shadow nothing.
@@ -84,7 +107,11 @@ Your actual keymap, including your own bindings:
 ```sh
 omt keys --cheatsheet          # a table
 omt keys --cheatsheet --json   # for a script
+omt keys list                  # every binding, with the file it came from
 ```
+
+`omt keys list` names the layer and the file for each binding, because "why
+does this key do that" is answered by a path rather than by a list.
 
 Generated from the keymap rather than maintained by hand. A hand-written
 cheatsheet is wrong the first time anybody rebinds anything, and being

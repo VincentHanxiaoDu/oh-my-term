@@ -602,21 +602,38 @@
           "description": "The chord.",
           "type": "string"
         },
+        "file": {
+          "description": "The file it came from, when it came from one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "mode": {
           "description": "Which surface it applies on.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Which layer bound it: `builtin`, `user`, `project`, and so on.",
           "type": "string"
         }
       },
       "required": [
         "mode",
         "chord",
-        "action"
+        "action",
+        "source"
       ],
       "type": "object"
     },
     "BindingProblemOut": {
       "description": "Something wrong with a keybinding file.",
       "properties": {
+        "code": {
+          "default": "",
+          "description": "The stable code to look it up by.",
+          "type": "string"
+        },
         "help": {
           "description": "What to do.",
           "type": "string"
@@ -1057,6 +1074,7 @@
       "description": "Input to `keys.check_file`.",
       "properties": {
         "bindings": {
+          "default": [],
           "description": "Trigger to action.",
           "items": {
             "maxItems": 2,
@@ -1082,14 +1100,19 @@
           ]
         },
         "leader": {
+          "default": "",
           "description": "The leader chord.",
           "type": "string"
+        },
+        "text": {
+          "default": null,
+          "description": "The file itself.\n\nThe form a user actually has: everything 10 §8.2 specifies beyond a\ntrigger and a name — `when`, `args`, `force`, `platform`, `requires`,\n`modes` — can only be checked from the text. The pair form remains for\na client that is building a file rather than reading one.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "leader",
-        "bindings"
-      ],
       "type": "object"
     },
     "CheckFileOut": {
