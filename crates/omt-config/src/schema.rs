@@ -259,10 +259,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
     (
-        "terminal.blocks.enabled",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
         "terminal.blocks.heuristic_fallback",
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),

@@ -116,6 +116,7 @@ pub(crate) fn session_limits(state: &crate::state::State) -> omt_daemon::Session
         scrollback: scrollback_limits(state),
         max_blocks: number_setting(state, "terminal.blocks.max_retained")
             .and_then(|n| usize::try_from(n).ok()),
+        block_marks: !setting(state, "terminal.blocks.enabled").contains("false"),
     }
 }
 

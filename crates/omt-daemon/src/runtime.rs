@@ -77,12 +77,25 @@ pub struct SessionRuntime {
 /// One value rather than a growing list of parameters: the caps come from
 /// configuration, `omt-daemon` sits below the crate that reads it, and each
 /// new cap would otherwise be another unlabelled argument at six call sites.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct SessionLimits {
     /// How much scrollback to keep.
     pub scrollback: omt_term::ScrollbackLimits,
     /// How many command blocks to keep. `None` is the built-in limit.
     pub max_blocks: Option<usize>,
+    /// Whether OSC 133 marks are honoured. On unless somebody said otherwise.
+    pub block_marks: bool,
+}
+
+impl Default for SessionLimits {
+    /// The built-in limits, with marks on.
+    fn default() -> Self {
+        Self {
+            scrollback: omt_term::ScrollbackLimits::default(),
+            max_blocks: None,
+            block_marks: true,
+        }
+    }
 }
 
 impl SessionRuntime {
@@ -109,6 +122,7 @@ impl SessionRuntime {
             size,
             scrollback: limits.scrollback,
             max_blocks: limits.max_blocks,
+            block_marks: limits.block_marks,
             ..TermConfig::default()
         });
         Ok(Self {

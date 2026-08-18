@@ -99,6 +99,14 @@ pub struct BlockTracker {
     /// Where the command text is being collected, between B and C.
     collecting: Option<String>,
     limit: usize,
+    /// Whether OSC 133 transitions are honoured at all.
+    ///
+    /// `terminal.blocks.enabled` reached nothing: the tracker was always on,
+    /// however it was configured. Off means the tracker stays — output with no
+    /// marks still opens an unattributed block, which is the fallback that
+    /// makes an SSH session to a host with no marks legible — but a mark is
+    /// ignored rather than acted on.
+    pub marks: bool,
 }
 
 /// How many blocks are kept.
@@ -117,6 +125,7 @@ impl BlockTracker {
             blocks: Vec::new(),
             collecting: None,
             limit: DEFAULT_LIMIT,
+            marks: true,
         }
     }
 
@@ -127,6 +136,20 @@ impl BlockTracker {
             limit: limit.max(1),
             ..Self::new()
         }
+    }
+
+    /// A tracker honouring a terminal's configuration.
+    ///
+    /// `omt-term` is below the layer that reads configuration, so the cap and
+    /// the marks flag arrive on `TermConfig`; this is the seam where they
+    /// become behaviour. Marks off means no prompts, no commands, no
+    /// unattributed guesses — a fallback race is itself a block, so it is
+    /// disabled with the rest.
+    #[must_use]
+    pub fn configured(max_blocks: Option<usize>, marks: bool) -> Self {
+        let mut tracker = max_blocks.map_or_else(Self::new, Self::with_limit);
+        tracker.marks = marks;
+        tracker
     }
 
     /// Every block, oldest first.
@@ -156,6 +179,9 @@ impl BlockTracker {
     /// Returns the block it opened or closed, so a caller can emit an event
     /// without searching for what changed.
     pub fn apply(&mut self, event: BlockEvent, row: u64) -> Option<BlockId> {
+        if !self.marks {
+            return None;
+        }
         match event {
             BlockEvent::PromptStart => {
                 // A prompt while a command is still open means the shell never
@@ -212,6 +238,12 @@ impl BlockTracker {
     ///
     /// Returns the block it opened, if it opened one.
     pub fn output_at(&mut self, row: u64) -> Option<BlockId> {
+        // With marks off this is the only way a block opens, and the blocks it
+        // opens never get a command: `OutputStart` by itself cannot attach
+        // one. That is the point of the switch.
+        if !self.marks {
+            return None;
+        }
         if self.blocks.last().is_some_and(|b| !b.outcome.is_finished()) {
             return None;
         }
@@ -291,6 +323,22 @@ mod tests {
         tracker.command_text(command);
         tracker.apply(BlockEvent::OutputStart, at + 1);
         tracker.apply(BlockEvent::CommandEnd { exit_code: exit }, at + 3);
+    }
+
+    #[test]
+    fn marks_off_means_no_blocks_at_all() {
+        // `terminal.blocks.enabled = false` reached nothing: the tracker was
+        // always on. Off means no prompts, no commands, no unattributed
+        // guesses — output opens nothing and marks are ignored, which is the
+        // honest reading of "blocks disabled".
+        let mut t = BlockTracker::new();
+        t.marks = false;
+        t.apply(BlockEvent::PromptStart, 0);
+        t.apply(BlockEvent::CommandStart, 0);
+        t.apply(BlockEvent::OutputStart, 0);
+        t.apply(BlockEvent::CommandEnd { exit_code: Some(0) }, 1);
+        t.output_at(2);
+        assert!(t.blocks().is_empty(), "{:?}", t.blocks());
     }
 
     #[test]

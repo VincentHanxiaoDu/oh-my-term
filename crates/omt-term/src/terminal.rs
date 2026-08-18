@@ -33,6 +33,8 @@ pub struct TermConfig {
     /// and `omt-term` is below the layer that reads configuration — so it is
     /// passed in, which is the only direction the layering allows.
     pub max_blocks: Option<usize>,
+    /// Whether OSC 133 marks are honoured. On unless somebody said otherwise.
+    pub block_marks: bool,
 }
 
 impl Default for TermConfig {
@@ -48,6 +50,7 @@ impl Default for TermConfig {
             foreground: None,
             background: None,
             max_blocks: None,
+            block_marks: true,
         }
     }
 }
@@ -217,11 +220,7 @@ impl Terminal {
                 colours: (config.foreground.clone(), config.background.clone()),
                 images: Vec::new(),
             },
-            blocks: config
-                .max_blocks
-                .map_or_else(crate::block::BlockTracker::new, |limit| {
-                    crate::block::BlockTracker::with_limit(limit)
-                }),
+            blocks: crate::block::BlockTracker::configured(config.max_blocks, config.block_marks),
             command_at: None,
             damage: crate::damage::Tracker::new(size.rows),
         }
