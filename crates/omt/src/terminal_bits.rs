@@ -630,6 +630,7 @@ pub(crate) fn selecting(
     rect: omt_tui::Rect,
     total: u64,
     line: &mut dyn FnMut(u64) -> Option<String>,
+    state: &crate::state::State,
 ) {
     use omt_input::mouse::Kind;
     match kind {
@@ -660,7 +661,7 @@ pub(crate) fn selecting(
                     .anchor
                     .is_some_and(|(row, col)| (row, col) != (reading.row, reading.col));
                 if moved {
-                    yank(reading, line);
+                    let _ = yank(reading, line, state);
                 }
             }
             *copying = None;
@@ -693,21 +694,33 @@ pub(crate) fn scrolling(
 ///
 /// Through the terminal omt is drawing on, which is the only clipboard
 /// reachable from the far end of an ssh link — where these sessions actually
-/// run.
-pub(crate) fn yank(reading: &omt_tui::CopyMode, line: &mut dyn FnMut(u64) -> Option<String>) {
+/// run. The settings that steer it — `media.clipboard.osc52_write` and
+/// `media.clipboard.osc52_max_bytes` — reached nothing: the selection always
+/// went and the cap was always the built-in sixty-four KiB.
+///
+/// Returns the text, so the caller can answer a later OSC 52 read with it.
+pub(crate) fn yank(
+    reading: &omt_tui::CopyMode,
+    line: &mut dyn FnMut(u64) -> Option<String>,
+    state: &crate::state::State,
+) -> Option<String> {
     let text = omt_tui::selected_text(reading, line);
     if text.is_empty() {
-        return;
+        return None;
     }
-    if let Ok(sequence) = omt_media::clipboard::osc52(
-        &text,
-        &std::env::var("TERM").unwrap_or_default(),
-        omt_media::clipboard::DEFAULT_MAX_BYTES,
-    ) {
+    let write = !setting(state, "media.clipboard.osc52_write").contains("false");
+    let max = crate::terminal_bits::byte_setting(state, "media.clipboard.osc52_max_bytes")
+        .and_then(|b| usize::try_from(b).ok())
+        .unwrap_or(omt_media::clipboard::DEFAULT_MAX_BYTES);
+    if write
+        && let Ok(sequence) =
+            omt_media::clipboard::osc52(&text, &std::env::var("TERM").unwrap_or_default(), max)
+    {
         let mut stdout = io::stdout();
         let _ = stdout.write_all(sequence.as_bytes());
         let _ = stdout.flush();
     }
+    Some(text)
 }
 
 /// What is still running, as rows somebody reads before ending it.

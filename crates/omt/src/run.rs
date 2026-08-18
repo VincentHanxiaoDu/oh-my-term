@@ -49,10 +49,10 @@ const QUIT_TITLE: &str = "Quit — this ends what is running";
 /// Compared rather than remembered in a flag, for the same reason as the quit
 /// overlay: what a chosen row *does* depends on which list it came from, and
 /// the list is the thing that knows.
-const COMMANDS_TITLE: &str = "This agent's commands";
+pub(crate) const COMMANDS_TITLE: &str = "This agent's commands";
 
 /// The title of the list of what has been run here before.
-const RECALL_TITLE: &str = "Run here before";
+pub(crate) const RECALL_TITLE: &str = "Run here before";
 
 /// Rows of chrome below the panes: the status bar, and only that.
 const STATUS_ROWS: u16 = 1;
@@ -251,10 +251,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         .context("entering raw mode")?;
     // Why omt stopped, said out loud on the way out.
     //
-    // A terminal that closes without a word is indistinguishable from one that
-    // crashed — that is exactly what it looked like the first time somebody's
-    // shell exited under it, and the answer was sitting in the session's
-    // state the whole time.
+    // A terminal that closes without a word is indistinguishable from one
+    // that crashed — and the answer was in the session's state all along.
     let mut why: Option<String> = None;
     let mut out = io::stdout();
     // Asked once, here and nowhere else: a query's reply arrives in the same
@@ -375,9 +373,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let bell_audible = bell_mode.contains("audible") || bell_mode.contains("both");
     let bell_visual = bell_mode.contains("visual") || bell_mode.contains("both");
     let mut bell_until = 0u64;
-    // Whether a paste is waiting for a yes or a no, and the thresholds that
-    // decide it is worth asking. `paste_confirm_lines` of zero or fewer asks
-    // nothing: a number a machine wrote is a machine declining the question.
+    // Whether a paste waits for an answer, and the thresholds that decide it
+    // is worth asking. Zero or fewer asks nothing.
     let paste_confirm_lines =
         crate::terminal_bits::number_setting(&state, "terminal.paste_confirm_lines")
             .unwrap_or(0)
@@ -385,6 +382,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     let paste_confirm_on_newline =
         setting(&state, "terminal.paste_confirm_on_newline").contains("true");
     let mut pending_paste: Option<Vec<u8>> = None;
+    // The last selection that was yanked, so an OSC 52 *read* from a program
+    // in a pane can be answered with what the person actually copied —
+    // `media.clipboard.osc52_read` decides whether it ever is.
+    let mut last_yank: Option<String> = None;
+    let osc52_read = setting(&state, "media.clipboard.osc52_read").contains("true");
+    // How tall an image may be when drawn in a pane.
+    let image_max_rows = crate::terminal_bits::number_setting(&state, "media.images.max_rows")
+        .unwrap_or(0)
+        .clamp(1, 10_000) as u16;
     // Survives an iteration boundary the way `layout_dirty` does. The hint
     // line is drawn inside the frame, and a flag set while processing input
     // at the end of one iteration is lost when the next one starts — which is
@@ -463,6 +469,30 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     }
                     if bell_visual {
                         bell_until = monotonic_ms() + 350;
+                    }
+                }
+                // A program asking for the clipboard. Answered only when
+                // `media.clipboard.osc52_read` says so, and only with what was
+                // actually yanked — the alternative is answering "yes, here is
+                // the entire screen" to anything that asks.
+                if osc52_read
+                    && let Some(text) = last_yank.as_ref()
+                    && let omt_events::EventPayload::Terminal(
+                        omt_events::TerminalEvent::ClipboardRead,
+                    ) = &event.payload
+                    && let Ok(sequence) = omt_media::clipboard::osc52(
+                        text,
+                        &std::env::var("TERM").unwrap_or_default(),
+                        omt_media::clipboard::DEFAULT_MAX_BYTES,
+                    )
+                {
+                    let session = pane.session;
+                    let answer = sequence.as_bytes();
+                    if attached.is_some() {
+                        backing(&mut instance, &mut attached).write(session, answer)?;
+                    } else if let Some(rt) = instance.runtime_mut(session) {
+                        rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), answer)
+                            .context("writing the clipboard answer")?;
                     }
                 }
                 if let omt_events::EventPayload::Terminal(omt_events::TerminalEvent::Notified {
@@ -764,8 +794,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     // showing the same picture do not overwrite each other's
                     // placement on the host.
                     let id = crate::host_graphics::host_id(i, index);
+                    // `media.images.max_rows` reached nothing: an image filled
+                    // however many rows it had, and somebody who capped it
+                    // watched a screenshot take half their pane. The cap is
+                    // on the placement, not the stored image, so the
+                    // scrollback keeps the whole picture.
+                    let rows = image.rows.min(image_max_rows);
                     if let Some(placement) =
-                        crate::host_graphics::place(id, *started, image.rows, image.cols, top, area)
+                        crate::host_graphics::place(id, *started, rows, image.cols, top, area)
                     {
                         wanted.push((placement, image.data.clone()));
                     }
@@ -1231,15 +1267,16 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     cols: 0,
                     rows: 0,
                 });
-                if crate::mouse::handle(
+                if crate::mouse::handle(crate::mouse::Pointer {
                     pointer,
                     rect,
-                    &mut instance,
-                    &mut attached,
-                    &mut panes,
+                    instance: &mut instance,
+                    attached: &mut attached,
+                    panes: &mut panes,
                     focus,
-                    &mut copying,
-                )? {
+                    copying: &mut copying,
+                    state: &state,
+                })? {
                     layout_dirty = true;
                 }
                 continue;
@@ -1334,19 +1371,27 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                                     .map(|(rows, _)| rows)
                                     .unwrap_or_default();
                                 let base = span.map_or(0, |(from, _)| from);
-                                crate::terminal_bits::yank(reading, &mut |row| {
-                                    usize::try_from(row.checked_sub(base)?)
-                                        .ok()
-                                        .and_then(|i| rows.get(i).cloned())
-                                });
+                                last_yank = crate::terminal_bits::yank(
+                                    reading,
+                                    &mut |row| {
+                                        usize::try_from(row.checked_sub(base)?)
+                                            .ok()
+                                            .and_then(|i| rows.get(i).cloned())
+                                    },
+                                    &state,
+                                );
                             } else {
                                 let seam = backing(&mut instance, &mut attached);
                                 let terminal = session.and_then(|id| seam.terminal(id));
-                                crate::terminal_bits::yank(reading, &mut |row| {
-                                    terminal
-                                        .and_then(|t| t.line_at(row))
-                                        .map(omt_term::Line::text)
-                                });
+                                last_yank = crate::terminal_bits::yank(
+                                    reading,
+                                    &mut |row| {
+                                        terminal
+                                            .and_then(|t| t.line_at(row))
+                                            .map(omt_term::Line::text)
+                                    },
+                                    &state,
+                                );
                             }
                             copying = None;
                         }
@@ -1431,28 +1476,29 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                             .context("writing input")?;
                     }
                 }
-                Input::Palette => {
-                    // Built from the catalog, so the list is what this build
-                    // actually registers rather than a menu maintained beside
-                    // it — which is how a palette comes to offer something that
-                    // is not there.
-                    overlay = Some(omt_tui::Overlay::new(
-                        "Commands",
-                        omt_tui::ACTIONS
-                            .iter()
-                            .map(|a| omt_tui::Choice {
-                                label: a.capability.to_owned(),
-                                detail: String::new(),
-                                chord: a.binding.map(str::to_owned),
-                                mark: None,
-                            })
-                            .collect(),
-                    ));
-                    layout_dirty = true;
-                }
-                Input::Agents => {
-                    overlay = Some(omt_tui::Overlay::new("Agents", agent_rows(&watched)));
-                    layout_dirty = true;
+                // The lists, built in one place so a title and its rows
+                // cannot drift apart.
+                Input::Palette
+                | Input::Agents
+                | Input::Recall
+                | Input::Commands
+                | Input::Conversation
+                | Input::Sessions => {
+                    if let Some(open) = crate::panels::overlay_for(
+                        &input,
+                        &watched,
+                        crate::panels::OverlayCtx {
+                            session: panes[focus].session,
+                            workspace,
+                            instance: &mut instance,
+                            attached: &mut attached,
+                            state: &state,
+                            term_cols,
+                        },
+                    ) {
+                        overlay = Some(open);
+                        layout_dirty = true;
+                    }
                 }
                 Input::CopyMode => {
                     // How much history there is, from whichever side owns it.
@@ -1471,45 +1517,6 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     };
                     let rows = rects.get(focus).map_or(1, |r| r.rows);
                     copying = Some(omt_tui::CopyMode::entering(total, rows));
-                    layout_dirty = true;
-                }
-                Input::Recall => {
-                    let suggestions = crate::rows::recall_of(&mut attached, &state, workspace);
-                    overlay = Some(omt_tui::Overlay::new(
-                        RECALL_TITLE,
-                        crate::rows::recall_rows(&suggestions),
-                    ));
-                    layout_dirty = true;
-                }
-                Input::Commands => {
-                    let session = panes[focus].session;
-                    let commands = crate::rows::offers_of(&mut attached, &state, session);
-                    overlay = Some(omt_tui::Overlay::new(
-                        COMMANDS_TITLE,
-                        crate::rows::command_rows(&commands),
-                    ));
-                    layout_dirty = true;
-                }
-                Input::Conversation => {
-                    overlay = Some(omt_tui::Overlay::new(
-                        "Conversation",
-                        conversation_of(
-                            &instance,
-                            &mut attached,
-                            &state,
-                            panes[focus].session,
-                            term_cols,
-                        ),
-                    ));
-                    layout_dirty = true;
-                }
-                Input::Sessions => {
-                    // Every session this instance holds, not only the ones with
-                    // a pane on screen. A session that is running somewhere
-                    // else is exactly the one somebody opens this list to find,
-                    // and a list that showed only what was already visible
-                    // answered a question nobody had.
-                    overlay = Some(omt_tui::Overlay::new("Sessions", session_rows(&watched)));
                     layout_dirty = true;
                 }
                 Input::Resize { cols, rows } => {

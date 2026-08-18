@@ -199,44 +199,24 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "logging goes to stderr and the crash note; nothing consults this yet",
     ),
     (
-        "media.blob_dir",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
-        "media.clipboard.osc52_max_bytes",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
-        "media.clipboard.osc52_read",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
-        "media.clipboard.osc52_write",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
-        "media.images.max_rows",
-        "the media path is unconditional; nothing consults this yet",
-    ),
-    (
         "media.images.thumbnail_max_px",
-        "the media path is unconditional; nothing consults this yet",
+        "no thumbnail machinery exists in the web client's media list, so there is nothing to size",
     ),
     (
         "media.osc_bridge.max_bytes",
-        "the media path is unconditional; nothing consults this yet",
+        "caps the in-band OSC bridge (09 §5.3), which is not implemented; the cap would bound a channel that does not exist",
     ),
     (
         "media.quota.max_blobs_per_session",
-        "the media path is unconditional; nothing consults this yet",
+        "blobs carry no session attribution, so a per-session cap has nothing to count; adding it is a store redesign",
     ),
     (
         "media.quota.ttl_referenced",
-        "the media path is unconditional; nothing consults this yet",
+        "the store has one TTL for runtime blobs; a second lifecycle for referenced blobs is a sweep() redesign",
     ),
     (
         "media.reverse_socket.hosts",
-        "the media path is unconditional; nothing consults this yet",
+        "names the hosts allowed a reverse socket (09 §5.2), which is not implemented; there is no socket to allow",
     ),
     (
         "shell.command_metadata",

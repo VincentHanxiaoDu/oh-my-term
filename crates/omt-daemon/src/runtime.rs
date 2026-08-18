@@ -315,6 +315,10 @@ impl SessionRuntime {
                 EventSourceTag::Core,
                 EventPayload::Terminal(TerminalEvent::Bell),
             )),
+            HostAction::ClipboardRead { selection: _ } => Some((
+                EventSourceTag::Core,
+                EventPayload::Terminal(TerminalEvent::ClipboardRead),
+            )),
             HostAction::Notify { title, body } => Some((
                 EventSourceTag::Core,
                 EventPayload::Terminal(TerminalEvent::Notified {

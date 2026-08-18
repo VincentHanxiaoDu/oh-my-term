@@ -723,6 +723,17 @@ impl CapabilityHandler<RemoteDiscard> for MirrorHandler {
 /// the workspace (09 §4.3.2 records the verification), so there is nothing to
 /// buy by putting it inside one.
 fn managed_root() -> Result<std::path::PathBuf, CapabilityError> {
+    // `media.blob_dir` first: it was in the settings reference and reached
+    // nothing, so somebody who pointed their blobs somewhere with space in it
+    // still filled the state directory. The environment override stays above
+    // it — it is the tests' escape hatch, and a per-run override should beat
+    // a file somebody wrote once.
+    let state = crate::state::State::default();
+    let configured = crate::terminal_bits::setting(&state, "media.blob_dir");
+    let configured = configured.trim().trim_matches('"').trim();
+    if !configured.is_empty() {
+        return Ok(std::path::PathBuf::from(configured));
+    }
     if let Ok(explicit) = std::env::var("OMT_MEDIA_DIR") {
         return Ok(std::path::PathBuf::from(explicit));
     }

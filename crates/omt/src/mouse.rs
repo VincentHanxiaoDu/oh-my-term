@@ -227,15 +227,41 @@ fn of_button(button: crossterm::event::MouseButton) -> Button {
 /// # Errors
 /// Fails only if writing to the session does — the same failure as any other
 /// keystroke, and for the same reason.
-pub(crate) fn handle(
-    pointer: &crossterm::event::MouseEvent,
-    rect: omt_tui::Rect,
-    instance: &mut omt_daemon::Instance,
-    attached: &mut Option<crate::backing::Attached>,
-    panes: &mut [crate::panes::LocalPane],
-    focus: usize,
-    copying: &mut Option<omt_tui::CopyMode>,
-) -> anyhow::Result<bool> {
+/// Everything the mouse handler needs, which exceeds the wordy-argument limit.
+///
+/// A struct rather than nine unlabelled parameters: the selection path
+/// reaches the configuration through it, and the seventh word is where
+/// somebody swaps two values.
+pub(crate) struct Pointer<'a> {
+    /// The event itself.
+    pub(crate) pointer: &'a crossterm::event::MouseEvent,
+    /// Where the pane is on the screen.
+    pub(crate) rect: omt_tui::Rect,
+    /// The instance the pane belongs to.
+    pub(crate) instance: &'a mut omt_daemon::Instance,
+    /// The attached client, when there is one.
+    pub(crate) attached: &'a mut Option<crate::backing::Attached>,
+    /// Every pane on screen.
+    pub(crate) panes: &'a mut [crate::panes::LocalPane],
+    /// Which one is focused.
+    pub(crate) focus: usize,
+    /// The in-flight selection, if there is one.
+    pub(crate) copying: &'a mut Option<omt_tui::CopyMode>,
+    /// The configuration.
+    pub(crate) state: &'a crate::state::State,
+}
+
+pub(crate) fn handle(ctx: Pointer<'_>) -> anyhow::Result<bool> {
+    let Pointer {
+        pointer,
+        rect,
+        instance,
+        attached,
+        panes,
+        focus,
+        copying,
+        state,
+    } = ctx;
     use anyhow::Context as _;
 
     let Some((moused, inside)) = from_crossterm(pointer, rect) else {
@@ -270,9 +296,15 @@ pub(crate) fn handle(
         }
         Route::Select(kind) => {
             let total = crate::terminal_bits::history_depth(instance, attached, session);
-            crate::terminal_bits::selecting(copying, kind, &moused, rect, total, &mut |row| {
-                crate::terminal_bits::line_of(instance, attached, session, row)
-            });
+            crate::terminal_bits::selecting(
+                copying,
+                kind,
+                &moused,
+                rect,
+                total,
+                &mut |row| crate::terminal_bits::line_of(instance, attached, session, row),
+                state,
+            );
             Ok(true)
         }
         Route::Scroll(lines) => {

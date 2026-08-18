@@ -181,6 +181,13 @@ pub enum TerminalEvent {
     /// thing a terminal program sends *deliberately* to get a human's
     /// attention, and a phone decides whether to buzz on it.
     Bell,
+    /// A program asked for the clipboard — the OSC 52 read query.
+    ///
+    /// Emitted so the surface that owns the clipboard (the TUI, which yanked
+    /// the last selection) can answer it; `media.clipboard.osc52_read` decides
+    /// whether it does. No clipboard is kept in the daemon, which is why the
+    /// answer does not travel with the event.
+    ClipboardRead,
     /// A program asked for a notification — `OSC 9`, or `OSC 777 ; notify`.
     ///
     /// Beside `Bell` and for the same reason: it is a program deliberately

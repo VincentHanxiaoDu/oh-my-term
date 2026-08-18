@@ -294,9 +294,7 @@ fn the_bar_names_the_real_claude_and_not_only_a_binary_called_claude() {
     // and a fixed six seconds was a guess at the machine — which is how this
     // test failed under a full suite on a loaded core, exactly as the second
     // trap in HANDOFF §5 says it would.
-    s.settle_until(30.0, |s| {
-        s.row(ROWS - 1).to_lowercase().contains("claude")
-    });
+    s.settle_until(30.0, |s| s.row(ROWS - 1).to_lowercase().contains("claude"));
 
     let bar = s.row(ROWS - 1);
     let named = bar.to_lowercase().contains("claude");

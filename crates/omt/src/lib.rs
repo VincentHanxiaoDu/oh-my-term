@@ -24,6 +24,7 @@ pub mod multiuser;
 pub mod onboarding;
 pub mod ops;
 pub mod pairing;
+pub mod panels;
 pub mod panes;
 pub mod persist;
 pub mod probe;
