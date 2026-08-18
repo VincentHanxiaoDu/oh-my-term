@@ -115,10 +115,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the host colours come from the environment; nothing consults this yet",
     ),
     (
-        "agents.detection",
-        "detection is unconditional; nothing consults this yet",
-    ),
-    (
         "appearance.block_style",
         "the web client draws with it; nothing applies it yet",
     ),
@@ -219,20 +215,8 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "names the hosts allowed a reverse socket (09 §5.2), which is not implemented; there is no socket to allow",
     ),
     (
-        "shell.command_metadata",
-        "shell integration installs the same way for everyone; nothing consults this yet",
-    ),
-    (
-        "shell.inject_env",
-        "shell integration installs the same way for everyone; nothing consults this yet",
-    ),
-    (
-        "shell.osc133",
-        "shell integration installs the same way for everyone; nothing consults this yet",
-    ),
-    (
         "shell.propagate_over_ssh",
-        "shell integration installs the same way for everyone; nothing consults this yet",
+        "no ssh child-environment path exists to propagate through; the marker env belongs to the host the pane is on",
     ),
     (
         "terminal.env_passthrough",
@@ -476,8 +460,8 @@ pub const SETTINGS: &[Setting] = &[
     Setting {
         key: "shell.inject_env",
         kind: Kind::Bool,
-        default: "false",
-        doc: "Inject env.",
+        default: "true",
+        doc: "Whether panes carry OMT_SESSION, OMT_SOCK and OMT_AGENT_EVENTS. Off means hooks have nothing to reach for, which is a user saying they want no agent markers.",
         choices: &[],
         scope: crate::Scope::Any,
     },
@@ -492,8 +476,8 @@ pub const SETTINGS: &[Setting] = &[
     Setting {
         key: "shell.command_metadata",
         kind: Kind::Bool,
-        default: "false",
-        doc: "Command metadata.",
+        default: "true",
+        doc: "Whether the status bar shows the shell's reported pwd and branch. Off hides the cells; the blocks still carry their own exit codes.",
         choices: &[],
         scope: crate::Scope::Any,
     },

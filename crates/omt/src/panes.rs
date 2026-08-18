@@ -79,6 +79,8 @@ pub(crate) struct Opening<'a> {
     pub(crate) tile: omt_tui::PaneId,
     pub(crate) socket: &'a str,
     pub(crate) limits: omt_daemon::SessionLimits,
+    /// Whether the pane carries the agent markers, from `shell.inject_env`.
+    pub(crate) inject_markers: bool,
 }
 
 impl LocalPane {
@@ -118,6 +120,7 @@ impl LocalPane {
             tile,
             socket,
             limits,
+            inject_markers,
         } = *opening;
         let session = instance
             .create_session(workspace, SessionKind::Shell, SessionMode::Pty)
@@ -133,19 +136,26 @@ impl LocalPane {
                 // which session it belongs to and where to report. Without
                 // the socket a hook gives up on its first line — which is
                 // why every agent run inside omt was reporting nothing.
-                env: vec![
-                    ("OMT_SESSION".to_owned(), session.to_wire()),
-                    ("OMT_SOCK".to_owned(), socket.to_owned()),
-                    // Said out loud, because an agent that has to guess whether
-                    // its host understands a sequence will either stay silent
-                    // or write JSON onto somebody's screen. The version is the
-                    // whole negotiation: a number an agent can compare, with no
-                    // round trip on a channel that has no replies.
-                    (
-                        "OMT_AGENT_EVENTS".to_owned(),
-                        omt_term::AGENT_EVENT_PROTOCOL.to_string(),
-                    ),
-                ],
+                // `shell.inject_env = false` is the user saying they want
+                // none of it.
+                env: if inject_markers {
+                    vec![
+                        ("OMT_SESSION".to_owned(), session.to_wire()),
+                        ("OMT_SOCK".to_owned(), socket.to_owned()),
+                        // Said out loud, because an agent that has to guess
+                        // whether its host understands a sequence will either
+                        // stay silent or write JSON onto somebody's screen.
+                        // The version is the whole negotiation: a number an
+                        // agent can compare, with no round trip on a channel
+                        // that has no replies.
+                        (
+                            "OMT_AGENT_EVENTS".to_owned(),
+                            omt_term::AGENT_EVENT_PROTOCOL.to_string(),
+                        ),
+                    ]
+                } else {
+                    Vec::new()
+                },
                 ..PtyConfig::default()
             },
             limits,

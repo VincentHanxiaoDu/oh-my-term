@@ -47,6 +47,7 @@ pub(crate) enum Installed {
 /// thought about it gets working blocks, which is the point of a default.
 pub(crate) fn wanted(state: &crate::state::State) -> bool {
     !crate::terminal_bits::setting(state, "shell.auto_install").contains("false")
+        && crate::terminal_bits::emits_marks(state)
 }
 
 /// Whether this shell is one the configuration named.

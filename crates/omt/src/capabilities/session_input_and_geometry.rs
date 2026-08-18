@@ -355,6 +355,11 @@ impl CapabilityHandler<SessionRelease> for SessionReleaseHandler {
 /// terminal's own and an instance's — cannot drift into telling an agent
 /// different things.
 fn session_env(state: &State, id: omt_types::SessionId) -> Vec<(String, String)> {
+    // `shell.inject_env = false` is the user saying they want no agent
+    // markers in panes; a session created from the web then carries none.
+    if !crate::terminal_bits::inject_markers(state) {
+        return Vec::new();
+    }
     let mut env = vec![("OMT_SESSION".to_owned(), id.to_wire())];
     if let Some(socket) = state.socket() {
         env.push(("OMT_SOCK".to_owned(), socket.display().to_string()));

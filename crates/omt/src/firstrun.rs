@@ -10,6 +10,13 @@
 /// created here, so a second run says nothing — including a second run that
 /// changes nothing else.
 pub(crate) fn first_run_summary() {
+    first_run_summary_with(crate::terminal_bits::agents_detection(
+        &crate::state::State::default(),
+    ))
+}
+
+/// The same, with the detection switch decided by the caller's state.
+pub(crate) fn first_run_summary_with(detection_on: bool) {
     let Some(home) = config_home() else {
         return;
     };
@@ -31,7 +38,7 @@ pub(crate) fn first_run_summary() {
         })
         .unwrap_or_else(|| "your shell".to_owned());
 
-    let agents = detected_agents();
+    let agents = detected_agents(detection_on);
 
     println!("omt {}", env!("CARGO_PKG_VERSION"));
     println!("  shell: {shell}");
@@ -50,7 +57,10 @@ pub(crate) fn first_run_summary() {
 /// Named rather than counted: "3 agents detected" tells somebody nothing they
 /// can act on, and the list is what makes it obvious omt already knows about
 /// the one they use.
-pub(crate) fn detected_agents() -> Vec<String> {
+pub(crate) fn detected_agents(detection_on: bool) -> Vec<String> {
+    if !detection_on {
+        return Vec::new();
+    }
     [
         "claude",
         "codex",

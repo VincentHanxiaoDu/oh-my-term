@@ -47,8 +47,8 @@ Generated from `omt-config`'s schema. Every setting has a default, because a fea
 | `notifications.when` | needs-you \| any-change \| off | `"needs-you"` | immediately | When to notify. `needs-you` is a card waiting on a human, which is the only one worth a buzz by default. |
 | `server.bind` | text | `"127.0.0.1:7717"` | on listener restart | Where the web surface listens. Loopback by default, deliberately. |
 | `shell.auto_install` | bool | `true` | immediately | Auto install. |
-| `shell.command_metadata` | bool | `false` | immediately | Command metadata. |
-| `shell.inject_env` | bool | `false` | immediately | Inject env. |
+| `shell.command_metadata` | bool | `true` | immediately | Whether the status bar shows the shell's reported pwd and branch. Off hides the cells; the blocks still carry their own exit codes. |
+| `shell.inject_env` | bool | `true` | immediately | Whether panes carry OMT_SESSION, OMT_SOCK and OMT_AGENT_EVENTS. Off means hooks have nothing to reach for, which is a user saying they want no agent markers. |
 | `shell.osc133` | emit \| consume \| both | `"both"` | immediately | The shell osc133. |
 | `shell.propagate_over_ssh` | bool | `false` | immediately | Propagate over ssh. |
 | `shell.shells` | text | `""` | immediately | The shell shells. Default: auto-detected. |

@@ -105,6 +105,42 @@ fn reflow_policy(state: &crate::state::State) -> omt_term::Reflow {
     }
 }
 
+/// Whether omt looks at panes for agents, from `agents.detection`.
+///
+/// Off means no observations and no advertised list — the probe loop and the
+/// first-run summary both check it. The web's explicit install flow keeps
+/// working: that is a user asking, not detection.
+pub(crate) fn agents_detection(state: &crate::state::State) -> bool {
+    !setting(state, "agents.detection").contains("false")
+}
+
+/// Whether panes carry the agent markers, from `shell.inject_env`.
+///
+/// On by default — panes always carried them, and hooks exit at their guard
+/// without a socket. Off is a user saying they want no markers at all, which
+/// is why the setting exists.
+pub(crate) fn inject_markers(state: &crate::state::State) -> bool {
+    !setting(state, "shell.inject_env").contains("false")
+}
+
+/// Whether OSC 133 marks are consumed, from `shell.osc133`.
+///
+/// `emit` means omt installs the emitter and does not read marks back;
+/// `consume` means it reads them and installs nothing; `both`, the default,
+/// is exactly what has always happened. The specific switches already wired
+/// (`blocks.enabled`, `auto_install`) refine the same decision.
+pub(crate) fn consumes_marks(state: &crate::state::State) -> bool {
+    !matches!(setting(state, "shell.osc133").as_str(), "emit")
+}
+
+/// Whether omt installs the OSC 133 emitter, from `shell.osc133`.
+///
+/// The emit half of the same key: `consume` alone means marks are read and
+/// never installed.
+pub(crate) fn emits_marks(state: &crate::state::State) -> bool {
+    !matches!(setting(state, "shell.osc133").as_str(), "consume")
+}
+
 /// Which terminal modes omt asks for, from the settings that reached nothing.
 ///
 /// Both default to on, which is what they have always been; the point is that
@@ -129,7 +165,8 @@ pub(crate) fn session_limits(state: &crate::state::State) -> omt_daemon::Session
         scrollback: scrollback_limits(state),
         max_blocks: number_setting(state, "terminal.blocks.max_retained")
             .and_then(|n| usize::try_from(n).ok()),
-        block_marks: !setting(state, "terminal.blocks.enabled").contains("false"),
+        block_marks: !setting(state, "terminal.blocks.enabled").contains("false")
+            && consumes_marks(state),
         block_fallback: !setting(state, "terminal.blocks.heuristic_fallback").contains("false"),
         reflow: reflow_policy(state),
     }

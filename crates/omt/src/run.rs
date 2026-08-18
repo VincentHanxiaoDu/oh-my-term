@@ -240,6 +240,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 tile: first_tile,
                 socket: &socket_text,
                 limits,
+                inject_markers: crate::terminal_bits::inject_markers(&state),
             },
         )?]
     };
@@ -340,7 +341,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // When the roster was last asked for. Attached only; the local path reads
     // its own instance and has nothing to be stale about.
     let mut rostered_at = 0u64;
-    let mut branch = BranchCache::default();
+    let mut branch = crate::panels::BranchCache::default();
 
     // Labelled, because the input drain below is itself a loop: an unlabelled
     // `break` on detach would leave the drain and carry straight on drawing
@@ -396,6 +397,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // at the end of one iteration is lost when the next one starts — which is
     // how the paste confirmation first managed to never appear.
     let mut hint_dirty = false;
+    // Whether the status bar shows the shell-reported branch.
+    let command_metadata = setting(&state, "shell.command_metadata").contains("true");
     let separators = {
         let configured = setting(&state, "terminal.word_separators");
         configured.trim().trim_matches('"').to_owned()
@@ -539,6 +542,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // there for.
             crate::absorb::from_session_file(&state, &mut instance, pane.session);
 
+            if !crate::terminal_bits::agents_detection(&state) {
+                continue;
+            }
             let detection = instance.observe_session(pane.session, pane.binding, &refs, now);
             let before = pane.agent.as_ref().map(|p| p.detection.agent);
             pane.agent = detection.map(|detection| crate::probe::Probed {
@@ -739,7 +745,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             for (pane, rect) in panes.iter().zip(&rects) {
                 backing(&mut instance, &mut attached).resize(pane.session, rect.cols, rect.rows)?;
             }
-            draw_separators(&mut out, &rects, palette, depth).context("drawing separators")?;
+            crate::panels::draw_separators(&mut out, &rects, palette, depth)
+                .context("drawing separators")?;
             layout_dirty = false;
         }
 
@@ -1017,7 +1024,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             cwd: instance
                 .session(focused_session)
                 .and_then(|s| s.cwd.clone()),
-            branch: chrome.branch.clone(),
+            // `shell.command_metadata = false` hides the shell-reported
+            // branch; the cell used to be unconditional, which made the
+            // setting decoration.
+            branch: if command_metadata {
+                chrome.branch.clone()
+            } else {
+                None
+            },
             dirty: false,
             leader: leader_key.display(),
             bell: now < bell_until,
@@ -1575,6 +1589,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                                         tile: new_tile,
                                         socket: &socket_text,
                                         limits,
+                                        inject_markers: crate::terminal_bits::inject_markers(
+                                            &state,
+                                        ),
                                     },
                                 )
                             };
@@ -1817,83 +1834,6 @@ fn ended_because(session: &omt_session::Session) -> String {
     }
 }
 
-/// Draw the separator between panes.
-///
-/// A vertical rule rather than a blank column: two shells side by side with
-/// nothing between them read as one shell with very strange output.
-/// The branch, remembered for a moment.
-///
-/// `git status` spawns two processes. Asking it per frame — which is what
-/// "read once per frame, not cached" turned into at up to 125 frames a second
-/// — is 250 process spawns a second to answer a question whose answer changes
-/// when somebody types `git checkout`. It was the single largest cost in the
-/// loop, and it is why a pasted paragraph arrived a character at a time.
-///
-/// A second of staleness after a checkout is imperceptible. A quarter of a
-/// second of latency per keystroke is not.
-#[derive(Default)]
-struct BranchCache {
-    /// Which directory the answer is for, so a `cd` is not answered with the
-    /// previous workspace's branch.
-    dir: String,
-    branch: Option<String>,
-    at: Option<u64>,
-}
-
-impl BranchCache {
-    /// How long an answer is reused.
-    const FRESH_MS: u64 = 1_000;
-
-    fn get(&mut self, dir: &str, now: u64) -> Option<String> {
-        self.get_with(dir, now, |dir| {
-            omt_workspace_fs::git::status(std::path::Path::new(dir))
-                .ok()
-                .and_then(|s| s.branch)
-        })
-    }
-
-    /// The caching itself, with the lookup passed in.
-    ///
-    /// Split out so what this type is *for* — asking rarely — is testable
-    /// without a repository and without counting process spawns, which is a
-    /// measurement that passes by luck whichever way the code goes.
-    fn get_with(
-        &mut self,
-        dir: &str,
-        now: u64,
-        lookup: impl FnOnce(&str) -> Option<String>,
-    ) -> Option<String> {
-        let fresh = self.dir == dir
-            && self
-                .at
-                .is_some_and(|at| now.saturating_sub(at) < Self::FRESH_MS);
-        if !fresh {
-            self.dir = dir.to_owned();
-            self.at = Some(now);
-            self.branch = lookup(dir);
-        }
-        self.branch.clone()
-    }
-}
-
-fn draw_separators(
-    out: &mut impl Write,
-    rects: &[omt_tui::Rect],
-    palette: omt_tui::paint::Chrome,
-    depth: omt_tui::paint::Depth,
-) -> io::Result<()> {
-    // Built once rather than per row: the rule is the same every time, and a
-    // hundred-row window is a hundred allocations of the same short string.
-    let rule = omt_tui::paint::separator(palette, depth);
-    for pair in rects.windows(2) {
-        let col = pair[0].col + pair[0].cols + 1;
-        for row in 0..pair[0].rows {
-            write!(out, "\x1b[{};{col}H{rule}", row + 1)?;
-        }
-    }
-    Ok(())
-}
-
 /// Milliseconds since the process started.
 ///
 /// Monotonic rather than wall-clock: the writer token's idle timeout must not
@@ -1909,45 +1849,6 @@ pub(crate) fn monotonic_ms() -> u64 {
 #[allow(clippy::expect_used, reason = "in a test, expect() is the assertion")]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_branch_is_asked_for_at_most_once_a_second() {
-        // `git status` spawns two processes and this ran per frame, at up to
-        // 125 frames a second. It was the single largest cost in the loop and
-        // the reason a pasted paragraph arrived a character at a time.
-        let mut cache = BranchCache::default();
-        let mut asked = 0;
-        for now in 0..500 {
-            let got = cache.get_with("/repo", now, |_| {
-                asked += 1;
-                Some("main".to_owned())
-            });
-            assert_eq!(got.as_deref(), Some("main"));
-        }
-        assert_eq!(asked, 1, "asked git {asked} times in half a second");
-    }
-
-    #[test]
-    fn a_stale_answer_is_replaced_rather_than_kept() {
-        // A second of staleness after a checkout is imperceptible; never
-        // updating would show the wrong branch forever.
-        let mut cache = BranchCache::default();
-        cache.get_with("/repo", 0, |_| Some("main".to_owned()));
-        let after = cache.get_with("/repo", BranchCache::FRESH_MS, |_| {
-            Some("feature".to_owned())
-        });
-        assert_eq!(after.as_deref(), Some("feature"));
-    }
-
-    #[test]
-    fn a_different_directory_is_never_answered_from_the_previous_one() {
-        // The failure this prevents is a `cd` into another worktree showing
-        // the branch of the one just left, which is worse than showing none.
-        let mut cache = BranchCache::default();
-        cache.get_with("/one", 0, |_| Some("main".to_owned()));
-        let other = cache.get_with("/two", 1, |_| Some("release".to_owned()));
-        assert_eq!(other.as_deref(), Some("release"));
-    }
 
     #[test]
     fn the_cursor_lands_on_the_row_the_pane_was_drawn_at() {
