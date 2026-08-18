@@ -1792,3 +1792,122 @@ fn a_default_screen_asks_the_terminal_about_graphics() {
         s.raw.len()
     );
 }
+
+#[test]
+fn a_daemon_created_pane_has_the_same_signal_layout_as_a_local_one() {
+    let _serial = serially();
+    // HANDOFF §6.2: a pane's shell was stopped by `SIGINT` in ordinary use and
+    // it has never been reproduced here. The shape to suspect is a signal
+    // reaching the pane's process group from outside it, and the thing to
+    // compare is the pty's terminal settings and process-group layout between
+    // a session the daemon created and one this terminal owns. This is that
+    // comparison, run rather than reasoned about.
+    //
+    // Two things decide whether a `Ctrl-C` typed anywhere near omt can stop a
+    // pane's shell:
+    //
+    // - **the shell leads its own process group**, so a signal sent to another
+    //   group cannot reach it;
+    // - **the pty delivers signals at all, and on the usual character** —
+    //   `isig` with `intr = ^C`. A pty configured otherwise turns the same
+    //   keystroke into something else entirely.
+    //
+    // The first version of this test asked for `tpgid` as well and asserted it
+    // equalled the shell's group. It does not, and should not: the reading was
+    // taken *while a pipeline was in the foreground*, so the answer was the
+    // pipeline's group. Recorded because the wrong version looked exactly as
+    // convincing as the right one.
+    let layout = "ps -o pid=,pgid= -p $$\n";
+
+    let mut local = Screen::start();
+    local.settle_until(20.0, |s| s.screen().contains('$'));
+    local.type_in(layout);
+    local.settle_until(20.0, |s| pair(&s.screen()).is_some());
+    let local_group = pair(&local.screen());
+    local.type_in("stty -a\n");
+    local.settle_until(20.0, |s| s.screen().contains("intr"));
+    let local_signals = signal_settings(&local.screen());
+
+    let runtime = instance_dir("layout-daemon");
+    let _cleanup = Instance(runtime.clone());
+    let mut daemon = Screen::start_attached_in(&runtime);
+    daemon.settle_until(30.0, |s| s.screen().contains('$'));
+    daemon.type_in(layout);
+    daemon.settle_until(30.0, |s| pair(&s.screen()).is_some());
+    let daemon_group = pair(&daemon.screen());
+    daemon.type_in("stty -a\n");
+    daemon.settle_until(30.0, |s| s.screen().contains("intr"));
+    let daemon_signals = signal_settings(&daemon.screen());
+
+    // Printed, because this test is also the record §6.2 asks for.
+    println!("local group:  {local_group:?}   signals: {local_signals:?}");
+    println!("daemon group: {daemon_group:?}   signals: {daemon_signals:?}");
+
+    for (which, group) in [("local", local_group), ("daemon", daemon_group)] {
+        let Some((pid, pgid)) = group else {
+            panic!("{which}: the pane printed no process-group line");
+        };
+        assert_eq!(
+            pgid, pid,
+            "{which}: the shell does not lead its own process group, so a \
+             signal sent to another group can reach it"
+        );
+    }
+
+    assert_eq!(
+        local_signals, daemon_signals,
+        "a daemon-created pane's signal settings differ from a local one's, \
+         which is the difference §6.2 is looking for"
+    );
+    assert!(
+        local_signals.iter().any(|s| s == "isig"),
+        "signals are off on this pty: {local_signals:?}"
+    );
+    assert!(
+        local_signals.iter().any(|s| s == "intr=^C"),
+        "the interrupt character is not ^C: {local_signals:?}"
+    );
+}
+
+/// The `pid pgid` a pane printed, if it printed one.
+fn pair(screen: &str) -> Option<(u32, u32)> {
+    screen.lines().map(str::trim).find_map(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        match fields[..] {
+            [a, b] => Some((a.parse().ok()?, b.parse().ok()?)),
+            _ => None,
+        }
+    })
+}
+
+/// The parts of `stty -a` that decide what a `Ctrl-C` does.
+///
+/// Only those parts: the rest of the line includes the window size, which
+/// differs between two screens for reasons that have nothing to do with
+/// signals and would make the comparison fail for the wrong reason.
+fn signal_settings(screen: &str) -> Vec<String> {
+    let text = screen.replace('\n', " ");
+    let mut out = Vec::new();
+    for flag in ["isig", "-isig", "brkint", "-brkint", "icanon", "-icanon"] {
+        if text.split_whitespace().any(|w| w.trim_matches(';') == flag) {
+            out.push((*flag).to_owned());
+        }
+    }
+    // `intr = ^C` arrives as three words, and as two on a terminal that omits
+    // the spaces.
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if let Some(at) = words.iter().position(|w| *w == "intr") {
+        let value = words
+            .get(at + 1)
+            .and_then(|w| {
+                if *w == "=" {
+                    words.get(at + 2)
+                } else {
+                    Some(w)
+                }
+            })
+            .unwrap_or(&"?");
+        out.push(format!("intr={}", value.trim_matches(';')));
+    }
+    out
+}

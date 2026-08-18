@@ -251,10 +251,40 @@ ptys do not have. **The instrumentation to catch it is now in place**: omt
 names the reason on the way out, and a panic leaves a note at
 `/tmp/omt-crash.log`. The next occurrence should report itself.
 
-If you pick this up: the shape to suspect is a signal reaching the pane's
-process group from outside it, and the thing to compare is the pty's terminal
-settings and process-group layout between a daemon-created session and a
-locally-owned one.
+**That comparison has now been run**, because it was the one thing this file
+asked for and nobody had done: the pty's terminal settings and process-group
+layout, between a session the daemon created and one a terminal owns.
+`a_daemon_created_pane_has_the_same_signal_layout_as_a_local_one` in the screen
+suite is the experiment, and it prints what it found:
+
+```
+local group:  Some((15736, 15736))   signals: ["isig", "brkint", "icanon", "intr=^C"]
+daemon group: Some((15999, 15999))   signals: ["isig", "brkint", "icanon", "intr=^C"]
+```
+
+In both, the pane's shell leads its own process group — so a signal sent to
+another group cannot reach it — and the pty delivers signals on the ordinary
+character. **The two are identical**, which rules out the suspicion this
+section was written around: whatever sent that `SIGINT`, it was not a
+difference between how a daemon creates a session and how a terminal does.
+
+The test is left in place as the guard rather than as the answer. If the two
+ever stop matching, that is the difference — and it will fail rather than
+needing to be noticed.
+
+What that leaves is outside omt's own ptys: something on that machine that
+signals a process group omt's pane is in, or a terminal whose settings differ
+from every one tried here. The instrumentation for the next occurrence is
+already in place (the reason on the way out, `/tmp/omt-crash.log`), and
+`omt session list` reports the exit status of a session whose program was
+stopped.
+
+One method note, because the wrong version of this experiment was as convincing
+as the right one: the first attempt also asked for `tpgid` and asserted it
+equalled the shell's process group. It does not, and should not — the reading
+was taken while a pipeline was in the foreground, so the answer was the
+*pipeline's* group. A measurement that changes what it measures is worth
+distrusting before its result is.
 
 ## 7. One request
 
