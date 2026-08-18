@@ -27,7 +27,7 @@ pub use cell::{Cell, Color, ColorKind, Flags, GraphemeId, Resolved, Underline};
 pub use grid::{Cursor, EraseExtent, Grid, GridSize, Margins};
 pub use line::{ExtraAttrs, Generation, HyperlinkId, ImagePlacementId, Line, Wrap, erase_template};
 pub use scrollback::{
-    Point, Position, Resolution, Scrollback, ScrollbackLimits, unwrap_lines, wrap_line,
+    Point, Position, Reflow, Resolution, Scrollback, ScrollbackLimits, unwrap_lines, wrap_line,
     wrapped_rows,
 };
 pub use seed::seed;

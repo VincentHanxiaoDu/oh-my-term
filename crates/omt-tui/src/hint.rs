@@ -33,6 +33,13 @@ pub struct Situation {
     /// Carried rather than looked up: a hint naming a key the user has not got
     /// is worse than no hint, and the leader is the user's to relocate.
     pub leader: String,
+    /// How many lines a paste that is waiting for an answer has.
+    ///
+    /// `None` when no paste is pending. The confirmation exists because
+    /// `paste_confirm_lines` and `paste_confirm_on_newline` were settings that
+    /// reached nothing: a two-hundred-line paste went straight into the shell,
+    /// where its first line ran.
+    pub paste_pending_lines: Option<usize>,
 }
 
 /// The hint to show, or nothing.
@@ -60,6 +67,13 @@ pub fn hint_for_within(s: &Situation, cols: u16) -> Option<String> {
     };
     // Ordered by urgency, and the order is the design: whatever is most likely
     // to be the reason you are looking at the screen wins the single slot.
+    // A paste awaiting an answer is the only thing that outranks the leader
+    // strip: the rest of the screen is live and a stray keystroke is a risk.
+    if let Some(lines) = s.paste_pending_lines {
+        return Some(format!(
+            "paste {lines} lines? y to send · any other key to drop"
+        ));
+    }
     if s.prefix_armed {
         return Some(pending_strip_within(cols, &p));
     }
@@ -188,6 +202,7 @@ mod tests {
             remote_clients: 0,
             has_used_prefix: false,
             leader: default_leader(),
+            paste_pending_lines: None,
         }
     }
 

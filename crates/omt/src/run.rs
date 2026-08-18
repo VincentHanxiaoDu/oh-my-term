@@ -172,11 +172,37 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     };
     let socket_text = hook_socket.display().to_string();
     let mut instance = state.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let cwd = crate::state::canonical_root(
-        &std::env::current_dir()
+    // Where a new pane starts, which is a setting and was nothing but a
+    // constant: `terminal.default_cwd` is in the settings reference and in the
+    // importer, and whatever it said, panes started in the directory omt had
+    // been started in. `home` is `$HOME`; `last` is where the earliest
+    // session is sitting, because "the last place" is what it means when a
+    // multiplexer is asked; `workspace` (the default) is the current
+    // directory, which is what omt always did.
+    let cwd = crate::state::canonical_root(&match crate::terminal_bits::setting(
+        &state,
+        "terminal.default_cwd",
+    )
+    .as_str()
+    {
+        // `$HOME` is the one directory that cannot be stale: it is a
+        // shell convention as old as shells.
+        "home" => std::env::var("HOME").unwrap_or_else(|_| ".".to_owned()),
+        // The earliest session's cwd, when one exists; the current
+        // directory otherwise, which is the honest "there was no last".
+        "last" => instance
+            .sessions()
+            .first()
+            .and_then(|s| s.cwd.clone())
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| ".".to_owned())
+            }),
+        _ => std::env::current_dir()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| ".".to_owned()),
-    );
+    });
     let workspace = instance
         .open_workspace(&cwd)
         .context("opening a workspace")?;
@@ -342,6 +368,28 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // for the same reason: this is on the path of every keystroke.
     // Read once, beside the other startup settings.
     let hints_enabled = !setting(&state, "hints.enabled").contains("false");
+    // What a bell in a pane does. `terminal.bell` reached nothing: the events
+    // were emitted and no one consumed them, which is the "vocabulary with no
+    // consumer" shape again. `off` | `visual` | `audible` | `both`.
+    let bell_mode = setting(&state, "terminal.bell");
+    let bell_audible = bell_mode.contains("audible") || bell_mode.contains("both");
+    let bell_visual = bell_mode.contains("visual") || bell_mode.contains("both");
+    let mut bell_until = 0u64;
+    // Whether a paste is waiting for a yes or a no, and the thresholds that
+    // decide it is worth asking. `paste_confirm_lines` of zero or fewer asks
+    // nothing: a number a machine wrote is a machine declining the question.
+    let paste_confirm_lines =
+        crate::terminal_bits::number_setting(&state, "terminal.paste_confirm_lines")
+            .unwrap_or(0)
+            .clamp(0, 10_000) as usize;
+    let paste_confirm_on_newline =
+        setting(&state, "terminal.paste_confirm_on_newline").contains("true");
+    let mut pending_paste: Option<Vec<u8>> = None;
+    // Survives an iteration boundary the way `layout_dirty` does. The hint
+    // line is drawn inside the frame, and a flag set while processing input
+    // at the end of one iteration is lost when the next one starts — which is
+    // how the paste confirmation first managed to never appear.
+    let mut hint_dirty = false;
     let separators = {
         let configured = setting(&state, "terminal.word_separators");
         configured.trim().trim_matches('"').to_owned()
@@ -388,7 +436,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // exactly what happened, and is the shape of every bug this kind of
         // optimisation causes. Anything that changes with time and not with
         // input has to say so here.
-        let mut anything_happened = layout_dirty || overlay.is_some() || armed;
+        let mut anything_happened = layout_dirty || hint_dirty || overlay.is_some() || armed;
 
         for pane in &mut panes {
             // Whether anything came off the pty is the floor's only signal, so
@@ -405,6 +453,18 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             // to, and a terminal that swallowed these is why people run their
             // builds outside the multiplexer.
             for event in &produced {
+                if let omt_events::EventPayload::Terminal(omt_events::TerminalEvent::Bell) =
+                    &event.payload
+                {
+                    if bell_audible {
+                        // The outer terminal's own bell, which is what a
+                        // terminal does with a bell it was handed.
+                        let _ = io::stdout().write_all(b"\x07");
+                    }
+                    if bell_visual {
+                        bell_until = monotonic_ms() + 350;
+                    }
+                }
                 if let omt_events::EventPayload::Terminal(omt_events::TerminalEvent::Notified {
                     title,
                     body,
@@ -749,6 +809,9 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         let focused_session = panes[focus].session;
         let situation = omt_tui::Situation {
             leader: leader_key.display(),
+            paste_pending_lines: pending_paste
+                .as_ref()
+                .map(|p| p.iter().filter(|b| **b == b'\n').count() + 1),
             prefix_armed: armed
                 && armed_at.is_some_and(|at| {
                     at.elapsed().as_millis() as u64 >= omt_tui::PENDING_STRIP_DELAY_MS
@@ -921,6 +984,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             branch: chrome.branch.clone(),
             dirty: false,
             leader: leader_key.display(),
+            bell: now < bell_until,
         };
         let bar = omt_tui::status_bar(&status, term_cols);
         if shown_bar.as_deref() != Some(bar.as_str()) {
@@ -950,6 +1014,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         } else {
             None
         };
+        hint_dirty = false;
         let over = hint.map(|text| omt_tui::render_hint(Some(&text), term_cols));
         if shown_bottom != over {
             match &over {
@@ -1307,6 +1372,52 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             }
             armed = next;
             match input {
+                // A paste that has to be asked about before it reaches the
+                // program. `paste_confirm_lines` and
+                // `paste_confirm_on_newline` were in the settings reference
+                // and reached nothing: a paste of two hundred lines went
+                // straight into the shell, where the first line ran. When the
+                // confirmation is pending, the next key answers it, so the
+                // paste cannot land while the question is up.
+                Input::Paste(bytes) if pending_paste.is_none() => {
+                    let pane = &mut panes[focus];
+                    let session = pane.session;
+                    let lines = bytes.iter().filter(|b| **b == b'\n').count() + 1;
+                    let confirm = paste_confirm_lines > 0
+                        && (lines > paste_confirm_lines || (paste_confirm_on_newline && lines > 1));
+                    if confirm {
+                        pending_paste = Some(bytes);
+                        hint_dirty = true;
+                    } else if attached.is_some() {
+                        backing(&mut instance, &mut attached).write(session, &bytes)?;
+                    } else if let Some(rt) = instance.runtime_mut(session) {
+                        rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &bytes)
+                            .context("writing input")?;
+                    }
+                }
+                // A second paste while one is waiting for its answer: the
+                // first is still on the screen, and stacking pastes invites
+                // the wrong one through on a stray y.
+                Input::Paste(_) => {}
+                Input::Bytes(bytes) if pending_paste.is_some() => {
+                    // The answer to the question on screen. y hands the paste
+                    // over; anything else drops it, which is the safe side of
+                    // a yes/no question with no wrong answer worth regret.
+                    let paste = pending_paste.take();
+                    hint_dirty = true;
+                    if (bytes == b"y" || bytes == b"Y")
+                        && let Some(paste) = paste
+                    {
+                        let pane = &mut panes[focus];
+                        let session = pane.session;
+                        if attached.is_some() {
+                            backing(&mut instance, &mut attached).write(session, &paste)?;
+                        } else if let Some(rt) = instance.runtime_mut(session) {
+                            rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &paste)
+                                .context("writing input")?;
+                        }
+                    }
+                }
                 Input::Bytes(bytes) => {
                     let pane = &mut panes[focus];
                     let session = pane.session;

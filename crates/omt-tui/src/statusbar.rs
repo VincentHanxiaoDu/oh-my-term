@@ -55,6 +55,12 @@ pub struct Status {
     pub dirty: bool,
     /// Cell E: the leader, as a person reads it.
     pub leader: String,
+    /// Whether a pane rang the bell within the flash window.
+    ///
+    /// The visual bell, from `terminal.bell`. Set by the caller with a
+    /// deadline rather than cleared by this module, because this module is
+    /// pure text for a width.
+    pub bell: bool,
 }
 
 /// The glyph a session wears in cell B.
@@ -147,10 +153,14 @@ fn instance_cell(status: &Status) -> String {
 
 /// Cell E, which is never dropped and never truncated.
 fn help_cell(status: &Status, tight: bool) -> String {
+    // The bell glyph when a pane rang within the flash window. A plain
+    // "bell" word would widen the cell the moment it appeared, which is a
+    // layout jump for something that should be a flash.
+    let ring = if status.bell { "\u{237e} " } else { "" };
     if tight {
-        format!("{}?", status.leader)
+        format!("{ring}{}?", status.leader)
     } else {
-        format!("{} ? help", status.leader)
+        format!("{ring}{} ? help", status.leader)
     }
 }
 
@@ -263,6 +273,7 @@ mod tests {
             branch: Some("main".to_owned()),
             dirty: true,
             leader: "^B".to_owned(),
+            bell: false,
         }
     }
 

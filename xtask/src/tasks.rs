@@ -146,10 +146,14 @@ pub(crate) fn test_isolation() -> Result<()> {
         // alone once made this gate fire on a suite that *was* isolated —
         // which is the worst kind of gate, because the fix for a false alarm
         // is to weaken it.
-        if text.contains("mod common;")
-            && let Some(dir) = entry.parent()
-        {
-            for shared in walk(&dir.join("common")).unwrap_or_default() {
+        //
+        // A harness split into a module directory (`tests/screen/main.rs`)
+        // points at it with `#[path]`, and the path is followed here: it is
+        // the same discovery rule, not a different one. The screen suite uses
+        // it to stay one test binary while keeping files under the line
+        // limit.
+        if let Some(dir) = harness_dir(&text, entry.parent()) {
+            for shared in walk(&dir).unwrap_or_default() {
                 if shared.extension().is_some_and(|e| e == "rs") {
                     text.push_str(&std::fs::read_to_string(&shared).unwrap_or_default());
                 }
@@ -205,6 +209,54 @@ pub(crate) fn test_isolation() -> Result<()> {
         wrong.len()
     );
     Ok(())
+}
+
+/// Where a test file's harness lives, when it has one.
+///
+/// `tests/<name>.rs` declares `mod common;`, resolving to
+/// `tests/<name>/common/` — wait, to `tests/common.rs`/`tests/common/` beside
+/// the file. A module directory test (`tests/screen/main.rs`) declares
+/// `#[path = "../common/mod.rs"] mod common;`, and the path is relative to
+/// the file's own directory.
+#[must_use]
+fn harness_dir(text: &str, file_dir: Option<&Path>) -> Option<PathBuf> {
+    let dir = file_dir?;
+    if text.contains("mod common;") {
+        // `#[path = "..."]` above the declaration, resolved against the file's
+        // directory; without it, `tests/<name>/common/`.
+        let path_attr = text.lines().rev().find_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with("#[path") {
+                trimmed
+                    .split('=')
+                    .nth(1)
+                    // `]` comes off before the quotes: the line ends
+                    // `..."...]`, and quoting is what protects a path with a
+                    // bracket in it.
+                    .map(|p| p.trim().trim_matches(']').trim_matches('"').trim())
+            } else {
+                None
+            }
+        });
+        return Some(path_attr.map_or_else(
+            || dir.join("common"),
+            |p| {
+                // The attribute names a file (`../common/mod.rs`); the walk
+                // below takes directories, so the file's parent is what the
+                // harness actually lives in.
+                let joined = dir.join(p);
+                let is_mod = joined.file_name().is_some_and(|n| n == "mod.rs");
+                if is_mod {
+                    joined
+                        .parent()
+                        .map_or_else(|| joined.clone(), Path::to_path_buf)
+                } else {
+                    joined
+                }
+            },
+        ));
+    }
+    None
 }
 
 /// Every file under a directory.
@@ -323,10 +375,22 @@ pub(crate) fn settings_readers() -> Result<()> {
 /// the same.
 fn reads(sources: &str, key: &str) -> bool {
     let quoted = format!("\"{key}\"");
-    sources.lines().any(|line| {
-        line.contains(&quoted)
-            && (line.contains("get(") || line.contains("setting(") || line.contains("_file("))
-    })
+    let mut from = 0;
+    while let Some(at) = sources[from..].find(&quoted) {
+        let at = from + at;
+        // A window around the key rather than the line it sits on: rustfmt
+        // splits a long call across lines, and a gate that depends on
+        // formatting fails for the wrong reason — which is how this one
+        // failed twice already.
+        let start = at.saturating_sub(120);
+        let end = (at + quoted.len() + 200).min(sources.len());
+        let window = &sources[start..end];
+        if window.contains("get(") || window.contains("setting(") || window.contains("_file(") {
+            return true;
+        }
+        from = at + quoted.len();
+    }
+    false
 }
 
 /// The quoted words following a marker, in file order.
@@ -481,6 +545,15 @@ mod settings_reader_tests {
         assert!(reads(lookup, "notifications.when"));
         let listed = "    pub key: \"notifications.when\",";
         assert!(!reads(listed, "notifications.when"));
+    }
+
+    #[test]
+    fn a_call_rustfmt_split_across_lines_still_counts() {
+        // The gate once reported a setting as unread because the call and the
+        // key sat on different lines after formatting — a gate failing for
+        // the wrong reason.
+        let split = "let cwd = canonical_root(&match terminal_bits::setting(\n        &state,\n        \"terminal.default_cwd\",\n    )";
+        assert!(reads(split, "terminal.default_cwd"));
     }
 
     #[test]

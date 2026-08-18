@@ -27,14 +27,16 @@ pub struct TermConfig {
     pub foreground: Option<String>,
     /// The same for the background, which is the one almost everything reads.
     pub background: Option<String>,
-    /// How many command blocks to keep, when the caller has an opinion.
+    /// How many command blocks to keep; `None` is the built-in limit.
     ///
-    /// `None` is the built-in limit. A cap belongs to whoever configured it,
-    /// and `omt-term` is below the layer that reads configuration — so it is
-    /// passed in, which is the only direction the layering allows.
+    /// `omt-term` is below the configuration layer, so the cap is passed in.
     pub max_blocks: Option<usize>,
-    /// Whether OSC 133 marks are honoured. On unless somebody said otherwise.
+    /// Whether OSC 133 marks are honoured.
     pub block_marks: bool,
+    /// Whether unmarked output opens unattributed blocks.
+    pub block_fallback: bool,
+    /// What a resize may reflow.
+    pub reflow: crate::scrollback::Reflow,
 }
 
 impl Default for TermConfig {
@@ -43,14 +45,14 @@ impl Default for TermConfig {
             size: GridSize::new(80, 24),
             scrollback: ScrollbackLimits::default(),
             max_host_actions: 256,
-            // No claim by default. omt only knows these when the terminal it
-            // is itself running in has answered, and inventing a colour is
-            // worse than silence: a program told the background is black on a
-            // white terminal renders unreadably and has been *told* to.
+            // No claim by default: inventing a colour is worse than silence,
+            // and a program told the wrong one has been *told* to.
             foreground: None,
             background: None,
             max_blocks: None,
             block_marks: true,
+            block_fallback: true,
+            reflow: crate::scrollback::Reflow::default(),
         }
     }
 }
@@ -76,7 +78,7 @@ pub const AGENT_EVENT_PROTOCOL: u32 = 1;
 pub enum Which {
     /// The scrolling one.
     Primary,
-    /// The one full-screen programs draw on, which has no scrollback.
+    /// The full-screen buffer, with no scrollback.
     Alternate,
 }
 
@@ -100,6 +102,8 @@ pub struct Terminal {
     /// generations, which is a scan of `rows` integers rather than a
     /// comparison of cells.
     damage: crate::damage::Tracker,
+    /// What a resize may reflow.
+    reflow_policy: crate::scrollback::Reflow,
 }
 
 /// Everything the parser mutates.
@@ -202,6 +206,7 @@ impl Terminal {
         let size = config.size;
         Self {
             parser: vte::Parser::new(),
+            reflow_policy: config.reflow,
             graphics: crate::graphics::Scanner::default(),
             state: State {
                 primary: Grid::new(size),
@@ -220,7 +225,11 @@ impl Terminal {
                 colours: (config.foreground.clone(), config.background.clone()),
                 images: Vec::new(),
             },
-            blocks: crate::block::BlockTracker::configured(config.max_blocks, config.block_marks),
+            blocks: crate::block::BlockTracker::configured(
+                config.max_blocks,
+                config.block_marks,
+                config.block_fallback,
+            ),
             command_at: None,
             damage: crate::damage::Tracker::new(size.rows),
         }
@@ -477,17 +486,23 @@ impl Terminal {
     /// happened to have drawn produces garbage. Every serious terminal does
     /// this, and it is not a shortcut.
     pub fn resize(&mut self, size: GridSize) -> ResizeReport {
-        // The shape changed, so a renderer's cached geometry is about a screen
-        // that no longer exists. Reported as structural rather than as "every
-        // row changed", which would have it draw new content into the old
-        // geometry.
         self.damage.structural(size.rows);
         let st = &mut self.state;
         let old = st.primary.size();
 
-        // Everything the primary screen holds becomes logical lines, is
-        // re-wrapped at the new width, and comes back — rather than the grid
-        // trying to join and re-split its own rows.
+        // Reflow off: the screen is cut at the new size with no rewrite.
+        if self.reflow_policy == crate::scrollback::Reflow::None {
+            st.primary = st.primary.cut(size);
+            st.alternate = Grid::new(size);
+            st.tab_stops = default_tab_stops(size.cols);
+            return ResizeReport {
+                from: old,
+                to: size,
+                reflowed: false,
+            };
+        }
+
+        // Primary rows become logical lines, re-wrapped at the new width.
         let used = used_height(&st.primary);
         let rows: Vec<Line> = st.primary.rows()[..used as usize].to_vec();
         st.scrollback.push_rows(&rows);
@@ -499,8 +514,8 @@ impl Terminal {
         for l in &logical {
             wrapped.extend(crate::scrollback::wrap_line(l, size.cols));
         }
-        // Anything that no longer fits goes back where it came from, so
-        // shrinking a window scrolls content up rather than destroying it.
+        // Overflow goes back to the scrollback, so a shrink scrolls up
+        // rather than destroying.
         let overflow = wrapped.len().saturating_sub(size.rows as usize);
         if overflow > 0 {
             let kept: Vec<Line> = wrapped.drain(..overflow).collect();
@@ -619,7 +634,6 @@ impl State {
         // wherever the sequence happened to leave the cursor.
         self.grid_mut().cursor.col = 0;
         // Written into the cells, not painted over them. What is in the grid
-        // scrolls, copies, seeds and reaches the web client without any of
         // those knowing an image exists; an overlay would have to be
         // reimplemented on every surface to match.
         let cols = self.grid().size().cols;
@@ -1143,11 +1157,10 @@ mod alt_screen_tests {
     #[test]
     fn the_cursor_a_program_left_on_the_alternate_screen_is_not_the_one_that_comes_back() {
         // Each screen carries its own cursor, which is what makes 1049's
-        // "restore" free here: nothing the alternate screen's program does can
-        // move the primary's. Written down because the obvious alternative —
-        // one shared cursor plus an explicit save/restore — is what most
-        // emulators do, and somebody refactoring towards it would break this
-        // without noticing.
+        // "restore" free: nothing the alternate program does can move the
+        // primary's. The shared-cursor + save/restore alternative is what
+        // most emulators do, and refactoring towards it would break this
+        // without notice.
         let mut t = term();
         t.advance(b"one\r\ntwo\r\n");
         let before = (t.grid().cursor.row, t.grid().cursor.col);
@@ -1217,8 +1230,8 @@ mod tests {
 
     #[test]
     fn a_cursor_move_alone_does_not_open_a_block() {
-        // A status line repainting itself is not a command running, and a
-        // block per repaint would bury every real one.
+        // A status line repainting itself is not a command running, and a block
+        // per repaint would bury every real one.
         let mut t = Terminal::new(TermConfig::default());
         t.advance(b"\x1b[5;1H\x1b[2K");
         assert!(t.blocks().is_empty(), "{:?}", t.blocks());
@@ -1226,8 +1239,7 @@ mod tests {
 
     #[test]
     fn a_marked_session_does_not_also_get_early_blocks() {
-        // Otherwise every command would produce two: the marked one and an
-        // unattributed twin.
+        // Otherwise every marked command would have an unattributed twin.
         let mut t = Terminal::new(TermConfig::default());
         t.advance(b"\x1b]133;A\x07$ \x1b]133;B\x07ls\x1b]133;C\x07");
         t.advance(b"file\r\n");
@@ -1815,10 +1827,8 @@ mod tests {
     }
     #[test]
     fn a_program_asking_what_colour_the_background_is_gets_an_answer() {
-        // Agent CLIs ask this to decide whether they are on a light or a dark
-        // terminal. A terminal that stays silent leaves them to guess, and the
-        // guess is wrong about half the time — which looks like the *agent*
-        // has the bug.
+        // Agent CLIs ask it to decide light or dark; silence leaves them
+        // guessing, and a wrong guess looks like the agent has a bug.
         let mut t = Terminal::new(TermConfig {
             size: GridSize::new(10, 2),
             background: Some("rgb:1111/2222/3333".to_owned()),

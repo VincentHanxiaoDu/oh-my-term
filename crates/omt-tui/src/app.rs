@@ -104,6 +104,13 @@ impl Drop for RawGuard {
 pub enum Input {
     /// Bytes to write to the session.
     Bytes(Vec<u8>),
+    /// A paste, whole, with its bracketed markers already added.
+    ///
+    /// Distinct from typed bytes on purpose: `paste_confirm_lines` and
+    /// `paste_confirm_on_newline` exist to ask before a large paste reaches
+    /// the program, and a caller cannot tell a paste from very fast typing if
+    /// the two arrive in the same variant.
+    Paste(Vec<u8>),
     /// The window changed size.
     Resize {
         /// New width.
@@ -327,7 +334,7 @@ pub fn translate(event: &Event, armed: bool, mode: EncodeMode, leader: Leader) -
         // pasted newline submit a half-typed command in a shell, and would
         // make a paste indistinguishable from very fast typing to an editor
         // that cares about the difference.
-        Event::Paste(text) => (Input::Bytes(bracketed(text)), armed),
+        Event::Paste(text) => (Input::Paste(bracketed(text)), armed),
         // Focus and mouse are the program's to handle once those modes are
         // wired; forwarding them before then would send bytes no program
         // asked to receive.
@@ -629,8 +636,8 @@ mod tests {
             EncodeMode::default(),
             Leader::default(),
         );
-        let Input::Bytes(bytes) = input else {
-            panic!("a paste must reach the program, got {input:?}");
+        let Input::Paste(bytes) = input else {
+            panic!("a paste must arrive as its own kind, got {input:?}");
         };
         assert_eq!(bytes, b"\x1b[200~two words\x1b[201~");
         assert!(!armed, "a paste is not a command");

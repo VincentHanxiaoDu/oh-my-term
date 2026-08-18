@@ -250,6 +250,26 @@ pub fn wrap_line(line: &Line, width: u16) -> Vec<Line> {
     out
 }
 
+/// What content may be re-wrapped when the terminal resizes.
+///
+/// `terminal.reflow.on_resize` in 10 §7.3. `ActiveBlock` and `All` behave the
+/// same here, deliberately: the scrollback is width-independent by
+/// construction — it stores logical lines and re-wraps on demand — so
+/// "reflow the visible block only" and "reflow everything" cost the same and
+/// produce the same history. What is genuinely different is `None`: content is
+/// never re-written at the new width, so a resize truncates rather than
+/// reflows, exactly as a terminal with reflow disabled does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Reflow {
+    /// Reflow the active block and its history, which is everything here.
+    #[default]
+    ActiveBlock,
+    /// Reflow everything, which is the same thing in this model.
+    All,
+    /// Reflow nothing: the screen is cut at the new size.
+    None,
+}
+
 /// Join display rows back into logical lines.
 ///
 /// A row whose wrap continues is appended to the one before it. This is what

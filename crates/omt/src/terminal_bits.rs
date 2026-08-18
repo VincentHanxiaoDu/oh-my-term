@@ -93,6 +93,18 @@ pub(crate) fn scrollback_limits_of(lines: Option<u64>) -> omt_term::ScrollbackLi
     limits
 }
 
+/// The reflow policy, from `terminal.reflow.on_resize`.
+///
+/// Anything unrecognised is the default: `active_block` and `all` behave the
+/// same in this model, and `none` is the one choice that is observably
+/// different.
+fn reflow_policy(state: &crate::state::State) -> omt_term::Reflow {
+    match setting(state, "terminal.reflow.on_resize").as_str() {
+        "none" => omt_term::Reflow::None,
+        _ => omt_term::Reflow::default(),
+    }
+}
+
 /// Which terminal modes omt asks for, from the settings that reached nothing.
 ///
 /// Both default to on, which is what they have always been; the point is that
@@ -108,15 +120,18 @@ pub(crate) fn terminal_modes(state: &crate::state::State) -> omt_tui::Modes {
 
 /// The caps a new session's terminal is given.
 ///
-/// Both come from settings that reached nothing: the scrollback kept the
-/// built-in ten thousand lines whatever the file said, and
-/// `terminal.blocks.max_retained` capped nothing at all.
+/// Each came from a setting that reached nothing: the scrollback kept the
+/// built-in ten thousand lines whatever the file said,
+/// `terminal.blocks.max_retained` capped nothing, and neither the marks
+/// switch nor the reflow policy was read at all.
 pub(crate) fn session_limits(state: &crate::state::State) -> omt_daemon::SessionLimits {
     omt_daemon::SessionLimits {
         scrollback: scrollback_limits(state),
         max_blocks: number_setting(state, "terminal.blocks.max_retained")
             .and_then(|n| usize::try_from(n).ok()),
         block_marks: !setting(state, "terminal.blocks.enabled").contains("false"),
+        block_fallback: !setting(state, "terminal.blocks.heuristic_fallback").contains("false"),
+        reflow: reflow_policy(state),
     }
 }
 

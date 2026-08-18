@@ -85,6 +85,11 @@ pub struct SessionLimits {
     pub max_blocks: Option<usize>,
     /// Whether OSC 133 marks are honoured. On unless somebody said otherwise.
     pub block_marks: bool,
+    /// Whether unmarked output opens unattributed blocks. On unless somebody
+    /// said otherwise.
+    pub block_fallback: bool,
+    /// What a resize may reflow.
+    pub reflow: omt_term::Reflow,
 }
 
 impl Default for SessionLimits {
@@ -94,6 +99,8 @@ impl Default for SessionLimits {
             scrollback: omt_term::ScrollbackLimits::default(),
             max_blocks: None,
             block_marks: true,
+            block_fallback: true,
+            reflow: omt_term::Reflow::default(),
         }
     }
 }
@@ -123,6 +130,8 @@ impl SessionRuntime {
             scrollback: limits.scrollback,
             max_blocks: limits.max_blocks,
             block_marks: limits.block_marks,
+            block_fallback: limits.block_fallback,
+            reflow: limits.reflow,
             ..TermConfig::default()
         });
         Ok(Self {

@@ -102,11 +102,15 @@ pub struct BlockTracker {
     /// Whether OSC 133 transitions are honoured at all.
     ///
     /// `terminal.blocks.enabled` reached nothing: the tracker was always on,
-    /// however it was configured. Off means the tracker stays — output with no
-    /// marks still opens an unattributed block, which is the fallback that
-    /// makes an SSH session to a host with no marks legible — but a mark is
-    /// ignored rather than acted on.
+    /// however it was configured. Off means a mark is ignored rather than
+    /// acted on.
     pub marks: bool,
+    /// Whether output with no marks opens an unattributed block.
+    ///
+    /// `terminal.blocks.heuristic_fallback` reached nothing too: the fallback
+    /// that makes an SSH session to a host with no marks legible ran whatever
+    /// it said. Off means marks are the *only* thing that opens a block.
+    pub fallback: bool,
 }
 
 /// How many blocks are kept.
@@ -126,6 +130,7 @@ impl BlockTracker {
             collecting: None,
             limit: DEFAULT_LIMIT,
             marks: true,
+            fallback: true,
         }
     }
 
@@ -146,9 +151,10 @@ impl BlockTracker {
     /// unattributed guesses — a fallback race is itself a block, so it is
     /// disabled with the rest.
     #[must_use]
-    pub fn configured(max_blocks: Option<usize>, marks: bool) -> Self {
+    pub fn configured(max_blocks: Option<usize>, marks: bool, fallback: bool) -> Self {
         let mut tracker = max_blocks.map_or_else(Self::new, Self::with_limit);
         tracker.marks = marks;
+        tracker.fallback = fallback;
         tracker
     }
 
@@ -240,8 +246,9 @@ impl BlockTracker {
     pub fn output_at(&mut self, row: u64) -> Option<BlockId> {
         // With marks off this is the only way a block opens, and the blocks it
         // opens never get a command: `OutputStart` by itself cannot attach
-        // one. That is the point of the switch.
-        if !self.marks {
+        // one. That is the point of the switch. With the fallback off, a block
+        // opens only where a mark opened one.
+        if !self.marks || !self.fallback {
             return None;
         }
         if self.blocks.last().is_some_and(|b| !b.outcome.is_finished()) {
@@ -333,12 +340,32 @@ mod tests {
         // honest reading of "blocks disabled".
         let mut t = BlockTracker::new();
         t.marks = false;
+        t.fallback = true;
         t.apply(BlockEvent::PromptStart, 0);
         t.apply(BlockEvent::CommandStart, 0);
         t.apply(BlockEvent::OutputStart, 0);
         t.apply(BlockEvent::CommandEnd { exit_code: Some(0) }, 1);
         t.output_at(2);
         assert!(t.blocks().is_empty(), "{:?}", t.blocks());
+    }
+
+    #[test]
+    fn fallback_off_means_only_marks_open_blocks() {
+        // `terminal.blocks.heuristic_fallback` reached nothing: unmarked
+        // output opened unattributed blocks whatever it said.
+        let mut t = BlockTracker::new();
+        t.marks = true;
+        t.fallback = false;
+        t.output_at(2);
+        assert!(t.blocks().is_empty(), "{:?}", t.blocks());
+
+        // And a marked command still becomes a block.
+        t.apply(BlockEvent::PromptStart, 0);
+        t.apply(BlockEvent::CommandStart, 0);
+        t.apply(BlockEvent::OutputStart, 1);
+        t.apply(BlockEvent::CommandEnd { exit_code: Some(0) }, 2);
+        assert_eq!(t.blocks().len(), 1);
+        assert!(t.blocks()[0].attributed);
     }
 
     #[test]

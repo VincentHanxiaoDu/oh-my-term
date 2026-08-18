@@ -143,6 +143,27 @@ pub struct Grid {
 }
 
 impl Grid {
+    /// Cut the grid to a new size: the top rows are kept and anything beyond
+    /// the new height is dropped, with no re-wrapping.
+    ///
+    /// The `reflow.on_resize = "none"` behaviour. Distinct from `resize`'s
+    /// round trip through the scrollback, which pushes history up and
+    /// re-wraps it at the new width.
+    #[must_use]
+    pub fn cut(&self, size: GridSize) -> Self {
+        let mut fresh = Self::new(size);
+        fresh.cursor = self.cursor;
+        let rows = self.rows().len();
+        for i in 0..u16::try_from(rows).unwrap_or(0).min(size.rows) {
+            *fresh.row_mut(i) = self.row(i).clone();
+        }
+        fresh.cursor.col = fresh.cursor.col.min(size.cols.saturating_sub(1));
+        fresh.cursor.row = fresh.cursor.row.min(size.rows.saturating_sub(1));
+        fresh
+    }
+}
+
+impl Grid {
     /// A blank grid.
     #[must_use]
     pub fn new(size: GridSize) -> Self {

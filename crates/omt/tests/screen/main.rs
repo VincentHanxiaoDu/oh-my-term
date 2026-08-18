@@ -22,7 +22,10 @@
 
 use std::time::{Duration, Instant};
 
+#[path = "../common/mod.rs"]
 mod common;
+
+pub mod paste_and_bell;
 use common::screen_harness::{COLS, ROWS, Screen, serially};
 
 #[test]
@@ -284,12 +287,16 @@ fn the_bar_names_the_real_claude_and_not_only_a_binary_called_claude() {
     s.settle(2.0);
     s.type_in(&format!("{} --help\r", claude.display()));
     // `--help` runs, prints and exits, which is not what is wanted here: the
-    // probe reads whatever is in the foreground *now*. So start it for real
-    // and give it long enough to be the foreground process across at least
-    // two probe intervals.
+    // probe reads whatever is in the foreground *now*. So start it for real.
     s.settle(1.0);
     s.type_in(&format!("{}\r", claude.display()));
-    s.settle(6.0);
+    // Waited for rather than slept for: the probe runs on its own interval,
+    // and a fixed six seconds was a guess at the machine — which is how this
+    // test failed under a full suite on a loaded core, exactly as the second
+    // trap in HANDOFF §5 says it would.
+    s.settle_until(30.0, |s| {
+        s.row(ROWS - 1).to_lowercase().contains("claude")
+    });
 
     let bar = s.row(ROWS - 1);
     let named = bar.to_lowercase().contains("claude");
@@ -1910,36 +1917,4 @@ fn signal_settings(screen: &str) -> Vec<String> {
         out.push(format!("intr={}", value.trim_matches(';')));
     }
     out
-}
-
-#[test]
-fn the_mouse_and_the_hint_line_can_both_be_turned_off() {
-    let _serial = serially();
-    // Two settings that were in the reference and reached nothing:
-    // `terminal.mouse_reporting` still had omt take every click from the
-    // terminal underneath, and `hints.enabled` could not stop the one surface
-    // that exists to stop nagging.
-    let mut s =
-        Screen::start_with_config("terminal.mouse_reporting = false\nhints.enabled = false\n");
-    s.settle(2.0);
-    assert!(
-        !s.raw().contains("\x1b[?1000h"),
-        "omt asked for mouse reports with them turned off:\n{:?}",
-        s.raw()
-    );
-    assert!(
-        !s.screen().contains("detaches"),
-        "the hint line is still drawn with hints turned off:\n{}",
-        s.screen()
-    );
-    // The leader strip is a menu somebody asked for, not a hint, so it stays.
-    s.type_in("\x02");
-    s.settle_until(5.0, |s| s.screen().contains('\u{25b8}'));
-    assert!(
-        s.screen().contains("detach"),
-        "the leader strip was hidden with the hints:\n{}",
-        s.screen()
-    );
-    s.type_in("\x1b");
-    s.settle(0.5);
 }

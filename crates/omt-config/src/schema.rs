@@ -255,36 +255,12 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "shell integration installs the same way for everyone; nothing consults this yet",
     ),
     (
-        "terminal.bell",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.blocks.heuristic_fallback",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.default_cwd",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
         "terminal.env_passthrough",
-        "the terminal core takes its own defaults; nothing passes this in yet",
+        "a child inherits omt's entire environment (omt-pty/src/spawn.rs), so a passthrough list has no point to act on; making it a filter would be a design change, not a wire",
     ),
     (
         "terminal.highlight",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.paste_confirm_lines",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.paste_confirm_on_newline",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.reflow.on_resize",
-        "the terminal core takes its own defaults; nothing passes this in yet",
+        "the feature it would switch on has no consumer: omt-input::highlight is called nowhere, so turning this on would change nothing; the setting is the second half of that absence",
     ),
 ];
 
