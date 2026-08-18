@@ -78,12 +78,14 @@ verify:
 - `media.images.*` — the image path is unconditional; the enable switch, the
   protocol choice and the row cap are read nowhere.
 
-> **Since this audit was written**, the binding file half of it is fixed: the
-> two sections below record what was found, and
-> `openspec/changes/archive/2026-08-17-the-binding-file-nothing-ever-opened`
-> records what was done. `keymap` now comes from `keybindings.toml`, which
-> `omt-config::keys` opens and `omt-input::resolve` compiles. The fifty-nine
-> settings below are still unread.
+> **Since this audit was written**, the wiring is done. `keymap` now comes
+> from `keybindings.toml`, which `omt-config::keys` opens and
+> `omt-input::resolve` compiles. Of the sixty-six settings, **fifty-three are
+> read by real code** — each group wired through its own archived OpenSpec
+> change — and the thirteen below are declared unwired in `UNWIRED` with the
+> reason each deserves. `cargo xtask settings-readers` is what keeps that
+> true, and it fails in both directions: undeclared silence and a stale
+> excuse.
 
 ## The key nothing could set
 
@@ -132,3 +134,37 @@ Both were seen failing before the table was filled in:
 `appearance.theme` has a reader and is still listed in `UNWIRED`. Remove the
 entry: a stale excuse is how the list stops meaning anything.
 ```
+
+## The final state
+
+`cargo xtask settings-readers` reports:
+
+```
+settings readers ok — 66 settings, 13 of them declared unwired with a reason
+```
+
+The thirteen are each accompanied by the reason they are not wired:
+
+- `terminal.blocks`, `terminal.foreground`, `terminal.background` — by
+  design: the tracker is always on, and host colours come from the
+  environment.
+- `media.osc_bridge.max_bytes`, `media.reverse_socket.hosts` — the tier 2
+  and tier 1 channels (09 §5.3, §5.2) are not implemented; the cap and the
+  host list would bound something that does not exist.
+- `media.images.thumbnail_max_px` — no thumbnail machinery exists.
+- `media.quota.max_blobs_per_session`, `media.quota.ttl_referenced` — the
+  store records no session and has one TTL; each is a store redesign.
+- `shell.propagate_over_ssh` — no ssh child-environment propagation path
+  exists; the marker env belongs to the host the pane is on.
+- `terminal.env_passthrough` — a child inherits omt's whole environment, so
+  a passthrough list has no point to act on.
+- `terminal.highlight` — `omt-input::highlight` is called nowhere; the
+  setting is the second half of that absence.
+- `appearance.theme` — no theme registry exists; the importer writes files
+  nothing registers.
+- `appearance.show_agent_badges` — the roster shows no agent badge today;
+  there is nothing for the switch to hide.
+
+Each of these is a design change behind the key, not a wire. If one of them
+gets its feature, the gate will say so the day it does: a reader appearing
+while the entry still stands is a failure, and the failure names the entry.

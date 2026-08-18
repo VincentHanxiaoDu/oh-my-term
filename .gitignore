@@ -32,3 +32,6 @@ web/test-results/
 web/playwright-report/
 .vite/
 .claude/settings.json
+
+# The pi session state; tool-local and never part of the project.
+/.pi/
