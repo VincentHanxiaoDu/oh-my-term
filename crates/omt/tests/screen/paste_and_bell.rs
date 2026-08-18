@@ -103,3 +103,35 @@ fn a_bell_in_a_pane_is_silent_when_turned_off() {
         s.raw
     );
 }
+
+#[test]
+fn the_log_writes_where_the_setting_says_and_only_at_its_level() {
+    let _serial = serially();
+    // `log.file` and `log.level` were in the settings reference and reached
+    // nothing: there was no log at all. Off writes nothing by default, the
+    // file collects what the level admits, and the level admits what it says.
+    let log = std::env::temp_dir().join(format!("omt-log-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&log);
+    let cfg = format!("log.file = \"{}\"\nlog.level = \"error\"\n", log.display());
+    let mut s = Screen::start_with_config(&cfg);
+    s.settle(2.0);
+    // The info line was below the level: nothing may have been written.
+    let quiet = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        !quiet.contains("omt "),
+        "an info line reached the log under error level: {quiet}"
+    );
+    drop(s);
+
+    // At the default level the startup line lands in the file.
+    let _ = std::fs::remove_file(&log);
+    let mut s = Screen::start_with_config(&format!("log.file = \"{}\"\n", log.display()));
+    s.settle_until(15.0, |_| {
+        std::fs::read_to_string(&log).is_ok_and(|t| t.contains("omt "))
+    });
+    let written = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        written.contains("omt ") && written.contains("starts"),
+        "no startup line in the log: {written:?}"
+    );
+}

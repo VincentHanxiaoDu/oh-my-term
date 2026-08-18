@@ -22,8 +22,8 @@ Generated from `omt-config`'s schema. Every setting has a default, because a fea
 | `font.line_height` | number | `1.2` | immediately | Line height as a multiple of the font size. |
 | `font.size` | number | `13.0` | immediately | Point size. |
 | `hints.enabled` | bool | `true` | immediately | Show the hint line. It stops offering the introduction once the prefix has been used. |
-| `log.file` | text | `""` | immediately | The log file. Default: $XDG_STATE_HOME/omt/omt.log. |
-| `log.level` | error \| warn \| info \| debug \| trace | `"info"` | immediately | The log level. |
+| `log.file` | text | `""` | immediately | The log file. Empty logs to stderr. Rotates at log.max_size. |
+| `log.level` | error \| warn \| info \| debug \| trace | `"info"` | immediately | What the log admits: error | warn | info | debug | trace. |
 | `log.max_size` | text | `"32MiB"` | immediately | The log max size. |
 | `log.redact_secrets` | bool | `false` | immediately | Redact secrets. |
 | `media.blob_dir` | text | `""` | immediately | The media blob dir. Default: $XDG_RUNTIME_DIR/omt/<instance>/blobs. |

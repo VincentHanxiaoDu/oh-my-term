@@ -179,22 +179,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the web client draws with it; nothing applies it yet",
     ),
     (
-        "log.file",
-        "logging goes to stderr and the crash note; nothing consults this yet",
-    ),
-    (
-        "log.level",
-        "logging goes to stderr and the crash note; nothing consults this yet",
-    ),
-    (
-        "log.max_size",
-        "logging goes to stderr and the crash note; nothing consults this yet",
-    ),
-    (
-        "log.redact_secrets",
-        "logging goes to stderr and the crash note; nothing consults this yet",
-    ),
-    (
         "media.images.thumbnail_max_px",
         "no thumbnail machinery exists in the web client's media list, so there is nothing to size",
     ),
@@ -605,7 +589,7 @@ pub const SETTINGS: &[Setting] = &[
         key: "log.level",
         kind: Kind::Enumerated,
         default: "\"info\"",
-        doc: "The log level.",
+        doc: "What the log admits: error | warn | info | debug | trace.",
         choices: &["error", "warn", "info", "debug", "trace"],
         scope: crate::Scope::Any,
     },
@@ -613,7 +597,7 @@ pub const SETTINGS: &[Setting] = &[
         key: "log.file",
         kind: Kind::Text,
         default: "\"\"",
-        doc: "The log file. Default: $XDG_STATE_HOME/omt/omt.log.",
+        doc: "The log file. Empty logs to stderr. Rotates at log.max_size.",
         choices: &[],
         scope: crate::Scope::Any,
     },

@@ -13,6 +13,7 @@ pub mod bindings;
 pub mod bootstrap;
 pub mod cli;
 pub mod crash;
+pub mod diag;
 pub mod discovery;
 pub mod doctor;
 pub mod events;

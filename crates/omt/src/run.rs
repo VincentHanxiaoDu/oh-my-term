@@ -420,6 +420,15 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         muted: setting(&state, "notifications.sound").contains("false"),
     };
 
+    // The log, built once from the settings that configured nothing. Below
+    // the lines that speak to a person: the reason omt closes and the crash
+    // note stay on the terminal and in their fixed file.
+    let diag = crate::diag::Diag::from_state(&state);
+    diag.log(
+        crate::diag::Level::Info,
+        &format!("omt {} starts, shell {}", env!("CARGO_PKG_VERSION"), shell),
+    );
+
     // Released before the frame loop and taken again per iteration, so the
     // hook listener gets the instance between frames rather than never.
     drop(instance);
