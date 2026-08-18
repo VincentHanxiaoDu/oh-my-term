@@ -183,10 +183,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the web client draws with it; nothing applies it yet",
     ),
     (
-        "hints.enabled",
-        "the hint line is state-driven; nothing consults this yet",
-    ),
-    (
         "log.file",
         "logging goes to stderr and the crash note; nothing consults this yet",
     ),
@@ -243,10 +239,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the media path is unconditional; nothing consults this yet",
     ),
     (
-        "server.bind",
-        "the address comes from the command line; nothing consults this yet",
-    ),
-    (
         "shell.command_metadata",
         "shell integration installs the same way for everyone; nothing consults this yet",
     ),
@@ -275,10 +267,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
     (
-        "terminal.bracketed_paste",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
         "terminal.default_cwd",
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
@@ -288,10 +276,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
     ),
     (
         "terminal.highlight",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.mouse_reporting",
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
     (

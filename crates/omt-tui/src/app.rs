@@ -24,27 +24,63 @@ impl RawGuard {
     /// Fails if the terminal refuses, which is what happens when stdout is not
     /// one.
     pub fn enter() -> io::Result<Self> {
+        Self::enter_with(Modes::default())
+    }
+
+    /// The same, with the modes the configuration asked for.
+    ///
+    /// `terminal.mouse_reporting` and `terminal.bracketed_paste` are in the
+    /// settings reference and reached nothing: omt asked for both
+    /// unconditionally, so somebody who turned the mouse off still had every
+    /// click taken from the terminal underneath.
+    ///
+    /// # Errors
+    /// Fails if raw mode cannot be entered or the terminal cannot be written
+    /// to.
+    pub fn enter_with(modes: Modes) -> io::Result<Self> {
         crossterm::terminal::enable_raw_mode()?;
         let mut out = io::stdout();
         crossterm::execute!(
             out,
             crossterm::terminal::EnterAlternateScreen,
             crossterm::cursor::Hide,
-            // The terminal wraps a paste in markers and delivers it as one
-            // event instead of one per character. Without it a pasted
-            // paragraph is hundreds of key events, and every layer above has
-            // to be fast enough to keep up with a burst it should never have
-            // been handed. It also lets the pane below know a burst is a
-            // paste, which is what stops a pasted newline running a command.
-            crossterm::event::EnableBracketedPaste,
-            // Without this omt never sees a pointer at all, and a drag across
-            // a pane is the *outer* terminal selecting a rectangle of omt's
-            // whole frame — every pane's chrome included. Asking for reports
-            // is what makes a selection mean the pane it was made in.
-            crossterm::event::EnableMouseCapture
         )?;
+        if modes.bracketed_paste {
+            crossterm::execute!(out, crossterm::event::EnableBracketedPaste)?;
+        }
+        if modes.mouse_reporting {
+            crossterm::execute!(out, crossterm::event::EnableMouseCapture)?;
+        }
         out.flush()?;
         Ok(Self)
+    }
+}
+
+/// Which terminal modes omt asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Modes {
+    /// Whether omt asks the terminal to report the mouse.
+    ///
+    /// Without it omt never sees a pointer at all, and a drag across a pane is
+    /// the *outer* terminal selecting a rectangle of omt's whole frame — every
+    /// pane's chrome included. Asking for reports is what makes a selection
+    /// mean the pane it was made in, and turning it off is a user saying they
+    /// would rather have their terminal's own selection.
+    pub mouse_reporting: bool,
+    /// Whether omt asks for bracketed paste.
+    ///
+    /// The terminal wraps a paste in markers and delivers it as one event
+    /// instead of one per character; it is also what stops a pasted newline
+    /// running a command.
+    pub bracketed_paste: bool,
+}
+
+impl Default for Modes {
+    fn default() -> Self {
+        Self {
+            mouse_reporting: true,
+            bracketed_paste: true,
+        }
     }
 }
 

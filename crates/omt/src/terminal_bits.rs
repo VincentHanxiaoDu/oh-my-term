@@ -93,6 +93,19 @@ pub(crate) fn scrollback_limits_of(lines: Option<u64>) -> omt_term::ScrollbackLi
     limits
 }
 
+/// Which terminal modes omt asks for, from the settings that reached nothing.
+///
+/// Both default to on, which is what they have always been; the point is that
+/// turning one off now does something. Somebody who set
+/// `terminal.mouse_reporting = false` still had every click taken from the
+/// terminal underneath, which is the one thing that setting exists to stop.
+pub(crate) fn terminal_modes(state: &crate::state::State) -> omt_tui::Modes {
+    omt_tui::Modes {
+        mouse_reporting: !setting(state, "terminal.mouse_reporting").contains("false"),
+        bracketed_paste: !setting(state, "terminal.bracketed_paste").contains("false"),
+    }
+}
+
 /// The caps a new session's terminal is given.
 ///
 /// Both come from settings that reached nothing: the scrollback kept the

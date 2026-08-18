@@ -43,7 +43,11 @@ fn main() -> Result<()> {
         // `omt` on its own does the thing the name promises.
         [] => omt::run::run_shell(None),
         ["run", program] => omt::run::run_shell(Some((*program).to_owned())),
-        ["web"] => omt::web::run(omt_server::DEFAULT_BIND),
+        // The configured address, not the compiled-in one. `server.bind` is in
+        // the settings reference with a scope that stops a cloned repository
+        // moving somebody's daemon off loopback — and nothing read it, so the
+        // scope guarded a value that could not be set.
+        ["web"] => omt::web::run(&omt::web::configured_bind()),
         ["web", "--bind", addr] => omt::web::run(addr),
         ["web", "--bind", addr, "--tls-cert", cert, "--tls-key", key] => omt::web::run_with_tls(
             addr,

@@ -7,6 +7,24 @@ use omt_types::Role;
 
 use crate::state::State;
 
+/// Where `omt web` listens when nobody said.
+///
+/// `server.bind` first, then the compiled-in loopback default. The setting has
+/// a deliberately narrow scope — a repository you cloned must not be able to
+/// move your daemon off loopback — and until now that scope protected a value
+/// nothing read.
+#[must_use]
+pub fn configured_bind() -> String {
+    let state = crate::state::State::default();
+    let configured = crate::terminal_bits::setting(&state, "server.bind");
+    let trimmed = configured.trim().trim_matches('"').trim();
+    if trimmed.is_empty() {
+        omt_server::DEFAULT_BIND.to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
 /// Start the HTTP and WebSocket server, minting a token to connect with.
 ///
 /// The token is printed once, here, and nowhere else — there is no way to

@@ -1911,3 +1911,35 @@ fn signal_settings(screen: &str) -> Vec<String> {
     }
     out
 }
+
+#[test]
+fn the_mouse_and_the_hint_line_can_both_be_turned_off() {
+    let _serial = serially();
+    // Two settings that were in the reference and reached nothing:
+    // `terminal.mouse_reporting` still had omt take every click from the
+    // terminal underneath, and `hints.enabled` could not stop the one surface
+    // that exists to stop nagging.
+    let mut s =
+        Screen::start_with_config("terminal.mouse_reporting = false\nhints.enabled = false\n");
+    s.settle(2.0);
+    assert!(
+        !s.raw().contains("\x1b[?1000h"),
+        "omt asked for mouse reports with them turned off:\n{:?}",
+        s.raw()
+    );
+    assert!(
+        !s.screen().contains("detaches"),
+        "the hint line is still drawn with hints turned off:\n{}",
+        s.screen()
+    );
+    // The leader strip is a menu somebody asked for, not a hint, so it stays.
+    s.type_in("\x02");
+    s.settle_until(5.0, |s| s.screen().contains('\u{25b8}'));
+    assert!(
+        s.screen().contains("detach"),
+        "the leader strip was hidden with the hints:\n{}",
+        s.screen()
+    );
+    s.type_in("\x1b");
+    s.settle(0.5);
+}

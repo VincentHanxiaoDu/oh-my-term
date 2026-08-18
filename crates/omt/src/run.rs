@@ -221,7 +221,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
 
     // Entered last, so anything that fails above reports on a working terminal
     // rather than into raw mode.
-    let _guard = RawGuard::enter().context("entering raw mode")?;
+    let _guard = RawGuard::enter_with(crate::terminal_bits::terminal_modes(&state))
+        .context("entering raw mode")?;
     // Why omt stopped, said out loud on the way out.
     //
     // A terminal that closes without a word is indistinguishable from one that
@@ -339,6 +340,8 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // before anything read them.
     // What ends a word in copy mode. Read once, beside the keymap flavour and
     // for the same reason: this is on the path of every keystroke.
+    // Read once, beside the other startup settings.
+    let hints_enabled = !setting(&state, "hints.enabled").contains("false");
     let separators = {
         let configured = setting(&state, "terminal.word_separators");
         configured.trim().trim_matches('"').to_owned()
@@ -937,7 +940,16 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // always is a row spent on nothing.
         // Within the width, because the leader strip is a menu: built too wide
         // it is truncated, and what is lost is the end of it.
-        let hint = omt_tui::hint_for_within(&situation, term_cols);
+        // `hints.enabled` is in the settings reference and reached nothing, so
+        // the one surface that exists to stop nagging could not be turned off.
+        // The leader strip is not a hint and stays: it is a menu somebody
+        // opened by pressing the leader, and hiding what they just asked for
+        // is a different thing entirely.
+        let hint = if hints_enabled || situation.prefix_armed {
+            omt_tui::hint_for_within(&situation, term_cols)
+        } else {
+            None
+        };
         let over = hint.map(|text| omt_tui::render_hint(Some(&text), term_cols));
         if shown_bottom != over {
             match &over {
