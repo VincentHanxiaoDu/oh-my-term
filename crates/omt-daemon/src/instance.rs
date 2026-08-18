@@ -575,9 +575,8 @@ impl Instance {
             .map(|t| t.screen_text())
             .unwrap_or_default();
 
-        let runtime =
-            crate::SessionRuntime::spawn(id, config, omt_term::ScrollbackLimits::default())
-                .map_err(|e| crate::RuntimeError::Io(e.to_string()))?;
+        let runtime = crate::SessionRuntime::spawn(id, config, crate::SessionLimits::default())
+            .map_err(|e| crate::RuntimeError::Io(e.to_string()))?;
         self.runtimes.insert(id, runtime);
         if let Some(session) = self.tree.session_mut(id) {
             session.state = omt_session::SessionState::Starting;

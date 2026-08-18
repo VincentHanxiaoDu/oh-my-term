@@ -218,11 +218,28 @@ impl Copy {
     /// a scrollback the next line is usually unrelated output rather than a
     /// continuation, so wrapping moves the reader somewhere they were not
     /// looking.
-    pub fn word(&mut self, towards: Word, mut read: impl FnMut(u64) -> Option<String>) {
+    pub fn word(&mut self, towards: Word, read: impl FnMut(u64) -> Option<String>) {
+        self.word_between(towards, "", read);
+    }
+
+    /// The same, with the characters that end a word.
+    ///
+    /// `terminal.word_separators` is in the settings reference and in the
+    /// importer that maps other terminals' configurations onto omt's, and it
+    /// reached nothing: a word motion always stopped at whitespace, so
+    /// `/usr/local/bin` was one word however anybody had configured it.
+    /// Empty keeps the old rule, which is what a caller with no configuration
+    /// wants.
+    pub fn word_between(
+        &mut self,
+        towards: Word,
+        separators: &str,
+        mut read: impl FnMut(u64) -> Option<String>,
+    ) {
         let Some(text) = read(self.row) else { return };
         let chars: Vec<char> = text.chars().collect();
         let at = usize::from(self.col);
-        let is_word = |c: char| !c.is_whitespace();
+        let is_word = |c: char| !c.is_whitespace() && !separators.contains(c);
         let landed = match towards {
             Word::Next => {
                 let mut i = at;
@@ -633,6 +650,21 @@ mod tests {
         assert_eq!(copy.col, 6);
         copy.word(Word::End, line);
         assert_eq!(copy.col, 9, "the end of `test`");
+    }
+
+    #[test]
+    fn word_separators_end_a_word_where_they_are_configured_to() {
+        // `terminal.word_separators` reached nothing, so `/usr/local/bin` was
+        // one word however anybody had configured it — including for anyone
+        // who imported the setting from the terminal they came from.
+        let line = |_row: u64| Some("/usr/local/bin end".to_owned());
+        let mut plain = Copy::entering(0, 24);
+        plain.word(Word::Next, line);
+        assert_eq!(plain.col, 15, "whitespace alone leaves the path whole");
+
+        let mut split = Copy::entering(0, 24);
+        split.word_between(Word::Next, "/", line);
+        assert_eq!(split.col, 1, "a separator ends the word where it is");
     }
 
     #[test]

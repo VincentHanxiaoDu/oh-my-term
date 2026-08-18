@@ -78,7 +78,7 @@ pub(crate) struct Opening<'a> {
     pub(crate) size: PtySize,
     pub(crate) tile: omt_tui::PaneId,
     pub(crate) socket: &'a str,
-    pub(crate) scrollback: omt_term::ScrollbackLimits,
+    pub(crate) limits: omt_daemon::SessionLimits,
 }
 
 impl LocalPane {
@@ -117,7 +117,7 @@ impl LocalPane {
             size,
             tile,
             socket,
-            scrollback,
+            limits,
         } = *opening;
         let session = instance
             .create_session(workspace, SessionKind::Shell, SessionMode::Pty)
@@ -148,7 +148,7 @@ impl LocalPane {
                 ],
                 ..PtyConfig::default()
             },
-            scrollback,
+            limits,
         )
         .context("starting the shell")?;
         instance.attach(runtime).context("attaching")?;

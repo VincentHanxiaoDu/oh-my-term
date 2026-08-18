@@ -93,6 +93,19 @@ pub(crate) fn scrollback_limits_of(lines: Option<u64>) -> omt_term::ScrollbackLi
     limits
 }
 
+/// The caps a new session's terminal is given.
+///
+/// Both come from settings that reached nothing: the scrollback kept the
+/// built-in ten thousand lines whatever the file said, and
+/// `terminal.blocks.max_retained` capped nothing at all.
+pub(crate) fn session_limits(state: &crate::state::State) -> omt_daemon::SessionLimits {
+    omt_daemon::SessionLimits {
+        scrollback: scrollback_limits(state),
+        max_blocks: number_setting(state, "terminal.blocks.max_retained")
+            .and_then(|n| usize::try_from(n).ok()),
+    }
+}
+
 /// The shell a new pane starts, in the order the documents promise.
 ///
 /// `terminal.default_shell` before `$SHELL`: the setting is the one thing a
@@ -434,19 +447,42 @@ pub(crate) enum Reading {
 /// Takes how many rows there are and a way to read one, rather than a
 /// terminal: the history a reader moves through lives on whichever side of the
 /// seam owns the session.
+///
+/// The rest travels as one value rather than five words. Five unlabelled
+/// arguments of which two are numbers is where somebody swaps a row count for
+/// a column count and nothing complains.
+#[derive(Clone, Copy)]
+pub(crate) struct Viewport<'a> {
+    /// Where the pane is on the screen.
+    pub(crate) rect: omt_tui::Rect,
+    /// How many rows of history there are.
+    pub(crate) total: u64,
+    /// Which key table copy mode is using.
+    pub(crate) flavour: Flavour,
+    /// What ends a word, from `terminal.word_separators`. Passed in rather
+    /// than read here: this is on the path of every keystroke in copy mode,
+    /// and a config lookup per key is a file opened per key.
+    pub(crate) separators: &'a str,
+    /// Where the shell said its prompts are, absolute and already filtered to
+    /// the ones omt actually saw a command for. Filtered by the caller,
+    /// because that is where the block model lives and where `attributed`
+    /// means anything.
+    pub(crate) prompts: &'a [u64],
+}
+
 pub(crate) fn reading_key(
     key: &crossterm::event::KeyEvent,
     reading: &mut omt_tui::CopyMode,
-    rect: omt_tui::Rect,
-    total: u64,
-    flavour: Flavour,
-    // `prompts`: where the shell said its prompts are, absolute and already
-    // filtered to the ones omt actually saw a command for. Filtered by the
-    // caller, because that is where the block model lives and where
-    // `attributed` means anything.
-    prompts: &[u64],
+    where_it_is: Viewport<'_>,
     line: &mut dyn FnMut(u64) -> Option<String>,
 ) -> Reading {
+    let Viewport {
+        rect,
+        total,
+        flavour,
+        separators,
+        prompts,
+    } = where_it_is;
     use crossterm::event::KeyCode;
 
     let rows = rect.rows.max(1);
@@ -478,7 +514,7 @@ pub(crate) fn reading_key(
     match copy_key(key, flavour) {
         CopyKey::Go(omt_tui::CopyMove::FirstNonBlank) => reading.first_non_blank(line),
         CopyKey::Go(towards) => reading.go(towards, total, rows, cols),
-        CopyKey::Word(towards) => reading.word(towards, line),
+        CopyKey::Word(towards) => reading.word_between(towards, separators, line),
         CopyKey::Mark => {
             reading.linewise = false;
             reading.mark();

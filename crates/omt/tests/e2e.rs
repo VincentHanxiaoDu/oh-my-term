@@ -40,7 +40,7 @@ fn session(instance: &mut Instance, script: &str, cwd: Option<&Path>) -> omt_typ
             size: PtySize::new(80, 24),
             ..PtyConfig::default()
         },
-        omt_term::ScrollbackLimits::default(),
+        omt_daemon::SessionLimits::default(),
     )
     .expect("spawn");
     instance.attach(runtime).expect("attach");

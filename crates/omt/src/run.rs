@@ -98,7 +98,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // nothing until now. Read once: it is a cap applied when a session starts,
     // and re-reading it per pane would open the file again for an answer that
     // cannot have changed.
-    let scrollback = crate::terminal_bits::scrollback_limits(&state);
+    let limits = crate::terminal_bits::session_limits(&state);
 
     // The snippet omt has documented as installed by default since before
     // anything installed it. Once, before the first pane starts, so the shell
@@ -213,7 +213,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 size: PtySize::new(cols, usable_rows),
                 tile: first_tile,
                 socket: &socket_text,
-                scrollback,
+                limits,
             },
         )?]
     };
@@ -337,6 +337,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // The leader, likewise. A file that names one relocates the whole
     // namespace with one edit, which is what the documents have promised since
     // before anything read them.
+    // What ends a word in copy mode. Read once, beside the keymap flavour and
+    // for the same reason: this is on the path of every keystroke.
+    let separators = {
+        let configured = setting(&state, "terminal.word_separators");
+        configured.trim().trim_matches('"').to_owned()
+    };
     let leader = bindings
         .as_ref()
         .map_or_else(omt_tui::app::default_leader, |b| b.leader());
@@ -1208,10 +1214,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         crate::terminal_bits::reading_key(
                             key,
                             reading,
-                            rect,
-                            total,
-                            keymap,
-                            &prompts,
+                            crate::terminal_bits::Viewport {
+                                rect,
+                                total,
+                                flavour: keymap,
+                                separators: &separators,
+                                prompts: &prompts,
+                            },
                             &mut |row| crate::backing::history_line(joined, id, row),
                         )
                     } else {
@@ -1221,10 +1230,13 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         crate::terminal_bits::reading_key(
                             key,
                             reading,
-                            rect,
-                            total,
-                            keymap,
-                            &prompts,
+                            crate::terminal_bits::Viewport {
+                                rect,
+                                total,
+                                flavour: keymap,
+                                separators: &separators,
+                                prompts: &prompts,
+                            },
                             &mut |row| {
                                 terminal
                                     .and_then(|t| t.line_at(row))
@@ -1432,7 +1444,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                                         size,
                                         tile: new_tile,
                                         socket: &socket_text,
-                                        scrollback,
+                                        limits,
                                     },
                                 )
                             };

@@ -68,7 +68,7 @@ fn the_daemon_can_answer_what_is_running_without_a_terminal() {
             env: vec![("TERM".to_owned(), "xterm-256color".to_owned())],
             env_remove: stripped(),
         },
-        omt_term::ScrollbackLimits::default(),
+        omt_daemon::SessionLimits::default(),
     )
     .expect("spawn");
     instance.attach(runtime).expect("attach");

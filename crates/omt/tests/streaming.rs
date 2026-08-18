@@ -46,7 +46,7 @@ fn serving(
             size: omt_pty::PtySize::new(40, 6),
             ..omt_pty::PtyConfig::default()
         },
-        omt_term::ScrollbackLimits::default(),
+        omt_daemon::SessionLimits::default(),
     )
     .expect("spawn");
     instance.attach(runtime).expect("attach");
@@ -507,7 +507,7 @@ fn a_command_that_ran_can_be_suggested_afterwards() {
             size: omt_pty::PtySize::new(60, 8),
             ..omt_pty::PtyConfig::default()
         },
-        omt_term::ScrollbackLimits::default(),
+        omt_daemon::SessionLimits::default(),
     )
     .expect("spawn");
     instance.attach(runtime).expect("attach");

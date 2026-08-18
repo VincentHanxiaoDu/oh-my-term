@@ -27,6 +27,12 @@ pub struct TermConfig {
     pub foreground: Option<String>,
     /// The same for the background, which is the one almost everything reads.
     pub background: Option<String>,
+    /// How many command blocks to keep, when the caller has an opinion.
+    ///
+    /// `None` is the built-in limit. A cap belongs to whoever configured it,
+    /// and `omt-term` is below the layer that reads configuration — so it is
+    /// passed in, which is the only direction the layering allows.
+    pub max_blocks: Option<usize>,
 }
 
 impl Default for TermConfig {
@@ -41,6 +47,7 @@ impl Default for TermConfig {
             // white terminal renders unreadably and has been *told* to.
             foreground: None,
             background: None,
+            max_blocks: None,
         }
     }
 }
@@ -210,7 +217,11 @@ impl Terminal {
                 colours: (config.foreground.clone(), config.background.clone()),
                 images: Vec::new(),
             },
-            blocks: crate::block::BlockTracker::new(),
+            blocks: config
+                .max_blocks
+                .map_or_else(crate::block::BlockTracker::new, |limit| {
+                    crate::block::BlockTracker::with_limit(limit)
+                }),
             command_at: None,
             damage: crate::damage::Tracker::new(size.rows),
         }

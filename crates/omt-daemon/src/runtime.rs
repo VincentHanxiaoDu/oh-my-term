@@ -72,6 +72,19 @@ pub struct SessionRuntime {
     tail: crate::tail::Tail,
 }
 
+/// What a session's terminal is capped at.
+///
+/// One value rather than a growing list of parameters: the caps come from
+/// configuration, `omt-daemon` sits below the crate that reads it, and each
+/// new cap would otherwise be another unlabelled argument at six call sites.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SessionLimits {
+    /// How much scrollback to keep.
+    pub scrollback: omt_term::ScrollbackLimits,
+    /// How many command blocks to keep. `None` is the built-in limit.
+    pub max_blocks: Option<usize>,
+}
+
 impl SessionRuntime {
     /// Start a process on a pty and attach a terminal to it.
     ///
@@ -84,7 +97,7 @@ impl SessionRuntime {
     pub fn spawn(
         id: SessionId,
         config: &PtyConfig,
-        scrollback: omt_term::ScrollbackLimits,
+        limits: SessionLimits,
     ) -> Result<Self, RuntimeError> {
         let size = GridSize::new(config.size.cols, config.size.rows);
         let pty = Pty::spawn(config)?;
@@ -94,7 +107,8 @@ impl SessionRuntime {
         pty.set_nonblocking(true)?;
         let terminal = Terminal::new(TermConfig {
             size,
-            scrollback,
+            scrollback: limits.scrollback,
+            max_blocks: limits.max_blocks,
             ..TermConfig::default()
         });
         Ok(Self {
@@ -317,7 +331,7 @@ mod tests {
         SessionRuntime::spawn(
             SessionId::new(),
             &sh(script),
-            omt_term::ScrollbackLimits::default(),
+            crate::SessionLimits::default(),
         )
         .expect("spawn")
     }
@@ -498,7 +512,7 @@ mod tests {
                 size: PtySize::new(40, 4),
                 ..PtyConfig::default()
             },
-            omt_term::ScrollbackLimits::default(),
+            crate::SessionLimits::default(),
         )
         .expect("spawn");
 

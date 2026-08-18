@@ -275,10 +275,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
     (
-        "terminal.blocks.max_retained",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
         "terminal.bracketed_paste",
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
@@ -308,10 +304,6 @@ pub const UNWIRED: &[(&str, &str)] = &[
     ),
     (
         "terminal.reflow.on_resize",
-        "the terminal core takes its own defaults; nothing passes this in yet",
-    ),
-    (
-        "terminal.word_separators",
         "the terminal core takes its own defaults; nothing passes this in yet",
     ),
 ];

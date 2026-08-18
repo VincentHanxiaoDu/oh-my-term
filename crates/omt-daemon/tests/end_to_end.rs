@@ -36,7 +36,7 @@ fn spawn_into(
             size,
             ..PtyConfig::default()
         },
-        omt_term::ScrollbackLimits::default(),
+        omt_daemon::SessionLimits::default(),
     )
     .expect("spawn");
     instance.attach(runtime).expect("attach");

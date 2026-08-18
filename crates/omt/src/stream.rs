@@ -201,7 +201,7 @@ mod tests {
                 size: omt_pty::PtySize::new(20, 4),
                 ..omt_pty::PtyConfig::default()
             },
-            omt_term::ScrollbackLimits::default(),
+            omt_daemon::SessionLimits::default(),
         )
         .expect("spawn");
         state.lock().expect("lock").attach(started).expect("attach");

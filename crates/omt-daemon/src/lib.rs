@@ -12,5 +12,5 @@ pub mod runtime;
 pub mod tail;
 
 pub use instance::{Instance, REPLAY_CAPACITY};
-pub use runtime::{Pumped, READ_CHUNK, RuntimeError, SessionRuntime};
+pub use runtime::{Pumped, READ_CHUNK, RuntimeError, SessionLimits, SessionRuntime};
 pub use tail::{TAIL_BYTES, Tail};
