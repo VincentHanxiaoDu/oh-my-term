@@ -374,9 +374,19 @@ pub(crate) fn settings_readers() -> Result<()> {
 /// would report a setting as wired because two unrelated things are spelled
 /// the same.
 fn reads(sources: &str, key: &str) -> bool {
-    let quoted = format!("\"{key}\"");
+    // Both quote styles: the Rust consumers write `"key"` and the web client
+    // writes `'key'`, and a gate that read one and not the other reported
+    // eleven wired settings as unwired — a false alarm in exactly the
+    // direction a gate must not lie.
+    let quoted_double = format!("\"{key}\"");
+    let quoted_single = format!("'{key}'");
+    reads_quoted(sources, &quoted_double) || reads_quoted(sources, &quoted_single)
+}
+
+/// Whether a quoted key appears inside a lookup call.
+fn reads_quoted(sources: &str, quoted: &str) -> bool {
     let mut from = 0;
-    while let Some(at) = sources[from..].find(&quoted) {
+    while let Some(at) = sources[from..].find(quoted) {
         let at = from + at;
         // A window around the key rather than the line it sits on: rustfmt
         // splits a long call across lines, and a gate that depends on
@@ -385,7 +395,15 @@ fn reads(sources: &str, key: &str) -> bool {
         let start = at.saturating_sub(120);
         let end = (at + quoted.len() + 200).min(sources.len());
         let window = &sources[start..end];
-        if window.contains("get(") || window.contains("setting(") || window.contains("_file(") {
+        // A reader is a lookup: a call in Rust (`get(`, `setting(`,
+        // `sound_file(`) or a bracket access in the web client
+        // (`values[...]`, `settings[...]`). A bare mention is not a reader.
+        if window.contains("get(")
+            || window.contains("setting(")
+            || window.contains("_file(")
+            || window.contains("values[")
+            || window.contains("settings[")
+        {
             return true;
         }
         from = at + quoted.len();
@@ -545,6 +563,15 @@ mod settings_reader_tests {
         assert!(reads(lookup, "notifications.when"));
         let listed = "    pub key: \"notifications.when\",";
         assert!(!reads(listed, "notifications.when"));
+    }
+
+    #[test]
+    fn a_type_script_key_is_read_too() {
+        // The web client reads settings with single quotes, and the gate once
+        // reported eleven wired settings as unwired because it only looked
+        // for double-quoted keys.
+        let ts = "      values['appearance.font.family'] = entry.value";
+        assert!(reads(ts, "appearance.font.family"));
     }
 
     #[test]

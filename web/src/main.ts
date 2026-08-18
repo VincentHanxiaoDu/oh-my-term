@@ -19,6 +19,7 @@ import { describeDevice, exchangeInvite, isInvite } from './join.js'
 import type { Instance } from './instances.js'
 import { fit } from './screen.js'
 import { applyTheme } from './terminal.js'
+import { applyAppearance } from './appearance.js'
 import type { Theme } from './terminal.js'
 
 /**
@@ -216,6 +217,22 @@ async function main(): Promise<void> {
     })
     // A theme that cannot be fetched leaves the defaults in place. There is
     // nothing useful to say about it and nothing broken.
+    .catch(() => {})
+
+  // The appearance settings, asked for once beside the theme. The
+  // `appearance.*` and `font.*` keys were in the reference and in the
+  // settings screen, and the client rendered its built-in face regardless:
+  // font, cursor shape and density only became CSS variables when this ran.
+  void store
+    .call('config.get')
+    .then((out) => {
+      const rows = (out as { values: Array<{ key: string; value: unknown }> }).values ?? []
+      const values: Record<string, unknown> = {}
+      for (const entry of rows) {
+        values[entry.key] = entry.value
+      }
+      applyAppearance(document.documentElement, values)
+    })
     .catch(() => {})
 
   // The phone's back gesture is the one navigation control every user already

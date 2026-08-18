@@ -782,11 +782,16 @@ html, body {
 /* The terminal keeps the user's own theme and their program's own colours.
    Restyling it would be omt deciding what somebody's shell looks like. */
 .terminal {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  /* The appearance settings land here: --face-machine is the family the
+     client applies from the configuration, and the rest keep their old
+     values as defaults so an unconfigured client renders exactly what it
+     always did. */
+  font-family: var(--face-machine, ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace);
   /* Pinch-driven, so one property decides the glyph size, how many columns fit,
      and the resize the instance is told about. */
-  font-size: var(--terminal-font);
-  line-height: 1.25;
+  font-size: var(--omt-font-size, var(--terminal-font));
+  line-height: var(--omt-line-height, 1.25);
+  font-variant-ligatures: var(--omt-ligatures, normal);
   white-space: pre;
   overflow-x: auto;
   padding: var(--space-2);
@@ -825,11 +830,17 @@ html, body {
 }
 .terminal .cursor {
   position: absolute;
-  top: 0;
-  width: 1ch;
-  height: 1.25em;
+  /* The shape the configuration names; a block is the default, which is
+     what the cursor has always been. */
+  top: var(--omt-cursor-top, 0);
+  width: var(--omt-cursor-width, 1ch);
+  height: var(--omt-cursor-height, 1.25em);
   background: var(--omt-cursor, var(--fg));
   mix-blend-mode: difference;
+  animation: omt-cursor-blink var(--omt-cursor-blink, none);
+}
+@keyframes omt-cursor-blink {
+  50% { opacity: 0; }
 }
 
 /* Everything below the grid: the keys a phone does not have, and the field a
@@ -1004,8 +1015,9 @@ html, body {
   min-width: 0;
   max-width: 100%;
   margin-bottom: var(--space-2);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border-strong);
+  border: var(--omt-block-edge, 1px solid var(--border));
+  border-left: var(--omt-block-left, 3px solid var(--border-strong));
+  border-top: var(--omt-block-top, none);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   overflow: hidden;

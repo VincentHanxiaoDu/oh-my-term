@@ -115,68 +115,12 @@ pub const UNWIRED: &[(&str, &str)] = &[
         "the host colours come from the environment; nothing consults this yet",
     ),
     (
-        "appearance.block_style",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.cursor.blink",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.cursor.style",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.density",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.font.fallbacks",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.font.family",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.font.ligatures",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.font.line_height",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.font.size",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
         "appearance.show_agent_badges",
-        "the web client draws with it; nothing applies it yet",
+        "the roster shows no agent badge today; the subagent grid is its own surface, so there is nothing for this switch to hide",
     ),
     (
         "appearance.theme",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.theme_light",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "appearance.theme_mode",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "font.family",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "font.line_height",
-        "the web client draws with it; nothing applies it yet",
-    ),
-    (
-        "font.size",
-        "the web client draws with it; nothing applies it yet",
+        "no theme registry exists: the importer writes files nothing registers, and the two built-ins are named omt dark and omt light",
     ),
     (
         "media.images.thumbnail_max_px",

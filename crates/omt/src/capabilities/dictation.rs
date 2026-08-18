@@ -290,8 +290,26 @@ pub(crate) struct ThemeGetHandler(pub(crate) State);
 
 impl CapabilityHandler<ThemeGet> for ThemeGetHandler {
     fn call(&self, _ctx: &CallContext, _input: ThemeGetIn) -> Result<ThemeOut, CapabilityError> {
-        let _ = &self.0;
-        let theme = omt_theme::Theme::builtin_dark();
+        // `appearance.theme_mode` and `appearance.theme_light` were in the
+        // settings reference and reached nothing: this handler always served
+        // the built-in dark theme, so a "light" setting changed nothing
+        // anywhere a client could see.
+        let mode = crate::terminal_bits::setting(&self.0, "appearance.theme_mode");
+        let light_named =
+            crate::terminal_bits::setting(&self.0, "appearance.theme_light").contains("light");
+        let theme = match mode.trim().trim_matches('\"') {
+            "light" => omt_theme::Theme::builtin_light(),
+            _ => {
+                // `auto` and a dark preference are the dark theme; a theme
+                // name is not looked up here because no theme registry
+                // exists — `appearance.theme` stays declared for that reason.
+                if light_named {
+                    omt_theme::Theme::builtin_light()
+                } else {
+                    omt_theme::Theme::builtin_dark()
+                }
+            }
+        };
         Ok(ThemeOut {
             name: theme.name,
             appearance: match theme.appearance {

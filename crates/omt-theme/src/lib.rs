@@ -173,6 +173,45 @@ impl Theme {
             },
         }
     }
+
+    /// The light half of the pair, for `appearance.theme_mode = "light"`.
+    ///
+    /// The same values as the web client's light fallback, for the same
+    /// reason the dark one exists: a session must look the same in a browser
+    /// as it does locally, whichever half the user asked for.
+    #[must_use]
+    pub fn builtin_light() -> Self {
+        Self {
+            name: "omt light".to_owned(),
+            appearance: Appearance::Light,
+            foreground: Rgb(0x1a, 0x1a, 0x1a),
+            background: Rgb(0xfa, 0xfa, 0xf8),
+            cursor: Rgb(0xb4, 0x3a, 0x00),
+            selection: Rgb(0xde, 0xe5, 0xf0),
+            palette: Palette {
+                normal: [
+                    Rgb(0x1a, 0x1a, 0x1a),
+                    Rgb(0xb0, 0x2e, 0x2e),
+                    Rgb(0x2e, 0x7d, 0x32),
+                    Rgb(0x8a, 0x6d, 0x1c),
+                    Rgb(0x1d, 0x4f, 0xa8),
+                    Rgb(0x7a, 0x3e, 0x9d),
+                    Rgb(0x1d, 0x6d, 0x6d),
+                    Rgb(0x4a, 0x4a, 0x4a),
+                ],
+                bright: [
+                    Rgb(0x80, 0x80, 0x80),
+                    Rgb(0xd4, 0x50, 0x50),
+                    Rgb(0x3d, 0xa8, 0x44),
+                    Rgb(0xb0, 0x8d, 0x2d),
+                    Rgb(0x35, 0x6f, 0xd6),
+                    Rgb(0x9c, 0x5f, 0xc4),
+                    Rgb(0x2f, 0x8f, 0x8f),
+                    Rgb(0x10, 0x10, 0x10),
+                ],
+            },
+        }
+    }
 }
 
 /// Whether a theme is light or dark.

@@ -17,6 +17,7 @@ import { choose, current, forget, list, readInvite, remember } from './instances
 import { describeDevice, exchangeInvite, isInvite } from './join.js';
 import { fit } from './screen.js';
 import { applyTheme } from './terminal.js';
+import { applyAppearance } from './appearance.js';
 /**
  * Which instance to connect to, taking an arriving invite if there is one.
  *
@@ -181,6 +182,21 @@ async function main() {
     })
         // A theme that cannot be fetched leaves the defaults in place. There is
         // nothing useful to say about it and nothing broken.
+        .catch(() => { });
+    // The appearance settings, asked for once beside the theme. The
+    // `appearance.*` and `font.*` keys were in the reference and in the
+    // settings screen, and the client rendered its built-in face regardless:
+    // font, cursor shape and density only became CSS variables when this ran.
+    void store
+        .call('config.get')
+        .then((out) => {
+        const rows = out.values ?? [];
+        const values = {};
+        for (const entry of rows) {
+            values[entry.key] = entry.value;
+        }
+        applyAppearance(document.documentElement, values);
+    })
         .catch(() => { });
     // The phone's back gesture is the one navigation control every user already
     // has. A web app that ignores it throws them out to the previous website
