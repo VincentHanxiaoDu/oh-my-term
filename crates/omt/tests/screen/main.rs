@@ -1712,7 +1712,13 @@ fn the_leader_is_the_one_the_binding_file_names() {
     // The new prefix opens the leader strip, and it names itself with the key
     // the user actually has rather than the default.
     s.type_in("\x01");
-    s.settle_until(5.0, |s| s.screen().contains('\u{25b8}'));
+    // The strip is a *menu that opens*, so the wait is for what the menu
+    // says, not for a decoration character: the `▸` in its header used to
+    // be the wait condition, and the moment the status bar wore its own
+    // `▸` for the focused session, the condition was satisfied by the bar
+    // before the strip existed, and the assertion failed for the right
+    // reason in the wrong place.
+    s.settle_until(5.0, |s| s.screen().contains("detach"));
     let screen = s.screen();
     assert!(
         screen.contains("detach"),

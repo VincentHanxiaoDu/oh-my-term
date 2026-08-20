@@ -333,9 +333,7 @@ pub(crate) fn refresh_roster(attached: &mut Attached) -> Result<()> {
                         agent_state: row["agent_state"].as_str().map(str::to_owned),
                         threads: row["threads"].as_u64().unwrap_or(0) as usize,
                         blocked: row["blocked"].as_u64().unwrap_or(0) as usize,
-                        live: row["state"]
-                            .as_str()
-                            .is_some_and(|st| st != "orphaned"),
+                        live: row["state"].as_str().is_some_and(|st| st != "orphaned"),
                     })
                 })
                 .collect()

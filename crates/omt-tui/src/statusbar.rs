@@ -87,10 +87,11 @@ fn sessions_full(status: &Status) -> String {
         .enumerate()
         .map(|(i, s)| {
             let mark = glyph(s);
+            let pointed = if s.focused { "\u{25b8}" } else { "" };
             if mark.is_empty() {
-                format!("{}:{}", i + 1, s.title)
+                format!("{pointed}{}:{}", i + 1, s.title)
             } else {
-                format!("{}:{} {mark}", i + 1, s.title)
+                format!("{pointed}{}:{} {mark}", i + 1, s.title)
             }
         })
         .collect::<Vec<_>>()
@@ -249,6 +250,26 @@ fn pad(line: &str, width: usize) -> String {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_focused_session_wears_the_marker_and_no_other_does() {
+        // The `focused` flag existed on the tab and the bar never drew it:
+        // with two panes open there was no way to tell which one would take
+        // the keystroke.
+        let mut first = tab("zsh", 0, false);
+        first.focused = true;
+        let second = tab("claude", 1, true);
+        let bar = render(
+            &Status {
+                sessions: vec![first, second],
+                ..status()
+            },
+            200,
+        );
+        assert!(bar.contains("\u{25b8}1:zsh"), "{bar}");
+        assert!(!bar.contains("\u{25b8}2:"), "{bar}");
+        assert!(bar.contains("2:claude ◍"), "{bar}");
+    }
 
     fn tab(title: &str, blocked: usize, working: bool) -> Tab {
         Tab {
