@@ -699,6 +699,24 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
             crate::rows::watched_local(&mut instance, &panes, now)
         };
 
+        // The window's size, polled rather than waited for. `SIGWINCH` goes
+        // to the *foreground* process group of the pty, which is the shell in
+        // the pane — omt is not in it, so it never saw a window change and
+        // the layout kept the old geometry: "change your resolution" drew a
+        // terminal that did not follow. A read of the size each round costs
+        // an ioctl and finds the change regardless of who owns the signal.
+        if let Ok((cols, rows)) = crossterm::terminal::size() {
+            let (cols, rows) = (cols.max(1), rows.max(1));
+            if cols != term_cols || rows != term_rows {
+                term_cols = cols;
+                term_rows = rows;
+                layout_dirty = true;
+                shown_hint = None;
+                shown_bar = None;
+                shown_bottom = None;
+            }
+        }
+
         // Nothing changed and nothing is waiting to be typed. Wait out the
         // tick here and go round again without drawing.
         //
@@ -756,6 +774,7 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         if layout_dirty {
             // Everything moved. Diffing against where a pane used to be paints
             // its old contents into its neighbour.
+
             write!(out, "\x1b[2J").context("clearing")?;
             placed = None;
             for pane in &mut panes {
@@ -779,6 +798,14 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 mode = EncodeMode {
                     application_cursor: terminal.modes().contains(TermMode::ApplicationCursor),
                 };
+            }
+            // A pane with no room — `divide` handed everything to its
+            // neighbour and this one got the empty rect — must not draw:
+            // its grid still has real content, and painting that content
+            // where somebody else's pane lives overwrites it. It simply
+            // waits in the tree for room.
+            if rect.cols == 0 || rect.rows == 0 {
+                continue;
             }
             pane.screen
                 // Offset by the tab bar, which owns the first row.

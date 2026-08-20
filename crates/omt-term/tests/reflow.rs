@@ -53,3 +53,20 @@ fn the_growth_after_none_does_not_restore_history() {
     assert!(text.iter().any(|l| l.contains('a')), "{text:?}");
     assert!(!text.iter().any(|l| l.contains('c')), "{text:?}");
 }
+
+#[test]
+fn shrinking_keeps_the_screen_content() {
+    // A pane is a pty of its own, and when the window shrinks the pane
+    // resizes with it. The screen that was there must survive: the
+    // alternative is a blank rectangle after every window change.
+    let mut t = Terminal::new(TermConfig {
+        size: GridSize::new(50, 29),
+        ..TermConfig::default()
+    });
+    t.advance(b"one\r\ntwo\r\nthree\r\n");
+    assert!(t.grid().rows().iter().any(|l| l.text().contains("one")));
+    t.resize(GridSize::new(30, 11));
+    let text: Vec<String> = t.grid().rows().iter().map(|l| l.text()).collect();
+    assert!(text.iter().any(|l| l.contains("one")), "{text:?}");
+    assert!(text.iter().any(|l| l.contains("two")), "{text:?}");
+}

@@ -83,6 +83,8 @@ pub struct Screen {
     pub raw: Vec<u8>,
     /// The `$HOME` this screen was given, which is the only one it may write to.
     pub home: std::path::PathBuf,
+    /// The omt process's pid, for a test that wants to poke at it.
+    pub pid: i32,
 }
 
 impl Screen {
@@ -277,10 +279,12 @@ impl Screen {
         })
         .expect("spawn omt");
         pty.set_nonblocking(true).expect("nonblocking");
+        let pid = pty.child_pid();
         Self {
             pty,
             dir,
             home,
+            pid,
             raw: Vec::new(),
             term: Terminal::new(TermConfig {
                 size: GridSize::new(COLS, ROWS),
@@ -313,6 +317,22 @@ impl Screen {
     /// a guess about how fast this machine is, and under a full test run — a
     /// dozen other suites competing for the same cores — the guess is wrong,
     /// which is a test that passes alone and fails in CI.
+    /// Resize the terminal omt is drawing on, as the window manager would.
+    ///
+    /// The whole reason "change your window size" was a reported bug: nothing
+    /// in the suite had ever resized a pty, so omt's resize handling was
+    /// tested by nobody. The kernel raises `SIGWINCH`, crossterm turns it
+    /// into an event, and this test reads what omt painted afterwards.
+    ///
+    /// The mirror terminal resizes with the pty: a screen that kept its old
+    /// size would make `rows()` lie about what omt drew after the change.
+    pub fn resize(&mut self, cols: u16, rows: u16) {
+        self.pty
+            .resize(PtySize::new(cols, rows))
+            .expect("the pty resizes");
+        self.term.resize(omt_term::GridSize::new(cols, rows));
+    }
+
     pub fn settle_until(&mut self, seconds: f32, mut done: impl FnMut(&Self) -> bool) {
         let deadline = Instant::now() + Duration::from_secs_f32(seconds);
         while Instant::now() < deadline {
@@ -369,9 +389,11 @@ impl Screen {
         self.term.grid().row(row).text().trim_end().to_owned()
     }
 
-    /// The whole screen, as lines.
+    /// The whole screen, as lines — at the size it currently is, so a
+    /// resized terminal reads as its new number of rows.
     pub fn rows(&self) -> Vec<String> {
-        (0..ROWS).map(|r| self.row(r)).collect()
+        let height = self.term.grid().size().rows;
+        (0..height).map(|r| self.row(r)).collect()
     }
 
     pub fn screen(&self) -> String {

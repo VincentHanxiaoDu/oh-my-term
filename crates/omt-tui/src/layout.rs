@@ -31,11 +31,14 @@ pub enum Split {
     Horizontal,
 }
 
-/// The narrowest pane worth drawing.
+/// The narrowest pane that can exist.
 ///
-/// Below this a shell prompt wraps on itself and any program with a table is
-/// unreadable. Chosen as the width at which `git log --oneline` still fits.
-pub const MIN_PANE_COLS: u16 = 40;
+/// Forty was the width at which `git log --oneline` still fits — a *good*
+/// width, not a usable one. As a floor it meant a window under eighty-one
+/// columns could not hold a split at all: `divide` refused, one pane took
+/// the whole screen and the other vanished. A pane exists while a shell
+/// prompt fits in it; whether it is *good* is a different question.
+pub const MIN_PANE_COLS: u16 = 12;
 
 /// The shortest.
 ///
@@ -205,16 +208,20 @@ mod tests {
     #[test]
     fn a_screen_too_narrow_admits_fewer_panes_than_asked_for() {
         // Eight unusable panes is worse than three usable ones, and the user
-        // cannot tell why nothing is legible.
-        assert_eq!(how_many_fit(80, 24, Split::Vertical, 8), 1);
-        assert_eq!(how_many_fit(81, 24, Split::Vertical, 8), 2);
+        // cannot tell why nothing is legible. Twelve columns is the floor now:
+        // at eighty, two panes of thirty-something fit; one column less than
+        // the first separator, none split at all.
+        assert_eq!(how_many_fit(80, 24, Split::Vertical, 8), 6);
+        assert_eq!(how_many_fit(24, 24, Split::Vertical, 8), 1);
     }
 
     #[test]
-    fn a_phone_width_screen_admits_exactly_one_pane() {
-        // Which is the whole argument for the mobile client's design: there is
-        // no split worth showing at fifty columns.
-        assert_eq!(how_many_fit(50, 40, Split::Vertical, 4), 1);
+    fn a_phone_width_screen_still_fits_two_panes() {
+        // Fifty columns is two twenty-four-column panes — narrow, but a shell
+        // prompt still fits, and a split at this width is precisely what the
+        // resize fix is about: the window shrank, and the layout must shrink
+        // with it rather than dropping the other pane.
+        assert_eq!(how_many_fit(50, 40, Split::Vertical, 4), 3);
     }
 
     #[test]

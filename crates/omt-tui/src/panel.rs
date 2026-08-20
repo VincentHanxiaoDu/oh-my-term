@@ -250,19 +250,21 @@ mod tests {
 
     #[test]
     fn a_wide_terminal_has_room_and_a_narrow_one_does_not() {
-        // 19 §2.1b's table, as a test: 24 columns is worth it at 170 and is
-        // not at 80, and the check is the same minimum a split is refused for.
+        // 19 §2.1b's table, as a test: a panel is worth it on a wide screen
+        // and not on a narrow one, and the check is the same minimum a split
+        // is refused for — which moved to twelve columns with the resize fix.
         assert!(fits(170, 1));
         assert!(fits(120, 1));
-        assert!(fits(100, 1));
-        assert!(!fits(60, 1), "it took columns a pane needed");
+        assert!(fits(60, 1));
+        assert!(!fits(24, 1), "it took columns a pane needed");
     }
 
     #[test]
     fn more_panes_need_more_room() {
         // Three panes and a panel is four things sharing the width.
         assert!(fits(200, 3));
-        assert!(!fits(140, 3));
+        assert!(fits(140, 3));
+        assert!(!fits(60, 3));
     }
 
     #[test]

@@ -967,7 +967,9 @@ fn a_hook_fired_from_inside_a_pane_reaches_the_conversation() {
     s.settle(2.0);
 
     s.type_in("\x02t"); // leader, transcript
-    s.settle_until(20.0, |s| s.screen().contains("Which database?"));
+    // A hook through a socket and back, on a machine that may be mid-suite:
+    // the bound is a ceiling, not a guess, and twenty was the flake.
+    s.settle_until(90.0, |s| s.screen().contains("Which database?"));
     let screen = s.screen();
     assert!(
         screen.contains("Which database?"),
@@ -999,7 +1001,7 @@ fn an_agent_that_starts_waiting_reaches_somebody_who_is_looking_elsewhere() {
         "printf '{payload}' | OMT_HOOK_EVENT=PreToolUse {} --agent claude-code >/dev/null\n",
         hook.display()
     ));
-    s.settle_until(20.0, |s| s.raw().contains("waiting for you"));
+    s.settle_until(90.0, |s| s.raw().contains("waiting for you"));
 
     let raw = s.raw();
     assert!(

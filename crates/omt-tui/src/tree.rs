@@ -555,22 +555,24 @@ mod tests {
 
     #[test]
     fn a_split_with_no_room_is_not_made() {
-        // Two panes nobody can read is worse than one somebody can, and worse
-        // than a pane that silently vanished.
-        let narrow = Rect {
-            cols: 50,
+        // Below the floor the split does not divide — but it must not paint
+        // the second pane over the first at a zero rect either, which is
+        // exactly what the shrink bug did before the floor moved to twelve
+        // columns.
+        let minuscule = Rect {
+            cols: 10,
             rows: 10,
             ..SCREEN
         };
         let mut tree = Node::leaf(p(1));
         tree.split(p(1), p(2), Split::Vertical);
-        let placed = tree.place(narrow);
-        assert_eq!(
-            placed.len(),
-            1,
-            "it divided space it did not have: {placed:?}"
+        let placed = tree.place(minuscule);
+        assert!(placed.len() <= 2, "{placed:?}");
+        assert!(
+            placed.iter().all(|p| p.rect.cols > 0),
+            "a pane got a zero rect: {placed:?}"
         );
-        assert_eq!(placed[0].rect, narrow);
+        assert_eq!(placed[0].rect, minuscule);
     }
 
     #[test]

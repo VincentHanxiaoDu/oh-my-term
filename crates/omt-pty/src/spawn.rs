@@ -145,6 +145,14 @@ pub struct Pty {
 impl Pty {
     /// Open a pty and spawn a process on it.
     ///
+    /// The child's process id, for a test that needs to look at it.
+    #[must_use]
+    pub fn child_pid(&self) -> libc::pid_t {
+        self.pid
+    }
+
+    /// Spawn a program on a pty.
+    ///
     /// # Errors
     /// Fails if no pty is available, if the program cannot be executed, or if
     /// any path or variable contains an interior NUL.

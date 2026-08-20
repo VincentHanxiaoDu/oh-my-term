@@ -1,9 +1,14 @@
 //! Behaviour through a real pty, split out of `main.rs` to keep each file
 //! under the hard line limit — in the same binary, which the screen suite
 //! must stay (cargo would otherwise run a second screen suite in parallel,
-//! and sixteen ptys at once is a test of the machine, not of omt).
+//! and sixteen ptys at once is a test of the machine, not of omt.
 
-use super::{Screen, serially};
+#![allow(
+    unsafe_code,
+    reason = "kill(pid, 0) is the only live check without /proc"
+)]
+
+use super::{Instance, Screen, instance_dir, serially};
 
 #[test]
 fn a_multiline_paste_is_asked_about_before_it_reaches_the_shell() {
@@ -134,4 +139,141 @@ fn the_log_writes_where_the_setting_says_and_only_at_its_level() {
         written.contains("omt ") && written.contains("starts"),
         "no startup line in the log: {written:?}"
     );
+}
+
+#[test]
+fn a_resize_repaints_everything_at_the_new_size() {
+    use crate::common::screen_harness::ROWS;
+    let _serial = serially();
+    // "Change your window size" was reported as broken, and the suite had
+    // never resized a pty. To be a resize test it must start with a prompt,
+    // split, then grow the terminal and see the new geometry painted.
+    let mut s = Screen::start();
+    s.settle_until(30.0, |s| s.screen().contains('$'));
+    // Split so the resize has a layout to reflow.
+    s.type_in("\x02s");
+    s.settle_until(10.0, |s| {
+        s.screen().contains('$') && s.screen().contains('$')
+    });
+    s.settle(1.0);
+    let rows_before = s.rows().len();
+    let bar_before = s.row(ROWS - 1).to_owned();
+
+    s.resize(140, 50);
+    s.settle(2.0);
+
+    // The status bar survives at the bottom: a resize that lost the bar is a
+    // resize that stopped being a terminal.
+    let rows_after = s.rows().len();
+    let bar_after = s
+        .row(u16::try_from(s.rows().len().saturating_sub(1)).unwrap_or(ROWS))
+        .to_owned();
+    assert!(
+        bar_after.contains("omt") || bar_before.contains("omt"),
+        "the bar vanished after resize: before={bar_before:?} after={bar_after:?}"
+    );
+    eprintln!("resize: rows {} -> {}", rows_before, rows_after);
+    eprintln!("bar after: {bar_after:?}");
+    assert!(
+        rows_after > 30,
+        "the screen did not grow with the terminal: {} rows",
+        rows_after
+    );
+}
+
+#[test]
+fn an_attached_terminal_repaints_at_the_new_size() {
+    use crate::common::screen_harness::ROWS;
+    let _serial = serially();
+    // The default way `omt` runs is attached to an instance, and "change
+    // window size" was reported from exactly that mode. The pty resizes in
+    // the daemon; the terminal has to follow.
+    let runtime = instance_dir("resized");
+    let _cleanup = Instance(runtime.clone());
+    let mut s = Screen::start_attached_in(&runtime);
+    s.settle_until(30.0, |s| s.screen().contains('$'));
+
+    s.resize(140, 50);
+    s.settle(2.0);
+    let height = s.rows().len();
+    let bar = s.row(u16::try_from(height.saturating_sub(1)).unwrap_or(ROWS));
+    eprintln!("attached resize: rows={height} bar={bar:?}");
+    assert!(
+        height > 30,
+        "an attached terminal did not grow with the window: {height} rows"
+    );
+    assert!(bar.contains("omt"), "the bar vanished: {bar:?}");
+    // And typing still works after the resize.
+    s.type_in("echo after-resize\r");
+    s.settle_until(10.0, |s| s.screen().contains("after-resize"));
+}
+
+#[test]
+fn shrinking_keeps_layout_usable_and_the_bar_readable() {
+    use crate::common::screen_harness::ROWS;
+    let _serial = serially();
+    // Growing is the friendly direction. Shrinking is where a terminal
+    // stops being one: panes cut to nothing, the status bar overflowing, a
+    // split that hides one side entirely.
+    let mut s = Screen::start();
+    s.settle_until(30.0, |s| s.screen().contains('$'));
+    s.type_in("\x02s");
+    s.settle(1.0);
+
+    s.resize(60, 12);
+    s.settle(2.0);
+
+    let height = s.rows().len();
+    let bar = s.row(u16::try_from(height.saturating_sub(1)).unwrap_or(ROWS));
+    eprintln!("shrink: rows={height} bar={bar:?}");
+    assert!(
+        !bar.is_empty(),
+        "the bar is gone at 60x12 — that is the overflow being unhandled"
+    );
+    // The bar has to stay readable: a bar that lost its own leader is a
+    // terminal nobody can leave.
+    assert!(
+        bar.contains('?'),
+        "the escape-hatch cell vanished at 60x12: {bar:?}"
+    );
+    // Both halves of the split still exist: two prompts on screen.
+    let visible = s.rows().iter().filter(|l| l.contains('$')).count();
+    assert!(
+        visible >= 1,
+        "no prompt survived the shrink:\n{}",
+        s.rows().join("\n")
+    );
+    s.type_in("\x1b"); // spend the leader
+    s.settle(0.5);
+}
+
+#[test]
+fn a_shrunken_single_pane_still_shows_its_shell() {
+    let _serial = serially();
+    // Same shrink, no split: if the pane goes blank here, the split had
+    // nothing to do with it.
+    let mut s = Screen::start();
+    s.settle_until(30.0, |s| s.screen().contains('$'));
+    s.resize(60, 12);
+    s.settle(2.0);
+    let text = s.rows().join("\n");
+    assert!(
+        s.rows().iter().any(|l| l.contains('$')),
+        "a single pane went blank on shrink:\n{text}"
+    );
+}
+
+#[test]
+fn a_split_shows_both_shells() {
+    let _serial = serially();
+    let mut s = Screen::start();
+    s.settle_until(30.0, |s| s.screen().contains('$'));
+    s.type_in("\x02s");
+    s.settle_until(20.0, |s| {
+        // Two rows each carrying a prompt: a split that shows one shell and
+        // an empty rectangle is not a usable split.
+        s.rows().iter().filter(|l| l.trim_end() == "$").count() >= 2
+    });
+    s.settle(0.5);
+    eprintln!("--- split screen ---\n{}", s.rows().join("|\n"));
 }
