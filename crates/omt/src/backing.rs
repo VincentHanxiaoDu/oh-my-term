@@ -82,6 +82,12 @@ pub(crate) struct Reported {
     pub(crate) threads: usize,
     /// How many of those are waiting for a human.
     pub(crate) blocked: usize,
+    /// Whether a process is behind it, per the instance's own state.
+    ///
+    /// An orphan — restored from a snapshot after a restart — is readable but
+    /// has no process, which makes it a bad default for an attach: `omt` is
+    /// how somebody comes back to work, not to a dead screen.
+    pub(crate) live: bool,
 }
 
 /// The seam, for one statement.
@@ -327,6 +333,9 @@ pub(crate) fn refresh_roster(attached: &mut Attached) -> Result<()> {
                         agent_state: row["agent_state"].as_str().map(str::to_owned),
                         threads: row["threads"].as_u64().unwrap_or(0) as usize,
                         blocked: row["blocked"].as_u64().unwrap_or(0) as usize,
+                        live: row["state"]
+                            .as_str()
+                            .is_some_and(|st| st != "orphaned"),
                     })
                 })
                 .collect()
@@ -382,9 +391,15 @@ pub(crate) fn first_session(
     // when each was created; picking the newest would mean a terminal that
     // reopened showed the session somebody made last rather than the one they
     // were working in.
-    if let Some(existing) = attached.roster.first().map(|s| s.id) {
-        watch(attached, existing, cols, rows)?;
-        return Ok(existing);
+    //
+    // An orphan is not a candidate at all: it has no process, so an attach to
+    // it is a screen somebody cannot type into. `omt` is how they come back to
+    // work; when the only thing left is an orphan, the honest answer is a
+    // fresh session, with the orphan still browsable in the session list.
+    if let Some(existing) = attached.roster.iter().find(|s| s.live) {
+        let id = existing.id;
+        watch(attached, id, cols, rows)?;
+        return Ok(id);
     }
     open_session(attached, &workspace, None, cols, rows)
 }

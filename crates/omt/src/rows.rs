@@ -811,6 +811,7 @@ mod view_tests {
             agent_state: state.map(str::to_owned),
             threads: 1,
             blocked,
+            live: true,
         }
     }
 
