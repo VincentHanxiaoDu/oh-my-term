@@ -143,6 +143,17 @@ impl CapabilityHandler<SessionResize> for SessionResizeHandler {
     ) -> Result<SessionResizeOut, CapabilityError> {
         let id = session_id(&input.session)?;
         let mut instance = self.0.lock()?;
+        // An orphan — a session restored from a snapshot with no pty behind it
+        // — has no real size to set, and resizing it must not refuse an
+        // attach the way `omt` with no arguments does: it picked the orphan
+        // because that is what was left running, and the first thing it does
+        // is resize. Same tolerance as `session.history` below.
+        if instance.orphan_terminal(id).is_some() && instance.runtime(id).is_none() {
+            return Ok(SessionResizeOut {
+                cols: input.cols,
+                rows: input.rows,
+            });
+        }
         instance
             .runtime_mut(id)
             .ok_or_else(|| CapabilityError::not_found("no such session"))?
@@ -909,3 +920,59 @@ pub(crate) fn css_color(color: omt_term::Color) -> Option<String> {
 
 /// The most scrollback one read returns.
 pub(crate) const MAX_HISTORY_LINES: usize = 5_000;
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "in a test, expect() is the assertion"
+)]
+mod resize_tests {
+    use super::*;
+
+    #[test]
+    fn resizing_an_orphan_is_tolerated_instead_of_refused() {
+        // `omt` with no arguments attaches to the first session that is left
+        // running — which, after a daemon restart, is an orphan restored from
+        // a snapshot — and the first thing it does is resize. Refusing that
+        // resize made an attach to the one thing still there fail with
+        // "no such session".
+        // The handler locks the instance itself, so this test must not hold
+        // the lock while calling it — a second lock on the same thread
+        // deadlocks silently, which is the first trap in HANDOFF §5.
+        let state = crate::state::State::default();
+        let ws;
+        let id;
+        {
+            let mut instance = state.lock().expect("the instance locks");
+            ws = instance
+                .open_workspace("/tmp/omt-orphan-test")
+                .expect("a workspace opens");
+            id = instance
+                .restore_orphan(ws, "shell", None, &["left running".to_owned()])
+                .expect("an orphan restores");
+            assert!(instance.orphan_terminal(id).is_some());
+            assert!(instance.runtime(id).is_none());
+        }
+
+        let out = SessionResizeHandler(state.clone())
+            .call(
+                &omt_catalog::CallContext {
+                    actor: omt_types::Actor::Local,
+                    role: omt_types::Role::Viewer,
+                    request: omt_catalog::RequestId {
+                        device: omt_types::DeviceId::new(),
+                        n: 1,
+                    },
+                    intent: None,
+                },
+                SessionResizeIn {
+                    session: id.to_wire(),
+                    cols: 120,
+                    rows: 40,
+                },
+            )
+            .expect("resizing an orphan is not a failure");
+        assert_eq!(out.cols, 120);
+    }
+}
