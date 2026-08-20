@@ -19,12 +19,12 @@ Two real defects surfaced the moment it could:
    other got a zero rect — which was still painted, writing its stale grid
    over its neighbour's live one. Both prompts vanished.
 
-herdr and warp were read for how they do this (the survey is in
-`docs/research/`): both poll the terminal size rather than waiting for the
-signal only the foreground group gets, both clamp to a *usable* minimum
-(two columns / 2×4, not forty), and both coalesce per-frame resize bursts.
-The first two are adopted here directly; the third is unnecessary at omt's
-frame rate, where a size read is one ioctl.
+The two comparable products were read for how they do this: both poll the
+terminal size rather than waiting for the signal only the foreground group
+gets, both clamp to a *usable* minimum (two columns / 2×4, not forty), and
+both coalesce per-frame resize bursts. The first two are adopted here
+directly; the third is unnecessary at omt's frame rate, where a size read
+is one ioctl.
 
 ## What changes
 
@@ -45,7 +45,8 @@ frame rate, where a size read is one ioctl.
 ## Non-goals
 
 - No debounce/coalescing layer: at TICK a "resize storm" is one ioctl per
-  round, and the layout is a pure reflow of stored ratios (the herdr shape),
+  round, and the layout is a pure reflow of stored ratios (the shape the two
+comparable products both use),
   so repeated events are idempotent and cheap.
 - The agent notification and hook tests that flaked under load got longer
   wait ceilings, not weaker assertions: they wait for the same thing, just
@@ -56,4 +57,5 @@ frame rate, where a size read is one ioctl.
 - `omt`: the size poll and the zero-rect skip.
 - `omt-tui`: the floor, and the tests that matched it.
 - `omt-pty`, the harness: resize and the child pid, both for tests.
-- `docs/research/`: the herdr and warp surveys.
+- The two products' resize machinery was read; the mechanism notes follow
+  the repository's rule of naming nothing readable was borrowed from.
