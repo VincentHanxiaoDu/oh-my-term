@@ -397,6 +397,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
     // at the end of one iteration is lost when the next one starts — which is
     // how the paste confirmation first managed to never appear.
     let mut hint_dirty = false;
+    // Why the last write to the focused session was refused, shown on the
+    // hint row until a write succeeds. A terminal that dies on the first
+    // keystroke after attaching to a session restored from a snapshot is
+    // worse than one that says "restart it first" and stays alive.
+    let mut notice: Option<String> = None;
     // Whether the status bar shows the shell-reported branch.
     let command_metadata = setting(&state, "shell.command_metadata").contains("true");
     let separators = {
@@ -501,7 +506,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                     let session = pane.session;
                     let answer = sequence.as_bytes();
                     if attached.is_some() {
-                        backing(&mut instance, &mut attached).write(session, answer)?;
+                        if let Err(err) =
+                            backing(&mut instance, &mut attached).write(session, answer)
+                        {
+                            notice = Some(format!("{err:#}"));
+                            hint_dirty = true;
+                        }
                     } else if let Some(rt) = instance.runtime_mut(session) {
                         rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), answer)
                             .context("writing the clipboard answer")?;
@@ -1068,7 +1078,11 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
         // The leader strip is not a hint and stays: it is a menu somebody
         // opened by pressing the leader, and hiding what they just asked for
         // is a different thing entirely.
-        let hint = if hints_enabled || situation.prefix_armed {
+        let hint = if let Some(reason) = notice.as_deref() {
+            // A refusal shows the reason on the hint row until a write
+            // succeeds, with the one key that always works next to it.
+            Some(format!("{reason} · {} d detaches", leader_key.display()))
+        } else if hints_enabled || situation.prefix_armed {
             omt_tui::hint_for_within(&situation, term_cols)
         } else {
             None
@@ -1457,7 +1471,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         pending_paste = Some(bytes);
                         hint_dirty = true;
                     } else if attached.is_some() {
-                        backing(&mut instance, &mut attached).write(session, &bytes)?;
+                        if let Err(err) =
+                            backing(&mut instance, &mut attached).write(session, &bytes)
+                        {
+                            notice = Some(format!("{err:#}"));
+                            hint_dirty = true;
+                        }
                     } else if let Some(rt) = instance.runtime_mut(session) {
                         rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &bytes)
                             .context("writing input")?;
@@ -1479,7 +1498,12 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                         let pane = &mut panes[focus];
                         let session = pane.session;
                         if attached.is_some() {
-                            backing(&mut instance, &mut attached).write(session, &paste)?;
+                            if let Err(err) =
+                                backing(&mut instance, &mut attached).write(session, &paste)
+                            {
+                                notice = Some(format!("{err:#}"));
+                                hint_dirty = true;
+                            }
                         } else if let Some(rt) = instance.runtime_mut(session) {
                             rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &paste)
                                 .context("writing input")?;
@@ -1489,11 +1513,22 @@ pub fn run_shell(program: Option<String>) -> Result<()> {
                 Input::Bytes(bytes) => {
                     let pane = &mut panes[focus];
                     let session = pane.session;
+                    // Over the socket, with the epoch the instance handed
+                    // out. The token is arbitrated where the session lives,
+                    // which is the only place that can see every actor. A
+                    // refusal — a session restored from a snapshot has no
+                    // process — is shown on the hint row, never fatal.
                     if attached.is_some() {
-                        // Over the socket, with the epoch the instance handed
-                        // out. The token is arbitrated where the session lives,
-                        // which is the only place that can see every actor.
-                        backing(&mut instance, &mut attached).write(session, &bytes)?;
+                        match backing(&mut instance, &mut attached).write(session, &bytes) {
+                            Ok(()) => {
+                                notice = None;
+                                hint_dirty = true;
+                            }
+                            Err(err) => {
+                                notice = Some(format!("{err:#}"));
+                                hint_dirty = true;
+                            }
+                        }
                     } else if let Some(rt) = instance.runtime_mut(session) {
                         rt.write_input(&mut pane.writer, pane.epoch, monotonic_ms(), &bytes)
                             .context("writing input")?;

@@ -261,6 +261,9 @@ pub fn run(socket: Option<&Path>, program: Option<String>) -> Result<()> {
     let mut out = io::stdout();
     let mut armed = false;
     let mut last = String::new();
+    // Why the last write was refused, drawn above the session until a write
+    // succeeds — the fallback that keeps an attach to an orphan alive.
+    let mut notice: Option<String> = None;
 
     loop {
         let snapshot = daemon.call(
@@ -273,6 +276,14 @@ pub fn run(socket: Option<&Path>, program: Option<String>) -> Result<()> {
             write!(out, "\x1b[H\x1b[2J{painted}").context("drawing")?;
             out.flush().ok();
             last = painted;
+        }
+        // A refusal rides on the top line until a write succeeds. The screen
+        // is a snapshot, so the notice is redrawn with it rather than as a
+        // separate layer.
+        if let Some(reason) = notice.as_deref() {
+            let line = format!("\x1b[1;1H\x1b[1m{reason}\x1b[0m — ^B d detaches  \x1b[K");
+            write!(out, "{line}").context("drawing the notice")?;
+            out.flush().ok();
         }
 
         if crossterm::event::poll(std::time::Duration::from_millis(30))
@@ -288,7 +299,11 @@ pub fn run(socket: Option<&Path>, program: Option<String>) -> Result<()> {
             armed = next;
             match input {
                 omt_tui::Input::Bytes(bytes) => {
-                    daemon.call(
+                    // A refused write — a session restored from a snapshot
+                    // has no process — is shown where the attach renders,
+                    // never fatal. Dying on the first keystroke is how an
+                    // attach to the one session still there looks broken.
+                    let outcome = daemon.call(
                         "session.write",
                         serde_json::json!({
                             "session": session,
@@ -296,7 +311,12 @@ pub fn run(socket: Option<&Path>, program: Option<String>) -> Result<()> {
                             "epoch": epoch,
                         }),
                         true,
-                    )?;
+                    );
+                    if let Err(err) = outcome {
+                        notice = Some(format!("{err:#}"));
+                    } else {
+                        notice = None;
+                    }
                     // Redrawn on the next pass rather than here: the daemon has
                     // to have pumped the pty before the screen means anything.
                 }
